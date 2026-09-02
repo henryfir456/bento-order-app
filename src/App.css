@@ -186,11 +186,11 @@
   }
 }
 
-/* 強制隱藏 Netlify Drawer 浮動標籤與圖示 */
-netlify-drawer,
-[data-netlify-deploy-id],
-iframe[src*="netlify"],
-div[class*="netlify-drawer"] {
+/* 強制隱藏 Netlify 注入的 Badge 及彈出視窗 */
+.nl-wrap,
+#nl-card,
+#nl-badge,
+iframe[src*="netlify"] {
   display: none !important;
   visibility: hidden !important;
   pointer-events: none !important;
