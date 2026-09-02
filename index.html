@@ -7,20 +7,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>bento-order-app</title>
 
+  <!-- 強制消除 Netlify 注入標籤 -->
   <style>
-    /* 強制隱藏 Netlify 注入的 Badge */
-    .nl-wrap,
-    #nl-card,
-    #nl-badge,
-    section[aria-label*="Netlify"],
-    button[aria-label*="Netlify"] {
+    html body .nl-wrap,
+    html body #nl-card,
+    html body #nl-badge,
+    html body [class*="nl-wrap"],
+    html body [id*="nl-"] {
       display: none !important;
       visibility: hidden !important;
       opacity: 0 !important;
       pointer-events: none !important;
+      clip: rect(0, 0, 0, 0) !important;
       height: 0 !important;
       width: 0 !important;
-      overflow: hidden !important;
+      position: absolute !important;
+      left: -9999px !important;
     }
   </style>
 </head>

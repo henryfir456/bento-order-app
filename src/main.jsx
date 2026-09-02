@@ -3,55 +3,30 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 
-// 強制監聽並徹底移除 Netlify Badge
+// 在最上層對 HTML 節點進行暴力清掃
 if (typeof window !== 'undefined') {
-  const purgeBadge = () => {
-    // 1. 移除 DOM 元素
-    const elements = document.querySelectorAll('.nl-wrap, #nl-badge, #nl-card');
-    elements.forEach(el => el.remove());
-
-    // 2. 動態注入全域最高權重 CSS 樣式
-    if (!document.getElementById('anti-netlify-style')) {
-      const style = document.createElement('style');
-      style.id = 'anti-netlify-style';
-      style.innerHTML = `
-        .nl-wrap, #nl-badge, #nl-card, [class*="nl-wrap"] {
-          display: none !important;
-          opacity: 0 !important;
-          pointer-events: none !important;
-          visibility: hidden !important;
-          height: 0 !important;
-          width: 0 !important;
-        }
-      `;
-      (document.head || document.documentElement).appendChild(style);
-    }
+  const killBadge = () => {
+    const targets = document.querySelectorAll('.nl-wrap, #nl-badge, #nl-card');
+    targets.forEach(el => el.parentNode && el.parentNode.removeChild(el));
   };
 
-  // 立即觸發一次
-  purgeBadge();
+  // 1. 立即清掃
+  killBadge();
 
-  // 定時輪詢，防止非同步腳本晚載入
-  const timer = setInterval(purgeBadge, 300);
+  // 2. 針對頂層 html 掛載觀察器（防止 body 還沒誕生時注入）
+  const observer = new MutationObserver(killBadge);
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true
+  });
 
-  // 當 DOM 載入後掛載 MutationObserver 監聽
-  const initObserver = () => {
-    purgeBadge();
-    const target = document.body || document.documentElement;
-    if (target) {
-      const observer = new MutationObserver(purgeBadge);
-      observer.observe(target, { childList: true, subtree: true });
-    }
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initObserver);
-  } else {
-    initObserver();
-  }
-
-  // 10 秒後清除輪詢定時器以節省資源
-  setTimeout(() => clearInterval(timer), 10000);
+  // 3. 頁面載入完成後持續檢查 3 秒
+  window.addEventListener('load', () => {
+    killBadge();
+    setTimeout(killBadge, 500);
+    setTimeout(killBadge, 1500);
+    setTimeout(killBadge, 3000);
+  });
 }
 
 createRoot(document.getElementById('root')).render(
