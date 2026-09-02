@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import liff from '@line/liff';
 
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxddK8gf8Tb6Ny0aeIkayZ71kWYhF9DQfAaMMlBJKXb5nO2Ha6U_CZk12QSv_cN8sSaWw/exec";
-const LIFF_ID = "2011372097-BfmMZck8";
+// 自動根據目前環境讀取對應的變數
+const GAS_API_URL = import.meta.env.VITE_GAS_API_URL || "https://script.google.com/macros/s/AKfycbxddK8gf8Tb6Ny0aeIkayZ71kWYhF9DQfAaMMlBJKXb5nO2Ha6U_CZk12QSv_cN8sSaWw/exec";
+const LIFF_ID = import.meta.env.VITE_LIFF_ID || "2011372097-BfmMZck8";
 
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
