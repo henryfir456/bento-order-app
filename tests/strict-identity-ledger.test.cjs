@@ -1,0 +1,718 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const test = require('node:test');
+const vm = require('node:vm');
+
+class MockRange {
+  constructor(sheet, row, column, rowCount = 1, columnCount = 1) {
+    this.sheet = sheet;
+    this.row = row;
+    this.column = column;
+    this.rowCount = rowCount;
+    this.columnCount = columnCount;
+  }
+
+  getValues() {
+    return Array.from({ length: this.rowCount }, (_, rowOffset) => (
+      Array.from({ length: this.columnCount }, (_, columnOffset) => (
+        this.sheet.getCell(this.row + rowOffset, this.column + columnOffset)
+      ))
+    ));
+  }
+
+  getValue() {
+    return this.sheet.getCell(this.row, this.column);
+  }
+
+  setValue(value) {
+    this.sheet.setCell(this.row, this.column, value);
+    return this;
+  }
+
+  setValues(values) {
+    values.forEach((row, rowOffset) => {
+      row.forEach((value, columnOffset) => {
+        this.sheet.setCell(this.row + rowOffset, this.column + columnOffset, value);
+      });
+    });
+    return this;
+  }
+
+  setNumberFormat(format) {
+    this.sheet.setNumberFormat(this.row, this.column, format);
+    return this;
+  }
+
+  getNumberFormat() {
+    return this.sheet.getNumberFormat(this.row, this.column);
+  }
+}
+
+class MockSheet {
+  constructor(rows) {
+    this.rows = rows.map(row => row.slice());
+    this.numberFormats = new Map();
+  }
+
+  getDataRange() {
+    return new MockRange(this, 1, 1, Math.max(this.rows.length, 1), Math.max(this.getLastColumn(), 1));
+  }
+
+  getRange(row, column, rowCount = 1, columnCount = 1) {
+    return new MockRange(this, row, column, rowCount, columnCount);
+  }
+
+  getLastRow() {
+    return this.rows.length;
+  }
+
+  getLastColumn() {
+    return this.rows.reduce((max, row) => Math.max(max, row.length), 0);
+  }
+
+  appendRow(row) {
+    this.rows.push(row.slice());
+  }
+
+  getCell(row, column) {
+    return this.rows[row - 1]?.[column - 1] ?? '';
+  }
+
+  setCell(row, column, value) {
+    while (this.rows.length < row) this.rows.push([]);
+    while (this.rows[row - 1].length < column) this.rows[row - 1].push('');
+    this.rows[row - 1][column - 1] = value;
+  }
+
+  setNumberFormat(row, column, format) {
+    this.numberFormats.set(`${row}:${column}`, format);
+  }
+
+  getNumberFormat(row, column) {
+    return this.numberFormats.get(`${row}:${column}`) || '';
+  }
+}
+
+class MockSpreadsheet {
+  constructor(sheets) {
+    this.sheets = sheets;
+  }
+
+  getSheetByName(name) {
+    return this.sheets[name] || null;
+  }
+
+  insertSheet(name) {
+    this.sheets[name] = new MockSheet([]);
+    return this.sheets[name];
+  }
+}
+
+function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBehavior = {}) {
+  let uuid = 0;
+  const fetchCalls = [];
+  const logs = [];
+  let contentReads = 0;
+  const logger = fetchBehavior.logger || {
+    warn: (...args) => logs.push(args.join(' ')),
+    error: (...args) => logs.push(args.join(' '))
+  };
+  const responseBody = Object.prototype.hasOwnProperty.call(fetchBehavior, 'responseBody')
+    ? fetchBehavior.responseBody
+    : JSON.stringify(lineProfile);
+  const context = {
+    SpreadsheetApp: {
+      getActiveSpreadsheet: () => spreadsheet
+    },
+    LockService: {
+      getScriptLock: () => ({
+        waitLock() {},
+        releaseLock() {}
+      })
+    },
+    UrlFetchApp: {
+      fetch: (url, options) => {
+        fetchCalls.push({ url, options });
+        if (fetchBehavior.throwError) throw fetchBehavior.throwError;
+        return {
+          getResponseCode: () => lineProfileStatus,
+          getContentText: () => {
+            contentReads++;
+            return responseBody;
+          }
+        };
+      }
+    },
+    ContentService: {
+      MimeType: { JSON: 'application/json' },
+      createTextOutput: (text) => ({
+        text,
+        setMimeType() {
+          return this;
+        }
+      })
+    },
+    Utilities: {
+      formatDate: (date, _timezone, format) => {
+        if (format === 'yyyy-MM-dd') return date.toISOString().slice(0, 10);
+        return date.toISOString().replace('T', ' ').slice(0, 19);
+      },
+      getUuid: () => `uuid-${++uuid}`
+    },
+    console: logger,
+    __fetchCalls: fetchCalls,
+    __contentReads: () => contentReads,
+    __logs: logs
+  };
+  vm.createContext(context);
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'code.gs'), 'utf8');
+  vm.runInContext(source, context);
+  return context;
+}
+
+function usersSheet() {
+  return new MockSheet([
+    ['LINE_UserID', '姓名', '樓層', 'Balance', 'Role'],
+    ['admin-id', 'Admin User', '9樓', 100, 'Admin'],
+    ['user-id', 'Leo Wu Leo', '9樓', -80, 'User']
+  ]);
+}
+
+test('getUserInfo sends the accessToken to the LINE Profile endpoint', () => {
+  const gas = loadGas(new MockSpreadsheet({ Users: usersSheet() }), {
+    userId: 'unknown-id',
+    displayName: 'LINE Profile Name'
+  });
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({ action: 'getUserInfo', accessToken: 'access-token' })
+    }
+  });
+  const result = JSON.parse(output.text);
+  const request = gas.__fetchCalls[0];
+
+  assert.equal(result.success, true);
+  assert.equal(result.registered, false);
+  assert.equal(request.url, 'https://api.line.me/v2/profile');
+  assert.equal(request.options.method, 'get');
+  assert.equal(request.options.headers.Authorization, 'Bearer access-token');
+  assert.equal(request.options.muteHttpExceptions, true);
+});
+
+for (const [status, code] of [
+  [401, 'LINE_PROFILE_401'],
+  [403, 'LINE_PROFILE_403'],
+  [429, 'LINE_PROFILE_429'],
+  [500, 'LINE_PROFILE_HTTP_500']
+]) {
+  test(`LINE Profile HTTP ${status} returns ${code}`, () => {
+    const gas = loadGas(new MockSpreadsheet({ Users: usersSheet() }), {}, status);
+    const result = gas.getLineProfile('access-token');
+
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), { success: false, code, message: code });
+    assert.equal(gas.__contentReads(), 0);
+  });
+}
+
+test('missing accessToken returns TOKEN_MISSING without calling LINE', () => {
+  const gas = loadGas(new MockSpreadsheet({ Users: usersSheet() }));
+
+  const result = gas.getLineProfile(null);
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    success: false,
+    code: 'TOKEN_MISSING',
+    message: 'TOKEN_MISSING'
+  });
+  assert.equal(gas.__fetchCalls.length, 0);
+});
+
+test('UrlFetchApp errors return a safe code and do not log the accessToken', () => {
+  const gas = loadGas(
+    new MockSpreadsheet({ Users: usersSheet() }),
+    {},
+    200,
+    { throwError: new Error('request failed secret-token') }
+  );
+
+  const result = gas.getLineProfile('secret-token');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    success: false,
+    code: 'LINE_PROFILE_NETWORK_OR_AUTH_ERROR',
+    message: 'LINE_PROFILE_NETWORK_OR_AUTH_ERROR'
+  });
+  assert.doesNotMatch(gas.__logs.join('\n'), /secret-token/);
+});
+
+test('HTTP 200 with invalid JSON returns PROFILE_RESPONSE_INVALID_JSON', () => {
+  const gas = loadGas(
+    new MockSpreadsheet({ Users: usersSheet() }),
+    {},
+    200,
+    { responseBody: '{not-json' }
+  );
+
+  const result = gas.getLineProfile('access-token');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    success: false,
+    code: 'PROFILE_RESPONSE_INVALID_JSON',
+    message: 'PROFILE_RESPONSE_INVALID_JSON'
+  });
+});
+
+for (const profile of [{ displayName: 'Name' }, { userId: 'profile-user-id' }]) {
+  test('HTTP 200 with an incomplete profile returns PROFILE_RESPONSE_INVALID', () => {
+    const gas = loadGas(new MockSpreadsheet({ Users: usersSheet() }), profile);
+
+    const result = gas.getLineProfile('access-token');
+
+    assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+      success: false,
+      code: 'PROFILE_RESPONSE_INVALID',
+      message: 'PROFILE_RESPONSE_INVALID'
+    });
+  });
+}
+
+test('Users lookup failures return a safe identity diagnostic code', () => {
+  const gas = loadGas(new MockSpreadsheet({ Users: usersSheet() }), {
+    userId: 'unknown-id',
+    displayName: 'LINE Profile Name'
+  });
+  gas.getRegisteredUser = () => {
+    throw new Error('Users lookup failed accessToken=secret-token');
+  };
+
+  const result = gas.getUserInfo('access-token');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    success: false,
+    code: 'USER_LOOKUP_FAILED',
+    message: 'USER_LOOKUP_FAILED'
+  });
+  assert.doesNotMatch(gas.__logs.join('\n'), /secret-token/);
+});
+
+test('doPost keeps identity backend exceptions on the safe error-code contract', () => {
+  const gas = loadGas(new MockSpreadsheet({ Users: usersSheet() }), {
+    userId: 'unknown-id',
+    displayName: 'LINE Profile Name'
+  });
+  gas.getRegisteredUser = () => {
+    throw new Error('identity internal failure accessToken=secret-token');
+  };
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({ action: 'getUserInfo', accessToken: 'secret-token' })
+    }
+  });
+  const result = JSON.parse(output.text);
+
+  assert.deepEqual(result, {
+    success: false,
+    code: 'USER_LOOKUP_FAILED',
+    message: 'USER_LOOKUP_FAILED'
+  });
+  assert.doesNotMatch(gas.__logs.join('\n'), /secret-token/);
+});
+
+test('registration backend exceptions return a safe error code', () => {
+  const gas = loadGas(new MockSpreadsheet({ Users: usersSheet() }), {
+    userId: 'unknown-id',
+    displayName: 'LINE Profile Name'
+  });
+  gas.LockService.getScriptLock = () => ({
+    waitLock() {
+      throw new Error('registration internal failure accessToken=secret-token');
+    },
+    releaseLock() {}
+  });
+
+  const result = gas.registerUser({ accessToken: 'secret-token', pickupFloor: '1樓' });
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    success: false,
+    code: 'REGISTRATION_BACKEND_ERROR',
+    message: 'REGISTRATION_BACKEND_ERROR'
+  });
+  assert.doesNotMatch(gas.__logs.join('\n'), /secret-token/);
+});
+
+test('doPost does not expose raw malformed-request exceptions', () => {
+  const gas = loadGas(new MockSpreadsheet({ Users: usersSheet() }));
+
+  const output = gas.doPost({ postData: { contents: '{not-json' } });
+
+  assert.deepEqual(JSON.parse(output.text), {
+    success: false,
+    code: 'REQUEST_FAILED',
+    message: 'REQUEST_FAILED'
+  });
+});
+
+function orderSpreadsheet() {
+  return new MockSpreadsheet({
+    Users: usersSheet(),
+    Settings: new MockSheet([
+      ['Date', 'Vendor', 'Mode'],
+      ['2026-09-10', '蔡老師', 'A']
+    ]),
+    Menu: new MockSheet([
+      ['Date', 'Vendor', 'item_id', 'item_name', 'price', 'unused', 'note', 'image_url'],
+      ['2026-09-09', '蔡老師', 'A01', '小而美', 80, '', '', '']
+    ]),
+    Orders: new MockSheet([
+      ['OrderID', 'Date', 'Vendor', 'Name', 'PickupFloor', 'item_id', 'item_name', 'quantity', 'unit_price', 'subtotal', 'CreatedAt', 'UpdatedAt', 'Status', 'LINE_UserID', 'Balance', 'Note']
+    ])
+  });
+}
+
+test('getOrderPageData returns menu and the matching active user order together', () => {
+  const spreadsheet = orderSpreadsheet();
+  spreadsheet.sheets.Orders.rows.push(
+    ['ORD-USER', '2026-09-10', '蔡老師', 'Leo Wu Leo', '9樓', 'A01', '小而美', 2, 80, 160, '2026-09-03 08:00:00', '2026-09-03 08:00:00', 'ACTIVE', 'user-id', -240, '不要菇'],
+    ['ORD-OTHER-USER', '2026-09-10', '蔡老師', 'Admin User', '9樓', 'A01', '小而美', 3, 80, 240, '2026-09-03 08:00:00', '2026-09-03 08:00:00', 'ACTIVE', 'admin-id', -140, ''],
+    ['ORD-OTHER-DATE', '2026-09-11', '蔡老師', 'Leo Wu Leo', '9樓', 'A01', '小而美', 4, 80, 320, '2026-09-03 08:00:00', '2026-09-03 08:00:00', 'ACTIVE', 'user-id', -400, ''],
+    ['ORD-CANCELLED', '2026-09-10', '蔡老師', 'Leo Wu Leo', '9樓', 'A01', '小而美', 5, 80, 400, '2026-09-03 08:00:00', '2026-09-03 08:00:00', 'CANCELLED', 'user-id', -640, '']
+  );
+  const gas = loadGas(spreadsheet);
+
+  const result = JSON.parse(gas.doGet({
+    parameter: {
+      action: 'getOrderPageData',
+      targetDate: '2026-09-10',
+      userId: 'user-id'
+    }
+  }).text);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.menu)), [{
+    item_id: 'A01',
+    item_name: '小而美',
+    price: 80,
+    note: '',
+    image_url: ''
+  }]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.myOrder)), {
+    orderId: 'ORD-USER',
+    items: [{
+      order_id: 'ORD-USER',
+      item_id: 'A01',
+      item_name: '小而美',
+      quantity: 2,
+      unit_price: 80,
+      subtotal: 160
+    }],
+    note: '不要菇'
+  });
+});
+
+test('getOrderPageData returns an empty order when the registered user has none', () => {
+  const gas = loadGas(orderSpreadsheet());
+
+  const result = gas.getOrderPageData('2026-09-10', 'admin-id');
+
+  assert.equal(result.success, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.myOrder)), {
+    orderId: '',
+    items: [],
+    note: ''
+  });
+});
+
+test('getOrderPageData rejects an unregistered user before returning personal order data', () => {
+  const gas = loadGas(orderSpreadsheet());
+
+  const result = gas.getOrderPageData('unknown-id', '2026-09-10');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    success: false,
+    message: '此 LINE 帳號尚未註冊，請聯絡管理員。'
+  });
+});
+
+test('strict identity does not fallback to client name or floor', () => {
+  const spreadsheet = new MockSpreadsheet({ Users: usersSheet() });
+  const gas = loadGas(spreadsheet, {
+    userId: 'unknown-id',
+    displayName: 'LINE Profile Name'
+  });
+
+  assert.equal(gas.getRegisteredUser('unknown-id'), null);
+  const identityResult = gas.getUserInfo('access-token');
+  assert.equal(identityResult.success, true);
+  assert.equal(identityResult.registered, false);
+  assert.equal(identityResult.lineUserId, 'unknown-id');
+  assert.equal(identityResult.displayName, 'LINE Profile Name');
+  assert.equal(gas.isValidPickupFloor('1樓'), true);
+  assert.equal(gas.isValidPickupFloor('2樓'), false);
+});
+
+test('first registration uses only LINE Profile identity and is idempotent', () => {
+  const spreadsheet = new MockSpreadsheet({
+    Users: new MockSheet([
+      ['LINE_UserID', '姓名', '樓層', 'Balance', 'Role']
+    ])
+  });
+  const gas = loadGas(spreadsheet, {
+    userId: 'profile-user-id',
+    displayName: '=HYPERLINK("https://example.com", "Name")'
+  });
+
+  const first = gas.registerUser({
+    accessToken: 'access-token',
+    pickupFloor: '9樓',
+    userId: 'client-forged-id',
+    displayName: 'Client Name',
+    balance: 999,
+    role: 'Admin',
+    targetUserId: 'another-user'
+  });
+
+  assert.equal(first.success, true);
+  assert.equal(first.registered, true);
+  assert.deepEqual(spreadsheet.sheets.Users.rows[1], [
+    'profile-user-id',
+    '=HYPERLINK("https://example.com", "Name")',
+    '9樓',
+    0,
+    'User'
+  ]);
+  assert.equal(spreadsheet.sheets.Users.getRange(2, 2).getNumberFormat(), '@');
+
+  const duplicate = gas.registerUser({
+    accessToken: 'access-token',
+    pickupFloor: '1樓'
+  });
+  assert.equal(duplicate.success, true);
+  assert.equal(duplicate.alreadyRegistered, true);
+  assert.equal(spreadsheet.sheets.Users.rows.length, 2);
+  assert.equal(spreadsheet.sheets.Users.getCell(2, 3), '9樓');
+});
+
+test('registration rejects invalid floor and failed LINE Profile API validation', () => {
+  const spreadsheet = new MockSpreadsheet({ Users: new MockSheet([[
+    'LINE_UserID', '姓名', '樓層', 'Balance', 'Role'
+  ]]) });
+  const gas = loadGas(spreadsheet, {
+    userId: 'profile-user-id',
+    displayName: 'LINE Profile Name'
+  });
+
+  const invalidFloor = gas.registerUser({ accessToken: 'access-token', pickupFloor: '2樓' });
+  assert.equal(invalidFloor.success, false);
+  assert.match(invalidFloor.message, /只允許/);
+  assert.equal(spreadsheet.sheets.Users.rows.length, 1);
+
+  const invalidTokenGas = loadGas(spreadsheet, {
+    userId: 'profile-user-id',
+    displayName: 'LINE Profile Name'
+  }, 401);
+  const invalidToken = invalidTokenGas.registerUser({ accessToken: 'expired-token', pickupFloor: '1樓' });
+  assert.equal(invalidToken.success, false);
+  assert.equal(invalidToken.code, 'LINE_PROFILE_401');
+  assert.equal(invalidToken.message, 'LINE_PROFILE_401');
+  assert.equal(spreadsheet.sheets.Users.rows.length, 1);
+});
+
+test('registration readback failure does not append a second row', () => {
+  const spreadsheet = new MockSpreadsheet({ Users: new MockSheet([[
+    'LINE_UserID', '姓名', '樓層', 'Balance', 'Role'
+  ]]) });
+  const gas = loadGas(spreadsheet, {
+    userId: 'profile-user-id',
+    displayName: 'LINE Profile Name'
+  });
+  gas.getRegisteredUser = () => null;
+
+  const result = gas.registerUser({ accessToken: 'access-token', pickupFloor: '1樓' });
+
+  assert.equal(result.success, false);
+  assert.match(result.message, /無法重新取得/);
+  assert.equal(spreadsheet.sheets.Users.rows.length, 2);
+});
+
+test('Admin top-up uses Users balance and appends complete TOPUP ledger row', () => {
+  const spreadsheet = new MockSpreadsheet({
+    Users: usersSheet(),
+    TopupHistory: new MockSheet([[
+      'Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註'
+    ]])
+  });
+  const gas = loadGas(spreadsheet);
+
+  const result = gas.topUpBalance('admin-id', 'user-id', 500, '現金收款');
+  assert.equal(result.success, true);
+  assert.equal(result.newBalance, 420);
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 4), 420);
+
+  const ledgerRow = spreadsheet.sheets.TopupHistory.rows[1];
+  assert.equal(ledgerRow[4], 500);
+  assert.equal(ledgerRow[5], 420);
+  assert.match(ledgerRow[7], /^TXN-/);
+  assert.equal(ledgerRow[8], 'TOPUP');
+  assert.equal(ledgerRow[9], '');
+  assert.equal(ledgerRow[10], 'admin-id');
+  assert.equal(ledgerRow[11], 'Admin User');
+});
+
+test('top-up always starts from Users balance even when legacy ledger balance differs', () => {
+  const spreadsheet = new MockSpreadsheet({
+    Users: usersSheet(),
+    TopupHistory: new MockSheet([
+      ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註', 'TransactionID', 'Type', 'ReferenceID', 'OperatorUserID', 'OperatorName'],
+      ['2026-09-01 10:00:00', 'user-id', 'Leo Wu Leo', '9樓', 1000, 9999, 'legacy mismatch', 'TXN-OLD', 'TOPUP', '', 'legacy', 'Legacy']
+    ])
+  });
+  const gas = loadGas(spreadsheet);
+
+  const result = gas.topUpBalance('admin-id', 'user-id', 500, '現金收款');
+
+  assert.equal(result.success, true);
+  assert.equal(result.newBalance, 420);
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 4), 420);
+  assert.equal(spreadsheet.sheets.TopupHistory.rows.at(-1)[5], 420);
+});
+
+test('top-up rejects unknown operators, non-Admin operators, and non-positive amounts', () => {
+  const spreadsheet = new MockSpreadsheet({ Users: usersSheet() });
+  const gas = loadGas(spreadsheet);
+
+  assert.equal(gas.topUpBalance('unknown-id', 'user-id', 100, '').success, false);
+  assert.equal(gas.topUpBalance('user-id', 'admin-id', 100, '').success, false);
+  assert.equal(gas.topUpBalance('admin-id', 'user-id', 0, '').success, false);
+  assert.equal(gas.topUpBalance('admin-id', 'user-id', -1, '').success, false);
+  assert.equal(gas.topUpBalance('admin-id', 'user-id', 'NaN', '').success, false);
+});
+
+test('schema ensure preserves A:G and backfills only safe legacy metadata', () => {
+  const legacyRows = [
+    ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註'],
+    ['2026-09-01 10:00:00', 'user-id', 'Leo Wu Leo', '9樓', 500, 420, 'Admin 手動儲值'],
+    ['2026-09-02 10:00:00', 'user-id', 'Leo Wu Leo', '9樓', -160, 260, '未知歷史備註']
+  ];
+  const spreadsheet = new MockSpreadsheet({ TopupHistory: new MockSheet(legacyRows) });
+  const gas = loadGas(spreadsheet);
+  const before = legacyRows.map(row => row.slice());
+
+  gas.ensureTopupHistorySchema();
+
+  const history = spreadsheet.sheets.TopupHistory;
+  assert.deepEqual(history.rows.map(row => row.slice(0, 7)), before);
+  assert.deepEqual(history.rows[0].slice(7, 12), [
+    'TransactionID', 'Type', 'ReferenceID', 'OperatorUserID', 'OperatorName'
+  ]);
+  assert.match(history.rows[1][7], /^TXN-LEGACY-/);
+  assert.equal(history.rows[1][8], 'TOPUP');
+  assert.equal(history.rows[1][9], '');
+  assert.equal(history.rows[1][10], 'LEGACY');
+  assert.equal(history.rows[1][11], 'LEGACY');
+  assert.equal(history.rows[2][8], '');
+});
+
+test('submit and cancel append ORDER/REFUND using the same OrderID', () => {
+  const spreadsheet = orderSpreadsheet();
+  const gas = loadGas(spreadsheet);
+
+  const submitted = gas.submitOrder({
+    userId: 'user-id',
+    pickup_floor: '1樓',
+    target_date: '2026-09-10',
+    items: [{ item_id: 'A01', quantity: 2, item_name: 'client value', unit_price: 1 }],
+    note: '不要菇'
+  });
+
+  assert.equal(submitted.success, true);
+  assert.match(submitted.orderId, /^ORD-/);
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 4), -240);
+  const orderLedger = spreadsheet.sheets.TopupHistory.rows.at(-1);
+  assert.equal(orderLedger[4], -160);
+  assert.equal(orderLedger[5], -240);
+  assert.equal(orderLedger[8], 'ORDER');
+  assert.equal(orderLedger[9], submitted.orderId);
+  assert.equal(spreadsheet.sheets.Orders.rows[1][3], 'Leo Wu Leo');
+  assert.equal(spreadsheet.sheets.Orders.rows[1][4], '1樓');
+  assert.equal(spreadsheet.sheets.Orders.rows[1][8], 80);
+
+  const unauthorizedCancel = gas.cancelOrder({
+    userId: 'admin-id',
+    orderId: submitted.orderId,
+    date: '2026-09-10'
+  });
+  assert.equal(unauthorizedCancel.success, false);
+
+  const cancelled = gas.cancelOrder({
+    userId: 'user-id',
+    orderId: submitted.orderId,
+    date: '2026-09-10'
+  });
+
+  assert.equal(cancelled.success, true);
+  assert.equal(cancelled.newBalance, -80);
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 4), -80);
+  assert.equal(spreadsheet.sheets.Orders.rows[1][12], 'CANCELLED');
+  const refundLedger = spreadsheet.sheets.TopupHistory.rows.at(-1);
+  assert.equal(refundLedger[4], 160);
+  assert.equal(refundLedger[5], -80);
+  assert.equal(refundLedger[8], 'REFUND');
+  assert.equal(refundLedger[9], submitted.orderId);
+});
+
+test('editing an order refunds the old OrderID and charges a new OrderID', () => {
+  const spreadsheet = orderSpreadsheet();
+  const gas = loadGas(spreadsheet);
+  const first = gas.submitOrder({
+    userId: 'user-id',
+    pickup_floor: '9樓',
+    target_date: '2026-09-10',
+    items: [{ item_id: 'A01', quantity: 2 }],
+    note: ''
+  });
+  const second = gas.submitOrder({
+    userId: 'user-id',
+    pickup_floor: '1樓',
+    target_date: '2026-09-10',
+    items: [{ item_id: 'A01', quantity: 1 }],
+    note: ''
+  });
+
+  assert.equal(first.success, true);
+  assert.equal(second.success, true);
+  assert.notEqual(first.orderId, second.orderId);
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 4), -160);
+  assert.equal(spreadsheet.sheets.Orders.rows[1][12], 'CANCELLED');
+  assert.equal(spreadsheet.sheets.Orders.rows[2][12], 'ACTIVE');
+  const ledger = spreadsheet.sheets.TopupHistory.rows;
+  assert.equal(ledger[1][8], 'ORDER');
+  assert.equal(ledger[2][8], 'REFUND');
+  assert.equal(ledger[2][9], first.orderId);
+  assert.equal(ledger[3][8], 'ORDER');
+  assert.equal(ledger[3][9], second.orderId);
+});
+
+test('reconciliation is read-only and reports differences without repairing them', () => {
+  const spreadsheet = new MockSpreadsheet({
+    Users: usersSheet(),
+    TopupHistory: new MockSheet([
+      ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註', 'TransactionID', 'Type', 'ReferenceID', 'OperatorUserID', 'OperatorName'],
+      ['2026-09-01 10:00:00', 'user-id', 'Leo Wu Leo', '9樓', 500, 420, '現金收款', 'TXN-1', 'TOPUP', '', 'admin-id', 'Admin User']
+    ])
+  });
+  const gas = loadGas(spreadsheet);
+  const usersBefore = spreadsheet.sheets.Users.rows.map(row => row.slice());
+  const ledgerBefore = spreadsheet.sheets.TopupHistory.rows.map(row => row.slice());
+
+  const result = gas.auditBalanceConsistency();
+
+  assert.equal(result.success, true);
+  assert.equal(result.allConsistent, false);
+  assert.equal(result.results.find(row => row.lineUserId === 'user-id').difference, -500);
+  assert.equal(result.results.find(row => row.lineUserId === 'admin-id').latestLedgerBalance, null);
+  assert.deepEqual(spreadsheet.sheets.Users.rows, usersBefore);
+  assert.deepEqual(spreadsheet.sheets.TopupHistory.rows, ledgerBefore);
+});
