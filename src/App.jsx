@@ -217,7 +217,9 @@ export default function App() {
         logAuthDiagnostic('USER_REGISTERED=true');
         logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
         setLineUserId(canonicalUserId);
-        prefetchAdminSummary(canonicalUserId);
+        if (identity.user.role === 'Admin') {
+          prefetchAdminSummary(canonicalUserId);
+        }
         fetchUserAllOrders(canonicalUserId);
         await fetchCalendarEvents(canonicalUserId);
       } else if (identity?.success && identity.registered === false) {
@@ -359,7 +361,9 @@ export default function App() {
       logAuthDiagnostic('USER_REGISTERED=true');
       logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
       setLineUserId(canonicalUserId);
-      prefetchAdminSummary(canonicalUserId);
+      if (identity.user.role === 'Admin') {
+        prefetchAdminSummary(canonicalUserId);
+      }
       fetchUserAllOrders(canonicalUserId);
       await fetchCalendarEvents(canonicalUserId);
     } catch (err) {
@@ -485,23 +489,30 @@ export default function App() {
     setHasExistingOrder(false);
 
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getInitData&targetDate=${dateStr}&t=${Date.now()}`);
+      const res = await fetch(`${GAS_API_URL}?action=getOrderPageData&targetDate=${encodeURIComponent(dateStr)}&userId=${encodeURIComponent(lineUserId)}&t=${Date.now()}`);
       const data = await res.json();
-      if (data.success) {
+      if (data.success && data.myOrder && Array.isArray(data.myOrder.items)) {
+        const orderMap = {};
+        data.myOrder.items.forEach(item => {
+          orderMap[item.item_id] = item.quantity;
+        });
+
         setSetting(data.setting);
         setDeadline(data.deadline);
         setMenu(data.menu);
         setImageLoadErrors({});
+        setOrderItems(orderMap);
+        setActiveOrderId(data.myOrder.orderId || '');
+        setHasExistingOrder(data.myOrder.items.length > 0);
+        setOrderNote(data.myOrder.note || '');
         setViewMode('order');
-
-        if (lineUserId) {
-          fetchUserOrder(lineUserId, dateStr);
-        }
-      } else {
+      } else if (!data.success) {
         await showPopup({ icon: 'error', title: '讀取失敗', text: data.message || '讀取失敗' });
+      } else {
+        await showPopup({ icon: 'error', title: '讀取失敗', text: '無法取得既有訂單狀態，請稍後再試。' });
       }
     } catch (err) {
-      await showPopup({ icon: 'error', title: '連線錯誤', text: '目前無法讀取菜單，請稍後再試。' });
+      await showPopup({ icon: 'error', title: '連線錯誤', text: '目前無法讀取訂餐資料，請稍後再試。' });
     } finally {
       setLoading(false);
     }
@@ -546,31 +557,6 @@ export default function App() {
   };
 
   const handleSpecialAdminSaveVendor = () => saveAdminVendor(specialAdminDate, specialAdminVendorChoice);
-
-  const fetchUserOrder = async (uId, targetDate) => {
-    if (!uId || !targetDate) return;
-    try {
-      const res = await fetch(`${GAS_API_URL}?action=getUserOrder&userId=${encodeURIComponent(uId)}&date=${targetDate}`);
-      const data = await res.json();
-      if (data.success && data.items) {
-        const orderMap = {};
-        data.items.forEach(item => {
-          orderMap[item.item_id] = item.quantity;
-        });
-        setOrderItems(orderMap);
-        setActiveOrderId(data.orderId || '');
-        setHasExistingOrder(data.items.length > 0);
-        setOrderNote(data.note || '');
-      } else {
-        setOrderItems({});
-        setActiveOrderId('');
-        setOrderNote('');
-        setHasExistingOrder(false);
-      }
-    } catch (err) {
-      console.error("查詢舊訂單失敗", err);
-    }
-  };
 
   const handleSubmit = async () => {
     if (loading || authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
@@ -1025,7 +1011,6 @@ export default function App() {
                 <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${userBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
                   ${userBalance}
                 </span>
-                <span className="text-[10px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-100">🔍查明細</span>
               </button>
             )}
           </div>
@@ -1274,8 +1259,15 @@ export default function App() {
                     <div className="flex-1 min-w-0 space-y-1">
                       {group.items.map((item) => {
                         const qty = orderItems[item.item_id] || 0;
+                        const isSelected = qty > 0;
                         return (
-                          <div key={item.item_id} className="flex justify-between items-center gap-2">
+                          <div
+                            key={item.item_id}
+                            className={`flex justify-between items-center gap-2 rounded-xl border-l-4 px-2 py-2 transition-colors ${isSelected
+                              ? 'bg-emerald-50 border-l-[#2C4A3E] shadow-sm'
+                              : 'border-l-transparent'
+                              }`}
+                          >
                             <div className="min-w-0">
                               <div className="font-bold text-sm text-gray-800 truncate">
                                 {item.displayVariant || group.baseName}
@@ -1299,7 +1291,10 @@ export default function App() {
                               >
                                 -
                               </button>
-                              <span className="w-7 h-7 flex items-center justify-center text-sm font-bold bg-gray-100 rounded-lg text-gray-800 border border-gray-200">
+                              <span className={`w-7 h-7 flex items-center justify-center text-sm font-bold rounded-lg border ${isSelected
+                                ? 'bg-[#2C4A3E] text-white border-[#2C4A3E]'
+                                : 'bg-gray-100 text-gray-800 border-gray-200'
+                                }`}>
                                 {qty}
                               </span>
                               <button
