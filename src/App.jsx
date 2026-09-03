@@ -55,8 +55,11 @@ export default function App() {
   const [lineUserId, setLineUserId] = useState('');
   const [userRole, setUserRole] = useState('User');
   const [userBalance, setUserBalance] = useState(0);
+  const [defaultFloor, setDefaultFloor] = useState('');
+  const [identityError, setIdentityError] = useState('');
 
   const [selectedDate, setSelectedDate] = useState(null);
+  const [activeOrderId, setActiveOrderId] = useState('');
   const [setting, setSetting] = useState(null);
   const [deadline, setDeadline] = useState(null);
   const [menu, setMenu] = useState([]);
@@ -75,6 +78,10 @@ export default function App() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyList, setHistoryList] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedTopupUser, setSelectedTopupUser] = useState(null);
+  const [topupAmount, setTopupAmount] = useState('');
+  const [topupNote, setTopupNote] = useState('現金收款');
+  const [topupLoading, setTopupLoading] = useState(false);
 
   // Admin 管理月曆彈窗狀態
   const [adminManageMode, setAdminManageMode] = useState(false);
@@ -99,11 +106,12 @@ export default function App() {
         const profile = await liff.getProfile();
         currentUId = profile.userId;
         setLineUserId(profile.userId);
-        if (!name) setName(profile.displayName);
 
-        await fetchUserInfo(profile.userId, profile.displayName, floor);
-        prefetchAdminSummary(profile.userId);
-        fetchUserAllOrders(profile.displayName, floor);
+        const user = await fetchUserInfo(profile.userId);
+        if (user) {
+          prefetchAdminSummary(profile.userId);
+          fetchUserAllOrders(profile.userId);
+        }
       } else {
         liff.login();
       }
@@ -134,19 +142,28 @@ export default function App() {
     }
   };
 
-  const fetchUserInfo = async (uId, uName, uFloor) => {
+  const fetchUserInfo = async (uId) => {
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getUserInfo&userId=${uId}&name=${encodeURIComponent(uName)}&floor=${encodeURIComponent(uFloor)}&t=${Date.now()}`);
+      const res = await fetch(`${GAS_API_URL}?action=getUserInfo&userId=${encodeURIComponent(uId)}&t=${Date.now()}`);
       const data = await res.json();
       if (data.success && data.user) {
+        setIdentityError('');
         setUserBalance(data.user.balance || 0);
         setUserRole(data.user.role || 'User');
-        if (data.user.name) setName(data.user.name);
-        if (data.user.floor) setFloor(data.user.floor);
+        setName(data.user.name || '');
+        setDefaultFloor(data.user.defaultFloor || data.user.floor || '');
+        setFloor(data.user.defaultFloor || data.user.floor || '');
+        return data.user;
       }
+      setIdentityError(data.message || '此 LINE 帳號尚未註冊，請聯絡管理員。');
+      setName('');
+      setDefaultFloor('');
+      setUserRole('User');
     } catch (err) {
       console.error("讀取個人餘額失敗", err);
+      setIdentityError('目前無法驗證 LINE 身份，請稍後再試。');
     }
+    return null;
   };
 
   const fetchCalendarEvents = async (uId) => {
@@ -162,10 +179,10 @@ export default function App() {
     }
   };
 
-  const fetchUserAllOrders = async (userName, userFloor) => {
-    if (!userName.trim()) return;
+  const fetchUserAllOrders = async (uId) => {
+    if (!uId) return;
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getUserAllOrdersMap&name=${encodeURIComponent(userName)}&floor=${encodeURIComponent(userFloor)}&t=${Date.now()}`);
+      const res = await fetch(`${GAS_API_URL}?action=getUserAllOrdersMap&userId=${encodeURIComponent(uId)}&t=${Date.now()}`);
       const data = await res.json();
       if (data.success) {
         setUserOrdersMap(data.ordersMap || {});
@@ -176,10 +193,11 @@ export default function App() {
   };
 
   const fetchBalanceHistory = async () => {
+    if (!lineUserId || identityError) return;
     setShowHistoryModal(true);
     setHistoryLoading(true);
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getBalanceHistory&userId=${lineUserId}&name=${encodeURIComponent(name)}&floor=${encodeURIComponent(floor)}&t=${Date.now()}`);
+      const res = await fetch(`${GAS_API_URL}?action=getBalanceHistory&userId=${encodeURIComponent(lineUserId)}&t=${Date.now()}`);
       const data = await res.json();
       if (data.success) {
         setHistoryList(data.history || []);
@@ -193,8 +211,8 @@ export default function App() {
 
   const handleToggleLike = async (e, dateStr) => {
     e.stopPropagation(); // 防止觸發進入點餐頁面
-    if (!lineUserId) {
-      await showPopup({ icon: 'warning', title: '需要 LINE 登入', text: '請先於 LINE 內開啟本應用' });
+    if (!lineUserId || identityError) {
+      await showPopup({ icon: 'warning', title: '需要已註冊 LINE 身份', text: identityError || '請先於 LINE 內開啟本應用' });
       return;
     }
 
@@ -234,6 +252,11 @@ export default function App() {
   };
 
   const handleSelectDate = async (dateStr) => {
+    if (!lineUserId || identityError) {
+      await showPopup({ icon: 'warning', title: '無法訂餐', text: identityError || '目前無法驗證 LINE 身份' });
+      return;
+    }
+
     const event = calendarEvents[dateStr];
 
     if (adminManageMode && (userRole === 'Admin' || adminSummary.requesterRole === 'Admin')) {
@@ -251,6 +274,9 @@ export default function App() {
     setLoading(true);
     setMessage('');
     setOrderNote('');
+    setOrderItems({});
+    setActiveOrderId('');
+    setHasExistingOrder(false);
 
     try {
       const res = await fetch(`${GAS_API_URL}?action=getInitData&targetDate=${dateStr}&t=${Date.now()}`);
@@ -262,8 +288,8 @@ export default function App() {
         setImageLoadErrors({});
         setViewMode('order');
 
-        if (name.trim()) {
-          fetchUserOrder(name, floor, dateStr);
+        if (lineUserId) {
+          fetchUserOrder(lineUserId, dateStr);
         }
       } else {
         await showPopup({ icon: 'error', title: '讀取失敗', text: data.message || '讀取失敗' });
@@ -315,10 +341,10 @@ export default function App() {
 
   const handleSpecialAdminSaveVendor = () => saveAdminVendor(specialAdminDate, specialAdminVendorChoice);
 
-  const fetchUserOrder = async (userName, userFloor, targetDate) => {
-    if (!userName.trim()) return;
+  const fetchUserOrder = async (uId, targetDate) => {
+    if (!uId || !targetDate) return;
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getUserOrder&name=${encodeURIComponent(userName)}&floor=${encodeURIComponent(userFloor)}&date=${targetDate}`);
+      const res = await fetch(`${GAS_API_URL}?action=getUserOrder&userId=${encodeURIComponent(uId)}&date=${targetDate}`);
       const data = await res.json();
       if (data.success && data.items) {
         const orderMap = {};
@@ -326,9 +352,13 @@ export default function App() {
           orderMap[item.item_id] = item.quantity;
         });
         setOrderItems(orderMap);
+        setActiveOrderId(data.orderId || '');
         setHasExistingOrder(data.items.length > 0);
-        if (data.note) setOrderNote(data.note);
+        setOrderNote(data.note || '');
       } else {
+        setOrderItems({});
+        setActiveOrderId('');
+        setOrderNote('');
         setHasExistingOrder(false);
       }
     } catch (err) {
@@ -337,12 +367,9 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
+    if (loading || identityError || !lineUserId) return;
     if (isExpired) {
       await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
-      return;
-    }
-    if (!name.trim()) {
-      await showPopup({ icon: 'warning', title: '資料不完整', text: '請輸入訂購人姓名' });
       return;
     }
 
@@ -371,7 +398,6 @@ export default function App() {
         body: JSON.stringify({
           action: 'submitOrder',
           userId: lineUserId,
-          name,
           pickup_floor: floor,
           target_date: selectedDate,
           items,
@@ -385,8 +411,9 @@ export default function App() {
         if (data.newBalance !== undefined) {
           setUserBalance(data.newBalance);
         }
+        setActiveOrderId(data.orderId || '');
         fetchCalendarEvents();
-        fetchUserAllOrders(name, floor);
+        fetchUserAllOrders(lineUserId);
       } else {
         setMessage("❌ " + data.message);
       }
@@ -398,6 +425,7 @@ export default function App() {
   };
 
   const handleCancelOrder = async () => {
+    if (loading || !activeOrderId || !lineUserId || identityError) return;
     if (isExpired) {
       await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
       return;
@@ -424,8 +452,7 @@ export default function App() {
         body: JSON.stringify({
           action: 'cancelOrder',
           userId: lineUserId,
-          name: name,
-          pickup_floor: floor,
+          orderId: activeOrderId,
           date: selectedDate
         })
       });
@@ -433,12 +460,13 @@ export default function App() {
       if (data.success) {
         setMessage("✅ 訂單已取消並完成退款");
         setOrderItems({});
+        setActiveOrderId('');
         setHasExistingOrder(false);
         if (data.newBalance !== undefined && data.newBalance !== null) {
           setUserBalance(data.newBalance);
         }
         fetchCalendarEvents();
-        fetchUserAllOrders(name, floor);
+        fetchUserAllOrders(lineUserId);
       } else {
         setMessage("❌ " + (data.message || "取消失敗"));
       }
@@ -451,6 +479,7 @@ export default function App() {
 
   const handleExitToCalendar = () => {
     setSelectedDate(null);
+    setActiveOrderId('');
     setOrderItems({});
     setOrderNote('');
     setMessage('');
@@ -484,6 +513,62 @@ export default function App() {
       if (!hasCache) await showPopup({ icon: 'error', title: '總表連線失敗', text: '目前無法取得管理總表，請稍後再試。' });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleOpenTopupModal = (user) => {
+    setSelectedTopupUser(user);
+    setTopupAmount('');
+    setTopupNote('現金收款');
+  };
+
+  const handleTopupSubmit = async () => {
+    if (!selectedTopupUser || topupLoading || !isAdminUser) return;
+
+    const amountText = String(topupAmount).trim();
+    const amount = Number(amountText);
+    if (!amountText || !Number.isFinite(amount) || amount <= 0) {
+      await showPopup({ icon: 'warning', title: '金額不正確', text: '儲值金額必須大於 0。' });
+      return;
+    }
+
+    setTopupLoading(true);
+    try {
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'topUpBalance',
+          adminUserId: lineUserId,
+          targetUserId: selectedTopupUser.userId,
+          amount,
+          note: topupNote.trim()
+        })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        await showPopup({ icon: 'error', title: '儲值失敗', text: data.message || '儲值失敗' });
+        return;
+      }
+
+      setAdminSummary(prev => ({
+        ...prev,
+        usersSummary: prev.usersSummary.map(user => (
+          user.userId === selectedTopupUser.userId
+            ? { ...user, balance: data.newBalance }
+            : user
+        ))
+      }));
+      if (selectedTopupUser.userId === lineUserId) {
+        setUserBalance(data.newBalance);
+      }
+      setSelectedTopupUser(null);
+      await showPopup({ icon: 'success', title: '儲值成功', text: `${selectedTopupUser.name} 的餘額已更新。` });
+      prefetchAdminSummary(lineUserId);
+    } catch (err) {
+      await showPopup({ icon: 'error', title: '連線失敗', text: '目前無法完成儲值，請稍後再試。' });
+    } finally {
+      setTopupLoading(false);
     }
   };
 
@@ -710,6 +795,11 @@ export default function App() {
         <div className="max-w-xl mx-auto flex justify-between items-center">
           <div>
             <h1 className="text-xl font-bold">蔬食便當預訂系統</h1>
+            <div className="mt-1 text-xs text-emerald-100 flex flex-wrap items-center gap-1.5">
+              <span>👤 {name || (identityError ? '未註冊帳號' : '身份驗證中')}</span>
+              {name && <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">{userRole}</span>}
+              {defaultFloor && <span className="text-emerald-200">預設領取：{defaultFloor}</span>}
+            </div>
             <button
               onClick={fetchBalanceHistory}
               className="text-xs text-emerald-200 hover:underline flex items-center gap-1 mt-0.5 focus:outline-none"
@@ -756,6 +846,12 @@ export default function App() {
       </header>
 
       <main className="max-w-xl mx-auto p-4">
+        {identityError && !loading && (
+          <div className="mb-4 text-center text-sm font-bold p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200">
+            {identityError}
+          </div>
+        )}
+
         {loading && (
           <div className="text-center py-8 text-emerald-800 font-medium animate-pulse">
             資料處理中...
@@ -839,41 +935,32 @@ export default function App() {
             </div>
 
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <h3 className="font-bold text-sm text-[#2C4A3E]">訂購人資訊</h3>
-              <div className="grid grid-cols-3 gap-2">
-                <input
-                  type="text"
-                  placeholder="請輸入姓名"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  onBlur={() => {
-                    fetchUserOrder(name, floor, selectedDate);
-                    fetchUserAllOrders(name, floor);
-                  }}
-                  disabled={isExpired}
-                  className="col-span-1 border rounded-xl px-3 py-2 text-sm focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                />
-                <select
-                  value={floor}
-                  onChange={(e) => {
-                    setFloor(e.target.value);
-                    fetchUserOrder(name, e.target.value, selectedDate);
-                    fetchUserAllOrders(name, e.target.value);
-                  }}
-                  disabled={isExpired}
-                  className="col-span-1 border rounded-xl px-3 py-2 text-sm bg-white focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                >
-                  <option value="1樓">1樓</option>
-                  <option value="9樓">9樓</option>
-                </select>
-                <input
-                  type="text"
-                  placeholder="備註 (如：不要蛋)"
-                  value={orderNote}
-                  onChange={(e) => setOrderNote(e.target.value)}
-                  disabled={isExpired}
-                  className="col-span-1 border rounded-xl px-3 py-2 text-sm focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                />
+              <h3 className="font-bold text-sm text-[#2C4A3E]">我的訂購設定</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">當日領取樓層</label>
+                  <select
+                    value={floor}
+                    onChange={(e) => setFloor(e.target.value)}
+                    disabled={isExpired}
+                    className="w-full border rounded-xl px-3 py-2 text-sm bg-white focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  >
+                    <option value="1樓">1樓</option>
+                    <option value="9樓">9樓</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1" htmlFor="order-note">備註</label>
+                  <input
+                    id="order-note"
+                    type="text"
+                    placeholder="備註 (如：不要菇)"
+                    value={orderNote}
+                    onChange={(e) => setOrderNote(e.target.value)}
+                    disabled={isExpired}
+                    className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
+                  />
+                </div>
               </div>
             </div>
 
@@ -974,12 +1061,13 @@ export default function App() {
                       <th className="p-2">樓層</th>
                       <th className="p-2">餘額</th>
                       <th className="p-2">角色</th>
+                      {isAdminUser && <th className="p-2">操作</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {adminSummary.usersSummary.length === 0 ? (
                       <tr>
-                        <td colSpan="4" className="p-4 text-center text-gray-400">查無個人或成員資料</td>
+                        <td colSpan={isAdminUser ? 5 : 4} className="p-4 text-center text-gray-400">查無個人或成員資料</td>
                       </tr>
                     ) : (
                       adminSummary.usersSummary.map((u, idx) => (
@@ -992,6 +1080,21 @@ export default function App() {
                             </span>
                           </td>
                           <td className="p-2">{u.role}</td>
+                          {isAdminUser && (
+                            <td className="p-2">
+                              {u.userId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenTopupModal(u)}
+                                  className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm whitespace-nowrap"
+                                >
+                                  儲值
+                                </button>
+                              ) : (
+                                <span className="text-gray-400">—</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))
                     )}
@@ -1074,7 +1177,7 @@ export default function App() {
                 {hasExistingOrder && (
                   <button
                     onClick={handleCancelOrder}
-                    disabled={loading}
+                    disabled={loading || !activeOrderId}
                     className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl disabled:bg-gray-300 transition active:scale-95 shadow-sm"
                   >
                     取消訂餐
@@ -1145,6 +1248,76 @@ export default function App() {
             >
               關閉
             </button>
+          </div>
+        </div>
+      )}
+
+      {selectedTopupUser && isAdminUser && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl transform transition-all border border-emerald-100">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <h3 className="font-bold text-base text-[#2C4A3E] flex items-center gap-2">
+                <span className="text-xl">💰</span> 儲值：{selectedTopupUser.name}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setSelectedTopupUser(null)}
+                disabled={topupLoading}
+                className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="bg-emerald-50 rounded-2xl p-3 text-emerald-900">
+                目前餘額：<span className="font-bold">${selectedTopupUser.balance}</span>
+              </div>
+              <div>
+                <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="topup-amount">儲值金額</label>
+                <input
+                  id="topup-amount"
+                  type="number"
+                  min="0.01"
+                  step="any"
+                  inputMode="decimal"
+                  value={topupAmount}
+                  onChange={(e) => setTopupAmount(e.target.value)}
+                  disabled={topupLoading}
+                  className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm disabled:bg-gray-100"
+                />
+              </div>
+              <div>
+                <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="topup-note">備註</label>
+                <input
+                  id="topup-note"
+                  type="text"
+                  value={topupNote}
+                  onChange={(e) => setTopupNote(e.target.value)}
+                  disabled={topupLoading}
+                  className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm disabled:bg-gray-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedTopupUser(null)}
+                disabled={topupLoading}
+                className="w-1/2 bg-gray-100 text-gray-600 py-3 rounded-2xl text-sm font-bold hover:bg-gray-200 transition active:scale-95 shadow-sm disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleTopupSubmit}
+                disabled={topupLoading}
+                className="w-1/2 bg-[#2C4A3E] text-white py-3 rounded-2xl text-sm font-bold hover:bg-emerald-800 disabled:bg-gray-300 transition active:scale-95 shadow-md"
+              >
+                {topupLoading ? '處理中...' : '確認儲值'}
+              </button>
+            </div>
           </div>
         </div>
       )}

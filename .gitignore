@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 code.gs
 .env.development
+/tests/
