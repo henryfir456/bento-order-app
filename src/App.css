@@ -185,14 +185,3 @@
     border-right-color: var(--border);
   }
 }
-
-/* 強制隱藏 Netlify 注入的 Badge 及彈出視窗 */
-.nl-wrap,
-#nl-card,
-#nl-badge,
-iframe[src*="netlify"] {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  opacity: 0 !important;
-}

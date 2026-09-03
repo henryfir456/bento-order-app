@@ -1,9 +1,50 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import liff from '@line/liff';
+import Swal from 'sweetalert2';
+import 'sweetalert2/dist/sweetalert2.min.css';
 
 // 自動根據目前環境讀取對應的變數
-const GAS_API_URL = import.meta.env.VITE_GAS_API_URL || "https://script.google.com/macros/s/AKfycbxddK8gf8Tb6Ny0aeIkayZ71kWYhF9DQfAaMMlBJKXb5nO2Ha6U_CZk12QSv_cN8sSaWw/exec";
-const LIFF_ID = import.meta.env.VITE_LIFF_ID || "2011372097-BfmMZck8";
+const GAS_API_URL = import.meta.env.VITE_GAS_API_URL;
+const LIFF_ID = import.meta.env.VITE_LIFF_ID;
+
+if (!GAS_API_URL) {
+  throw new Error('Missing VITE_GAS_API_URL');
+}
+
+if (!LIFF_ID) {
+  throw new Error('Missing VITE_LIFF_ID');
+}
+
+const showPopup = (options) => Swal.fire({
+  confirmButtonText: '確定',
+  confirmButtonColor: '#2C4A3E',
+  customClass: {
+    popup: 'rounded-3xl',
+    confirmButton: 'rounded-xl'
+  },
+  ...options
+});
+
+const parseMenuItemName = (itemName = '') => {
+  const fullName = String(itemName).trim();
+  const match = fullName.match(/^(.*?)\s*(?:\(([^()]*)\)|（([^（）]*)）)\s*$/);
+
+  if (!match || !match[1].trim()) {
+    return { baseName: fullName, variant: '' };
+  }
+
+  return {
+    baseName: match[1].trim(),
+    variant: (match[2] ?? match[3] ?? '').trim()
+  };
+};
+
+const formatDateInput = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
@@ -19,6 +60,7 @@ export default function App() {
   const [setting, setSetting] = useState(null);
   const [deadline, setDeadline] = useState(null);
   const [menu, setMenu] = useState([]);
+  const [imageLoadErrors, setImageLoadErrors] = useState({});
   const [name, setName] = useState('');
   const [floor, setFloor] = useState('1樓');
   const [orderNote, setOrderNote] = useState('');
@@ -38,6 +80,9 @@ export default function App() {
   const [adminManageMode, setAdminManageMode] = useState(false);
   const [selectedAdminDate, setSelectedAdminDate] = useState(null);
   const [adminVendorChoice, setAdminVendorChoice] = useState('蔡老師');
+  const [showSpecialAdminModal, setShowSpecialAdminModal] = useState(false);
+  const [specialAdminDate, setSpecialAdminDate] = useState(formatDateInput(new Date()));
+  const [specialAdminVendorChoice, setSpecialAdminVendorChoice] = useState('蔡老師');
 
   const isExpired = Boolean(deadline?.isExpired || deadline?.expired);
 
@@ -140,7 +185,7 @@ export default function App() {
         setHistoryList(data.history || []);
       }
     } catch (err) {
-      alert("無法讀取交易歷史明細");
+      await showPopup({ icon: 'error', title: '讀取失敗', text: '無法讀取交易歷史明細' });
     } finally {
       setHistoryLoading(false);
     }
@@ -149,7 +194,7 @@ export default function App() {
   const handleToggleLike = async (e, dateStr) => {
     e.stopPropagation(); // 防止觸發進入點餐頁面
     if (!lineUserId) {
-      alert("請先於 LINE 內開啟本應用");
+      await showPopup({ icon: 'warning', title: '需要 LINE 登入', text: '請先於 LINE 內開啟本應用' });
       return;
     }
 
@@ -198,7 +243,7 @@ export default function App() {
     }
 
     if (!event || !event.vendor) {
-      alert("該日期尚未開團！若想吃蔡老師，可以點擊愛心投票開團。");
+      await showPopup({ icon: 'warning', title: '尚未開團', text: '若想吃蔡老師，可以點擊愛心投票開團。' });
       return;
     }
 
@@ -214,23 +259,24 @@ export default function App() {
         setSetting(data.setting);
         setDeadline(data.deadline);
         setMenu(data.menu);
+        setImageLoadErrors({});
         setViewMode('order');
 
         if (name.trim()) {
           fetchUserOrder(name, floor, dateStr);
         }
       } else {
-        alert(data.message || "讀取失敗");
+        await showPopup({ icon: 'error', title: '讀取失敗', text: data.message || '讀取失敗' });
       }
     } catch (err) {
-      alert("連線錯誤");
+      await showPopup({ icon: 'error', title: '連線錯誤', text: '目前無法讀取菜單，請稍後再試。' });
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAdminSaveVendor = async () => {
-    if (!selectedAdminDate) return;
+  const saveAdminVendor = async (dateStr, vendor) => {
+    if (!dateStr) return;
     setLoading(true);
     try {
       const res = await fetch(GAS_API_URL, {
@@ -239,24 +285,35 @@ export default function App() {
         body: JSON.stringify({
           action: 'adminSetVendor',
           adminUserId: lineUserId,
-          dateStr: selectedAdminDate,
-          vendor: adminVendorChoice
+          dateStr,
+          vendor
         })
       });
       const data = await res.json();
       if (data.success) {
-        alert("開團設定已更新！");
+        await showPopup({ icon: 'success', title: '更新完成', text: '開團設定已更新！' });
         setSelectedAdminDate(null);
+        setShowSpecialAdminModal(false);
         fetchCalendarEvents();
       } else {
-        alert("更新失敗：" + data.message);
+        await showPopup({ icon: 'error', title: '更新失敗', text: `更新失敗：${data.message}` });
       }
     } catch (err) {
-      alert("連線失敗");
+      await showPopup({ icon: 'error', title: '連線失敗', text: '目前無法更新開團設定，請稍後再試。' });
     } finally {
       setLoading(false);
     }
   };
+
+  const handleAdminSaveVendor = () => saveAdminVendor(selectedAdminDate, adminVendorChoice);
+
+  const handleOpenSpecialAdminModal = () => {
+    setSpecialAdminDate(formatDateInput(new Date()));
+    setSpecialAdminVendorChoice('蔡老師');
+    setShowSpecialAdminModal(true);
+  };
+
+  const handleSpecialAdminSaveVendor = () => saveAdminVendor(specialAdminDate, specialAdminVendorChoice);
 
   const fetchUserOrder = async (userName, userFloor, targetDate) => {
     if (!userName.trim()) return;
@@ -281,11 +338,11 @@ export default function App() {
 
   const handleSubmit = async () => {
     if (isExpired) {
-      alert("該日期已截止訂餐！");
+      await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
       return;
     }
     if (!name.trim()) {
-      alert("請輸入訂購人姓名");
+      await showPopup({ icon: 'warning', title: '資料不完整', text: '請輸入訂購人姓名' });
       return;
     }
 
@@ -302,7 +359,7 @@ export default function App() {
       .filter(i => i.quantity > 0);
 
     if (items.length === 0) {
-      alert("請至少選擇一份便購");
+      await showPopup({ icon: 'warning', title: '尚未選擇餐點', text: '請至少選擇一份便購' });
       return;
     }
 
@@ -342,10 +399,20 @@ export default function App() {
 
   const handleCancelOrder = async () => {
     if (isExpired) {
-      alert("已過截止時間，無法取消訂購！");
+      await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
       return;
     }
-    if (!confirm(`確定要取消 ${selectedDate} 的訂單嗎？取消後將自動辦理退款。`)) {
+    const result = await showPopup({
+      icon: 'question',
+      title: '確認取消訂單？',
+      text: `取消 ${selectedDate} 後將自動辦理退款。`,
+      showCancelButton: true,
+      confirmButtonText: '確定取消',
+      cancelButtonText: '返回',
+      cancelButtonColor: '#9CA3AF',
+      reverseButtons: true
+    });
+    if (!result.isConfirmed) {
       return;
     }
 
@@ -411,10 +478,10 @@ export default function App() {
         });
         if (!hasCache) setViewMode('admin');
       } else if (!hasCache) {
-        alert(data.message || "無法取得總表");
+        await showPopup({ icon: 'error', title: '無法取得總表', text: data.message || '無法取得總表' });
       }
     } catch (err) {
-      if (!hasCache) alert("總表連線失敗");
+      if (!hasCache) await showPopup({ icon: 'error', title: '總表連線失敗', text: '目前無法取得管理總表，請稍後再試。' });
     } finally {
       setLoading(false);
     }
@@ -433,14 +500,19 @@ export default function App() {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
+    const firstWeekdayColumn = Math.min((firstDay + 6) % 7, 5); // 星期一為第 0 欄，週末落在首週末端
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const days = [];
-    for (let i = 0; i < firstDay; i++) {
+    for (let i = 0; i < firstWeekdayColumn; i++) {
       days.push(<div key={`empty-${i}`} className="h-24 bg-gray-50/50 border border-gray-100 rounded-lg"></div>);
     }
 
     for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      const dayOfWeek = date.getDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const event = calendarEvents[dateStr];
       const eventExpired = Boolean(event?.isExpired || event?.expired);
@@ -473,7 +545,7 @@ export default function App() {
         statusBg = "bg-gray-50/70 text-gray-400 border-dashed border-gray-200 hover:bg-gray-100 cursor-pointer";
       }
 
-      // 1. 在 days.push 前，先根據當天的 dateStr (例如 '2026-09-02') 或日期物件計算出農曆標籤
+      // 1. 在 days.push 前，先根據當天的 dateStr 計算出農曆標籤
       const lunarLabel = getLunarLabel(dateStr);
 
       days.push(
@@ -524,11 +596,83 @@ export default function App() {
     return days;
   };
 
+  const renderWeekendEvents = () => {
+    const year = currentMonth.getFullYear();
+    const month = currentMonth.getMonth();
+    const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六'];
+
+    return Object.entries(calendarEvents)
+      .filter(([dateStr, event]) => {
+        if (!event?.vendor) return false;
+        const date = new Date(`${dateStr}T00:00:00`);
+        const dayOfWeek = date.getDay();
+        return !Number.isNaN(date.getTime())
+          && date.getFullYear() === year
+          && date.getMonth() === month
+          && (dayOfWeek === 0 || dayOfWeek === 6);
+      })
+      .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+      .map(([dateStr, event]) => {
+        const date = new Date(`${dateStr}T00:00:00`);
+        const eventExpired = Boolean(event?.isExpired || event?.expired);
+
+        return (
+          <button
+            key={dateStr}
+            type="button"
+            onClick={() => handleSelectDate(dateStr)}
+            className="w-full text-left bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-xl p-3 transition-colors"
+          >
+            <div className="flex justify-between items-center gap-3">
+              <span className="font-bold text-sm text-emerald-900">
+                {date.getMonth() + 1}/{date.getDate()}（{weekdayLabels[date.getDay()]}）
+              </span>
+              <div className="flex items-center gap-2 text-xs">
+                {event.likeCount > 0 && <span className="text-rose-600 font-bold">❤️ {event.likeCount}</span>}
+                <span className={eventExpired ? 'bg-amber-100 text-amber-800 px-2 py-1 rounded-lg font-bold' : 'bg-emerald-600 text-white px-2 py-1 rounded-lg font-bold'}>
+                  {eventExpired ? '已截止' : '預訂'}
+                </span>
+              </div>
+            </div>
+            <div className="text-xs text-gray-700 font-bold mt-1">{event.vendor}</div>
+          </button>
+        );
+      });
+  };
+
   const totalCount = Object.values(orderItems).reduce((a, b) => a + b, 0);
   const totalPrice = Object.entries(orderItems).reduce((sum, [id, qty]) => {
     const item = menu.find(m => m.item_id === id);
     return sum + (item ? item.price * qty : 0);
   }, 0);
+
+  const groupedMenu = useMemo(() => {
+    const groups = new Map();
+
+    menu.forEach(item => {
+      const { baseName, variant } = parseMenuItemName(item.item_name);
+      const groupKey = baseName || item.item_name;
+      const group = groups.get(groupKey) || {
+        baseName: groupKey,
+        baseImageUrl: '',
+        variantImageUrl: '',
+        items: []
+      };
+
+      group.items.push({ ...item, displayVariant: variant });
+      if (!variant && item.image_url) {
+        group.baseImageUrl = item.image_url;
+      } else if (variant && item.image_url && !group.variantImageUrl) {
+        group.variantImageUrl = item.image_url;
+      }
+      groups.set(groupKey, group);
+    });
+
+    return Array.from(groups.values()).map(group => ({
+      ...group,
+      imageUrl: group.baseImageUrl || group.variantImageUrl
+    }));
+  }, [menu]);
 
   // 修復版：精確比對 Intl 回傳的農曆日期
   const getLunarLabel = (dateStr) => {
@@ -558,6 +702,7 @@ export default function App() {
 
   const aggregatedOrders = getAggregatedOrders();
   const isAdminUser = userRole === 'Admin' || adminSummary.requesterRole === 'Admin';
+  const weekendEvents = renderWeekendEvents();
 
   return (
     <div className="min-h-screen bg-[#F7F5F0] text-gray-800 pb-24">
@@ -623,7 +768,16 @@ export default function App() {
               <h2 className="text-lg font-bold text-[#2C4A3E]">
                 {currentMonth.getFullYear()} 年 {currentMonth.getMonth() + 1} 月 預訂月曆
               </h2>
-              <div className="flex gap-1">
+              <div className="flex gap-1 items-center">
+                {isAdminUser && (
+                  <button
+                    type="button"
+                    onClick={handleOpenSpecialAdminModal}
+                    className="bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] px-2 py-1.5 rounded-lg transition shadow-sm font-bold"
+                  >
+                    ＋ 特殊日期開團
+                  </button>
+                )}
                 <button
                   onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
                   className="p-1.5 hover:bg-gray-100 rounded-lg text-sm"
@@ -645,13 +799,22 @@ export default function App() {
               </div>
             )}
 
-            <div className="grid grid-cols-7 gap-1 text-center font-medium text-xs text-gray-500 mb-1">
-              <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+            <div className="grid grid-cols-5 gap-1 text-center font-medium text-xs text-gray-500 mb-1">
+              <div>一</div><div>二</div><div>三</div><div>四</div><div>五</div>
             </div>
 
-            <div className="grid grid-cols-7 gap-1.5">
+            <div className="grid grid-cols-5 gap-1.5">
               {renderCalendarDays()}
             </div>
+
+            {weekendEvents.length > 0 && (
+              <div className="border-t border-emerald-100 pt-3 space-y-2">
+                <h3 className="font-bold text-sm text-[#2C4A3E]">週末特別開團</h3>
+                <div className="space-y-2">
+                  {weekendEvents}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -716,51 +879,72 @@ export default function App() {
 
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
               <h3 className="font-bold text-sm text-[#2C4A3E]">今日菜單</h3>
-              {menu.length === 0 ? (
+              {groupedMenu.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">本日無可選菜單</p>
               ) : (
-                menu.map((item) => {
-                  const qty = orderItems[item.item_id] || 0;
-                  return (
-                    <div key={item.item_id} className="flex justify-between items-center py-2 border-b last:border-0">
-                      <div>
-                        <div className="font-medium text-sm">{item.item_name}</div>
-                        <div className="text-xs text-emerald-700 font-bold flex items-center gap-1">
-                          <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200">
-                            ${item.price}
-                          </span>
-                          {item.note && <span className="text-gray-400 font-normal">({item.note})</span>}
-                        </div>
+                groupedMenu.map((group) => (
+                  <div key={group.baseName} className="flex gap-3 py-3 border-b last:border-0">
+                    {group.imageUrl && !imageLoadErrors[group.baseName] ? (
+                      <img
+                        src={group.imageUrl}
+                        alt={group.baseName}
+                        onError={() => setImageLoadErrors(prev => ({ ...prev, [group.baseName]: true }))}
+                        className="w-14 h-14 object-cover rounded-xl shadow-sm border border-gray-100 shrink-0"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 bg-gray-50 rounded-xl flex items-center justify-center border border-gray-100 text-gray-400 text-xs shadow-sm shrink-0">
+                        無圖片
                       </div>
+                    )}
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setOrderItems(prev => ({ ...prev, [item.item_id]: Math.max(0, qty - 1) }))}
-                          disabled={isExpired}
-                          className={`w-7 h-7 rounded-full font-bold transition-all ${isExpired
-                            ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                            : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-                            }`}
-                        >
-                          -
-                        </button>
-                        <span className="w-7 h-7 flex items-center justify-center text-sm font-bold bg-gray-100 rounded-lg text-gray-800 border border-gray-200">
-                          {qty}
-                        </span>
-                        <button
-                          onClick={() => setOrderItems(prev => ({ ...prev, [item.item_id]: qty + 1 }))}
-                          disabled={isExpired}
-                          className={`w-7 h-7 rounded-full font-bold text-white transition-all ${isExpired
-                            ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                            : 'bg-[#2C4A3E] hover:bg-emerald-800'
-                            }`}
-                        >
-                          +
-                        </button>
-                      </div>
+                    <div className="flex-1 min-w-0 space-y-1">
+                      {group.items.map((item) => {
+                        const qty = orderItems[item.item_id] || 0;
+                        return (
+                          <div key={item.item_id} className="flex justify-between items-center gap-2">
+                            <div className="min-w-0">
+                              <div className="font-bold text-sm text-gray-800 truncate">
+                                {item.displayVariant || group.baseName}
+                              </div>
+                              <div className="text-xs text-emerald-700 font-bold flex items-center gap-1 mt-1">
+                                <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200 shadow-sm">
+                                  ${item.price}
+                                </span>
+                                {item.note && <span className="text-gray-400 font-normal bg-gray-50 px-1.5 py-0.5 rounded truncate">({item.note})</span>}
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => setOrderItems(prev => ({ ...prev, [item.item_id]: Math.max(0, qty - 1) }))}
+                                disabled={isExpired}
+                                className={`w-7 h-7 rounded-full font-bold transition-all ${isExpired
+                                  ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
+                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                                  }`}
+                              >
+                                -
+                              </button>
+                              <span className="w-7 h-7 flex items-center justify-center text-sm font-bold bg-gray-100 rounded-lg text-gray-800 border border-gray-200">
+                                {qty}
+                              </span>
+                              <button
+                                onClick={() => setOrderItems(prev => ({ ...prev, [item.item_id]: qty + 1 }))}
+                                disabled={isExpired}
+                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${isExpired
+                                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                  : 'bg-[#2C4A3E] hover:bg-emerald-800'
+                                  }`}
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })
+                  </div>
+                ))
               )}
             </div>
 
@@ -835,25 +1019,37 @@ export default function App() {
             </div>
 
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <h3 className="font-bold text-base text-[#2C4A3E]">🍱 當日訂單明細 (含備註)</h3>
+              <h3 className="font-bold text-base text-[#2C4A3E]">🍱 當日訂單明細 (依樓層分組)</h3>
               {adminSummary.todayOrders.length === 0 ? (
                 <p className="text-xs text-gray-400 text-center py-4">今日無訂單</p>
               ) : (
-                <div className="space-y-2">
-                  {adminSummary.todayOrders.map((o, idx) => (
-                    <div key={idx} className="flex justify-between items-center text-xs p-2.5 border-b last:border-0 bg-gray-50/50 rounded-xl">
-                      <div>
-                        <div className="font-bold text-gray-800">
-                          {o.name} ({o.pickup_floor})
-                          {o.note && <span className="ml-2 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-normal">📝 {o.note}</span>}
+                <div className="space-y-4">
+                  {Object.entries(
+                    adminSummary.todayOrders.reduce((acc, order) => {
+                      const floor = order.pickup_floor || '其他';
+                      if (!acc[floor]) acc[floor] = [];
+                      acc[floor].push(order);
+                      return acc;
+                    }, {})
+                  ).map(([floor, orders]) => (
+                    <div key={floor} className="space-y-2">
+                      <h4 className="text-sm font-bold text-emerald-800 border-b border-emerald-100 pb-1">{floor} 訂單</h4>
+                      {orders.map((o, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs p-3 border border-gray-100 bg-gray-50/80 rounded-xl hover:bg-emerald-50/50 transition-colors">
+                          <div>
+                            <div className="font-bold text-gray-800">
+                              {o.name}
+                              {o.note && <span className="ml-2 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-normal shadow-sm">📝 {o.note}</span>}
+                            </div>
+                            <div className="text-gray-600 mt-1">
+                              {o.item_name} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
+                            </div>
+                          </div>
+                          <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">
+                            ${o.subtotal}
+                          </span>
                         </div>
-                        <div className="text-gray-600 mt-1">
-                          {o.item_name} <span className="bg-gray-200 px-1 py-0.2 rounded font-bold">x {o.quantity}</span>
-                        </div>
-                      </div>
-                      <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200">
-                        ${o.subtotal}
-                      </span>
+                      ))}
                     </div>
                   ))}
                 </div>
@@ -906,35 +1102,37 @@ export default function App() {
 
       {/* 餘額歷史異動 Modal 彈窗 */}
       {showHistoryModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-5 space-y-4 shadow-xl max-h-[80vh] flex flex-col">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-base text-[#2C4A3E]">💳 個人儲值/交易明細</h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl transform transition-all max-h-[85vh] flex flex-col border border-emerald-100">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <h3 className="font-bold text-base text-[#2C4A3E] flex items-center gap-2">
+                <span className="text-xl">💳</span> 個人儲值/交易明細
+              </h3>
               <button
                 onClick={() => setShowHistoryModal(false)}
-                className="text-gray-400 hover:text-gray-600 text-lg font-bold"
+                className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
               >
                 ✕
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {historyLoading ? (
                 <p className="text-center text-xs text-gray-400 py-6 animate-pulse">載入明細中...</p>
               ) : historyList.length === 0 ? (
                 <p className="text-center text-xs text-gray-400 py-6">尚無交易紀錄</p>
               ) : (
                 historyList.map((item, idx) => (
-                  <div key={idx} className="bg-gray-50 p-3 rounded-xl flex justify-between items-center text-xs border border-gray-100">
+                  <div key={idx} className="bg-gray-50/80 p-3.5 rounded-2xl flex justify-between items-center text-xs border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <div>
-                      <div className="font-bold text-gray-700">{item.note}</div>
+                      <div className="font-bold text-gray-700 text-sm mb-1">{item.note}</div>
                       <div className="text-[10px] text-gray-400">{item.timestamp}</div>
                     </div>
                     <div className="text-right">
-                      <div className={`font-bold text-xs px-1.5 py-0.5 rounded inline-block ${item.changeAmount >= 0 ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-red-100 text-red-600 border border-red-200'}`}>
+                      <div className={`font-bold text-xs px-2 py-1 rounded-lg inline-block ${item.changeAmount >= 0 ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-600 border border-rose-200'}`}>
                         {item.changeAmount >= 0 ? `+${item.changeAmount}` : item.changeAmount}
                       </div>
-                      <div className="text-[10px] text-gray-500 mt-1">結餘: ${item.balance}</div>
+                      <div className="text-[10px] text-gray-500 mt-1.5 font-medium">結餘: ${item.balance}</div>
                     </div>
                   </div>
                 ))
@@ -943,7 +1141,7 @@ export default function App() {
 
             <button
               onClick={() => setShowHistoryModal(false)}
-              className="w-full bg-[#2C4A3E] text-white py-2 rounded-xl text-xs font-bold hover:bg-emerald-800 transition"
+              className="w-full bg-[#2C4A3E] text-white py-3 rounded-2xl text-sm font-bold hover:bg-emerald-800 transition shadow-md active:scale-95"
             >
               關閉
             </button>
@@ -953,40 +1151,113 @@ export default function App() {
 
       {/* Admin 手動修改開團彈窗 Modal */}
       {selectedAdminDate && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl">
-            <div className="flex justify-between items-center border-b pb-3">
-              <h3 className="font-bold text-base text-[#2C4A3E]">🛠️ 開團管理：{selectedAdminDate}</h3>
-              <button onClick={() => setSelectedAdminDate(null)} className="text-gray-400 font-bold">✕</button>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl transform transition-all border border-emerald-100">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <h3 className="font-bold text-base text-[#2C4A3E] flex items-center gap-2">
+                <span className="text-xl">🛠️</span> 開團管理：{selectedAdminDate}
+              </h3>
+              <button
+                onClick={() => setSelectedAdminDate(null)}
+                className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
             </div>
 
-            <div className="space-y-3 text-xs">
+            <div className="space-y-4 text-xs">
               <div>
-                <label className="block text-gray-600 font-bold mb-1">選擇店家</label>
+                <label className="block text-gray-600 font-bold mb-2 text-sm">選擇店家</label>
                 <select
                   value={adminVendorChoice}
                   onChange={(e) => setAdminVendorChoice(e.target.value)}
-                  className="w-full border rounded-xl p-2.5 bg-white text-sm focus:outline-emerald-600"
+                  className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm"
                 >
                   <option value="蔡老師">蔡老師</option>
                   <option value="禾拾">禾拾</option>
-                  <option value="">暫不開團 (取消)</option>
+                  <option value="合十">合十</option>
+                  <option value="">不開團</option>
                 </select>
               </div>
             </div>
 
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setSelectedAdminDate(null)}
-                className="w-1/2 bg-gray-100 text-gray-600 py-2.5 rounded-xl text-xs font-bold hover:bg-gray-200 transition"
+                className="w-1/2 bg-gray-100 text-gray-600 py-3 rounded-2xl text-sm font-bold hover:bg-gray-200 transition active:scale-95 shadow-sm"
               >
                 取消
               </button>
               <button
                 onClick={handleAdminSaveVendor}
-                className="w-1/2 bg-[#2C4A3E] text-white py-2.5 rounded-xl text-xs font-bold hover:bg-emerald-800 transition"
+                className="w-1/2 bg-[#2C4A3E] text-white py-3 rounded-2xl text-sm font-bold hover:bg-emerald-800 transition active:scale-95 shadow-md"
               >
                 儲存更新
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSpecialAdminModal && isAdminUser && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl transform transition-all border border-emerald-100">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <h3 className="font-bold text-base text-[#2C4A3E] flex items-center gap-2">
+                <span className="text-xl">📅</span> 特殊日期開團
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowSpecialAdminModal(false)}
+                className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="special-admin-date">日期</label>
+                <input
+                  id="special-admin-date"
+                  type="date"
+                  value={specialAdminDate}
+                  onChange={(e) => setSpecialAdminDate(e.target.value)}
+                  className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="special-admin-vendor">店家</label>
+                <select
+                  id="special-admin-vendor"
+                  value={specialAdminVendorChoice}
+                  onChange={(e) => setSpecialAdminVendorChoice(e.target.value)}
+                  className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm"
+                >
+                  <option value="蔡老師">蔡老師</option>
+                  <option value="禾拾">禾拾</option>
+                  <option value="合十">合十</option>
+                  <option value="">不開團</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSpecialAdminModal(false)}
+                className="w-1/2 bg-gray-100 text-gray-600 py-3 rounded-2xl text-sm font-bold hover:bg-gray-200 transition active:scale-95 shadow-sm"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleSpecialAdminSaveVendor}
+                disabled={!specialAdminDate || loading}
+                className="w-1/2 bg-[#2C4A3E] text-white py-3 rounded-2xl text-sm font-bold hover:bg-emerald-800 disabled:bg-gray-300 transition active:scale-95 shadow-md"
+              >
+                儲存
               </button>
             </div>
           </div>
