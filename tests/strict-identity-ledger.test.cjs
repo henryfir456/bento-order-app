@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
+const { pathToFileURL } = require('node:url');
 
 class MockRange {
   constructor(sheet, row, column, rowCount = 1, columnCount = 1) {
@@ -715,4 +716,223 @@ test('reconciliation is read-only and reports differences without repairing them
   assert.equal(result.results.find(row => row.lineUserId === 'admin-id').latestLedgerBalance, null);
   assert.deepEqual(spreadsheet.sheets.Users.rows, usersBefore);
   assert.deepEqual(spreadsheet.sheets.TopupHistory.rows, ledgerBefore);
+});
+
+function ledgerSpreadsheet(rows) {
+  return new MockSpreadsheet({
+    Users: usersSheet(),
+    TopupHistory: new MockSheet(rows)
+  });
+}
+
+test('monthly balance history keeps the previous month opening balance and stable newest-first order', () => {
+  const gas = loadGas(ledgerSpreadsheet([
+    ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註', 'TransactionID', 'Type', 'ReferenceID'],
+    ['2026-08-31 23:59:59', 'user-id', 'Leo Wu Leo', '9樓', 0, 500, '月初餘額', 'TXN-AUG', 'ADJUSTMENT', ''],
+    ['2026-09-01 00:00:00', 'user-id', 'Leo Wu Leo', '9樓', -100, 400, '訂餐扣款 (2026-09-01)', 'TXN-SEP-1', 'ORDER', 'ORD-1'],
+    ['2026-09-03 16:25:00', 'user-id', 'Leo Wu Leo', '9樓', -200, 200, '訂餐扣款 (2026-09-09)', 'TXN-SEP-2', 'ORDER', 'ORD-2']
+  ]));
+
+  const result = gas.getBalanceHistoryByMonth('user-id', 2026, 9);
+
+  assert.equal(result.success, true);
+  assert.equal(result.openingBalance, 500);
+  assert.equal(result.totalCredit, 0);
+  assert.equal(result.totalDebit, 300);
+  assert.equal(result.closingBalance, 200);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.transactions.map(row => row.id))), ['TXN-SEP-2', 'TXN-SEP-1']);
+});
+
+test('monthly balance history aggregates credits and debits from the anchored opening balance', () => {
+  const gas = loadGas(ledgerSpreadsheet([
+    ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註', 'TransactionID', 'Type', 'ReferenceID'],
+    ['2026-08-31 12:00:00', 'user-id', 'Leo Wu Leo', '9樓', 0, -500, '前月結餘', 'TXN-AUG', 'ADJUSTMENT', ''],
+    ['2026-09-02 09:00:00', 'user-id', 'Leo Wu Leo', '9樓', 200, -300, '取消訂單退款', 'TXN-CREDIT', 'REFUND', 'ORD-1'],
+    ['2026-09-04 09:00:00', 'user-id', 'Leo Wu Leo', '9樓', -300, -600, '訂餐扣款', 'TXN-DEBIT', 'ORDER', 'ORD-2']
+  ]));
+
+  const result = gas.getBalanceHistoryByMonth('user-id', 2026, 9);
+
+  assert.equal(result.openingBalance, -500);
+  assert.equal(result.totalCredit, 200);
+  assert.equal(result.totalDebit, 300);
+  assert.equal(result.closingBalance, -600);
+});
+
+test('monthly balance history returns equal opening and closing balances for an empty month', () => {
+  const gas = loadGas(ledgerSpreadsheet([
+    ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註', 'TransactionID', 'Type', 'ReferenceID'],
+    ['2026-08-31 23:59:59', 'user-id', 'Leo Wu Leo', '9樓', 0, 400, '前月結餘', 'TXN-AUG', 'ADJUSTMENT', '']
+  ]));
+
+  const result = gas.getBalanceHistoryByMonth('user-id', 2026, 9);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.transactions)), []);
+  assert.equal(result.openingBalance, 400);
+  assert.equal(result.closingBalance, 400);
+  assert.equal(result.totalCredit, 0);
+  assert.equal(result.totalDebit, 0);
+});
+
+test('monthly balance history rejects invalid months safely', () => {
+  const gas = loadGas(ledgerSpreadsheet([
+    ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註', 'TransactionID', 'Type', 'ReferenceID']
+  ]));
+
+  assert.equal(gas.getBalanceHistoryByMonth('user-id', 2026, 0).success, false);
+  assert.equal(gas.getBalanceHistoryByMonth('user-id', 2026, 13).success, false);
+});
+
+test('monthly balance history uses the existing ledger read-only', () => {
+  const rows = [
+    ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註', 'TransactionID', 'Type', 'ReferenceID'],
+    ['2026-08-31 23:59:59', 'user-id', 'Leo Wu Leo', '9樓', 0, 400, '前月結餘', 'TXN-AUG', 'ADJUSTMENT', '']
+  ];
+  const spreadsheet = ledgerSpreadsheet(rows);
+  const before = spreadsheet.sheets.TopupHistory.rows.map(row => row.slice());
+  const gas = loadGas(spreadsheet);
+
+  gas.getBalanceHistoryByMonth('user-id', '2026', '09');
+
+  assert.deepEqual(spreadsheet.sheets.TopupHistory.rows, before);
+});
+
+test('monthly balance API resolves the user from the LINE access token, not a forged userId', () => {
+  const spreadsheet = ledgerSpreadsheet([
+    ['Timestamp', 'LINE_UserID', '姓名', '樓層', '異動金額', '結餘', '備註', 'TransactionID', 'Type', 'ReferenceID'],
+    ['2026-09-01 10:00:00', 'user-id', 'Leo Wu Leo', '9樓', -100, -180, '本人扣款', 'TXN-USER', 'ORDER', 'ORD-USER'],
+    ['2026-09-02 10:00:00', 'admin-id', 'Admin User', '9樓', 500, 600, '其他帳戶儲值', 'TXN-ADMIN', 'TOPUP', '']
+  ]);
+  const gas = loadGas(spreadsheet, { userId: 'user-id', displayName: 'Leo Wu Leo' });
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'getBalanceHistoryByMonth',
+        accessToken: 'access-token',
+        userId: 'admin-id',
+        year: '2026',
+        month: '09'
+      })
+    }
+  });
+  const result = JSON.parse(output.text);
+
+  assert.equal(result.success, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.transactions.map(row => row.id))), ['TXN-USER']);
+});
+
+test('calendar management keeps the existing special-date vendor save contract', () => {
+  const spreadsheet = new MockSpreadsheet({
+    Users: usersSheet(),
+    Settings: new MockSheet([
+      ['Date', 'Vendor', 'Mode'],
+      ['2026-09-09', '蔡老師', 'A']
+    ])
+  });
+  const gas = loadGas(spreadsheet);
+
+  const result = gas.adminSetVendor({
+    adminUserId: 'admin-id',
+    dateStr: '2026-09-09',
+    vendor: '禾拾'
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(spreadsheet.sheets.Settings.rows[1][1], '禾拾');
+  assert.equal(spreadsheet.sheets.Settings.rows[1][2], 'B');
+});
+
+test('admin summary defaults to today and returns an empty summary for a future date', () => {
+  const gas = loadGas(orderSpreadsheet());
+  const todayResult = gas.getAdminSummary('admin-id');
+  const futureResult = gas.getAdminSummary('admin-id', '2099-12-31');
+
+  assert.equal(todayResult.success, true);
+  assert.match(todayResult.targetDate, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(futureResult.success, true);
+  assert.equal(futureResult.totalItems, 0);
+  assert.equal(futureResult.totalAmount, 0);
+  assert.deepEqual(JSON.parse(JSON.stringify(futureResult.items)), []);
+});
+
+test('admin summary filters the selected date and aggregates item, amount, and pickup totals', () => {
+  const spreadsheet = orderSpreadsheet();
+  spreadsheet.sheets.Orders.rows.push(
+    ['ORD-0909-A', '2026-09-09', '蔡老師', 'Leo Wu Leo', '1樓', 'A01', '小而美', 2, 80, 160, '2026-09-03 08:00:00', '2026-09-03 08:00:00', 'ACTIVE', 'user-id', -240, ''],
+    ['ORD-0909-B', '2026-09-09', '蔡老師', 'Admin User', '9樓', 'A02', '田園便當', 1, 100, 100, '2026-09-03 08:00:00', '2026-09-03 08:00:00', 'ACTIVE', 'admin-id', 0, ''],
+    ['ORD-0908', '2026-09-08', '蔡老師', 'Leo Wu Leo', '1樓', 'A01', '小而美', 9, 80, 720, '2026-09-03 08:00:00', '2026-09-03 08:00:00', 'ACTIVE', 'user-id', -800, ''],
+    ['ORD-0910', '2026-09-10', '蔡老師', 'Leo Wu Leo', '1樓', 'A01', '小而美', 7, 80, 560, '2026-09-03 08:00:00', '2026-09-03 08:00:00', 'ACTIVE', 'user-id', -640, '']
+  );
+  const gas = loadGas(spreadsheet);
+
+  const result = gas.getAdminSummary('admin-id', '2026-09-09');
+
+  assert.equal(result.success, true);
+  assert.equal(result.todayOrders.length, 2);
+  assert.equal(result.totalItems, 3);
+  assert.equal(result.totalAmount, 260);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.items)), [
+    { item_id: 'A01', item_name: '小而美', quantity: 2, totalAmount: 160 },
+    { item_id: 'A02', item_name: '田園便當', quantity: 1, totalAmount: 100 }
+  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.pickupSummary)), {
+    '1樓': { totalItems: 2, totalAmount: 160 },
+    '9樓': { totalItems: 1, totalAmount: 100 }
+  });
+});
+
+test('admin summary rejects invalid date-only values', () => {
+  const gas = loadGas(orderSpreadsheet());
+
+  assert.equal(gas.getAdminSummary('admin-id', '2026-02-30').success, false);
+  assert.equal(gas.getAdminSummary('admin-id', 'abc').success, false);
+});
+
+test('admin summary is restricted to Admin and its token API ignores forged operator ids', () => {
+  const spreadsheet = orderSpreadsheet();
+  const gas = loadGas(spreadsheet, { userId: 'user-id', displayName: 'Leo Wu Leo' });
+
+  assert.equal(gas.getAdminSummary('user-id', '2026-09-09').success, false);
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'getAdminSummary',
+        accessToken: 'access-token',
+        userId: 'admin-id',
+        targetDate: '2026-09-09'
+      })
+    }
+  });
+
+  assert.equal(JSON.parse(output.text).success, false);
+});
+
+test('month navigation crosses calendar year boundaries', async () => {
+  const utils = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'dateUtils.js')).href);
+
+  assert.deepEqual(utils.shiftYearMonth(2026, 12, 1), { year: 2027, month: 1 });
+  assert.deepEqual(utils.shiftYearMonth(2026, 1, -1), { year: 2025, month: 12 });
+  assert.deepEqual(utils.getTaipeiYearMonth(new Date('2026-09-30T16:30:00Z')), { year: 2026, month: 10 });
+  assert.equal(utils.formatDateInput(new Date('2026-09-30T16:30:00Z')), '2026-10-01');
+});
+
+test('calendar management owns special-date controls without a separate modal entry', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+
+  assert.doesNotMatch(appSource, /showSpecialAdminModal/);
+  assert.doesNotMatch(appSource, /特殊日期開團/);
+  assert.match(appSource, /specialAdminDate/);
+});
+
+test('frontend wires monthly balance and selected-date admin summary queries', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+
+  assert.match(appSource, /getBalanceHistoryByMonth/);
+  assert.match(appSource, /selectedYear/);
+  assert.match(appSource, /selectedOrderDate/);
+  assert.match(appSource, /adminSummaryRequestRef\.current \+= 1/);
+  assert.match(appSource, /historyRequestRef\.current \+= 1/);
 });

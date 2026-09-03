@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import liff from '@line/liff';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
+import { formatDateInput, getTaipeiYearMonth, shiftYearMonth } from './dateUtils';
 
 // 自動根據目前環境讀取對應的變數
 const GAS_API_URL = import.meta.env.VITE_GAS_API_URL;
@@ -57,11 +58,19 @@ const parseMenuItemName = (itemName = '') => {
   };
 };
 
-const formatDateInput = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+const formatSignedAmount = (value) => {
+  const amount = Number(value || 0);
+  return `${amount >= 0 ? '+' : '-'}$${Math.abs(amount)}`;
+};
+
+const formatBalanceAmount = (value) => {
+  const balance = Number(value || 0);
+  return `${balance < 0 ? '-' : ''}$${Math.abs(balance)}`;
+};
+
+const getConfiguredVendor = (event) => {
+  const vendor = event?.vendor;
+  return vendor === undefined || vendor === null ? '蔡老師' : vendor;
 };
 
 export default function App() {
@@ -96,12 +105,35 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  const [adminSummary, setAdminSummary] = useState({ usersSummary: [], todayOrders: [], requesterRole: 'User' });
+  const [selectedOrderDate, setSelectedOrderDate] = useState(() => formatDateInput());
+  const [adminSummary, setAdminSummary] = useState({
+    usersSummary: [],
+    todayOrders: [],
+    requesterRole: 'User',
+    targetDate: '',
+    totalItems: 0,
+    totalAmount: 0,
+    items: [],
+    pickupSummary: {}
+  });
+  const [adminSummaryLoading, setAdminSummaryLoading] = useState(false);
+  const [adminSummaryError, setAdminSummaryError] = useState('');
+  const adminSummaryRequestRef = useRef(0);
 
   // 餘額歷史彈窗狀態
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyList, setHistoryList] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+  const [selectedYear, setSelectedYear] = useState(() => getTaipeiYearMonth().year);
+  const [selectedMonth, setSelectedMonth] = useState(() => getTaipeiYearMonth().month);
+  const [historySummary, setHistorySummary] = useState({
+    openingBalance: 0,
+    totalCredit: 0,
+    totalDebit: 0,
+    closingBalance: 0
+  });
+  const historyRequestRef = useRef(0);
   const [selectedTopupUser, setSelectedTopupUser] = useState(null);
   const [topupAmount, setTopupAmount] = useState('');
   const [topupNote, setTopupNote] = useState('現金收款');
@@ -111,13 +143,14 @@ export default function App() {
   const [adminManageMode, setAdminManageMode] = useState(false);
   const [selectedAdminDate, setSelectedAdminDate] = useState(null);
   const [adminVendorChoice, setAdminVendorChoice] = useState('蔡老師');
-  const [showSpecialAdminModal, setShowSpecialAdminModal] = useState(false);
   const [specialAdminDate, setSpecialAdminDate] = useState(formatDateInput(new Date()));
   const [specialAdminVendorChoice, setSpecialAdminVendorChoice] = useState('蔡老師');
 
   const isExpired = Boolean(deadline?.isExpired || deadline?.expired);
 
   const clearIdentityData = () => {
+    adminSummaryRequestRef.current += 1;
+    historyRequestRef.current += 1;
     setLineUserId('');
     setUserRole('User');
     setUserBalance(0);
@@ -135,12 +168,27 @@ export default function App() {
     setOrderItems({});
     setHasExistingOrder(false);
     setMessage('');
-    setAdminSummary({ usersSummary: [], todayOrders: [], requesterRole: 'User' });
+    setSelectedOrderDate(formatDateInput());
+    setAdminSummary({
+      usersSummary: [],
+      todayOrders: [],
+      requesterRole: 'User',
+      targetDate: '',
+      totalItems: 0,
+      totalAmount: 0,
+      items: [],
+      pickupSummary: {}
+    });
+    setAdminSummaryLoading(false);
+    setAdminSummaryError('');
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
-    setShowSpecialAdminModal(false);
     setShowHistoryModal(false);
+    setHistoryLoading(false);
+    setHistoryList([]);
+    setHistorySummary({ openingBalance: 0, totalCredit: 0, totalDebit: 0, closingBalance: 0 });
+    setHistoryError('');
     setViewMode('calendar');
   };
 
@@ -244,23 +292,71 @@ export default function App() {
     initLiffAndFetchData();
   }, []);
 
+  const loadAdminSummary = async (targetDate, targetUserId, shouldShowView) => {
+    if (!targetUserId || !targetDate) return;
+
+    const requestId = ++adminSummaryRequestRef.current;
+    if (shouldShowView) setViewMode('admin');
+    setAdminSummaryLoading(true);
+    setAdminSummaryError('');
+    setAdminSummary(prev => ({
+      ...prev,
+      targetDate,
+      todayOrders: [],
+      totalItems: 0,
+      totalAmount: 0,
+      items: [],
+      pickupSummary: {}
+    }));
+
+    try {
+      const accessToken = liff.getAccessToken();
+      if (!accessToken) {
+        setAdminSummaryError('目前無法驗證身份，請重新登入後再試。');
+        return;
+      }
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'getAdminSummary',
+          accessToken,
+          targetDate
+        })
+      });
+      const data = await res.json();
+      if (requestId !== adminSummaryRequestRef.current) return;
+
+      if (data.success) {
+        const nextOrders = data.todayOrders || [];
+        const fallbackTotalItems = nextOrders.reduce((sum, order) => sum + Number(order.quantity || 0), 0);
+        const fallbackTotalAmount = nextOrders.reduce((sum, order) => sum + Number(order.subtotal || 0), 0);
+        setAdminSummary({
+          usersSummary: data.usersSummary || [],
+          todayOrders: nextOrders,
+          requesterRole: data.requesterRole || userRole,
+          targetDate: data.targetDate || targetDate,
+          totalItems: data.totalItems ?? fallbackTotalItems,
+          totalAmount: data.totalAmount ?? fallbackTotalAmount,
+          items: data.items || [],
+          pickupSummary: data.pickupSummary || {}
+        });
+      } else {
+        setAdminSummaryError('目前無法取得指定日期的訂單總覽，請稍後再試。');
+      }
+    } catch {
+      if (requestId === adminSummaryRequestRef.current) {
+        setAdminSummaryError('目前無法取得指定日期的訂單總覽，請稍後再試。');
+      }
+    } finally {
+      if (requestId === adminSummaryRequestRef.current) setAdminSummaryLoading(false);
+    }
+  };
+
   const prefetchAdminSummary = async (uId) => {
     const targetUserId = uId || lineUserId;
     if (!targetUserId) return;
-
-    try {
-      const res = await fetch(`${GAS_API_URL}?action=getAdminSummary&userId=${targetUserId}&t=${Date.now()}`);
-      const data = await res.json();
-      if (data.success) {
-        setAdminSummary({
-          usersSummary: data.usersSummary || [],
-          todayOrders: data.todayOrders || [],
-          requesterRole: data.requesterRole || userRole
-        });
-      }
-    } catch (err) {
-      console.warn("背景預載總表失敗", err);
-    }
+    await loadAdminSummary(selectedOrderDate, targetUserId, false);
   };
 
   const fetchUserInfo = async (accessToken) => {
@@ -402,21 +498,69 @@ export default function App() {
     }
   };
 
-  const fetchBalanceHistory = async () => {
+  const loadBalanceHistory = async (year, month) => {
     if (authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
-    setShowHistoryModal(true);
+
+    const requestId = ++historyRequestRef.current;
     setHistoryLoading(true);
+    setHistoryError('');
+    setHistoryList([]);
+    setHistorySummary({ openingBalance: 0, totalCredit: 0, totalDebit: 0, closingBalance: 0 });
+
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getBalanceHistory&userId=${encodeURIComponent(lineUserId)}&t=${Date.now()}`);
-      const data = await res.json();
-      if (data.success) {
-        setHistoryList(data.history || []);
+      const accessToken = liff.getAccessToken();
+      if (!accessToken) {
+        setHistoryError('目前無法驗證身份，請重新登入後再試。');
+        return;
       }
-    } catch (err) {
-      await showPopup({ icon: 'error', title: '讀取失敗', text: '無法讀取交易歷史明細' });
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'getBalanceHistoryByMonth',
+          accessToken,
+          year,
+          month
+        })
+      });
+      const data = await res.json();
+      if (requestId !== historyRequestRef.current) return;
+
+      if (data.success) {
+        setHistoryList(data.transactions || []);
+        setHistorySummary({
+          openingBalance: data.openingBalance || 0,
+          totalCredit: data.totalCredit || 0,
+          totalDebit: data.totalDebit || 0,
+          closingBalance: data.closingBalance || 0
+        });
+      } else {
+        setHistoryError('目前無法讀取此月份的交易明細，請稍後再試。');
+      }
+    } catch {
+      if (requestId === historyRequestRef.current) {
+        setHistoryError('目前無法讀取此月份的交易明細，請稍後再試。');
+      }
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestRef.current) setHistoryLoading(false);
     }
+  };
+
+  const fetchBalanceHistory = () => {
+    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
+    const currentMonth = getTaipeiYearMonth();
+    setSelectedYear(currentMonth.year);
+    setSelectedMonth(currentMonth.month);
+    setShowHistoryModal(true);
+    loadBalanceHistory(currentMonth.year, currentMonth.month);
+  };
+
+  const shiftHistoryMonth = (offset) => {
+    if (historyLoading) return;
+    const nextMonth = shiftYearMonth(selectedYear, selectedMonth, offset);
+    setSelectedYear(nextMonth.year);
+    setSelectedMonth(nextMonth.month);
+    loadBalanceHistory(nextMonth.year, nextMonth.month);
   };
 
   const handleToggleLike = async (e, dateStr) => {
@@ -471,7 +615,7 @@ export default function App() {
 
     if (adminManageMode && (userRole === 'Admin' || adminSummary.requesterRole === 'Admin')) {
       setSelectedAdminDate(dateStr);
-      setAdminVendorChoice(event?.vendor || '蔡老師');
+      setAdminVendorChoice(getConfiguredVendor(event));
       return;
     }
 
@@ -536,7 +680,6 @@ export default function App() {
       if (data.success) {
         await showPopup({ icon: 'success', title: '更新完成', text: '開團設定已更新！' });
         setSelectedAdminDate(null);
-        setShowSpecialAdminModal(false);
         fetchCalendarEvents();
       } else {
         await showPopup({ icon: 'error', title: '更新失敗', text: `更新失敗：${data.message}` });
@@ -550,10 +693,20 @@ export default function App() {
 
   const handleAdminSaveVendor = () => saveAdminVendor(selectedAdminDate, adminVendorChoice);
 
-  const handleOpenSpecialAdminModal = () => {
-    setSpecialAdminDate(formatDateInput(new Date()));
-    setSpecialAdminVendorChoice('蔡老師');
-    setShowSpecialAdminModal(true);
+  const handleToggleAdminManage = () => {
+    const nextMode = !adminManageMode;
+    setAdminManageMode(nextMode);
+    if (nextMode) {
+      const today = formatDateInput(new Date());
+      setSpecialAdminDate(today);
+      setSpecialAdminVendorChoice(getConfiguredVendor(calendarEvents[today]));
+    }
+  };
+
+  const handleSpecialAdminDateChange = (dateStr) => {
+    setSpecialAdminDate(dateStr);
+    const event = calendarEvents[dateStr];
+    setSpecialAdminVendorChoice(event ? event.vendor || '' : '蔡老師');
   };
 
   const handleSpecialAdminSaveVendor = () => saveAdminVendor(specialAdminDate, specialAdminVendorChoice);
@@ -679,34 +832,15 @@ export default function App() {
     setViewMode('calendar');
   };
 
-  const fetchAdminSummary = async () => {
+  const fetchAdminSummary = () => {
     if (authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
-    const hasCache = adminSummary.usersSummary.length > 0 || adminSummary.todayOrders.length > 0;
+    loadAdminSummary(selectedOrderDate, lineUserId, true);
+  };
 
-    if (hasCache) {
-      setViewMode('admin');
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      const res = await fetch(`${GAS_API_URL}?action=getAdminSummary&userId=${lineUserId}&t=${Date.now()}`);
-      const data = await res.json();
-      if (data.success) {
-        setAdminSummary({
-          usersSummary: data.usersSummary || [],
-          todayOrders: data.todayOrders || [],
-          requesterRole: data.requesterRole || userRole
-        });
-        if (!hasCache) setViewMode('admin');
-      } else if (!hasCache) {
-        await showPopup({ icon: 'error', title: '無法取得總表', text: data.message || '無法取得總表' });
-      }
-    } catch (err) {
-      if (!hasCache) await showPopup({ icon: 'error', title: '總表連線失敗', text: '目前無法取得管理總表，請稍後再試。' });
-    } finally {
-      setLoading(false);
-    }
+  const handleAdminDateChange = (dateStr) => {
+    if (!dateStr || authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
+    setSelectedOrderDate(dateStr);
+    loadAdminSummary(dateStr, lineUserId, true);
   };
 
   const handleOpenTopupModal = (user) => {
@@ -1009,7 +1143,7 @@ export default function App() {
               >
                 儲值餘額：
                 <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${userBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
-                  ${userBalance}
+                  {formatBalanceAmount(userBalance)}
                 </span>
               </button>
             )}
@@ -1020,7 +1154,7 @@ export default function App() {
               <>
                 {viewMode === 'calendar' && (
                   <button
-                    onClick={() => setAdminManageMode(!adminManageMode)}
+                    onClick={handleToggleAdminManage}
                     className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${adminManageMode ? 'bg-rose-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
                   >
                     {adminManageMode ? '🔒 離開管理' : '⚙️ 月曆管理'}
@@ -1137,15 +1271,6 @@ export default function App() {
                 {currentMonth.getFullYear()} 年 {currentMonth.getMonth() + 1} 月 預訂月曆
               </h2>
               <div className="flex gap-1 items-center">
-                {isAdminUser && (
-                  <button
-                    type="button"
-                    onClick={handleOpenSpecialAdminModal}
-                    className="bg-emerald-700 hover:bg-emerald-600 text-white text-[10px] px-2 py-1.5 rounded-lg transition shadow-sm font-bold"
-                  >
-                    ＋ 特殊日期開團
-                  </button>
-                )}
                 <button
                   onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
                   className="p-1.5 hover:bg-gray-100 rounded-lg text-sm"
@@ -1162,8 +1287,42 @@ export default function App() {
             </div>
 
             {adminManageMode && (
-              <div className="bg-rose-50 border border-rose-200 p-2 rounded-xl text-xs text-rose-800 font-medium flex justify-between items-center">
-                <span>🛠️ 管理者模式啟用中：直接點擊日期可手動指定/切換開團店家。</span>
+              <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-xs text-rose-800 space-y-3">
+                <p className="font-medium">🛠️ 管理者模式啟用中：點擊月曆日期可編輯該日開團設定。</p>
+                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
+                  <div>
+                    <label className="block font-bold mb-1" htmlFor="calendar-special-date">指定日期</label>
+                    <input
+                      id="calendar-special-date"
+                      type="date"
+                      value={specialAdminDate}
+                      onChange={(e) => handleSpecialAdminDateChange(e.target.value)}
+                      className="w-full min-w-0 border border-rose-200 rounded-xl p-2.5 bg-white text-sm focus:outline-rose-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold mb-1" htmlFor="calendar-special-vendor">店家</label>
+                    <select
+                      id="calendar-special-vendor"
+                      value={specialAdminVendorChoice}
+                      onChange={(e) => setSpecialAdminVendorChoice(e.target.value)}
+                      className="w-full min-w-0 border border-rose-200 rounded-xl p-2.5 bg-white text-sm focus:outline-rose-500"
+                    >
+                      <option value="蔡老師">蔡老師</option>
+                      <option value="禾拾">禾拾</option>
+                      <option value="合十">合十</option>
+                      <option value="">不開團</option>
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSpecialAdminSaveVendor}
+                    disabled={!specialAdminDate || loading}
+                    className="bg-[#2C4A3E] text-white px-3 py-2.5 rounded-xl font-bold hover:bg-emerald-800 disabled:bg-gray-300 whitespace-nowrap"
+                  >
+                    儲存設定
+                  </button>
+                </div>
               </div>
             )}
 
@@ -1334,7 +1493,47 @@ export default function App() {
         {isRegistered && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <h3 className="font-bold text-base text-[#2C4A3E]">👥 成員餘額總表</h3>
+              <div className="flex flex-wrap justify-between items-center gap-3">
+                <h3 className="font-bold text-base text-[#2C4A3E]">📊 管理員訂單總覽</h3>
+                <label className="flex items-center gap-2 text-xs font-bold text-gray-600" htmlFor="admin-order-date">
+                  訂單日期
+                  <input
+                    id="admin-order-date"
+                    type="date"
+                    value={selectedOrderDate}
+                    onChange={(e) => handleAdminDateChange(e.target.value)}
+                    className="min-w-0 border border-gray-200 rounded-xl px-2.5 py-2 bg-white text-sm focus:outline-emerald-600"
+                  />
+                </label>
+              </div>
+              {adminSummary.targetDate && (
+                <p className="text-xs text-gray-500">目前顯示：{adminSummary.targetDate}</p>
+              )}
+            </div>
+
+            {adminSummaryLoading ? (
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
+                讀取指定日期總覽中...
+              </div>
+            ) : adminSummaryError ? (
+              <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">
+                {adminSummaryError}
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
+                    <div className="text-xs text-gray-500">總份數</div>
+                    <div className="text-xl font-bold text-[#2C4A3E]">{adminSummary.totalItems}</div>
+                  </div>
+                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
+                    <div className="text-xs text-gray-500">總金額</div>
+                    <div className="text-xl font-bold text-[#2C4A3E]">${adminSummary.totalAmount}</div>
+                  </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
+                  <h3 className="font-bold text-base text-[#2C4A3E]">👥 成員餘額總表</h3>
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-gray-100 text-gray-600">
@@ -1358,7 +1557,7 @@ export default function App() {
                           <td className="p-2">{u.floor}</td>
                           <td className="p-2">
                             <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${u.balance < 0 ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
-                              ${u.balance}
+                              {formatBalanceAmount(u.balance)}
                             </span>
                           </td>
                           <td className="p-2">{u.role}</td>
@@ -1388,7 +1587,7 @@ export default function App() {
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
               <h3 className="font-bold text-base text-[#2C4A3E]">📦 便購種類匯總</h3>
               {Object.keys(aggregatedOrders).length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">今日無訂單統計</p>
+                <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
               ) : (
                 <div className="grid grid-cols-2 gap-2">
                   {Object.entries(aggregatedOrders).map(([itemKey, qty], idx) => (
@@ -1404,9 +1603,9 @@ export default function App() {
             </div>
 
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <h3 className="font-bold text-base text-[#2C4A3E]">🍱 當日訂單明細 (依樓層分組)</h3>
+              <h3 className="font-bold text-base text-[#2C4A3E]">🍱 {selectedOrderDate} 訂單明細 (依樓層分組)</h3>
               {adminSummary.todayOrders.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">今日無訂單</p>
+                <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
               ) : (
                 <div className="space-y-4">
                   {Object.entries(
@@ -1440,6 +1639,8 @@ export default function App() {
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
         )}
       </main>
@@ -1501,23 +1702,70 @@ export default function App() {
               </button>
             </div>
 
+            <div className="flex items-center justify-between gap-2 rounded-2xl bg-emerald-50 px-2 py-2">
+              <button
+                type="button"
+                aria-label="上一個月"
+                onClick={() => shiftHistoryMonth(-1)}
+                disabled={historyLoading}
+                className="min-w-10 min-h-10 rounded-xl bg-white text-[#2C4A3E] font-bold shadow-sm disabled:text-gray-300"
+              >
+                ◀
+              </button>
+              <span className="text-sm font-bold text-[#2C4A3E]" aria-live="polite">
+                {selectedYear} 年 {selectedMonth} 月
+              </span>
+              <button
+                type="button"
+                aria-label="下一個月"
+                onClick={() => shiftHistoryMonth(1)}
+                disabled={historyLoading}
+                className="min-w-10 min-h-10 rounded-xl bg-white text-[#2C4A3E] font-bold shadow-sm disabled:text-gray-300"
+              >
+                ▶
+              </button>
+            </div>
+
+            {!historyLoading && !historyError && (
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl bg-gray-50 border border-gray-100 p-2.5">
+                  <div className="text-gray-500">月初餘額</div>
+                  <div className="font-bold text-gray-800 mt-1">{formatBalanceAmount(historySummary.openingBalance)}</div>
+                </div>
+                <div className="rounded-xl bg-gray-50 border border-gray-100 p-2.5">
+                  <div className="text-gray-500">月底餘額</div>
+                  <div className="font-bold text-gray-800 mt-1">{formatBalanceAmount(historySummary.closingBalance)}</div>
+                </div>
+                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-2.5">
+                  <div className="text-emerald-700">本月增加</div>
+                  <div className="font-bold text-emerald-800 mt-1">+${historySummary.totalCredit}</div>
+                </div>
+                <div className="rounded-xl bg-rose-50 border border-rose-100 p-2.5">
+                  <div className="text-rose-700">本月扣除</div>
+                  <div className="font-bold text-rose-800 mt-1">-${historySummary.totalDebit}</div>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {historyLoading ? (
                 <p className="text-center text-xs text-gray-400 py-6 animate-pulse">載入明細中...</p>
+              ) : historyError ? (
+                <p className="text-center text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">{historyError}</p>
               ) : historyList.length === 0 ? (
-                <p className="text-center text-xs text-gray-400 py-6">尚無交易紀錄</p>
+                <p className="text-center text-xs text-gray-400 py-6">此月份沒有交易紀錄</p>
               ) : (
                 historyList.map((item, idx) => (
                   <div key={idx} className="bg-gray-50/80 p-3.5 rounded-2xl flex justify-between items-center text-xs border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <div>
-                      <div className="font-bold text-gray-700 text-sm mb-1">{item.note}</div>
-                      <div className="text-[10px] text-gray-400">{item.timestamp}</div>
+                      <div className="font-bold text-gray-700 text-sm mb-1">{item.description || item.note || item.type || '交易異動'}</div>
+                      <div className="text-[10px] text-gray-400">{item.occurredAt || item.timestamp}</div>
                     </div>
                     <div className="text-right">
-                      <div className={`font-bold text-xs px-2 py-1 rounded-lg inline-block ${item.changeAmount >= 0 ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-600 border border-rose-200'}`}>
-                        {item.changeAmount >= 0 ? `+${item.changeAmount}` : item.changeAmount}
+                      <div className={`font-bold text-xs px-2 py-1 rounded-lg inline-block ${(item.amount ?? item.changeAmount) >= 0 ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-600 border border-rose-200'}`}>
+                        {formatSignedAmount(item.amount ?? item.changeAmount)}
                       </div>
-                      <div className="text-[10px] text-gray-500 mt-1.5 font-medium">結餘: ${item.balance}</div>
+                      <div className="text-[10px] text-gray-500 mt-1.5 font-medium">結餘: {formatBalanceAmount(item.balanceAfter ?? item.balance)}</div>
                     </div>
                   </div>
                 ))
@@ -1553,7 +1801,7 @@ export default function App() {
 
             <div className="space-y-4 text-xs">
               <div className="bg-emerald-50 rounded-2xl p-3 text-emerald-900">
-                目前餘額：<span className="font-bold">${selectedTopupUser.balance}</span>
+                目前餘額：<span className="font-bold">{formatBalanceAmount(selectedTopupUser.balance)}</span>
               </div>
               <div>
                 <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="topup-amount">儲值金額</label>
@@ -1654,70 +1902,6 @@ export default function App() {
         </div>
       )}
 
-      {showSpecialAdminModal && isAdminUser && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl transform transition-all border border-emerald-100">
-            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
-              <h3 className="font-bold text-base text-[#2C4A3E] flex items-center gap-2">
-                <span className="text-xl">📅</span> 特殊日期開團
-              </h3>
-              <button
-                type="button"
-                onClick={() => setShowSpecialAdminModal(false)}
-                className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-4 text-xs">
-              <div>
-                <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="special-admin-date">日期</label>
-                <input
-                  id="special-admin-date"
-                  type="date"
-                  value={specialAdminDate}
-                  onChange={(e) => setSpecialAdminDate(e.target.value)}
-                  className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="special-admin-vendor">店家</label>
-                <select
-                  id="special-admin-vendor"
-                  value={specialAdminVendorChoice}
-                  onChange={(e) => setSpecialAdminVendorChoice(e.target.value)}
-                  className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm"
-                >
-                  <option value="蔡老師">蔡老師</option>
-                  <option value="禾拾">禾拾</option>
-                  <option value="合十">合十</option>
-                  <option value="">不開團</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowSpecialAdminModal(false)}
-                className="w-1/2 bg-gray-100 text-gray-600 py-3 rounded-2xl text-sm font-bold hover:bg-gray-200 transition active:scale-95 shadow-sm"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={handleSpecialAdminSaveVendor}
-                disabled={!specialAdminDate || loading}
-                className="w-1/2 bg-[#2C4A3E] text-white py-3 rounded-2xl text-sm font-bold hover:bg-emerald-800 disabled:bg-gray-300 transition active:scale-95 shadow-md"
-              >
-                儲存
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

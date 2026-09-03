@@ -150,6 +150,64 @@ function normalizeOrderDate(rawDate) {
   return String(rawDate || '').trim().substring(0, 10);
 }
 
+function isValidYearMonth(year, month) {
+  const yearText = String(year === undefined || year === null ? '' : year).trim();
+  const monthText = String(month === undefined || month === null ? '' : month).trim();
+  if (!/^\d{4}$/.test(yearText) || !/^\d{1,2}$/.test(monthText)) return false;
+
+  const yearValue = Number(yearText);
+  const monthValue = Number(monthText);
+  return isFinite(yearValue)
+    && isFinite(monthValue)
+    && Math.floor(yearValue) === yearValue
+    && Math.floor(monthValue) === monthValue
+    && yearValue >= 1900
+    && yearValue <= 2100
+    && monthValue >= 1
+    && monthValue <= 12;
+}
+
+function isValidDateString(dateString) {
+  const text = String(dateString || '').trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1) return false;
+
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day <= daysInMonth;
+}
+
+function ledgerTimestampKey(rawTimestamp) {
+  if (rawTimestamp instanceof Date) {
+    return Utilities.formatDate(rawTimestamp, TIMEZONE, "yyyy-MM-dd HH:mm:ss");
+  }
+
+  const text = String(rawTimestamp || '').trim();
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(text)) {
+    const zonedDate = new Date(text);
+    if (!isNaN(zonedDate.getTime())) {
+      return Utilities.formatDate(zonedDate, TIMEZONE, "yyyy-MM-dd HH:mm:ss");
+    }
+  }
+
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2})?))?/);
+  if (match) {
+    const time = match[2] || '00:00:00';
+    return match[1] + ' ' + (time.length === 5 ? time + ':00' : time);
+  }
+
+  return '';
+}
+
+function hasNumericValue(value) {
+  const text = String(value === undefined || value === null ? '' : value).trim();
+  return text !== '' && isFinite(Number(text));
+}
+
 function doGet(e) {
   const action = e.parameter.action;
   
@@ -176,9 +234,9 @@ function doGet(e) {
   } else if (action === 'getUserInfo') {
     return jsonResponse({ success: false, message: "getUserInfo 必須使用 POST 進行 LINE 身份驗證" });
   } else if (action === 'getAdminSummary') {
-    const userId = e.parameter.userId;
-    const targetDate = e.parameter.targetDate;
-    return jsonResponse(getAdminSummary(userId, targetDate));
+    return jsonResponse({ success: false, message: "getAdminSummary 必須使用 POST 進行身份驗證" });
+  } else if (action === 'getBalanceHistoryByMonth') {
+    return jsonResponse({ success: false, message: "getBalanceHistoryByMonth 必須使用 POST 進行身份驗證" });
   } else if (action === 'getBalanceHistory') {
     const userId = e.parameter.userId;
     return jsonResponse(getBalanceHistory(userId));
@@ -201,6 +259,10 @@ function doPost(e) {
       return jsonResponse(getUserInfo(data.accessToken));
     } else if (action === 'registerUser') {
       return jsonResponse(registerUser(data));
+    } else if (action === 'getAdminSummary') {
+      return jsonResponse(getAdminSummaryForAccessToken(data));
+    } else if (action === 'getBalanceHistoryByMonth') {
+      return jsonResponse(getBalanceHistoryByMonthForAccessToken(data));
     } else if (action === 'assignProxy') {
       return jsonResponse(assignProxy(data.userId, data.targetUserId, data.newRole));
     } else if (action === 'topUpBalance') {
@@ -224,6 +286,26 @@ function doPost(e) {
 function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function getAdminSummaryForAccessToken(data) {
+  try {
+    const profile = getLineProfile(data && data.accessToken);
+    if (!profile.success) return profile;
+    return getAdminSummary(profile.userId, data && data.targetDate);
+  } catch (err) {
+    return { success: false, message: "目前無法取得管理員訂單總覽" };
+  }
+}
+
+function getBalanceHistoryByMonthForAccessToken(data) {
+  try {
+    const profile = getLineProfile(data && data.accessToken);
+    if (!profile.success) return profile;
+    return getBalanceHistoryByMonth(profile.userId, data && data.year, data && data.month);
+  } catch (err) {
+    return { success: false, message: "目前無法取得交易明細" };
+  }
 }
 
 // 簡易農曆初一、十五計算邏輯
@@ -1094,6 +1176,106 @@ function getBalanceHistory(userId) {
   return { success: true, history: userHistory };
 }
 
+function getBalanceHistoryByMonth(userId, year, month) {
+  const user = getRegisteredUser(userId);
+  if (!user) return { success: false, message: UNREGISTERED_USER_MESSAGE };
+  if (!isValidYearMonth(year, month)) {
+    return { success: false, message: "查詢月份不正確" };
+  }
+
+  const yearValue = Number(year);
+  const monthValue = Number(month);
+  const monthKey = yearValue + '-' + String(monthValue).padStart(2, '0');
+  const historySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(BALANCE_LEDGER_SHEET);
+  const values = historySheet ? historySheet.getDataRange().getValues().slice(1) : [];
+  const userRows = [];
+  let hasUserLedgerRows = false;
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    if (String(row[1] || '').trim() !== user.userId) continue;
+    hasUserLedgerRows = true;
+
+    const timestampKey = ledgerTimestampKey(row[0]);
+    const hasAmount = hasNumericValue(row[4]);
+    const hasBalance = hasNumericValue(row[5]);
+    if (!timestampKey || (!hasAmount && !hasBalance)) continue;
+
+    userRows.push({
+      rowIndex: i,
+      timestampKey: timestampKey,
+      amount: hasAmount ? Number(row[4]) : null,
+      balanceAfter: hasBalance ? Number(row[5]) : null,
+      row: row
+    });
+  }
+
+  userRows.sort((a, b) => a.timestampKey.localeCompare(b.timestampKey) || a.rowIndex - b.rowIndex);
+  const monthRows = userRows.filter(item => item.amount !== null && item.timestampKey.substring(0, 7) === monthKey);
+  const priorRows = userRows.filter(item => item.timestampKey.substring(0, 7) < monthKey);
+  const priorWithBalance = priorRows.filter(item => item.balanceAfter !== null);
+  const monthStartBalance = priorWithBalance.length > 0
+    ? priorWithBalance[priorWithBalance.length - 1].balanceAfter
+    : null;
+
+  let openingBalance = monthStartBalance;
+  if (openingBalance === null && monthRows.length > 0 && monthRows[0].balanceAfter !== null) {
+    openingBalance = monthRows[0].balanceAfter - monthRows[0].amount;
+  }
+  if (openingBalance === null && !hasUserLedgerRows) {
+    openingBalance = user.balance;
+  }
+  if (openingBalance === null) {
+    return { success: false, message: "目前無法重建此月份的餘額明細" };
+  }
+
+  let totalCredit = 0;
+  let totalDebit = 0;
+  monthRows.forEach(item => {
+    if (item.amount >= 0) {
+      totalCredit += item.amount;
+    } else {
+      totalDebit += Math.abs(item.amount);
+    }
+  });
+
+  const lastMonthRow = monthRows[monthRows.length - 1];
+  const closingBalance = lastMonthRow && lastMonthRow.balanceAfter !== null
+    ? lastMonthRow.balanceAfter
+    : openingBalance + totalCredit - totalDebit;
+
+  const transactions = monthRows.slice().reverse().map(item => {
+    const row = item.row;
+    const occurredAt = item.timestampKey.substring(0, 16);
+    return {
+      id: row[7] || '',
+      transactionId: row[7] || '',
+      type: row[8] || '',
+      referenceId: row[9] || '',
+      description: row[6] || '',
+      note: row[6] || '',
+      occurredAt: occurredAt,
+      timestamp: occurredAt,
+      amount: item.amount,
+      changeAmount: item.amount,
+      balanceAfter: item.balanceAfter,
+      balance: item.balanceAfter
+    };
+  });
+
+  return {
+    success: true,
+    ok: true,
+    year: yearValue,
+    month: monthValue,
+    openingBalance: openingBalance,
+    totalCredit: totalCredit,
+    totalDebit: totalDebit,
+    closingBalance: closingBalance,
+    transactions: transactions
+  };
+}
+
 function getUserInfo(accessToken) {
   const profile = getLineProfile(accessToken);
   if (!profile.success) return profile;
@@ -1232,6 +1414,9 @@ function getAdminSummary(requestUserId, targetDateStr) {
 
   const requester = getRegisteredUser(requestUserId);
   if (!requester) return { success: false, message: UNREGISTERED_USER_MESSAGE };
+  if (requester.role !== "Admin") {
+    return { success: false, message: "權限不足：只有 Admin 可以查看訂單總覽" };
+  }
 
   const userData = userSheet.getDataRange().getValues().slice(1);
   const allUsers = userData.map(row => ({
@@ -1245,14 +1430,48 @@ function getAdminSummary(requestUserId, targetDateStr) {
   const isRequesterAdmin = requester.role === "Admin";
   const visibleUsers = isRequesterAdmin ? allUsers : (requester ? [requester] : []);
 
-  const todayStr = targetDateStr || Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd");
+  const todayStr = targetDateStr === undefined || targetDateStr === null || String(targetDateStr).trim() === ''
+    ? Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd")
+    : String(targetDateStr).trim();
+  if (!isValidDateString(todayStr)) {
+    return { success: false, message: "日期格式不正確" };
+  }
+
   const orderValues = orderSheet ? orderSheet.getDataRange().getValues().slice(1) : [];
   
   const todayOrders = [];
+  const itemSummary = {};
+  const pickupSummary = {};
+  let totalItems = 0;
+  let totalAmount = 0;
   for (let i = 0; i < orderValues.length; i++) {
     const r = orderValues[i];
     const rDate = normalizeOrderDate(r[1]);
     if (rDate === todayStr && r[12] === 'ACTIVE') {
+      const quantity = Number(r[7] || 0);
+      const subtotal = Number(r[9] || 0);
+      const itemKey = String(r[5] || r[6] || '');
+      const pickupFloor = String(r[4] || '其他');
+      totalItems += quantity;
+      totalAmount += subtotal;
+
+      if (!itemSummary[itemKey]) {
+        itemSummary[itemKey] = {
+          item_id: r[5] || '',
+          item_name: r[6] || '',
+          quantity: 0,
+          totalAmount: 0
+        };
+      }
+      itemSummary[itemKey].quantity += quantity;
+      itemSummary[itemKey].totalAmount += subtotal;
+
+      if (!pickupSummary[pickupFloor]) {
+        pickupSummary[pickupFloor] = { totalItems: 0, totalAmount: 0 };
+      }
+      pickupSummary[pickupFloor].totalItems += quantity;
+      pickupSummary[pickupFloor].totalAmount += subtotal;
+
       todayOrders.push({
         order_id: r[0],
         name: r[3],
@@ -1273,7 +1492,11 @@ function getAdminSummary(requestUserId, targetDateStr) {
     targetDate: todayStr,
     requesterRole: requester ? requester.role : "User",
     usersSummary: visibleUsers,
-    todayOrders: todayOrders
+    todayOrders: todayOrders,
+    totalItems: totalItems,
+    totalAmount: totalAmount,
+    items: Object.keys(itemSummary).map(key => itemSummary[key]),
+    pickupSummary: pickupSummary
   };
 }
 
