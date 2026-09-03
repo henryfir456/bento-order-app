@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import liff from '@line/liff';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
@@ -6,6 +6,24 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 // 自動根據目前環境讀取對應的變數
 const GAS_API_URL = import.meta.env.VITE_GAS_API_URL;
 const LIFF_ID = import.meta.env.VITE_LIFF_ID;
+
+const AUTH_STATES = Object.freeze({
+  AUTH_LOADING: 'AUTH_LOADING',
+  AUTH_REQUIRED: 'AUTH_REQUIRED',
+  AUTH_FAILED: 'AUTH_FAILED',
+  UNREGISTERED: 'UNREGISTERED',
+  REGISTERED: 'REGISTERED'
+});
+
+const redactAuthSecrets = (value) => String(value || 'Unknown error')
+  .replace(/(access[_-]?token|id[_-]?token|authorization)\s*[:=]?\s*[^\s,;]+/gi, '$1=[REDACTED]')
+  .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]');
+
+const logAuthDiagnostic = (message) => {
+  if (import.meta.env.DEV) {
+    console.info(`[AUTH] ${message}`);
+  }
+};
 
 if (!GAS_API_URL) {
   throw new Error('Missing VITE_GAS_API_URL');
@@ -56,7 +74,13 @@ export default function App() {
   const [userRole, setUserRole] = useState('User');
   const [userBalance, setUserBalance] = useState(0);
   const [defaultFloor, setDefaultFloor] = useState('');
-  const [identityError, setIdentityError] = useState('');
+  const [authState, setAuthState] = useState(AUTH_STATES.AUTH_LOADING);
+  const [authStage, setAuthStage] = useState(AUTH_STATES.AUTH_LOADING);
+  const [authError, setAuthError] = useState('');
+  const [registrationDisplayName, setRegistrationDisplayName] = useState('');
+  const [registrationFloor, setRegistrationFloor] = useState('1樓');
+  const [registrationLoading, setRegistrationLoading] = useState(false);
+  const authInitInFlightRef = useRef(false);
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [activeOrderId, setActiveOrderId] = useState('');
@@ -93,35 +117,130 @@ export default function App() {
 
   const isExpired = Boolean(deadline?.isExpired || deadline?.expired);
 
+  const clearIdentityData = () => {
+    setLineUserId('');
+    setUserRole('User');
+    setUserBalance(0);
+    setDefaultFloor('');
+    setRegistrationDisplayName('');
+    setName('');
+    setCalendarEvents({});
+    setUserOrdersMap({});
+    setSelectedDate(null);
+    setActiveOrderId('');
+    setSetting(null);
+    setDeadline(null);
+    setMenu([]);
+    setImageLoadErrors({});
+    setOrderItems({});
+    setHasExistingOrder(false);
+    setMessage('');
+    setAdminSummary({ usersSummary: [], todayOrders: [], requesterRole: 'User' });
+    setAdminManageMode(false);
+    setSelectedAdminDate(null);
+    setSelectedTopupUser(null);
+    setShowSpecialAdminModal(false);
+    setShowHistoryModal(false);
+    setViewMode('calendar');
+  };
+
+  const failAuthentication = (stage, error) => {
+    const safeMessage = redactAuthSecrets(error instanceof Error ? error.message : error);
+    setAuthState(AUTH_STATES.AUTH_FAILED);
+    setAuthStage(stage);
+    setAuthError(`${stage}: ${safeMessage}`);
+    clearIdentityData();
+    console.error(`[AUTH] ${stage}: ${safeMessage}`);
+  };
+
+  const initLiffAndFetchData = async () => {
+    if (authInitInFlightRef.current) {
+      logAuthDiagnostic('LIFF_INIT_SKIPPED_IN_FLIGHT');
+      return;
+    }
+
+    authInitInFlightRef.current = true;
+    let currentStage = 'LIFF_INIT_START';
+    setLoading(true);
+    setAuthState(AUTH_STATES.AUTH_LOADING);
+    setAuthStage(currentStage);
+    setAuthError('');
+    clearIdentityData();
+
+    try {
+      logAuthDiagnostic('LIFF_INIT_START');
+      await liff.init({ liffId: LIFF_ID });
+      currentStage = 'LIFF_INIT_SUCCESS';
+      setAuthStage(currentStage);
+      logAuthDiagnostic(currentStage);
+
+      const isLoggedIn = liff.isLoggedIn();
+      logAuthDiagnostic(`LIFF_IS_LOGGED_IN=${isLoggedIn}`);
+      logAuthDiagnostic(`LIFF_IS_IN_CLIENT=${liff.isInClient()}`);
+      if (!isLoggedIn) {
+        setAuthState(AUTH_STATES.AUTH_REQUIRED);
+        setAuthStage(AUTH_STATES.AUTH_REQUIRED);
+        logAuthDiagnostic('AUTH_REQUIRED');
+        liff.login();
+        return;
+      }
+
+      currentStage = 'LIFF_ACCESS_TOKEN_READ';
+      setAuthStage(currentStage);
+      const accessToken = liff.getAccessToken();
+      logAuthDiagnostic(`LIFF_ACCESS_TOKEN_PRESENT=${Boolean(accessToken)}`);
+      if (!accessToken) {
+        failAuthentication('LIFF_ACCESS_TOKEN_MISSING', 'LIFF accessToken 不存在');
+        return;
+      }
+
+      currentStage = 'LIFF_PROFILE_START';
+      setAuthStage(currentStage);
+      try {
+        await liff.getProfile();
+        logAuthDiagnostic('LIFF_PROFILE_SUCCESS=true');
+      } catch (profileError) {
+        logAuthDiagnostic('LIFF_PROFILE_SUCCESS=false');
+        failAuthentication('LIFF_PROFILE_FAILED', profileError);
+        return;
+      }
+
+      currentStage = 'BACKEND_IDENTITY_VERIFY_START';
+      setAuthStage(currentStage);
+      const identity = await fetchUserInfo(accessToken);
+      if (identity?.success && identity.registered && identity.user) {
+        const canonicalUserId = identity.user.userId;
+        setAuthState(AUTH_STATES.REGISTERED);
+        setAuthStage('REGISTERED');
+        setAuthError('');
+        logAuthDiagnostic('BACKEND_IDENTITY_VERIFY_SUCCESS=true');
+        logAuthDiagnostic('USER_REGISTERED=true');
+        logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
+        setLineUserId(canonicalUserId);
+        prefetchAdminSummary(canonicalUserId);
+        fetchUserAllOrders(canonicalUserId);
+        await fetchCalendarEvents(canonicalUserId);
+      } else if (identity?.success && identity.registered === false) {
+        setAuthState(AUTH_STATES.UNREGISTERED);
+        setAuthStage('UNREGISTERED');
+        setAuthError('');
+        logAuthDiagnostic('BACKEND_IDENTITY_VERIFY_SUCCESS=true');
+        logAuthDiagnostic('USER_REGISTERED=false');
+      } else {
+        logAuthDiagnostic('BACKEND_IDENTITY_VERIFY_SUCCESS=false');
+        failAuthentication('BACKEND_IDENTITY_VERIFY_FAILED', identity?.message || 'backend 未回傳有效身份狀態');
+      }
+    } catch (err) {
+      failAuthentication(currentStage, err);
+    } finally {
+      setLoading(false);
+      authInitInFlightRef.current = false;
+    }
+  };
+
   useEffect(() => {
     initLiffAndFetchData();
   }, []);
-
-  const initLiffAndFetchData = async () => {
-    setLoading(true);
-    try {
-      await liff.init({ liffId: LIFF_ID });
-      let currentUId = '';
-      if (liff.isLoggedIn()) {
-        const profile = await liff.getProfile();
-        currentUId = profile.userId;
-        setLineUserId(profile.userId);
-
-        const user = await fetchUserInfo(profile.userId);
-        if (user) {
-          prefetchAdminSummary(profile.userId);
-          fetchUserAllOrders(profile.userId);
-        }
-      } else {
-        liff.login();
-      }
-      await fetchCalendarEvents(currentUId);
-    } catch (err) {
-      console.error("LIFF 初始化或讀取失敗", err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const prefetchAdminSummary = async (uId) => {
     const targetUserId = uId || lineUserId;
@@ -142,32 +261,119 @@ export default function App() {
     }
   };
 
-  const fetchUserInfo = async (uId) => {
+  const fetchUserInfo = async (accessToken) => {
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getUserInfo&userId=${encodeURIComponent(uId)}&t=${Date.now()}`);
+      if (!accessToken) {
+        return { success: false, message: 'LIFF accessToken 不存在' };
+      }
+
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'getUserInfo',
+          accessToken
+        })
+      });
+      if (!res.ok) {
+        return { success: false, message: `backend HTTP ${res.status}` };
+      }
       const data = await res.json();
-      if (data.success && data.user) {
-        setIdentityError('');
+      if (data.success && data.registered && data.user) {
+        setLineUserId(data.user.userId);
         setUserBalance(data.user.balance || 0);
         setUserRole(data.user.role || 'User');
         setName(data.user.name || '');
         setDefaultFloor(data.user.defaultFloor || data.user.floor || '');
         setFloor(data.user.defaultFloor || data.user.floor || '');
-        return data.user;
+        return data;
       }
-      setIdentityError(data.message || '此 LINE 帳號尚未註冊，請聯絡管理員。');
-      setName('');
-      setDefaultFloor('');
-      setUserRole('User');
+
+      if (data.success && data.registered === false) {
+        setLineUserId(data.lineUserId || '');
+        setRegistrationDisplayName(data.displayName || '');
+        setRegistrationFloor('1樓');
+        setName('');
+        setDefaultFloor('');
+        setUserRole('User');
+        setUserBalance(0);
+        return data;
+      }
+
+      return { success: false, message: data.message || 'backend 未回傳有效身份狀態' };
     } catch (err) {
-      console.error("讀取個人餘額失敗", err);
-      setIdentityError('目前無法驗證 LINE 身份，請稍後再試。');
+      const safeMessage = redactAuthSecrets(err instanceof Error ? err.message : err);
+      logAuthDiagnostic(`BACKEND_IDENTITY_VERIFY_SUCCESS=false stage=BACKEND_IDENTITY_VERIFY_REQUEST error=${safeMessage}`);
+      return { success: false, message: safeMessage };
     }
-    return null;
+  };
+
+  const handleRegister = async () => {
+    if (registrationLoading || authState !== AUTH_STATES.UNREGISTERED) return;
+
+    const accessToken = liff.getAccessToken();
+    if (!accessToken) {
+      failAuthentication('REGISTER_ACCESS_TOKEN_MISSING', 'LIFF accessToken 不存在');
+      await showPopup({ icon: 'error', title: '身份驗證失敗', text: '目前無法取得 LINE 身份驗證，請重新驗證。' });
+      return;
+    }
+
+    setRegistrationLoading(true);
+    setLoading(true);
+    setAuthStage('REGISTER_REQUEST');
+    logAuthDiagnostic('REGISTER_REQUEST_START');
+    try {
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'registerUser',
+          accessToken,
+          pickupFloor: registrationFloor
+        })
+      });
+      if (!res.ok) {
+        throw new Error(`backend HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (!data.success) {
+        await showPopup({ icon: 'error', title: '註冊失敗', text: data.message || '目前無法完成註冊，請稍後再試。' });
+        return;
+      }
+
+      // Backend 會回傳 canonical row；這裡再重新取得一次，確保後續狀態來自 Users。
+      const canonicalAccessToken = liff.getAccessToken();
+      logAuthDiagnostic(`LIFF_ACCESS_TOKEN_PRESENT=${Boolean(canonicalAccessToken)}`);
+      const identity = await fetchUserInfo(canonicalAccessToken);
+      if (!identity?.success || !identity.registered || !identity.user) {
+        failAuthentication('REGISTRATION_CANONICAL_READBACK_FAILED', identity?.message || '註冊後無法取得 canonical Users row');
+        await showPopup({ icon: 'error', title: '註冊驗證失敗', text: '註冊完成後無法重新取得帳戶資料，請聯絡管理員。' });
+        return;
+      }
+
+      const canonicalUserId = identity.user.userId;
+      setAuthState(AUTH_STATES.REGISTERED);
+      setAuthStage('REGISTERED');
+      setAuthError('');
+      logAuthDiagnostic('BACKEND_IDENTITY_VERIFY_SUCCESS=true');
+      logAuthDiagnostic('USER_REGISTERED=true');
+      logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
+      setLineUserId(canonicalUserId);
+      prefetchAdminSummary(canonicalUserId);
+      fetchUserAllOrders(canonicalUserId);
+      await fetchCalendarEvents(canonicalUserId);
+    } catch (err) {
+      failAuthentication('REGISTER_REQUEST_FAILED', err);
+      await showPopup({ icon: 'error', title: '連線失敗', text: '目前無法完成註冊，請稍後再試。' });
+    } finally {
+      setRegistrationLoading(false);
+      setLoading(false);
+    }
   };
 
   const fetchCalendarEvents = async (uId) => {
     const targetId = uId || lineUserId;
+    if (!targetId) return;
     try {
       const res = await fetch(`${GAS_API_URL}?action=getCalendarEvents&userId=${targetId}&t=${Date.now()}`);
       const data = await res.json();
@@ -193,7 +399,7 @@ export default function App() {
   };
 
   const fetchBalanceHistory = async () => {
-    if (!lineUserId || identityError) return;
+    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
     setShowHistoryModal(true);
     setHistoryLoading(true);
     try {
@@ -211,8 +417,8 @@ export default function App() {
 
   const handleToggleLike = async (e, dateStr) => {
     e.stopPropagation(); // 防止觸發進入點餐頁面
-    if (!lineUserId || identityError) {
-      await showPopup({ icon: 'warning', title: '需要已註冊 LINE 身份', text: identityError || '請先於 LINE 內開啟本應用' });
+    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) {
+      await showPopup({ icon: 'warning', title: '需要已註冊 LINE 身份', text: authError || '請先完成 LINE 身份驗證' });
       return;
     }
 
@@ -252,8 +458,8 @@ export default function App() {
   };
 
   const handleSelectDate = async (dateStr) => {
-    if (!lineUserId || identityError) {
-      await showPopup({ icon: 'warning', title: '無法訂餐', text: identityError || '目前無法驗證 LINE 身份' });
+    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) {
+      await showPopup({ icon: 'warning', title: '無法訂餐', text: authError || '目前無法驗證 LINE 身份' });
       return;
     }
 
@@ -367,7 +573,7 @@ export default function App() {
   };
 
   const handleSubmit = async () => {
-    if (loading || identityError || !lineUserId) return;
+    if (loading || authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
     if (isExpired) {
       await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
       return;
@@ -425,7 +631,7 @@ export default function App() {
   };
 
   const handleCancelOrder = async () => {
-    if (loading || !activeOrderId || !lineUserId || identityError) return;
+    if (loading || authState !== AUTH_STATES.REGISTERED || !activeOrderId || !lineUserId) return;
     if (isExpired) {
       await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
       return;
@@ -488,6 +694,7 @@ export default function App() {
   };
 
   const fetchAdminSummary = async () => {
+    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
     const hasCache = adminSummary.usersSummary.length > 0 || adminSummary.todayOrders.length > 0;
 
     if (hasCache) {
@@ -786,7 +993,16 @@ export default function App() {
   };
 
   const aggregatedOrders = getAggregatedOrders();
-  const isAdminUser = userRole === 'Admin' || adminSummary.requesterRole === 'Admin';
+  const isRegistered = authState === AUTH_STATES.REGISTERED;
+  const isUnregistered = authState === AUTH_STATES.UNREGISTERED;
+  const isAdminUser = isRegistered && (userRole === 'Admin' || adminSummary.requesterRole === 'Admin');
+  const authStateLabel = {
+    [AUTH_STATES.AUTH_LOADING]: '身份驗證中',
+    [AUTH_STATES.AUTH_REQUIRED]: '請登入 LINE',
+    [AUTH_STATES.AUTH_FAILED]: '身份驗證失敗',
+    [AUTH_STATES.UNREGISTERED]: '尚未註冊',
+    [AUTH_STATES.REGISTERED]: '身份已驗證'
+  }[authState];
   const weekendEvents = renderWeekendEvents();
 
   return (
@@ -796,24 +1012,26 @@ export default function App() {
           <div>
             <h1 className="text-xl font-bold">蔬食便當預訂系統</h1>
             <div className="mt-1 text-xs text-emerald-100 flex flex-wrap items-center gap-1.5">
-              <span>👤 {name || (identityError ? '未註冊帳號' : '身份驗證中')}</span>
-              {name && <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">{userRole}</span>}
+              <span>👤 {name || registrationDisplayName || authStateLabel}</span>
+              {name && isRegistered && <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">{userRole}</span>}
               {defaultFloor && <span className="text-emerald-200">預設領取：{defaultFloor}</span>}
             </div>
-            <button
-              onClick={fetchBalanceHistory}
-              className="text-xs text-emerald-200 hover:underline flex items-center gap-1 mt-0.5 focus:outline-none"
-            >
-              儲值餘額：
-              <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${userBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
-                ${userBalance}
-              </span>
-              <span className="text-[10px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-100">🔍查明細</span>
-            </button>
+            {isRegistered && (
+              <button
+                onClick={fetchBalanceHistory}
+                className="text-xs text-emerald-200 hover:underline flex items-center gap-1 mt-0.5 focus:outline-none"
+              >
+                儲值餘額：
+                <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${userBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
+                  ${userBalance}
+                </span>
+                <span className="text-[10px] bg-emerald-800/80 px-1.5 py-0.5 rounded text-emerald-100">🔍查明細</span>
+              </button>
+            )}
           </div>
           {/* 方案一：依帳戶狀態動態隱藏/顯示管理者專用按鈕 */}
           <div className="flex gap-2">
-            {isAdminUser && (
+            {isRegistered && isAdminUser && (
               <>
                 {viewMode === 'calendar' && (
                   <button
@@ -833,7 +1051,7 @@ export default function App() {
                 )}
               </>
             )}
-            {viewMode !== 'calendar' && (
+            {isRegistered && viewMode !== 'calendar' && (
               <button
                 onClick={handleExitToCalendar}
                 className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg transition"
@@ -846,19 +1064,88 @@ export default function App() {
       </header>
 
       <main className="max-w-xl mx-auto p-4">
-        {identityError && !loading && (
-          <div className="mb-4 text-center text-sm font-bold p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200">
-            {identityError}
+        {authState === AUTH_STATES.AUTH_REQUIRED && !loading && (
+          <div className="mb-4 text-center bg-white rounded-3xl p-6 shadow-sm border border-emerald-900/10 space-y-4">
+            <div className="text-4xl">🔐</div>
+            <h2 className="text-xl font-bold text-[#2C4A3E]">需要登入 LINE</h2>
+            <p className="text-sm text-gray-500">請完成 LINE 登入後再使用便當預訂功能。</p>
+            <button
+              type="button"
+              onClick={initLiffAndFetchData}
+              className="w-full rounded-2xl bg-[#2C4A3E] py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-800"
+            >
+              登入 LINE
+            </button>
           </div>
         )}
 
-        {loading && (
+        {authState === AUTH_STATES.AUTH_FAILED && !loading && (
+          <div className="mb-4 text-center text-sm font-bold p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200">
+            <div className="mb-2">身份驗證失敗</div>
+            <div className="font-normal">{authError || `${authStage}: 無法取得有效 LINE 身份`}</div>
+            <button
+              type="button"
+              onClick={initLiffAndFetchData}
+              className="mt-3 rounded-xl bg-[#2C4A3E] px-4 py-2 text-white"
+            >
+              重新驗證
+            </button>
+          </div>
+        )}
+
+        {(authState === AUTH_STATES.AUTH_LOADING || (isRegistered && loading)) && (
           <div className="text-center py-8 text-emerald-800 font-medium animate-pulse">
             資料處理中...
           </div>
         )}
 
-        {viewMode === 'calendar' && !loading && (
+        {isUnregistered && !loading && (
+          <div className="bg-white rounded-3xl p-6 shadow-sm border border-emerald-900/10 space-y-6">
+            <div className="text-center space-y-2">
+              <div className="text-4xl">🍱</div>
+              <h2 className="text-2xl font-bold text-[#2C4A3E]">歡迎加入便當預訂</h2>
+              <p className="text-sm text-gray-500">完成設定後即可開始使用</p>
+            </div>
+
+            <div className="space-y-2 text-sm">
+              <div className="text-gray-500">姓名</div>
+              <div className="rounded-2xl bg-gray-50 border border-gray-100 px-4 py-3 font-bold text-gray-800">
+                {registrationDisplayName}
+              </div>
+            </div>
+
+            <div className="space-y-3 text-sm">
+              <div className="text-gray-500">預設領取樓層：</div>
+              <div className="grid grid-cols-2 gap-3">
+                {['1樓', '9樓'].map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setRegistrationFloor(option)}
+                    aria-pressed={registrationFloor === option}
+                    className={`rounded-2xl border py-3 font-bold transition ${registrationFloor === option
+                      ? 'border-[#2C4A3E] bg-[#2C4A3E] text-white shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-emerald-600'
+                      }`}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleRegister}
+              disabled={registrationLoading}
+              className="w-full rounded-2xl bg-[#2C4A3E] py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-800 disabled:bg-gray-300"
+            >
+              {registrationLoading ? '註冊中...' : '開始使用'}
+            </button>
+          </div>
+        )}
+
+        {isRegistered && viewMode === 'calendar' && !loading && (
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-emerald-900/10 space-y-3">
             <div className="flex justify-between items-center px-1">
               <h2 className="text-lg font-bold text-[#2C4A3E]">
@@ -914,7 +1201,7 @@ export default function App() {
           </div>
         )}
 
-        {viewMode === 'order' && !loading && (
+        {isRegistered && viewMode === 'order' && !loading && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 flex justify-between items-center">
               <div>
@@ -1049,7 +1336,7 @@ export default function App() {
           </div>
         )}
 
-        {viewMode === 'admin' && !loading && (
+        {isRegistered && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
               <h3 className="font-bold text-base text-[#2C4A3E]">👥 成員餘額總表</h3>
@@ -1163,7 +1450,7 @@ export default function App() {
       </main>
 
       {/* 底部導覽/操作列 */}
-      {viewMode === 'order' && (
+      {isRegistered && viewMode === 'order' && (
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg z-40">
           <div className="max-w-xl mx-auto flex justify-between items-center">
             <div>
