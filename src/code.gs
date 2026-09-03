@@ -6,6 +6,50 @@ const VALID_PICKUP_FLOORS = ["1樓", "9樓"];
 const UNREGISTERED_USER_MESSAGE = "此 LINE 帳號尚未註冊，請聯絡管理員。";
 const LINE_PROFILE_URL = "https://api.line.me/v2/profile";
 
+const ROLE_PERMISSIONS = {
+  User: {
+    orderOwn: true,
+    editOwnOrder: true,
+    cancelOwnOrder: true,
+    viewOwnBalance: true,
+    viewOwnTransactions: true
+  },
+  ProxyAdmin: {
+    orderOwn: true,
+    editOwnOrder: true,
+    cancelOwnOrder: true,
+    viewOwnBalance: true,
+    viewOwnTransactions: true,
+    viewAdminOrderSummary: true,
+    viewAllOrders: true,
+    viewOrderStatistics: true,
+    viewMemberBalances: true
+  },
+  Admin: {
+    orderOwn: true,
+    editOwnOrder: true,
+    cancelOwnOrder: true,
+    viewOwnBalance: true,
+    viewOwnTransactions: true,
+    viewAdminOrderSummary: true,
+    viewAllOrders: true,
+    viewOrderStatistics: true,
+    viewMemberBalances: true,
+    viewMemberTransactions: true,
+    topupMember: true,
+    manageCalendar: true,
+    manageMenu: true,
+    manageUsers: true,
+    manageRoles: true,
+    viewAsUser: true
+  }
+};
+
+function hasPermission(role, permission) {
+  const rolePermissions = ROLE_PERMISSIONS[String(role || 'User')] || ROLE_PERMISSIONS.User;
+  return rolePermissions[permission] === true;
+}
+
 function identityError(code) {
   return { success: false, code: code, message: code };
 }
@@ -68,7 +112,7 @@ function isValidPickupFloor(floor) {
 
 function isAdminUser(userId) {
   const user = getRegisteredUser(userId);
-  return Boolean(user && user.role === 'Admin');
+  return Boolean(user && hasPermission(user.role, 'manageRoles'));
 }
 
 function toPublicUser(user) {
@@ -141,6 +185,16 @@ function getLineProfile(accessToken) {
     userId: userId,
     displayName: displayName
   };
+}
+
+function getAuthenticatedUser(accessToken) {
+  const profile = getLineProfile(accessToken);
+  if (!profile.success) return profile;
+
+  const user = getRegisteredUser(profile.userId);
+  if (!user) return { success: false, message: UNREGISTERED_USER_MESSAGE };
+
+  return { success: true, user: user };
 }
 
 function normalizeOrderDate(rawDate) {
@@ -252,9 +306,9 @@ function doPost(e) {
     const action = data.action;
 
     if (action === 'submitOrder') {
-      return jsonResponse(submitOrder(data));
+      return jsonResponse(submitOrderForAccessToken(data));
     } else if (action === 'cancelOrder') {
-      return jsonResponse(cancelOrder(data));
+      return jsonResponse(cancelOrderForAccessToken(data));
     } else if (action === 'getUserInfo') {
       return jsonResponse(getUserInfo(data.accessToken));
     } else if (action === 'registerUser') {
@@ -264,13 +318,15 @@ function doPost(e) {
     } else if (action === 'getBalanceHistoryByMonth') {
       return jsonResponse(getBalanceHistoryByMonthForAccessToken(data));
     } else if (action === 'assignProxy') {
-      return jsonResponse(assignProxy(data.userId, data.targetUserId, data.newRole));
+      return jsonResponse(assignProxyForAccessToken(data));
     } else if (action === 'topUpBalance') {
-      return jsonResponse(topUpBalance(data.adminUserId, data.targetUserId, data.amount, data.note));
+      return jsonResponse(topUpBalanceForAccessToken(data));
     } else if (action === 'toggleLike') {
-      return jsonResponse(toggleLike(data));
+      return jsonResponse(toggleLikeForAccessToken(data));
     } else if (action === 'adminSetVendor') {
-      return jsonResponse(adminSetVendor(data));
+      return jsonResponse(adminSetVendorForAccessToken(data));
+    } else if (action === 'getMemberBalances') {
+      return jsonResponse(getMemberBalancesForAccessToken(data));
     }
     return jsonResponse(identityError("INVALID_ACTION"));
   } catch (err) {
@@ -288,11 +344,47 @@ function jsonResponse(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function submitOrderForAccessToken(data) {
+  const authenticated = getAuthenticatedUser(data && data.accessToken);
+  if (!authenticated.success) return authenticated;
+  return submitOrder(Object.assign({}, data, { userId: authenticated.user.userId }));
+}
+
+function cancelOrderForAccessToken(data) {
+  const authenticated = getAuthenticatedUser(data && data.accessToken);
+  if (!authenticated.success) return authenticated;
+  return cancelOrder(Object.assign({}, data, { userId: authenticated.user.userId }));
+}
+
+function toggleLikeForAccessToken(data) {
+  const authenticated = getAuthenticatedUser(data && data.accessToken);
+  if (!authenticated.success) return authenticated;
+  return toggleLike(Object.assign({}, data, { userId: authenticated.user.userId }));
+}
+
+function adminSetVendorForAccessToken(data) {
+  const authenticated = getAuthenticatedUser(data && data.accessToken);
+  if (!authenticated.success) return authenticated;
+  return adminSetVendor(Object.assign({}, data, { adminUserId: authenticated.user.userId }));
+}
+
+function assignProxyForAccessToken(data) {
+  const authenticated = getAuthenticatedUser(data && data.accessToken);
+  if (!authenticated.success) return authenticated;
+  return assignProxy(authenticated.user.userId, data && data.targetUserId, data && data.newRole);
+}
+
+function topUpBalanceForAccessToken(data) {
+  const authenticated = getAuthenticatedUser(data && data.accessToken);
+  if (!authenticated.success) return authenticated;
+  return topUpBalance(authenticated.user.userId, data && data.targetUserId, data && data.amount, data && data.note);
+}
+
 function getAdminSummaryForAccessToken(data) {
   try {
-    const profile = getLineProfile(data && data.accessToken);
-    if (!profile.success) return profile;
-    return getAdminSummary(profile.userId, data && data.targetDate);
+    const authenticated = getAuthenticatedUser(data && data.accessToken);
+    if (!authenticated.success) return authenticated;
+    return getAdminSummary(authenticated.user.userId, data && data.targetDate, data && data.includeMemberBalances);
   } catch (err) {
     return { success: false, message: "目前無法取得管理員訂單總覽" };
   }
@@ -300,11 +392,21 @@ function getAdminSummaryForAccessToken(data) {
 
 function getBalanceHistoryByMonthForAccessToken(data) {
   try {
-    const profile = getLineProfile(data && data.accessToken);
-    if (!profile.success) return profile;
-    return getBalanceHistoryByMonth(profile.userId, data && data.year, data && data.month);
+    const authenticated = getAuthenticatedUser(data && data.accessToken);
+    if (!authenticated.success) return authenticated;
+    return getBalanceHistoryByMonth(authenticated.user.userId, data && data.year, data && data.month);
   } catch (err) {
     return { success: false, message: "目前無法取得交易明細" };
+  }
+}
+
+function getMemberBalancesForAccessToken(data) {
+  try {
+    const authenticated = getAuthenticatedUser(data && data.accessToken);
+    if (!authenticated.success) return authenticated;
+    return getMemberBalances(authenticated.user.userId);
+  } catch (err) {
+    return { success: false, message: "目前無法取得成員餘額" };
   }
 }
 
@@ -588,7 +690,10 @@ function adminSetVendor(data) {
     const { adminUserId, dateStr, vendor } = data;
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    if (!isAdminUser(adminUserId)) return { success: false, message: "權限不足，僅 Admin 可設定" };
+    const operator = getRegisteredUser(adminUserId);
+    if (!operator || !hasPermission(operator.role, 'manageCalendar')) {
+      return { success: false, message: "權限不足，僅具備月曆管理權限的管理員可設定" };
+    }
 
     let settingsSheet = ss.getSheetByName('Settings');
     if (!settingsSheet) {
@@ -781,8 +886,8 @@ function getUserAllOrdersMap(userId) {
 function getAdminOrders(requestUserId) {
   const requester = getRegisteredUser(requestUserId);
   if (!requester) return { success: false, message: UNREGISTERED_USER_MESSAGE };
-  if (requester.role !== 'Admin') {
-    return { success: false, message: "權限不足：只有 Admin 可以查看全部訂單" };
+  if (!hasPermission(requester.role, 'viewAllOrders')) {
+    return { success: false, message: "權限不足：目前角色無法查看全部訂單" };
   }
 
   const init = getInitData();
@@ -1405,7 +1510,36 @@ function auditBalanceConsistency() {
     results: results
   };
 }
-function getAdminSummary(requestUserId, targetDateStr) {
+
+function getAllUserSummaries(userSheet) {
+  const userData = userSheet.getDataRange().getValues().slice(1);
+  return userData.map(row => ({
+    userId: row[0],
+    name: row[1],
+    floor: row[2],
+    balance: Number(row[3] || 0),
+    role: row[4] || "User"
+  }));
+}
+
+function getMemberBalances(requestUserId) {
+  const requester = getRegisteredUser(requestUserId);
+  if (!requester) return { success: false, message: UNREGISTERED_USER_MESSAGE };
+  if (!hasPermission(requester.role, 'viewMemberBalances')) {
+    return { success: false, message: "權限不足：目前角色無法查看成員餘額" };
+  }
+
+  const userSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(USERS_SHEET);
+  if (!userSheet) return { success: false, message: "尚未建立 Users 資料" };
+
+  return {
+    success: true,
+    requesterRole: requester.role,
+    members: getAllUserSummaries(userSheet)
+  };
+}
+
+function getAdminSummary(requestUserId, targetDateStr, includeMemberBalances) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const userSheet = ss.getSheetByName(USERS_SHEET);
   const orderSheet = ss.getSheetByName(ORDERS_SHEET);
@@ -1414,21 +1548,16 @@ function getAdminSummary(requestUserId, targetDateStr) {
 
   const requester = getRegisteredUser(requestUserId);
   if (!requester) return { success: false, message: UNREGISTERED_USER_MESSAGE };
-  if (requester.role !== "Admin") {
-    return { success: false, message: "權限不足：只有 Admin 可以查看訂單總覽" };
+  if (!hasPermission(requester.role, 'viewAdminOrderSummary')) {
+    return { success: false, message: "權限不足：目前角色無法查看訂單總覽" };
   }
 
-  const userData = userSheet.getDataRange().getValues().slice(1);
-  const allUsers = userData.map(row => ({
-    userId: row[0],
-    name: row[1],
-    floor: row[2],
-    balance: Number(row[3] || 0),
-    role: row[4] || "User"
-  }));
-
-  const isRequesterAdmin = requester.role === "Admin";
-  const visibleUsers = isRequesterAdmin ? allUsers : (requester ? [requester] : []);
+  const shouldIncludeMemberBalances = includeMemberBalances === undefined || includeMemberBalances === null
+    ? true
+    : includeMemberBalances === true || String(includeMemberBalances).toLowerCase() === 'true';
+  const visibleUsers = shouldIncludeMemberBalances && hasPermission(requester.role, 'viewMemberBalances')
+    ? getAllUserSummaries(userSheet)
+    : [];
 
   const todayStr = targetDateStr === undefined || targetDateStr === null || String(targetDateStr).trim() === ''
     ? Utilities.formatDate(new Date(), TIMEZONE, "yyyy-MM-dd")
@@ -1525,8 +1654,8 @@ function topUpBalance(adminUserId, targetUserId, amount, note) {
 
     const operator = getRegisteredUser(adminUserId);
     if (!operator) return { success: false, message: UNREGISTERED_USER_MESSAGE };
-    if (operator.role !== 'Admin') {
-      return { success: false, message: "權限不足：只有最高管理者 (Admin) 可以進行人工儲值" };
+    if (!hasPermission(operator.role, 'topupMember')) {
+      return { success: false, message: "權限不足：目前角色無法進行人工儲值" };
     }
 
     const targetUser = getRegisteredUser(targetUserId);

@@ -95,6 +95,18 @@ class MockSheet {
   }
 }
 
+class TrackingSheet extends MockSheet {
+  constructor(rows) {
+    super(rows);
+    this.dataRangeReads = 0;
+  }
+
+  getDataRange() {
+    this.dataRangeReads += 1;
+    return super.getDataRange();
+  }
+}
+
 class MockSpreadsheet {
   constructor(sheets) {
     this.sheets = sheets;
@@ -178,6 +190,12 @@ function usersSheet() {
     ['admin-id', 'Admin User', '9樓', 100, 'Admin'],
     ['user-id', 'Leo Wu Leo', '9樓', -80, 'User']
   ]);
+}
+
+function usersWithProxySheet() {
+  const sheet = usersSheet();
+  sheet.rows.push(['proxy-id', 'Proxy Admin', '1樓', -20, 'ProxyAdmin']);
+  return sheet;
 }
 
 test('getUserInfo sends the accessToken to the LINE Profile endpoint', () => {
@@ -902,12 +920,213 @@ test('admin summary is restricted to Admin and its token API ignores forged oper
         action: 'getAdminSummary',
         accessToken: 'access-token',
         userId: 'admin-id',
+        role: 'Admin',
         targetDate: '2026-09-09'
       })
     }
   });
 
   assert.equal(JSON.parse(output.text).success, false);
+});
+
+test('central permission model keeps ProxyAdmin operational read access without finance or identity access', () => {
+  const gas = loadGas(new MockSpreadsheet({ Users: usersWithProxySheet() }));
+
+  assert.equal(gas.hasPermission('User', 'orderOwn'), true);
+  assert.equal(gas.hasPermission('User', 'viewMemberBalances'), false);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'viewAdminOrderSummary'), true);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'viewAllOrders'), true);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'viewOrderStatistics'), true);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'viewMemberBalances'), true);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'topupMember'), false);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'manageUsers'), false);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'manageRoles'), false);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'viewAsUser'), false);
+  assert.equal(gas.hasPermission('Admin', 'viewAsUser'), true);
+});
+
+test('ProxyAdmin can read admin summary and member balances but cannot top up', () => {
+  const spreadsheet = orderSpreadsheet();
+  spreadsheet.sheets.Users = usersWithProxySheet();
+  const gas = loadGas(spreadsheet);
+
+  const summary = gas.getAdminSummary('proxy-id', '2026-09-10', false);
+  const balances = gas.getMemberBalances('proxy-id');
+  const topup = gas.topUpBalance('proxy-id', 'user-id', 100, 'forged finance attempt');
+
+  assert.equal(summary.success, true);
+  assert.equal(summary.requesterRole, 'ProxyAdmin');
+  assert.deepEqual(JSON.parse(JSON.stringify(summary.usersSummary)), []);
+  assert.equal(balances.success, true);
+  assert.equal(balances.members.length, 3);
+  assert.equal(topup.success, false);
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 4), -80);
+});
+
+test('includeMemberBalances false avoids the member-list Users read while legacy callers remain compatible', () => {
+  const noBalancesUsers = new TrackingSheet(usersSheet().rows);
+  const noBalancesSpreadsheet = orderSpreadsheet();
+  noBalancesSpreadsheet.sheets.Users = noBalancesUsers;
+  const noBalancesGas = loadGas(noBalancesSpreadsheet);
+
+  const withoutBalances = noBalancesGas.getAdminSummary('admin-id', '2026-09-10', false);
+
+  assert.equal(withoutBalances.success, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(withoutBalances.usersSummary)), []);
+  assert.equal(noBalancesUsers.dataRangeReads, 1);
+
+  const legacyUsers = new TrackingSheet(usersSheet().rows);
+  const legacySpreadsheet = orderSpreadsheet();
+  legacySpreadsheet.sheets.Users = legacyUsers;
+  const legacyGas = loadGas(legacySpreadsheet);
+  const legacySummary = legacyGas.getAdminSummary('admin-id', '2026-09-10');
+
+  assert.equal(legacySummary.success, true);
+  assert.equal(legacySummary.usersSummary.length, 2);
+  assert.equal(legacyUsers.dataRangeReads, 2);
+});
+
+test('token-authenticated admin APIs ignore forged operator ids', () => {
+  const spreadsheet = orderSpreadsheet();
+  const gas = loadGas(spreadsheet, { userId: 'user-id', displayName: 'Leo Wu Leo' });
+
+  const topupOutput = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'topUpBalance',
+        accessToken: 'access-token',
+        adminUserId: 'admin-id',
+        targetUserId: 'user-id',
+        amount: 100,
+        note: 'forged operator'
+      })
+    }
+  });
+  const vendorOutput = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'adminSetVendor',
+        accessToken: 'access-token',
+        adminUserId: 'admin-id',
+        dateStr: '2026-09-10',
+        vendor: '禾拾'
+      })
+    }
+  });
+  const roleOutput = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'assignProxy',
+        accessToken: 'access-token',
+        userId: 'admin-id',
+        targetUserId: 'user-id',
+        newRole: 'ProxyAdmin'
+      })
+    }
+  });
+
+  assert.equal(JSON.parse(topupOutput.text).success, false);
+  assert.equal(JSON.parse(vendorOutput.text).success, false);
+  assert.equal(JSON.parse(roleOutput.text).success, false);
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 5), 'User');
+  assert.equal(spreadsheet.sheets.Settings.rows[1][1], '蔡老師');
+});
+
+test('token-authenticated admin operator is accepted even when client operator id is forged', () => {
+  const spreadsheet = orderSpreadsheet();
+  const gas = loadGas(spreadsheet, { userId: 'admin-id', displayName: 'Admin User' });
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'topUpBalance',
+        accessToken: 'access-token',
+        adminUserId: 'user-id',
+        targetUserId: 'user-id',
+        amount: 100,
+        note: 'token wins'
+      })
+    }
+  });
+
+  const result = JSON.parse(output.text);
+  assert.equal(result.success, true);
+  assert.equal(result.newBalance, 20);
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 4), 20);
+});
+
+test('member balance API is permission-gated by the authenticated LINE identity', () => {
+  const spreadsheet = new MockSpreadsheet({ Users: usersWithProxySheet() });
+  const gas = loadGas(spreadsheet, { userId: 'user-id', displayName: 'Leo Wu Leo' });
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'getMemberBalances',
+        accessToken: 'access-token',
+        userId: 'admin-id'
+      })
+    }
+  });
+
+  assert.equal(JSON.parse(output.text).success, false);
+});
+
+test('token-authenticated order writes ignore forged user ids', () => {
+  const spreadsheet = orderSpreadsheet();
+  const gas = loadGas(spreadsheet, { userId: 'user-id', displayName: 'Leo Wu Leo' });
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'submitOrder',
+        accessToken: 'access-token',
+        userId: 'admin-id',
+        pickup_floor: '1樓',
+        target_date: '2026-09-10',
+        items: [{ item_id: 'A01', quantity: 1 }],
+        note: ''
+      })
+    }
+  });
+  const result = JSON.parse(output.text);
+
+  assert.equal(result.success, true);
+  assert.equal(spreadsheet.sheets.Orders.rows[1][13], 'user-id');
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 4), -160);
+});
+
+test('frontend separates auth/view-as identity, guards writes, and keeps date changes off member balances', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const dateHandler = appSource.match(/const handleAdminDateChange = \(dateStr\) => \{[\s\S]*?\n  \};/);
+  const exitViewAsHandler = appSource.match(/const handleExitViewAs = \(\) => \{[\s\S]*?\n  \};/);
+
+  assert.match(appSource, /const ROLE_PERMISSIONS/);
+  assert.match(appSource, /const hasPermission/);
+  assert.match(appSource, /const \[authUser, setAuthUser\]/);
+  assert.match(appSource, /const \[viewAsUser, setViewAsUser\]/);
+  assert.match(appSource, /const effectiveUser = viewAsUser \|\| authUser/);
+  assert.match(appSource, /const effectiveRole = effectiveUser\?\.role/);
+  assert.match(appSource, /showViewAsModal/);
+  assert.match(appSource, /返回 Admin/);
+  assert.match(appSource, /action: 'getMemberBalances'/);
+  assert.match(appSource, /includeMemberBalances: false/);
+  assert.doesNotMatch(appSource, /adminSummary\.usersSummary\.map/);
+  assert.match(appSource, /const guardWrite = async/);
+  assert.match(appSource, /guardWrite\('愛心投票'\)/);
+  assert.match(appSource, /guardWrite\('月曆設定'\)/);
+  assert.match(appSource, /guardWrite\('訂單送出'\)/);
+  assert.match(appSource, /guardWrite\('取消訂單'\)/);
+  assert.match(appSource, /guardWrite\('儲值'\)/);
+  assert.ok(dateHandler);
+  assert.doesNotMatch(dateHandler[0], /loadMemberBalances/);
+  assert.ok(exitViewAsHandler);
+  assert.match(exitViewAsHandler[0], /setViewAsUser\(null\)/);
+  assert.match(exitViewAsHandler[0], /authUser\?\.role/);
+
+  const selectViewAsHandler = appSource.match(/const handleSelectViewAs = \(user\) => \{[\s\S]*?\n  \};/);
+  assert.ok(selectViewAsHandler);
+  assert.doesNotMatch(selectViewAsHandler[0], /setAuthUser|setLineUserId/);
 });
 
 test('month navigation crosses calendar year boundaries', async () => {

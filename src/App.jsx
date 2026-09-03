@@ -16,6 +16,47 @@ const AUTH_STATES = Object.freeze({
   REGISTERED: 'REGISTERED'
 });
 
+const ROLE_PERMISSIONS = Object.freeze({
+  User: Object.freeze({
+    orderOwn: true,
+    editOwnOrder: true,
+    cancelOwnOrder: true,
+    viewOwnBalance: true,
+    viewOwnTransactions: true
+  }),
+  ProxyAdmin: Object.freeze({
+    orderOwn: true,
+    editOwnOrder: true,
+    cancelOwnOrder: true,
+    viewOwnBalance: true,
+    viewOwnTransactions: true,
+    viewAdminOrderSummary: true,
+    viewAllOrders: true,
+    viewOrderStatistics: true,
+    viewMemberBalances: true
+  }),
+  Admin: Object.freeze({
+    orderOwn: true,
+    editOwnOrder: true,
+    cancelOwnOrder: true,
+    viewOwnBalance: true,
+    viewOwnTransactions: true,
+    viewAdminOrderSummary: true,
+    viewAllOrders: true,
+    viewOrderStatistics: true,
+    viewMemberBalances: true,
+    viewMemberTransactions: true,
+    topupMember: true,
+    manageCalendar: true,
+    manageMenu: true,
+    manageUsers: true,
+    manageRoles: true,
+    viewAsUser: true
+  })
+});
+
+const hasPermission = (role, permission) => Boolean(ROLE_PERMISSIONS[role]?.[permission]);
+
 const redactAuthSecrets = (value) => String(value || 'Unknown error')
   .replace(/(access[_-]?token|id[_-]?token|authorization)\s*[:=]?\s*[^\s,;]+/gi, '$1=[REDACTED]')
   .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]');
@@ -80,7 +121,8 @@ export default function App() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const [lineUserId, setLineUserId] = useState('');
-  const [userRole, setUserRole] = useState('User');
+  const [authUser, setAuthUser] = useState(null);
+  const [viewAsUser, setViewAsUser] = useState(null);
   const [userBalance, setUserBalance] = useState(0);
   const [defaultFloor, setDefaultFloor] = useState('');
   const [authState, setAuthState] = useState(AUTH_STATES.AUTH_LOADING);
@@ -119,6 +161,13 @@ export default function App() {
   const [adminSummaryLoading, setAdminSummaryLoading] = useState(false);
   const [adminSummaryError, setAdminSummaryError] = useState('');
   const adminSummaryRequestRef = useRef(0);
+  const [adminSection, setAdminSection] = useState('orders');
+  const [memberBalances, setMemberBalances] = useState([]);
+  const [memberBalancesLoading, setMemberBalancesLoading] = useState(false);
+  const [memberBalancesError, setMemberBalancesError] = useState('');
+  const [memberBalancesLoaded, setMemberBalancesLoaded] = useState(false);
+  const memberBalancesRequestRef = useRef(0);
+  const [showViewAsModal, setShowViewAsModal] = useState(false);
 
   // 餘額歷史彈窗狀態
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -151,8 +200,10 @@ export default function App() {
   const clearIdentityData = () => {
     adminSummaryRequestRef.current += 1;
     historyRequestRef.current += 1;
+    memberBalancesRequestRef.current += 1;
     setLineUserId('');
-    setUserRole('User');
+    setAuthUser(null);
+    setViewAsUser(null);
     setUserBalance(0);
     setDefaultFloor('');
     setRegistrationDisplayName('');
@@ -181,6 +232,12 @@ export default function App() {
     });
     setAdminSummaryLoading(false);
     setAdminSummaryError('');
+    setAdminSection('orders');
+    setMemberBalances([]);
+    setMemberBalancesLoading(false);
+    setMemberBalancesError('');
+    setMemberBalancesLoaded(false);
+    setShowViewAsModal(false);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
@@ -265,7 +322,7 @@ export default function App() {
         logAuthDiagnostic('USER_REGISTERED=true');
         logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
         setLineUserId(canonicalUserId);
-        if (identity.user.role === 'Admin') {
+        if (hasPermission(identity.user.role, 'viewAdminOrderSummary')) {
           prefetchAdminSummary(canonicalUserId);
         }
         fetchUserAllOrders(canonicalUserId);
@@ -321,7 +378,8 @@ export default function App() {
         body: JSON.stringify({
           action: 'getAdminSummary',
           accessToken,
-          targetDate
+          targetDate,
+          includeMemberBalances: false
         })
       });
       const data = await res.json();
@@ -334,7 +392,7 @@ export default function App() {
         setAdminSummary({
           usersSummary: data.usersSummary || [],
           todayOrders: nextOrders,
-          requesterRole: data.requesterRole || userRole,
+          requesterRole: data.requesterRole || authUser?.role || 'User',
           targetDate: data.targetDate || targetDate,
           totalItems: data.totalItems ?? fallbackTotalItems,
           totalAmount: data.totalAmount ?? fallbackTotalAmount,
@@ -354,9 +412,50 @@ export default function App() {
   };
 
   const prefetchAdminSummary = async (uId) => {
-    const targetUserId = uId || lineUserId;
+    const targetUserId = uId || authUserId;
     if (!targetUserId) return;
     await loadAdminSummary(selectedOrderDate, targetUserId, false);
+  };
+
+  const loadMemberBalances = async (force = false) => {
+    const visibleRole = viewAsUser?.role || authUser?.role;
+    if (!authUser?.userId || !hasPermission(visibleRole, 'viewMemberBalances')) return;
+    if (!force && memberBalancesLoaded) return;
+
+    const requestId = ++memberBalancesRequestRef.current;
+    setMemberBalancesLoading(true);
+    setMemberBalancesError('');
+
+    try {
+      const accessToken = liff.getAccessToken();
+      if (!accessToken) {
+        setMemberBalancesError('目前無法驗證身份，請重新登入後再試。');
+        return;
+      }
+      const res = await fetch(GAS_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({
+          action: 'getMemberBalances',
+          accessToken
+        })
+      });
+      const data = await res.json();
+      if (requestId !== memberBalancesRequestRef.current) return;
+
+      if (data.success) {
+        setMemberBalances(data.members || data.users || []);
+        setMemberBalancesLoaded(true);
+      } else {
+        setMemberBalancesError('目前無法取得成員餘額，請稍後再試。');
+      }
+    } catch {
+      if (requestId === memberBalancesRequestRef.current) {
+        setMemberBalancesError('目前無法取得成員餘額，請稍後再試。');
+      }
+    } finally {
+      if (requestId === memberBalancesRequestRef.current) setMemberBalancesLoading(false);
+    }
   };
 
   const fetchUserInfo = async (accessToken) => {
@@ -378,12 +477,22 @@ export default function App() {
       }
       const data = await res.json();
       if (data.success && data.registered && data.user) {
-        setLineUserId(data.user.userId);
-        setUserBalance(data.user.balance || 0);
-        setUserRole(data.user.role || 'User');
-        setName(data.user.name || '');
-        setDefaultFloor(data.user.defaultFloor || data.user.floor || '');
-        setFloor(data.user.defaultFloor || data.user.floor || '');
+        const nextUser = {
+          ...data.user,
+          userId: data.user.userId,
+          name: data.user.name || '',
+          floor: data.user.defaultFloor || data.user.floor || '',
+          defaultFloor: data.user.defaultFloor || data.user.floor || '',
+          balance: Number(data.user.balance || 0),
+          role: data.user.role || 'User'
+        };
+        setAuthUser(nextUser);
+        setViewAsUser(null);
+        setLineUserId(nextUser.userId);
+        setUserBalance(nextUser.balance);
+        setName(nextUser.name);
+        setDefaultFloor(nextUser.defaultFloor);
+        setFloor(nextUser.defaultFloor);
         return data;
       }
 
@@ -391,9 +500,10 @@ export default function App() {
         setLineUserId(data.lineUserId || '');
         setRegistrationDisplayName(data.displayName || '');
         setRegistrationFloor('1樓');
+        setAuthUser(null);
+        setViewAsUser(null);
         setName('');
         setDefaultFloor('');
-        setUserRole('User');
         setUserBalance(0);
         return data;
       }
@@ -457,7 +567,7 @@ export default function App() {
       logAuthDiagnostic('USER_REGISTERED=true');
       logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
       setLineUserId(canonicalUserId);
-      if (identity.user.role === 'Admin') {
+      if (hasPermission(identity.user.role, 'viewAdminOrderSummary')) {
         prefetchAdminSummary(canonicalUserId);
       }
       fetchUserAllOrders(canonicalUserId);
@@ -472,7 +582,7 @@ export default function App() {
   };
 
   const fetchCalendarEvents = async (uId) => {
-    const targetId = uId || lineUserId;
+    const targetId = uId || authUserId;
     if (!targetId) return;
     try {
       const res = await fetch(`${GAS_API_URL}?action=getCalendarEvents&userId=${targetId}&t=${Date.now()}`);
@@ -499,7 +609,7 @@ export default function App() {
   };
 
   const loadBalanceHistory = async (year, month) => {
-    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
+    if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
 
     const requestId = ++historyRequestRef.current;
     setHistoryLoading(true);
@@ -547,7 +657,7 @@ export default function App() {
   };
 
   const fetchBalanceHistory = () => {
-    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
+    if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
     const currentMonth = getTaipeiYearMonth();
     setSelectedYear(currentMonth.year);
     setSelectedMonth(currentMonth.month);
@@ -563,12 +673,23 @@ export default function App() {
     loadBalanceHistory(nextMonth.year, nextMonth.month);
   };
 
+  const guardWrite = async (operation) => {
+    if (!viewAsUser) return true;
+    await showPopup({
+      icon: 'info',
+      title: '目前是檢視模式',
+      text: `${operation}已停用，請先按「返回 Admin」再操作。`
+    });
+    return false;
+  };
+
   const handleToggleLike = async (e, dateStr) => {
     e.stopPropagation(); // 防止觸發進入點餐頁面
-    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) {
+    if (authState !== AUTH_STATES.REGISTERED || !authUserId) {
       await showPopup({ icon: 'warning', title: '需要已註冊 LINE 身份', text: authError || '請先完成 LINE 身份驗證' });
       return;
     }
+    if (!(await guardWrite('愛心投票'))) return;
 
     // 樂觀更新前端 UI
     setCalendarEvents(prev => {
@@ -592,7 +713,8 @@ export default function App() {
         body: JSON.stringify({
           action: 'toggleLike',
           date: dateStr,
-          userId: lineUserId
+          accessToken: liff.getAccessToken(),
+          userId: authUserId
         })
       });
       const data = await res.json();
@@ -606,14 +728,14 @@ export default function App() {
   };
 
   const handleSelectDate = async (dateStr) => {
-    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) {
+    if (authState !== AUTH_STATES.REGISTERED || !authUserId) {
       await showPopup({ icon: 'warning', title: '無法訂餐', text: authError || '目前無法驗證 LINE 身份' });
       return;
     }
 
     const event = calendarEvents[dateStr];
 
-    if (adminManageMode && (userRole === 'Admin' || adminSummary.requesterRole === 'Admin')) {
+    if (adminManageMode && can('manageCalendar')) {
       setSelectedAdminDate(dateStr);
       setAdminVendorChoice(getConfiguredVendor(event));
       return;
@@ -633,7 +755,7 @@ export default function App() {
     setHasExistingOrder(false);
 
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getOrderPageData&targetDate=${encodeURIComponent(dateStr)}&userId=${encodeURIComponent(lineUserId)}&t=${Date.now()}`);
+      const res = await fetch(`${GAS_API_URL}?action=getOrderPageData&targetDate=${encodeURIComponent(dateStr)}&userId=${encodeURIComponent(authUserId)}&t=${Date.now()}`);
       const data = await res.json();
       if (data.success && data.myOrder && Array.isArray(data.myOrder.items)) {
         const orderMap = {};
@@ -664,6 +786,7 @@ export default function App() {
 
   const saveAdminVendor = async (dateStr, vendor) => {
     if (!dateStr) return;
+    if (!(await guardWrite('月曆設定'))) return;
     setLoading(true);
     try {
       const res = await fetch(GAS_API_URL, {
@@ -671,7 +794,8 @@ export default function App() {
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'adminSetVendor',
-          adminUserId: lineUserId,
+          accessToken: liff.getAccessToken(),
+          adminUserId: authUserId,
           dateStr,
           vendor
         })
@@ -694,6 +818,7 @@ export default function App() {
   const handleAdminSaveVendor = () => saveAdminVendor(selectedAdminDate, adminVendorChoice);
 
   const handleToggleAdminManage = () => {
+    if (!can('manageCalendar') || viewAsUser) return;
     const nextMode = !adminManageMode;
     setAdminManageMode(nextMode);
     if (nextMode) {
@@ -712,7 +837,8 @@ export default function App() {
   const handleSpecialAdminSaveVendor = () => saveAdminVendor(specialAdminDate, specialAdminVendorChoice);
 
   const handleSubmit = async () => {
-    if (loading || authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
+    if (loading || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    if (!(await guardWrite('訂單送出'))) return;
     if (isExpired) {
       await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
       return;
@@ -742,7 +868,8 @@ export default function App() {
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'submitOrder',
-          userId: lineUserId,
+          accessToken: liff.getAccessToken(),
+          userId: authUserId,
           pickup_floor: floor,
           target_date: selectedDate,
           items,
@@ -758,7 +885,7 @@ export default function App() {
         }
         setActiveOrderId(data.orderId || '');
         fetchCalendarEvents();
-        fetchUserAllOrders(lineUserId);
+        fetchUserAllOrders(authUserId);
       } else {
         setMessage("❌ " + data.message);
       }
@@ -770,7 +897,8 @@ export default function App() {
   };
 
   const handleCancelOrder = async () => {
-    if (loading || authState !== AUTH_STATES.REGISTERED || !activeOrderId || !lineUserId) return;
+    if (loading || authState !== AUTH_STATES.REGISTERED || !activeOrderId || !authUserId) return;
+    if (!(await guardWrite('取消訂單'))) return;
     if (isExpired) {
       await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
       return;
@@ -796,7 +924,8 @@ export default function App() {
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'cancelOrder',
-          userId: lineUserId,
+          accessToken: liff.getAccessToken(),
+          userId: authUserId,
           orderId: activeOrderId,
           date: selectedDate
         })
@@ -811,7 +940,7 @@ export default function App() {
           setUserBalance(data.newBalance);
         }
         fetchCalendarEvents();
-        fetchUserAllOrders(lineUserId);
+        fetchUserAllOrders(authUserId);
       } else {
         setMessage("❌ " + (data.message || "取消失敗"));
       }
@@ -832,15 +961,75 @@ export default function App() {
     setViewMode('calendar');
   };
 
-  const fetchAdminSummary = () => {
-    if (authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
-    loadAdminSummary(selectedOrderDate, lineUserId, true);
+  const handleAdminDateChange = (dateStr) => {
+    if (!dateStr || authState !== AUTH_STATES.REGISTERED || !authUserId || !can('viewAdminOrderSummary')) return;
+    setSelectedOrderDate(dateStr);
+    loadAdminSummary(dateStr, authUserId, true);
   };
 
-  const handleAdminDateChange = (dateStr) => {
-    if (!dateStr || authState !== AUTH_STATES.REGISTERED || !lineUserId) return;
-    setSelectedOrderDate(dateStr);
-    loadAdminSummary(dateStr, lineUserId, true);
+  const handleAdminSectionChange = (section) => {
+    if (section === 'orders') {
+      if (!can('viewAdminOrderSummary')) return;
+      setAdminSection('orders');
+      loadAdminSummary(selectedOrderDate, authUserId, true);
+      return;
+    }
+
+    if (section === 'balances') {
+      if (!can('viewMemberBalances')) return;
+      setAdminSection('balances');
+      setViewMode('admin');
+      loadMemberBalances();
+    }
+  };
+
+  const openAdminCalendar = () => {
+    if (!can('manageCalendar') || viewAsUser) return;
+    setAdminSection('calendar');
+    setViewMode('calendar');
+    setAdminManageMode(true);
+    const today = formatDateInput(new Date());
+    setSpecialAdminDate(today);
+    setSpecialAdminVendorChoice(getConfiguredVendor(calendarEvents[today]));
+  };
+
+  const handleOpenViewAs = async () => {
+    if (!canAuth('viewAsUser') || viewAsUser) return;
+    setShowViewAsModal(true);
+    await loadMemberBalances();
+  };
+
+  const handleSelectViewAs = (user) => {
+    if (!user || !canAuth('viewAsUser')) return;
+    setViewAsUser(user);
+    setShowViewAsModal(false);
+    setAdminManageMode(false);
+    setSelectedAdminDate(null);
+    setSelectedTopupUser(null);
+    if (hasPermission(user.role, 'viewAdminOrderSummary')) {
+      setAdminSection('orders');
+      setViewMode('admin');
+      loadAdminSummary(selectedOrderDate, authUserId, true);
+    } else {
+      setAdminSection('orders');
+      setViewMode('calendar');
+    }
+  };
+
+  const handleExitViewAs = () => {
+    if (!viewAsUser) return;
+    setViewAsUser(null);
+    setShowViewAsModal(false);
+    setSelectedTopupUser(null);
+    setAdminManageMode(false);
+    setSelectedAdminDate(null);
+    setAdminSection('orders');
+    if (hasPermission(authUser?.role, 'viewAdminOrderSummary')) {
+      setViewMode('admin');
+      loadAdminSummary(selectedOrderDate, authUserId, true);
+    } else {
+      setViewMode('calendar');
+    }
   };
 
   const handleOpenTopupModal = (user) => {
@@ -850,7 +1039,8 @@ export default function App() {
   };
 
   const handleTopupSubmit = async () => {
-    if (!selectedTopupUser || topupLoading || !isAdminUser) return;
+    if (!selectedTopupUser || topupLoading || !can('topupMember')) return;
+    if (!(await guardWrite('儲值'))) return;
 
     const amountText = String(topupAmount).trim();
     const amount = Number(amountText);
@@ -866,7 +1056,8 @@ export default function App() {
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({
           action: 'topUpBalance',
-          adminUserId: lineUserId,
+          accessToken: liff.getAccessToken(),
+          adminUserId: authUserId,
           targetUserId: selectedTopupUser.userId,
           amount,
           note: topupNote.trim()
@@ -878,20 +1069,19 @@ export default function App() {
         return;
       }
 
-      setAdminSummary(prev => ({
-        ...prev,
-        usersSummary: prev.usersSummary.map(user => (
-          user.userId === selectedTopupUser.userId
-            ? { ...user, balance: data.newBalance }
-            : user
-        ))
-      }));
-      if (selectedTopupUser.userId === lineUserId) {
+      setMemberBalances(prev => prev.map(user => (
+        user.userId === selectedTopupUser.userId
+          ? { ...user, balance: data.newBalance }
+          : user
+      )));
+    if (selectedTopupUser.userId === authUserId) {
         setUserBalance(data.newBalance);
+        setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
       }
       setSelectedTopupUser(null);
       await showPopup({ icon: 'success', title: '儲值成功', text: `${selectedTopupUser.name} 的餘額已更新。` });
-      prefetchAdminSummary(lineUserId);
+      setMemberBalancesLoaded(false);
+      await loadMemberBalances(true);
     } catch (err) {
       await showPopup({ icon: 'error', title: '連線失敗', text: '目前無法完成儲值，請稍後再試。' });
     } finally {
@@ -991,7 +1181,8 @@ export default function App() {
             {/* 愛心投票按鈕 */}
             <button
               onClick={(e) => handleToggleLike(e, dateStr)}
-              className="flex items-center gap-0.5 text-xs focus:outline-none hover:scale-110 transition-transform"
+              disabled={isViewAsMode}
+              className="flex items-center gap-0.5 text-xs focus:outline-none hover:scale-110 transition-transform disabled:cursor-not-allowed disabled:opacity-50"
               title="點愛心開蔡老師團"
             >
               <span>{event?.isUserLiked ? '❤️' : '🤍'}</span>
@@ -1115,7 +1306,13 @@ export default function App() {
   const aggregatedOrders = getAggregatedOrders();
   const isRegistered = authState === AUTH_STATES.REGISTERED;
   const isUnregistered = authState === AUTH_STATES.UNREGISTERED;
-  const isAdminUser = isRegistered && (userRole === 'Admin' || adminSummary.requesterRole === 'Admin');
+  const authUserId = authUser?.userId || lineUserId;
+  const authRole = authUser?.role || 'User';
+  const effectiveUser = viewAsUser || authUser;
+  const effectiveRole = effectiveUser?.role || 'User';
+  const isViewAsMode = Boolean(viewAsUser);
+  const can = (permission) => isRegistered && hasPermission(effectiveRole, permission);
+  const canAuth = (permission) => isRegistered && hasPermission(authRole, permission);
   const authStateLabel = {
     [AUTH_STATES.AUTH_LOADING]: '身份驗證中',
     [AUTH_STATES.AUTH_REQUIRED]: '請登入 LINE',
@@ -1123,6 +1320,9 @@ export default function App() {
     [AUTH_STATES.UNREGISTERED]: '尚未註冊',
     [AUTH_STATES.REGISTERED]: '身份已驗證'
   }[authState];
+  const displayName = effectiveUser?.name || name || registrationDisplayName || authStateLabel;
+  const displayFloor = effectiveUser?.defaultFloor || effectiveUser?.floor || defaultFloor;
+  const displayBalance = effectiveUser?.balance ?? userBalance;
   const weekendEvents = renderWeekendEvents();
 
   return (
@@ -1132,43 +1332,76 @@ export default function App() {
           <div>
             <h1 className="text-xl font-bold">蔬食便當預訂系統</h1>
             <div className="mt-1 text-xs text-emerald-100 flex flex-wrap items-center gap-1.5">
-              <span>👤 {name || registrationDisplayName || authStateLabel}</span>
-              {name && isRegistered && <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">{userRole}</span>}
-              {defaultFloor && <span className="text-emerald-200">預設領取：{defaultFloor}</span>}
+              <span>👤 {displayName}</span>
+              {effectiveUser && isRegistered && <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">{effectiveRole}</span>}
+              {displayFloor && <span className="text-emerald-200">預設領取：{displayFloor}</span>}
             </div>
-            {isRegistered && (
+            {isRegistered && !isViewAsMode && can('viewOwnBalance') && (
               <button
                 onClick={fetchBalanceHistory}
                 className="text-xs text-emerald-200 hover:underline flex items-center gap-1 mt-0.5 focus:outline-none"
               >
                 儲值餘額：
-                <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${userBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
-                  {formatBalanceAmount(userBalance)}
+                <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${displayBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
+                  {formatBalanceAmount(displayBalance)}
                 </span>
               </button>
             )}
+            {isViewAsMode && (
+              <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                預覽餘額：{formatBalanceAmount(displayBalance)}（僅供介面預覽）
+              </div>
+            )}
+            {isViewAsMode && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border-2 border-amber-300 bg-amber-100 px-3 py-2 text-xs font-bold text-amber-950">
+                <span>👁 正以 {viewAsUser.name}（{viewAsUser.role}）身分檢視</span>
+                <button
+                  type="button"
+                  onClick={handleExitViewAs}
+                  className="rounded-lg bg-[#2C4A3E] px-2.5 py-1.5 text-white shadow-sm"
+                >
+                  返回 Admin
+                </button>
+              </div>
+            )}
           </div>
-          {/* 方案一：依帳戶狀態動態隱藏/顯示管理者專用按鈕 */}
           <div className="flex gap-2">
-            {isRegistered && isAdminUser && (
-              <>
-                {viewMode === 'calendar' && (
-                  <button
-                    onClick={handleToggleAdminManage}
-                    className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${adminManageMode ? 'bg-rose-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
-                  >
-                    {adminManageMode ? '🔒 離開管理' : '⚙️ 月曆管理'}
-                  </button>
-                )}
-                {viewMode !== 'admin' && (
-                  <button
-                    onClick={fetchAdminSummary}
-                    className="bg-amber-600 hover:bg-amber-500 text-white text-xs px-3 py-1.5 rounded-lg transition shadow-sm"
-                  >
-                    📊 總覽
-                  </button>
-                )}
-              </>
+            {isRegistered && canAuth('viewAsUser') && !isViewAsMode && (
+              <button
+                type="button"
+                onClick={handleOpenViewAs}
+                className="bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold"
+              >
+                👁 檢視身分
+              </button>
+            )}
+            {isRegistered && can('viewAdminOrderSummary') && (
+              <button
+                type="button"
+                onClick={() => handleAdminSectionChange('orders')}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'orders' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
+              >
+                📋 訂單管理
+              </button>
+            )}
+            {isRegistered && can('viewMemberBalances') && (
+              <button
+                type="button"
+                onClick={() => handleAdminSectionChange('balances')}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'balances' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
+              >
+                💰 餘額管理
+              </button>
+            )}
+            {isRegistered && can('manageCalendar') && viewMode === 'calendar' && (
+              <button
+                type="button"
+                onClick={adminManageMode ? handleToggleAdminManage : openAdminCalendar}
+                disabled={isViewAsMode}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${adminManageMode ? 'bg-rose-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
+              >
+                {adminManageMode ? '🔒 離開管理' : '📅 月曆管理'}
+              </button>
             )}
             {isRegistered && viewMode !== 'calendar' && (
               <button
@@ -1373,7 +1606,7 @@ export default function App() {
                   <select
                     value={floor}
                     onChange={(e) => setFloor(e.target.value)}
-                    disabled={isExpired}
+                    disabled={isExpired || isViewAsMode}
                     className="w-full border rounded-xl px-3 py-2 text-sm bg-white focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                   >
                     <option value="1樓">1樓</option>
@@ -1388,7 +1621,7 @@ export default function App() {
                     placeholder="備註 (如：不要菇)"
                     value={orderNote}
                     onChange={(e) => setOrderNote(e.target.value)}
-                    disabled={isExpired}
+                    disabled={isExpired || isViewAsMode}
                     className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                   />
                 </div>
@@ -1442,8 +1675,8 @@ export default function App() {
                             <div className="flex items-center gap-2 shrink-0">
                               <button
                                 onClick={() => setOrderItems(prev => ({ ...prev, [item.item_id]: Math.max(0, qty - 1) }))}
-                                disabled={isExpired}
-                                className={`w-7 h-7 rounded-full font-bold transition-all ${isExpired
+                                disabled={isExpired || isViewAsMode}
+                                className={`w-7 h-7 rounded-full font-bold transition-all ${isExpired || isViewAsMode
                                   ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                   : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
                                   }`}
@@ -1458,8 +1691,8 @@ export default function App() {
                               </span>
                               <button
                                 onClick={() => setOrderItems(prev => ({ ...prev, [item.item_id]: qty + 1 }))}
-                                disabled={isExpired}
-                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${isExpired
+                                disabled={isExpired || isViewAsMode}
+                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${isExpired || isViewAsMode
                                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                                   : 'bg-[#2C4A3E] hover:bg-emerald-800'
                                   }`}
@@ -1492,154 +1725,174 @@ export default function App() {
 
         {isRegistered && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <div className="flex flex-wrap justify-between items-center gap-3">
-                <h3 className="font-bold text-base text-[#2C4A3E]">📊 管理員訂單總覽</h3>
-                <label className="flex items-center gap-2 text-xs font-bold text-gray-600" htmlFor="admin-order-date">
-                  訂單日期
-                  <input
-                    id="admin-order-date"
-                    type="date"
-                    value={selectedOrderDate}
-                    onChange={(e) => handleAdminDateChange(e.target.value)}
-                    className="min-w-0 border border-gray-200 rounded-xl px-2.5 py-2 bg-white text-sm focus:outline-emerald-600"
-                  />
-                </label>
-              </div>
-              {adminSummary.targetDate && (
-                <p className="text-xs text-gray-500">目前顯示：{adminSummary.targetDate}</p>
-              )}
-            </div>
-
-            {adminSummaryLoading ? (
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
-                讀取指定日期總覽中...
-              </div>
-            ) : adminSummaryError ? (
-              <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">
-                {adminSummaryError}
-              </div>
-            ) : (
+            {adminSection === 'orders' && (
               <>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
-                    <div className="text-xs text-gray-500">總份數</div>
-                    <div className="text-xl font-bold text-[#2C4A3E]">{adminSummary.totalItems}</div>
-                  </div>
-                  <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
-                    <div className="text-xs text-gray-500">總金額</div>
-                    <div className="text-xl font-bold text-[#2C4A3E]">${adminSummary.totalAmount}</div>
-                  </div>
-                </div>
-
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-                  <h3 className="font-bold text-base text-[#2C4A3E]">👥 成員餘額總表</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-gray-100 text-gray-600">
-                    <tr>
-                      <th className="p-2">姓名</th>
-                      <th className="p-2">樓層</th>
-                      <th className="p-2">餘額</th>
-                      <th className="p-2">角色</th>
-                      {isAdminUser && <th className="p-2">操作</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adminSummary.usersSummary.length === 0 ? (
-                      <tr>
-                        <td colSpan={isAdminUser ? 5 : 4} className="p-4 text-center text-gray-400">查無個人或成員資料</td>
-                      </tr>
-                    ) : (
-                      adminSummary.usersSummary.map((u, idx) => (
-                        <tr key={idx} className="border-b last:border-0">
-                          <td className="p-2 font-medium">{u.name}</td>
-                          <td className="p-2">{u.floor}</td>
-                          <td className="p-2">
-                            <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${u.balance < 0 ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
-                              {formatBalanceAmount(u.balance)}
-                            </span>
-                          </td>
-                          <td className="p-2">{u.role}</td>
-                          {isAdminUser && (
-                            <td className="p-2">
-                              {u.userId ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenTopupModal(u)}
-                                  className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm whitespace-nowrap"
-                                >
-                                  儲值
-                                </button>
-                              ) : (
-                                <span className="text-gray-400">—</span>
-                              )}
-                            </td>
-                          )}
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <h3 className="font-bold text-base text-[#2C4A3E]">📦 便購種類匯總</h3>
-              {Object.keys(aggregatedOrders).length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(aggregatedOrders).map(([itemKey, qty], idx) => (
-                    <div key={idx} className="bg-emerald-50/60 border border-emerald-100 p-2.5 rounded-xl flex justify-between items-center">
-                      <span className="text-xs font-bold text-emerald-900">{itemKey}</span>
-                      <span className="text-xs font-extrabold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200 shadow-sm">
-                        x {qty}
-                      </span>
-                    </div>
-                  ))}
+                  <div className="flex flex-wrap justify-between items-center gap-3">
+                    <h3 className="font-bold text-base text-[#2C4A3E]">📋 訂單管理</h3>
+                    <label className="flex items-center gap-2 text-xs font-bold text-gray-600" htmlFor="admin-order-date">
+                      訂單日期
+                      <input
+                        id="admin-order-date"
+                        type="date"
+                        value={selectedOrderDate}
+                        onChange={(e) => handleAdminDateChange(e.target.value)}
+                        className="min-w-0 border border-gray-200 rounded-xl px-2.5 py-2 bg-white text-sm focus:outline-emerald-600"
+                      />
+                    </label>
+                  </div>
+                  {adminSummary.targetDate && (
+                    <p className="text-xs text-gray-500">目前顯示：{adminSummary.targetDate}</p>
+                  )}
                 </div>
-              )}
-            </div>
 
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <h3 className="font-bold text-base text-[#2C4A3E]">🍱 {selectedOrderDate} 訂單明細 (依樓層分組)</h3>
-              {adminSummary.todayOrders.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
-              ) : (
-                <div className="space-y-4">
-                  {Object.entries(
-                    adminSummary.todayOrders.reduce((acc, order) => {
-                      const floor = order.pickup_floor || '其他';
-                      if (!acc[floor]) acc[floor] = [];
-                      acc[floor].push(order);
-                      return acc;
-                    }, {})
-                  ).map(([floor, orders]) => (
-                    <div key={floor} className="space-y-2">
-                      <h4 className="text-sm font-bold text-emerald-800 border-b border-emerald-100 pb-1">{floor} 訂單</h4>
-                      {orders.map((o, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-xs p-3 border border-gray-100 bg-gray-50/80 rounded-xl hover:bg-emerald-50/50 transition-colors">
-                          <div>
-                            <div className="font-bold text-gray-800">
-                              {o.name}
-                              {o.note && <span className="ml-2 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-normal shadow-sm">📝 {o.note}</span>}
+                {adminSummaryLoading ? (
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
+                    讀取指定日期總覽中...
+                  </div>
+                ) : adminSummaryError ? (
+                  <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">
+                    {adminSummaryError}
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
+                        <div className="text-xs text-gray-500">總份數</div>
+                        <div className="text-xl font-bold text-[#2C4A3E]">{adminSummary.totalItems}</div>
+                      </div>
+                      <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
+                        <div className="text-xs text-gray-500">總金額</div>
+                        <div className="text-xl font-bold text-[#2C4A3E]">${adminSummary.totalAmount}</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
+                      <h3 className="font-bold text-base text-[#2C4A3E]">📦 便購種類匯總</h3>
+                      {Object.keys(aggregatedOrders).length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2">
+                          {Object.entries(aggregatedOrders).map(([itemKey, qty], idx) => (
+                            <div key={idx} className="bg-emerald-50/60 border border-emerald-100 p-2.5 rounded-xl flex justify-between items-center">
+                              <span className="text-xs font-bold text-emerald-900">{itemKey}</span>
+                              <span className="text-xs font-extrabold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200 shadow-sm">
+                                x {qty}
+                              </span>
                             </div>
-                            <div className="text-gray-600 mt-1">
-                              {o.item_name} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
-                            </div>
-                          </div>
-                          <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">
-                            ${o.subtotal}
-                          </span>
+                          ))}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
+
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
+                      <h3 className="font-bold text-base text-[#2C4A3E]">🍱 {selectedOrderDate} 訂單明細 (依樓層分組)</h3>
+                      {adminSummary.todayOrders.length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {Object.entries(
+                            adminSummary.todayOrders.reduce((acc, order) => {
+                              const floor = order.pickup_floor || '其他';
+                              if (!acc[floor]) acc[floor] = [];
+                              acc[floor].push(order);
+                              return acc;
+                            }, {})
+                          ).map(([floor, orders]) => (
+                            <div key={floor} className="space-y-2">
+                              <h4 className="text-sm font-bold text-emerald-800 border-b border-emerald-100 pb-1">{floor} 訂單</h4>
+                              {orders.map((o, idx) => (
+                                <div key={idx} className="flex justify-between items-center text-xs p-3 border border-gray-100 bg-gray-50/80 rounded-xl hover:bg-emerald-50/50 transition-colors">
+                                  <div>
+                                    <div className="font-bold text-gray-800">
+                                      {o.name}
+                                      {o.note && <span className="ml-2 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-normal shadow-sm">📝 {o.note}</span>}
+                                    </div>
+                                    <div className="text-gray-600 mt-1">
+                                      {o.item_name} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
+                                    </div>
+                                  </div>
+                                  <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">
+                                    ${o.subtotal}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </>
+            )}
+
+            {adminSection === 'balances' && can('viewMemberBalances') && (
+              <div className="space-y-4">
+                <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-2">
+                  <h3 className="font-bold text-base text-[#2C4A3E]">💰 餘額管理</h3>
+                  <p className="text-xs text-gray-500">成員餘額為目前帳戶總額，與訂單日期無關。</p>
+                </div>
+
+                {memberBalancesLoading ? (
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
+                    讀取成員餘額中...
+                  </div>
+                ) : memberBalancesError ? (
+                  <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">
+                    {memberBalancesError}
+                  </div>
+                ) : memberBalances.length === 0 ? (
+                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-gray-400">
+                    目前沒有成員餘額資料
+                  </div>
+                ) : (
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-gray-100 text-gray-600">
+                          <tr>
+                            <th className="p-2">姓名</th>
+                            <th className="p-2">樓層</th>
+                            <th className="p-2">餘額</th>
+                            <th className="p-2">角色</th>
+                            {can('topupMember') && !isViewAsMode && <th className="p-2">操作</th>}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {memberBalances.map((u, idx) => (
+                            <tr key={u.userId || `member-${idx}`} className="border-b last:border-0">
+                              <td className="p-2 font-medium">{u.name}</td>
+                              <td className="p-2">{u.floor}</td>
+                              <td className="p-2">
+                                <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${u.balance < 0 ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
+                                  {formatBalanceAmount(u.balance)}
+                                </span>
+                              </td>
+                              <td className="p-2">{u.role}</td>
+                              {can('topupMember') && !isViewAsMode && (
+                                <td className="p-2">
+                                  {u.userId ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenTopupModal(u)}
+                                      className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm whitespace-nowrap"
+                                    >
+                                      儲值
+                                    </button>
+                                  ) : (
+                                    <span className="text-gray-400">—</span>
+                                  )}
+                                </td>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -1660,7 +1913,7 @@ export default function App() {
                 {hasExistingOrder && (
                   <button
                     onClick={handleCancelOrder}
-                    disabled={loading || !activeOrderId}
+                    disabled={loading || !activeOrderId || isViewAsMode}
                     className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl disabled:bg-gray-300 transition active:scale-95 shadow-sm"
                   >
                     取消訂餐
@@ -1668,7 +1921,7 @@ export default function App() {
                 )}
                 <button
                   onClick={handleSubmit}
-                  disabled={loading || totalCount === 0}
+                  disabled={loading || totalCount === 0 || isViewAsMode}
                   className="bg-[#2C4A3E] text-white text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-emerald-800 disabled:bg-gray-300 transition active:scale-95 shadow-sm"
                 >
                   確認扣款送出
@@ -1782,7 +2035,52 @@ export default function App() {
         </div>
       )}
 
-      {selectedTopupUser && isAdminUser && (
+      {showViewAsModal && canAuth('viewAsUser') && !isViewAsMode && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-emerald-100">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="font-bold text-base text-[#2C4A3E]">👁 以其他身分檢視</h3>
+                <p className="text-xs text-gray-500 mt-1">只預覽 UI，選取後不會代替對方執行操作。</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowViewAsModal(false)}
+                className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            {memberBalancesLoading ? (
+              <p className="text-center text-sm text-emerald-800 animate-pulse py-6">讀取成員列表中...</p>
+            ) : memberBalancesError ? (
+              <div className="text-center text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">
+                {memberBalancesError}
+              </div>
+            ) : memberBalances.length === 0 ? (
+              <p className="text-center text-sm text-gray-400 py-6">目前沒有可檢視的成員資料</p>
+            ) : (
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                {memberBalances.map((user, idx) => (
+                  <button
+                    type="button"
+                    key={user.userId || `view-as-${idx}`}
+                    onClick={() => handleSelectViewAs(user)}
+                    className="w-full text-left rounded-2xl border border-gray-100 bg-gray-50 hover:bg-emerald-50 hover:border-emerald-200 p-3 transition-colors"
+                  >
+                    <span className="font-bold text-gray-800">{user.name}</span>
+                    <span className="ml-2 text-xs text-gray-500">{user.floor}</span>
+                    <span className="ml-2 text-xs font-bold text-emerald-800">{user.role}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedTopupUser && can('topupMember') && !isViewAsMode && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl transform transition-all border border-emerald-100">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
@@ -1853,7 +2151,7 @@ export default function App() {
       )}
 
       {/* Admin 手動修改開團彈窗 Modal */}
-      {selectedAdminDate && (
+      {selectedAdminDate && can('manageCalendar') && !isViewAsMode && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl transform transition-all border border-emerald-100">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
