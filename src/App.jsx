@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import liff from '@line/liff';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
-import { formatDateInput, getTaipeiYearMonth, shiftYearMonth } from './dateUtils';
+import { formatDateInput, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
 import { gasGet, gasPost } from './api/gasApi';
 import { hasPermission } from './auth/permissions';
 import { APP_VERSION, CHANGELOG } from './data/changelog';
@@ -1102,8 +1102,7 @@ export default function App() {
   const renderCalendarDays = () => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
-    const firstDay = new Date(year, month, 1).getDay();
-    const firstWeekdayColumn = Math.min((firstDay + 6) % 7, 5); // 星期一為第 0 欄，週末落在首週末端
+    const firstWeekdayColumn = getWeekdayLeadingBlankCount(year, month);
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const days = [];
@@ -1579,15 +1578,16 @@ export default function App() {
 
       </main>
 
-      <footer className="mx-auto mt-auto w-full max-w-xl px-4 pb-5 text-right text-xs text-gray-400">
-        <button
-          type="button"
-          onClick={() => setShowChangelogModal(true)}
-          aria-label={`查看開發歷程，目前版本 ${APP_VERSION}`}
-          className="rounded px-2 py-1 transition hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-        >
-          v{APP_VERSION}
-        </button>
+      <footer className="mx-auto mt-auto w-full max-w-xl px-4 py-5 text-center text-xs text-gray-400">
+        <div>© 2026 Henry · 蔬食便當預訂系統
+          <button
+            type="button"
+            onClick={() => setShowChangelogModal(true)}
+            aria-label={`查看開發歷程，目前版本 ${APP_VERSION}`}
+            className="rounded px-2 py-1 transition hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          >
+            v{APP_VERSION}
+          </button></div>
       </footer>
 
       {/* 底部導覽/操作列 */}

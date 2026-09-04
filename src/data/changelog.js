@@ -4,6 +4,16 @@ export const APP_VERSION = packageJson.version;
 
 export const CHANGELOG = [
   {
+    version: '0.7.1',
+    date: '2026-09-04',
+    changes: [
+      '修正月份起始於週末時的月曆空白列',
+      '優化頁尾資訊與作者標示',
+      '公告詳情新增公告日期'
+    ],
+    commits: []
+  },
+  {
     version: '0.7.0',
     date: '2026-09-04',
     changes: [

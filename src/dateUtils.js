@@ -33,3 +33,8 @@ export const shiftYearMonth = (year, month, offset) => {
     month: (monthIndex % 12) + 1
   };
 };
+
+export const getWeekdayLeadingBlankCount = (year, monthIndex) => {
+  const firstDayOfWeek = new Date(year, monthIndex, 1).getDay();
+  return firstDayOfWeek >= 1 && firstDayOfWeek <= 5 ? firstDayOfWeek - 1 : 0;
+};

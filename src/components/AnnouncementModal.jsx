@@ -1,5 +1,7 @@
 import Modal from './Modal';
 
+const formatAnnouncementDate = (date) => String(date || '').replace(/-/g, '/');
+
 export default function AnnouncementModal({ open, announcements = [], onClose }) {
   if (announcements.length === 0) return null;
 
@@ -14,6 +16,9 @@ export default function AnnouncementModal({ open, announcements = [], onClose })
         {announcements.map((announcement) => (
           <article key={announcement.id} className="space-y-2">
             <h3 className="font-bold text-[#2C4A3E]">{announcement.title}</h3>
+            <time dateTime={announcement.start_date} className="block text-xs text-gray-400">
+              📅 公告日期：{formatAnnouncementDate(announcement.start_date)}
+            </time>
             <p className="whitespace-pre-wrap text-sm leading-7 text-gray-600">{announcement.content}</p>
           </article>
         ))}

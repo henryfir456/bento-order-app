@@ -545,7 +545,13 @@ test('calendar page data includes the effective announcement without another fro
   assert.match(barSource, /onClick/);
   assert.match(modalSource, /announcements\.map/);
   assert.match(modalSource, /announcement\.title/);
+  assert.match(modalSource, /announcement\.start_date/);
+  assert.match(modalSource, /公告日期/);
+  assert.match(modalSource, /formatAnnouncementDate/);
   assert.match(modalSource, /announcement\.content/);
+  assert.ok(modalSource.indexOf('announcement.title') < modalSource.indexOf('announcement.start_date'));
+  assert.ok(modalSource.indexOf('announcement.start_date') < modalSource.indexOf('announcement.content'));
+  assert.doesNotMatch(modalSource, /announcement\.end_date/);
   assert.match(gasCalendarSource, /announcements: announcements/);
   assert.match(gasCalendarSource, /Transitional compatibility/);
   assert.match(calendarSource, /w-full min-w-0 bg-white/);
@@ -555,6 +561,13 @@ test('calendar page data includes the effective announcement without another fro
   assert.doesNotMatch(appSource, /bg-amber-100 text-amber-800/);
   assert.match(appSource, /bg-slate-300 border border-slate-400 text-slate-700/);
   assert.match(appSource, /bg-slate-500 text-white/);
+  const footerBlock = appSource.match(/<footer[\s\S]*?<\/footer>/)?.[0];
+  assert.ok(footerBlock);
+  assert.match(footerBlock, /© 2026 Henry · 蔬食便當預訂系統/);
+  assert.match(footerBlock, /v\{APP_VERSION\} · 更新紀錄/);
+  assert.match(footerBlock, /setShowChangelogModal\(true\)/);
+  assert.match(footerBlock, /text-center text-xs text-gray-400/);
+  assert.doesNotMatch(footerBlock, /fixed|sticky/);
   assert.match(orderSource, /isExpired \?/);
   assert.match(orderSource, /bg-slate-500 text-white text-xs px-2\.5 py-1 rounded-full font-bold/);
   assert.match(orderSource, /bg-slate-100 text-slate-700 border border-slate-300/);
@@ -1377,12 +1390,16 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.7.0');
-  assert.equal(packageLock.version, '0.7.0');
-  assert.equal(packageLock.packages[''].version, '0.7.0');
+  assert.equal(packageJson.version, '0.7.1');
+  assert.equal(packageLock.version, '0.7.1');
+  assert.equal(packageLock.packages[''].version, '0.7.1');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /version: '0\.1\.0'/);
   assert.match(changelogSource, /version: '0\.7\.0'/);
+  assert.match(changelogSource, /version: '0\.7\.1'/);
+  assert.match(changelogSource, /修正月份起始於週末時的月曆空白列/);
+  assert.match(changelogSource, /優化頁尾資訊與作者標示/);
+  assert.match(changelogSource, /公告詳情新增公告日期/);
   assert.match(changelogSource, /version: '0\.6\.0'/);
   assert.match(changelogSource, /新增首頁公告與公告詳情/);
   assert.match(changelogSource, /支援同時查看多則有效公告/);
@@ -1411,6 +1428,16 @@ test('month navigation crosses calendar year boundaries', async () => {
   assert.deepEqual(utils.shiftYearMonth(2026, 1, -1), { year: 2025, month: 12 });
   assert.deepEqual(utils.getTaipeiYearMonth(new Date('2026-09-30T16:30:00Z')), { year: 2026, month: 10 });
   assert.equal(utils.formatDateInput(new Date('2026-09-30T16:30:00Z')), '2026-10-01');
+});
+
+test('weekday-only calendar offset skips leading weekend dates', async () => {
+  const utils = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'dateUtils.js')).href);
+
+  assert.equal(utils.getWeekdayLeadingBlankCount(2026, 5), 0); // Monday: June 1
+  assert.equal(utils.getWeekdayLeadingBlankCount(2026, 8), 1); // Tuesday: September 1
+  assert.equal(utils.getWeekdayLeadingBlankCount(2026, 4), 4); // Friday: May 1
+  assert.equal(utils.getWeekdayLeadingBlankCount(2026, 7), 0); // Saturday: August 1
+  assert.equal(utils.getWeekdayLeadingBlankCount(2026, 10), 0); // Sunday: November 1
 });
 
 test('calendar management owns special-date controls without a separate modal entry', () => {
