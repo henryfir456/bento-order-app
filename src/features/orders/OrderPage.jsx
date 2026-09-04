@@ -25,7 +25,7 @@ export default function OrderPage({
               </div>
               <div className="text-right">
                 {isExpired ? (
-                  <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold">
+                  <span className="bg-slate-500 text-white text-xs px-2.5 py-1 rounded-full font-bold">
                     🔒 已截止 (唯讀)
                   </span>
                 ) : (
@@ -158,7 +158,7 @@ export default function OrderPage({
             </div>
 
             {isExpired && (
-              <div className="text-center text-xs font-bold p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200">
+              <div className="text-center text-xs font-bold p-3 rounded-xl bg-slate-100 text-slate-700 border border-slate-300">
                 🔒 訂餐已截止或暫停服務
               </div>
             )}

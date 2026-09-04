@@ -12,16 +12,16 @@ function warnMalformedAnnouncement(rowNumber, reason) {
   console.warn(`[ANNOUNCEMENT] Ignored malformed row ${rowNumber}: ${reason}`);
 }
 
-function getLatestAnnouncement(now) {
+function getActiveAnnouncements(now) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Announcements');
   if (!sheet) {
     console.warn('[ANNOUNCEMENT] Announcements sheet not found');
-    return null;
+    return [];
   }
 
   const values = sheet.getDataRange().getValues();
   const today = Utilities.formatDate(now || new Date(), TIMEZONE, 'yyyy-MM-dd');
-  let latest = null;
+  const activeAnnouncements = [];
 
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
@@ -58,15 +58,24 @@ function getLatestAnnouncement(now) {
 
     if (today < startDate || today > endDate) continue;
 
-    const candidate = { id, title, content, start_date: startDate, end_date: endDate, rowNumber };
-    if (!latest
-      || candidate.start_date > latest.start_date
-      || (candidate.start_date === latest.start_date && candidate.rowNumber > latest.rowNumber)) {
-      latest = candidate;
-    }
+    activeAnnouncements.push({
+      id,
+      title,
+      content,
+      start_date: startDate,
+      end_date: endDate,
+      rowNumber
+    });
   }
 
-  if (!latest) return null;
-  delete latest.rowNumber;
-  return latest;
+  return activeAnnouncements
+    .sort((left, right) => (
+      right.start_date.localeCompare(left.start_date)
+      || right.rowNumber - left.rowNumber
+    ))
+    .map(({ rowNumber, ...announcement }) => announcement);
+}
+
+function getLatestAnnouncement(now) {
+  return getActiveAnnouncements(now)[0] || null;
 }

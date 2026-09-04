@@ -131,7 +131,7 @@ export default function App() {
   const [floorLoading, setFloorLoading] = useState(false);
   const [floorError, setFloorError] = useState('');
   const [showChangelogModal, setShowChangelogModal] = useState(false);
-  const [announcement, setAnnouncement] = useState(null);
+  const [announcements, setAnnouncements] = useState([]);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -208,7 +208,7 @@ export default function App() {
     setFloorDraft('');
     setFloorError('');
     setShowChangelogModal(false);
-    setAnnouncement(null);
+    setAnnouncements([]);
     setShowAnnouncementModal(false);
     setImagePreview(null);
     setAdminManageMode(false);
@@ -546,7 +546,11 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         setCalendarEvents(data.events || {});
-        setAnnouncement(data.announcement ?? null);
+        // announcements is canonical; the singular fallback supports the deployment transition.
+        const nextAnnouncements = Array.isArray(data.announcements)
+          ? data.announcements
+          : (data.announcement ? [data.announcement] : []);
+        setAnnouncements(nextAnnouncements);
       }
     } catch (err) {
       console.error("無法讀取月曆資料", err);
@@ -1132,8 +1136,8 @@ export default function App() {
           }
         } else {
           if (eventExpired) {
-            statusBg = "bg-amber-50 border-amber-200 text-amber-900 hover:bg-amber-100 cursor-pointer";
-            statusBadge = <span className="text-[9px] bg-amber-200 text-amber-800 px-1 py-0.5 rounded">已截止</span>;
+            statusBg = "bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200 cursor-pointer";
+            statusBadge = <span className="text-[9px] bg-slate-300 border border-slate-400 text-slate-700 px-1 py-0.5 rounded font-medium">已截止</span>;
           } else {
             statusBg = "bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100 cursor-pointer shadow-sm";
             statusBadge = <span className="text-[9px] bg-emerald-600 text-white px-1 py-0.5 rounded font-medium">預訂</span>;
@@ -1216,20 +1220,27 @@ export default function App() {
         const date = new Date(`${dateStr}T00:00:00`);
         const eventExpired = Boolean(event?.isExpired || event?.expired);
 
+        const eventClassName = eventExpired
+          ? 'w-full text-left bg-slate-100 border border-slate-300 hover:bg-slate-200 rounded-xl p-3 transition-colors'
+          : 'w-full text-left bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-xl p-3 transition-colors';
+        const eventDateClassName = eventExpired
+          ? 'font-bold text-sm text-slate-800'
+          : 'font-bold text-sm text-emerald-900';
+
         return (
           <button
             key={dateStr}
             type="button"
             onClick={() => handleSelectDate(dateStr)}
-            className="w-full text-left bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 rounded-xl p-3 transition-colors"
+            className={eventClassName}
           >
             <div className="flex justify-between items-center gap-3">
-              <span className="font-bold text-sm text-emerald-900">
+              <span className={eventDateClassName}>
                 {date.getMonth() + 1}/{date.getDate()}（{weekdayLabels[date.getDay()]}）
               </span>
               <div className="flex items-center gap-2 text-xs">
                 {event.likeCount > 0 && <span className="text-rose-600 font-bold">❤️ {event.likeCount}</span>}
-                <span className={eventExpired ? 'bg-amber-100 text-amber-800 px-2 py-1 rounded-lg font-bold' : 'bg-emerald-600 text-white px-2 py-1 rounded-lg font-bold'}>
+                <span className={eventExpired ? 'bg-slate-500 text-white px-2 py-1 rounded-lg font-bold' : 'bg-emerald-600 text-white px-2 py-1 rounded-lg font-bold'}>
                   {eventExpired ? '已截止' : '預訂'}
                 </span>
               </div>
@@ -1413,10 +1424,10 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-xl mx-auto flex-1 p-4">
+      <main className="w-full max-w-xl min-w-0 mx-auto flex-1 p-4">
         {isRegistered && viewMode === 'calendar' && !loading && (
           <AnnouncementBar
-            announcement={announcement}
+            announcement={announcements[0] ?? null}
             onClick={() => setShowAnnouncementModal(true)}
           />
         )}
@@ -1900,8 +1911,8 @@ export default function App() {
       />
 
       <AnnouncementModal
-        open={showAnnouncementModal && Boolean(announcement)}
-        announcement={announcement}
+        open={showAnnouncementModal && announcements.length > 0}
+        announcements={announcements}
         onClose={() => setShowAnnouncementModal(false)}
       />
 

@@ -166,10 +166,14 @@ function getCalendarEvents(currentUserId) {
     }
   });
 
+  const announcements = getActiveAnnouncements();
+
   return {
     success: true,
     events: events,
-    announcement: getLatestAnnouncement()
+    announcements: announcements,
+    // Transitional compatibility for older frontends; announcements is the canonical API.
+    announcement: announcements[0] ?? null
   };
 }
 

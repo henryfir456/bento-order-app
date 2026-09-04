@@ -4,6 +4,17 @@ export const APP_VERSION = packageJson.version;
 
 export const CHANGELOG = [
   {
+    version: '0.7.0',
+    date: '2026-09-04',
+    changes: [
+      '新增首頁公告與公告詳情',
+      '支援同時查看多則有效公告',
+      '修正切換月份時月曆寬度不一致',
+      '統一已截止日期視覺狀態'
+    ],
+    commits: []
+  },
+  {
     version: '0.6.0',
     date: '2026-09-04',
     changes: [

@@ -416,23 +416,43 @@ function announcementSpreadsheet(rows) {
 
 const announcementAsOfDate = new Date('2026-09-04T04:00:00.000Z');
 
-test('latest announcement selects the latest start date and later sheet row for ties', () => {
+test('active announcements select latest start date and later sheet row for ties', () => {
   const gas = loadGas(announcementSpreadsheet([
     ['old', '舊公告', '舊內容', '2020-09-01', '2100-12-31', true],
     ['same-day-first', '同日公告一', '內容一', '2020-09-03', '2100-12-31', true],
     ['same-day-latest', '同日公告二', '內容二', '2020-09-03', '2100-12-31', true]
   ]));
 
-  const expected = {
-    id: 'same-day-latest',
-    title: '同日公告二',
-    content: '內容二',
-    start_date: '2020-09-03',
-    end_date: '2100-12-31'
-  };
+  const expected = [
+    {
+      id: 'same-day-latest',
+      title: '同日公告二',
+      content: '內容二',
+      start_date: '2020-09-03',
+      end_date: '2100-12-31'
+    },
+    {
+      id: 'same-day-first',
+      title: '同日公告一',
+      content: '內容一',
+      start_date: '2020-09-03',
+      end_date: '2100-12-31'
+    },
+    {
+      id: 'old',
+      title: '舊公告',
+      content: '舊內容',
+      start_date: '2020-09-01',
+      end_date: '2100-12-31'
+    }
+  ];
 
-  assert.deepEqual(JSON.parse(JSON.stringify(gas.getLatestAnnouncement(announcementAsOfDate))), expected);
-  assert.deepEqual(JSON.parse(JSON.stringify(gas.getCalendarEvents('admin-id').announcement)), expected);
+  const calendarResult = gas.getCalendarEvents('admin-id');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(gas.getActiveAnnouncements(announcementAsOfDate))), expected);
+  assert.deepEqual(JSON.parse(JSON.stringify(gas.getLatestAnnouncement(announcementAsOfDate))), expected[0]);
+  assert.deepEqual(JSON.parse(JSON.stringify(calendarResult.announcements)), expected);
+  assert.deepEqual(JSON.parse(JSON.stringify(calendarResult.announcement)), expected[0]);
 });
 
 test('announcement filtering ignores disabled, future, and expired rows', () => {
@@ -442,7 +462,7 @@ test('announcement filtering ignores disabled, future, and expired rows', () => 
     ['expired', '已結束', '不應顯示', '2026-08-01', '2026-09-03', true]
   ]));
 
-  assert.equal(gas.getLatestAnnouncement(announcementAsOfDate), null);
+  assert.deepEqual(JSON.parse(JSON.stringify(gas.getActiveAnnouncements(announcementAsOfDate))), []);
 });
 
 test('announcement start and end dates are inclusive boundaries', () => {
@@ -450,7 +470,28 @@ test('announcement start and end dates are inclusive boundaries', () => {
     ['boundary', '邊界公告', '首尾日都有效', '2026-09-04', '2026-09-04', true]
   ]));
 
-  assert.equal(gas.getLatestAnnouncement(announcementAsOfDate).id, 'boundary');
+  assert.equal(gas.getActiveAnnouncements(announcementAsOfDate)[0].id, 'boundary');
+});
+
+test('announcement parser accepts Google Sheets Date values', () => {
+  const spreadsheet = announcementSpreadsheet([
+    ['date-object', '日期物件公告', 'Date object 可正常解析', '', '', true]
+  ]);
+  const gas = loadGas(spreadsheet);
+  const startDate = vm.runInContext("new Date('2026-09-04T00:00:00.000Z')", gas);
+  const endDate = vm.runInContext("new Date('2026-09-04T00:00:00.000Z')", gas);
+  spreadsheet.sheets.Announcements.rows[1][3] = startDate;
+  spreadsheet.sheets.Announcements.rows[1][4] = endDate;
+
+  assert.deepEqual(JSON.parse(JSON.stringify(gas.getActiveAnnouncements(announcementAsOfDate))), [
+    {
+      id: 'date-object',
+      title: '日期物件公告',
+      content: 'Date object 可正常解析',
+      start_date: '2026-09-04',
+      end_date: '2026-09-04'
+    }
+  ]);
 });
 
 test('malformed announcement rows are ignored with warnings without hiding valid rows', () => {
@@ -464,6 +505,7 @@ test('malformed announcement rows are ignored with warnings without hiding valid
   const result = gas.getCalendarEvents('admin-id');
 
   assert.equal(result.success, true);
+  assert.equal(result.announcements.length, 1);
   assert.equal(result.announcement.id, 'valid');
   assert.equal(gas.__logs.length, 2);
   assert.match(gas.__logs[0], /malformed row 2/);
@@ -476,6 +518,7 @@ test('missing Announcements sheet returns null and keeps calendar initialization
   const result = gas.getCalendarEvents('admin-id');
 
   assert.equal(result.success, true);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.announcements)), []);
   assert.equal(result.announcement, null);
   assert.ok(result.events['2026-09-10']);
   assert.match(gas.__logs[0], /Announcements sheet not found/);
@@ -485,17 +528,38 @@ test('calendar page data includes the effective announcement without another fro
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const barSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'AnnouncementBar.jsx'), 'utf8');
   const modalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'AnnouncementModal.jsx'), 'utf8');
+  const calendarSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'calendar', 'CalendarManagement.jsx'), 'utf8');
+  const orderSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderPage.jsx'), 'utf8');
+  const gasCalendarSource = fs.readFileSync(path.join(__dirname, '..', 'gas', 'Calendar.gs'), 'utf8');
 
   assert.match(appSource, /import AnnouncementBar from ['"]\.\/components\/AnnouncementBar['"]/);
   assert.match(appSource, /import AnnouncementModal from ['"]\.\/components\/AnnouncementModal['"]/);
-  assert.match(appSource, /setAnnouncement\(data\.announcement \?\? null\)/);
+  assert.match(appSource, /const \[announcements, setAnnouncements\] = useState\(\[\]\)/);
+  assert.match(appSource, /Array\.isArray\(data\.announcements\)/);
+  assert.match(appSource, /setAnnouncements\(nextAnnouncements\)/);
+  assert.match(appSource, /announcements is canonical/);
   assert.match(appSource, /onClick=\{\(\) => setShowAnnouncementModal\(true\)\}/);
-  assert.match(appSource, /<AnnouncementBar[\s\S]*announcement=\{announcement\}/);
-  assert.match(appSource, /<AnnouncementModal[\s\S]*announcement=\{announcement\}/);
+  assert.match(appSource, /<AnnouncementBar[\s\S]*announcement=\{announcements\[0\] \?\? null\}/);
+  assert.match(appSource, /<AnnouncementModal[\s\S]*announcements=\{announcements\}/);
   assert.match(barSource, /truncate/);
   assert.match(barSource, /onClick/);
-  assert.match(modalSource, /title=\{announcement\?\.title\}/);
-  assert.match(modalSource, /announcement\?\.content/);
+  assert.match(modalSource, /announcements\.map/);
+  assert.match(modalSource, /announcement\.title/);
+  assert.match(modalSource, /announcement\.content/);
+  assert.match(gasCalendarSource, /announcements: announcements/);
+  assert.match(gasCalendarSource, /Transitional compatibility/);
+  assert.match(calendarSource, /w-full min-w-0 bg-white/);
+  assert.match(calendarSource, /grid grid-cols-5/);
+  assert.match(appSource, /w-full max-w-xl min-w-0 mx-auto flex-1 p-4/);
+  assert.doesNotMatch(appSource, /bg-amber-50 border-amber-200 text-amber-900/);
+  assert.doesNotMatch(appSource, /bg-amber-100 text-amber-800/);
+  assert.match(appSource, /bg-slate-300 border border-slate-400 text-slate-700/);
+  assert.match(appSource, /bg-slate-500 text-white/);
+  assert.match(orderSource, /isExpired \?/);
+  assert.match(orderSource, /bg-slate-500 text-white text-xs px-2\.5 py-1 rounded-full font-bold/);
+  assert.match(orderSource, /bg-slate-100 text-slate-700 border border-slate-300/);
+  assert.doesNotMatch(orderSource, /bg-amber-100 text-amber-800/);
+  assert.doesNotMatch(orderSource, /bg-amber-50 text-amber-800 border border-amber-200/);
 });
 
 test('getOrderPageData returns menu and the matching active user order together', () => {
@@ -1311,11 +1375,19 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const modalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'Modal.jsx'), 'utf8');
   const orderSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderPage.jsx'), 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.6.0');
+  assert.equal(packageJson.version, '0.7.0');
+  assert.equal(packageLock.version, '0.7.0');
+  assert.equal(packageLock.packages[''].version, '0.7.0');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /version: '0\.1\.0'/);
+  assert.match(changelogSource, /version: '0\.7\.0'/);
   assert.match(changelogSource, /version: '0\.6\.0'/);
+  assert.match(changelogSource, /新增首頁公告與公告詳情/);
+  assert.match(changelogSource, /支援同時查看多則有效公告/);
+  assert.match(changelogSource, /修正切換月份時月曆寬度不一致/);
+  assert.match(changelogSource, /統一已截止日期視覺狀態/);
   assert.match(changelogSource, /commits:/);
   assert.match(modalSource, /role="dialog"/);
   assert.match(modalSource, /Escape/);

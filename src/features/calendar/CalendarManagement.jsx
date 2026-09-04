@@ -13,7 +13,7 @@ export default function CalendarManagement({
   weekendEvents
 }) {
   return (
-<div className="bg-white rounded-2xl p-4 shadow-sm border border-emerald-900/10 space-y-3">
+<div className="w-full min-w-0 bg-white rounded-2xl p-4 shadow-sm border border-emerald-900/10 space-y-3">
             <div className="flex justify-between items-center px-1">
               <h2 className="text-lg font-bold text-[#2C4A3E]">
                 {currentMonth.getFullYear()} 年 {currentMonth.getMonth() + 1} 月 預訂月曆
@@ -93,4 +93,3 @@ export default function CalendarManagement({
           </div>
   );
 }
-
