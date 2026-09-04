@@ -93,24 +93,34 @@ function getDeadlineInfo(orderDateStr, mode) {
   };
 }
 
-function getCalendarEvents(currentUserId) {
+function getCalendarEvents(currentUserId, preloadedData) {
   const totalStart = Date.now();
   let settingsMs = 0;
   let likesMs = 0;
   let announcementsMs = 0;
   let computeMs = 0;
+  const hasSettingsData = Boolean(preloadedData && Array.isArray(preloadedData.settingsData));
+  const hasLikesData = Boolean(preloadedData && Array.isArray(preloadedData.likesData));
+  const hasAnnouncements = Boolean(preloadedData && Array.isArray(preloadedData.announcements));
+  const hasPreloadedCalendarData = hasSettingsData && hasLikesData && hasAnnouncements;
 
   try {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const settingsSheet = ss.getSheetByName('Settings');
-  const likesSheet = ss.getSheetByName('Likes');
+  const ss = hasPreloadedCalendarData
+    ? null
+    : SpreadsheetApp.getActiveSpreadsheet();
+  const settingsSheet = hasSettingsData ? null : ss.getSheetByName('Settings');
+  const likesSheet = hasLikesData ? null : ss.getSheetByName('Likes');
   
   const settingsStart = Date.now();
-  const settingsData = settingsSheet ? settingsSheet.getDataRange().getValues() : [];
+  const settingsData = hasSettingsData
+    ? preloadedData.settingsData
+    : settingsSheet ? settingsSheet.getDataRange().getValues() : [];
   settingsMs = Date.now() - settingsStart;
 
   const likesStart = Date.now();
-  const likesData = likesSheet ? likesSheet.getDataRange().getValues() : [];
+  const likesData = hasLikesData
+    ? preloadedData.likesData
+    : likesSheet ? likesSheet.getDataRange().getValues() : [];
   likesMs = Date.now() - likesStart;
 
   const computeStart = Date.now();
@@ -183,7 +193,9 @@ function getCalendarEvents(currentUserId) {
   computeMs = Date.now() - computeStart;
 
   const announcementsStart = Date.now();
-  const announcements = getActiveAnnouncements();
+  const announcements = hasAnnouncements
+    ? preloadedData.announcements
+    : getActiveAnnouncements();
   announcementsMs = Date.now() - announcementsStart;
 
   return {
@@ -194,11 +206,13 @@ function getCalendarEvents(currentUserId) {
     announcement: announcements[0] ?? null
   };
   } finally {
-    logPerformanceTiming('SETTINGS', settingsMs);
-    logPerformanceTiming('LIKES', likesMs);
-    logPerformanceTiming('ANNOUNCEMENTS', announcementsMs);
-    logPerformanceTiming('COMPUTE', computeMs);
-    logPerformanceTiming('TOTAL', Date.now() - totalStart);
+    if (!hasPreloadedCalendarData) {
+      logPerformanceTiming('SETTINGS', settingsMs);
+      logPerformanceTiming('LIKES', likesMs);
+      logPerformanceTiming('ANNOUNCEMENTS', announcementsMs);
+      logPerformanceTiming('COMPUTE', computeMs);
+      logPerformanceTiming('TOTAL', Date.now() - totalStart);
+    }
   }
 }
 

@@ -1,12 +1,12 @@
-function getRegisteredUser(userId) {
+function getRegisteredUser(userId, preloadedData) {
   const normalizedUserId = String(userId || '').trim();
   if (!normalizedUserId) return null;
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const userSheet = ss.getSheetByName(USERS_SHEET);
-  if (!userSheet) return null;
-
-  const data = userSheet.getDataRange().getValues();
+  const data = preloadedData || (() => {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const userSheet = ss.getSheetByName(USERS_SHEET);
+    return userSheet ? userSheet.getDataRange().getValues() : [];
+  })();
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     if (String(row[0] || '').trim() === normalizedUserId) {

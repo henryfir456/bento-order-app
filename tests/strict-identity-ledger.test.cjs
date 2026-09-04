@@ -189,6 +189,7 @@ function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBe
     'Announcements.gs',
     'Calendar.gs',
     'Admin.gs',
+    'Bootstrap.gs',
     'Code.gs'
   ];
   sourceFiles.forEach((fileName) => {
@@ -413,6 +414,142 @@ function announcementSpreadsheet(rows) {
   ]);
   return spreadsheet;
 }
+
+function bootstrapSpreadsheet(orderRows = []) {
+  const spreadsheet = orderSpreadsheet();
+  spreadsheet.sheets.Users = new TrackingSheet(usersSheet().rows);
+  spreadsheet.sheets.Settings = new TrackingSheet([
+    ['Date', 'Vendor', 'Mode'],
+    ['2026-09-10', '蔡老師', 'A']
+  ]);
+  spreadsheet.sheets.Likes = new TrackingSheet([
+    ['Date', 'LINE_UserID', 'Created_At']
+  ]);
+  spreadsheet.sheets.Menu = new TrackingSheet(spreadsheet.sheets.Menu.rows);
+  spreadsheet.sheets.Orders = new TrackingSheet([
+    ['OrderID', 'Date', 'Vendor', 'Name', 'PickupFloor', 'item_id', 'item_name', 'quantity', 'unit_price', 'subtotal', 'CreatedAt', 'UpdatedAt', 'Status', 'LINE_UserID', 'Balance', 'Note'],
+    ...orderRows
+  ]);
+  spreadsheet.sheets.Announcements = new TrackingSheet([
+    ['id', 'title', 'content', 'start_date', 'end_date', 'enabled']
+  ]);
+  return spreadsheet;
+}
+
+function orderRow(orderId, date, userId, status = 'ACTIVE') {
+  return [
+    orderId,
+    date,
+    '蔡老師',
+    'Test User',
+    '9樓',
+    'A01',
+    '小而美',
+    1,
+    80,
+    80,
+    '2026-09-01T01:00:00.000Z',
+    '2026-09-01T01:00:00.000Z',
+    status,
+    userId,
+    0,
+    ''
+  ];
+}
+
+test('bootstrap authenticates canonically and reads each startup sheet once', () => {
+  const spreadsheet = bootstrapSpreadsheet([
+    orderRow('active-target', '2026-09-10', 'user-id'),
+    orderRow('active-other-date', '2026-09-11', 'user-id'),
+    orderRow('active-other-user', '2026-09-10', 'other-user'),
+    orderRow('cancelled-target', '2026-09-10', 'user-id', 'CANCELLED')
+  ]);
+  const gas = loadGas(spreadsheet, {
+    userId: 'user-id',
+    displayName: 'LINE Profile Name'
+  });
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({ action: 'getBootstrapData', accessToken: 'access-token' })
+    }
+  });
+  const result = JSON.parse(output.text);
+
+  assert.equal(result.success, true);
+  assert.equal(result.registered, true);
+  assert.equal(result.user.userId, 'user-id');
+  assert.equal(result.user.lineUserId, 'user-id');
+  assert.equal(result.user.displayName, 'LINE Profile Name');
+  assert.equal(result.calendar.events['2026-09-10'].vendor, '蔡老師');
+  assert.deepEqual(JSON.parse(JSON.stringify(result.ordersMap)), {
+    '2026-09-10': true,
+    '2026-09-11': true
+  });
+  assert.equal(spreadsheet.sheets.Users.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Announcements.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Orders.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Menu.dataRangeReads, 0);
+  assert.equal(gas.__fetchCalls.length, 1);
+});
+
+test('unregistered bootstrap preserves identity response and skips non-critical sheets', () => {
+  const spreadsheet = bootstrapSpreadsheet();
+  const gas = loadGas(spreadsheet, {
+    userId: 'unknown-id',
+    displayName: 'LINE Profile Name'
+  });
+
+  const result = gas.getBootstrapData('access-token');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    success: true,
+    registered: false,
+    lineUserId: 'unknown-id',
+    displayName: 'LINE Profile Name'
+  });
+  assert.equal(spreadsheet.sheets.Users.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Announcements.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Orders.dataRangeReads, 0);
+});
+
+test('invalid bootstrap token returns the existing LINE error without reading Sheets', () => {
+  const spreadsheet = bootstrapSpreadsheet();
+  const gas = loadGas(spreadsheet, {}, 401);
+
+  const result = gas.getBootstrapData('access-token');
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    success: false,
+    code: 'LINE_PROFILE_401',
+    message: 'LINE_PROFILE_401'
+  });
+  assert.equal(spreadsheet.sheets.Users.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Announcements.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Orders.dataRangeReads, 0);
+});
+
+test('frontend bootstrap owns initial state and only uses legacy startup on INVALID_ACTION', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const initStart = appSource.indexOf('const initLiffAndFetchData');
+  const initEnd = appSource.indexOf('  useEffect(() => {', initStart);
+  const initSource = appSource.slice(initStart, initEnd);
+  const bootstrapBranchStart = initSource.indexOf('} else {', initSource.indexOf('if (usingLegacyStartup) {'));
+  const bootstrapBranch = initSource.slice(bootstrapBranchStart);
+
+  assert.match(initSource, /fetchBootstrapData\(accessToken\)/);
+  assert.match(initSource, /identity\?\.code === 'INVALID_ACTION'/);
+  assert.match(initSource, /identity = await fetchUserInfo\(accessToken\)/);
+  assert.match(bootstrapBranch, /setCalendarEvents\(identity\.calendar\?\.events/);
+  assert.match(bootstrapBranch, /setUserOrdersMap\(identity\.ordersMap/);
+  assert.doesNotMatch(bootstrapBranch, /fetchUserAllOrders|fetchCalendarEvents/);
+});
 
 const announcementAsOfDate = new Date('2026-09-04T04:00:00.000Z');
 

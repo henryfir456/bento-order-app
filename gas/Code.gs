@@ -47,6 +47,8 @@ function doPost(e) {
       return jsonResponse(cancelOrderForAccessToken(data));
     } else if (action === 'getUserInfo') {
       return jsonResponse(getUserInfo(data.accessToken));
+    } else if (action === 'getBootstrapData') {
+      return jsonResponse(getBootstrapData(data.accessToken, data.targetDate));
     } else if (action === 'registerUser') {
       return jsonResponse(registerUser(data));
     } else if (action === 'updateMyPickupFloor') {

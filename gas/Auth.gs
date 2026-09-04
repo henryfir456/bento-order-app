@@ -22,7 +22,9 @@ function logIdentityException(code, error, sensitiveValues) {
 }
 
 function isIdentityAction(action) {
-  return action === "getUserInfo" || action === "registerUser";
+  return action === "getUserInfo"
+    || action === "getBootstrapData"
+    || action === "registerUser";
 }
 
 function getLineProfile(accessToken) {

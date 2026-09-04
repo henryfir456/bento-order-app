@@ -242,6 +242,42 @@ export default function App() {
     console.error(`[AUTH] ${stage}: ${safeMessage}`);
   };
 
+  const applyUserInfoData = (data) => {
+    if (data.success && data.registered && data.user) {
+      const nextUser = {
+        ...data.user,
+        userId: data.user.userId,
+        name: data.user.name || '',
+        floor: data.user.defaultFloor || data.user.floor || '',
+        defaultFloor: data.user.defaultFloor || data.user.floor || '',
+        balance: Number(data.user.balance || 0),
+        role: data.user.role || 'User'
+      };
+      setAuthUser(nextUser);
+      setViewAsUser(null);
+      setLineUserId(nextUser.userId);
+      setUserBalance(nextUser.balance);
+      setName(nextUser.name);
+      setDefaultFloor(nextUser.defaultFloor);
+      setFloor(nextUser.defaultFloor);
+      return data;
+    }
+
+    if (data.success && data.registered === false) {
+      setLineUserId(data.lineUserId || '');
+      setRegistrationDisplayName(data.displayName || '');
+      setRegistrationFloor('1樓');
+      setAuthUser(null);
+      setViewAsUser(null);
+      setName('');
+      setDefaultFloor('');
+      setUserBalance(0);
+      return data;
+    }
+
+    return { success: false, message: data.message || 'backend 未回傳有效身份狀態' };
+  };
+
   const initLiffAndFetchData = async () => {
     if (authInitInFlightRef.current) {
       logAuthDiagnostic('LIFF_INIT_SKIPPED_IN_FLIGHT');
@@ -291,8 +327,13 @@ export default function App() {
 
       currentStage = 'BACKEND_IDENTITY_VERIFY_START';
       setAuthStage(currentStage);
-      const identity = await fetchUserInfo(accessToken);
+      let identity = await fetchBootstrapData(accessToken);
+      const usingLegacyStartup = identity?.code === 'INVALID_ACTION';
+      if (usingLegacyStartup) {
+        identity = await fetchUserInfo(accessToken);
+      }
       if (identity?.success && identity.registered && identity.user) {
+        applyUserInfoData(identity);
         const canonicalUserId = identity.user.userId;
         setAuthState(AUTH_STATES.REGISTERED);
         setAuthStage('REGISTERED');
@@ -300,10 +341,16 @@ export default function App() {
         logAuthDiagnostic('BACKEND_IDENTITY_VERIFY_SUCCESS=true');
         logAuthDiagnostic('USER_REGISTERED=true');
         logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
-        setLineUserId(canonicalUserId);
-        fetchUserAllOrders(canonicalUserId);
-        await fetchCalendarEvents(canonicalUserId);
+        if (usingLegacyStartup) {
+          fetchUserAllOrders(canonicalUserId);
+          await fetchCalendarEvents(canonicalUserId);
+        } else {
+          setCalendarEvents(identity.calendar?.events || {});
+          setAnnouncements(Array.isArray(identity.calendar?.announcements) ? identity.calendar.announcements : []);
+          setUserOrdersMap(identity.ordersMap || {});
+        }
       } else if (identity?.success && identity.registered === false) {
+        applyUserInfoData(identity);
         setAuthState(AUTH_STATES.UNREGISTERED);
         setAuthStage('UNREGISTERED');
         setAuthError('');
@@ -436,45 +483,37 @@ export default function App() {
         return { success: false, message: `backend HTTP ${res.status}` };
       }
       const data = await res.json();
-      if (data.success && data.registered && data.user) {
-        const nextUser = {
-          ...data.user,
-          userId: data.user.userId,
-          name: data.user.name || '',
-          floor: data.user.defaultFloor || data.user.floor || '',
-          defaultFloor: data.user.defaultFloor || data.user.floor || '',
-          balance: Number(data.user.balance || 0),
-          role: data.user.role || 'User'
-        };
-        setAuthUser(nextUser);
-        setViewAsUser(null);
-        setLineUserId(nextUser.userId);
-        setUserBalance(nextUser.balance);
-        setName(nextUser.name);
-        setDefaultFloor(nextUser.defaultFloor);
-        setFloor(nextUser.defaultFloor);
-        return data;
-      }
-
-      if (data.success && data.registered === false) {
-        setLineUserId(data.lineUserId || '');
-        setRegistrationDisplayName(data.displayName || '');
-        setRegistrationFloor('1樓');
-        setAuthUser(null);
-        setViewAsUser(null);
-        setName('');
-        setDefaultFloor('');
-        setUserBalance(0);
-        return data;
-      }
-
-      return { success: false, message: data.message || 'backend 未回傳有效身份狀態' };
+      return applyUserInfoData(data);
     } catch (err) {
       const safeMessage = redactAuthSecrets(err instanceof Error ? err.message : err);
       logAuthDiagnostic(`BACKEND_IDENTITY_VERIFY_SUCCESS=false stage=BACKEND_IDENTITY_VERIFY_REQUEST error=${safeMessage}`);
       return { success: false, message: safeMessage };
     } finally {
       logPerformanceTiming('GET_USER_INFO', requestStartTime);
+    }
+  };
+
+  const fetchBootstrapData = async (accessToken) => {
+    const requestStartTime = getPerformanceNow();
+    try {
+      if (!accessToken) {
+        return { success: false, message: 'LIFF accessToken 不存在' };
+      }
+
+      const res = await gasPost({
+        action: 'getBootstrapData',
+        accessToken
+      });
+      if (!res.ok) {
+        return { success: false, message: `backend HTTP ${res.status}` };
+      }
+      return await res.json();
+    } catch (err) {
+      const safeMessage = redactAuthSecrets(err instanceof Error ? err.message : err);
+      logAuthDiagnostic(`BOOTSTRAP_REQUEST_SUCCESS=false error=${safeMessage}`);
+      return { success: false, message: safeMessage };
+    } finally {
+      logPerformanceTiming('BOOTSTRAP_TOTAL', requestStartTime);
     }
   };
 

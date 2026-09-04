@@ -51,13 +51,15 @@ function getUserOrder(userId, date) {
   return { success: true, orderId: orderId, items: items, note: orderNote };
 }
 
-function getUserAllOrdersMap(userId) {
-  const user = getRegisteredUser(userId);
+function getUserAllOrdersMap(userId, preloadedUser, preloadedOrderValues) {
+  const user = preloadedUser || getRegisteredUser(userId);
   if (!user) return { success: false, message: UNREGISTERED_USER_MESSAGE };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(ORDERS_SHEET);
-  const values = sheet ? sheet.getDataRange().getValues() : [];
+  const values = preloadedOrderValues || (() => {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(ORDERS_SHEET);
+    return sheet ? sheet.getDataRange().getValues() : [];
+  })();
   const ordersMap = {};
 
   for (let i = 1; i < values.length; i++) {
@@ -334,4 +336,3 @@ function cancelOrder(data) {
     lock.releaseLock();
   }
 }
-
