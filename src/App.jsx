@@ -6,10 +6,12 @@ import { formatDateInput, getTaipeiYearMonth, shiftYearMonth } from './dateUtils
 import { gasGet, gasPost } from './api/gasApi';
 import { hasPermission } from './auth/permissions';
 import { APP_VERSION, CHANGELOG } from './data/changelog';
-import Modal from './components/Modal';
+import ChangelogModal from './components/ChangelogModal';
+import PickupFloorModal from './components/PickupFloorModal';
 import ViewAsBanner from './components/ViewAsBanner';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import OrderPage from './features/orders/OrderPage';
+import ImagePreviewModal from './features/orders/ImagePreviewModal';
 import AdminOrderSummary from './features/admin/AdminOrderSummary';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
@@ -338,10 +340,10 @@ export default function App() {
         return;
       }
       const res = await gasPost({
-          action: 'getAdminSummary',
-          accessToken,
-          targetDate,
-          includeMemberBalances: false
+        action: 'getAdminSummary',
+        accessToken,
+        targetDate,
+        includeMemberBalances: false
       });
       const data = await res.json();
       if (requestId !== adminSummaryRequestRef.current) return;
@@ -394,8 +396,8 @@ export default function App() {
         return;
       }
       const res = await gasPost({
-          action: 'getMemberBalances',
-          accessToken
+        action: 'getMemberBalances',
+        accessToken
       });
       const data = await res.json();
       if (requestId !== memberBalancesRequestRef.current) return;
@@ -422,8 +424,8 @@ export default function App() {
       }
 
       const res = await gasPost({
-          action: 'getUserInfo',
-          accessToken
+        action: 'getUserInfo',
+        accessToken
       });
       if (!res.ok) {
         return { success: false, message: `backend HTTP ${res.status}` };
@@ -485,9 +487,9 @@ export default function App() {
     logAuthDiagnostic('REGISTER_REQUEST_START');
     try {
       const res = await gasPost({
-          action: 'registerUser',
-          accessToken,
-          pickupFloor: registrationFloor
+        action: 'registerUser',
+        accessToken,
+        pickupFloor: registrationFloor
       });
       if (!res.ok) {
         throw new Error(`backend HTTP ${res.status}`);
@@ -573,10 +575,10 @@ export default function App() {
         return;
       }
       const res = await gasPost({
-          action: 'getBalanceHistoryByMonth',
-          accessToken,
-          year,
-          month
+        action: 'getBalanceHistoryByMonth',
+        accessToken,
+        year,
+        month
       });
       const data = await res.json();
       if (requestId !== historyRequestRef.current) return;
@@ -653,10 +655,10 @@ export default function App() {
 
     try {
       const res = await gasPost({
-          action: 'toggleLike',
-          date: dateStr,
-          accessToken: liff.getAccessToken(),
-          userId: authUserId
+        action: 'toggleLike',
+        date: dateStr,
+        accessToken: liff.getAccessToken(),
+        userId: authUserId
       });
       const data = await res.json();
       if (data.success) {
@@ -731,11 +733,11 @@ export default function App() {
     setLoading(true);
     try {
       const res = await gasPost({
-          action: 'adminSetVendor',
-          accessToken: liff.getAccessToken(),
-          adminUserId: authUserId,
-          dateStr,
-          vendor
+        action: 'adminSetVendor',
+        accessToken: liff.getAccessToken(),
+        adminUserId: authUserId,
+        dateStr,
+        vendor
       });
       const data = await res.json();
       if (data.success) {
@@ -801,13 +803,13 @@ export default function App() {
     setLoading(true);
     try {
       const res = await gasPost({
-          action: 'submitOrder',
-          accessToken: liff.getAccessToken(),
-          userId: authUserId,
-          pickup_floor: floor,
-          target_date: selectedDate,
-          items,
-          note: orderNote
+        action: 'submitOrder',
+        accessToken: liff.getAccessToken(),
+        userId: authUserId,
+        pickup_floor: floor,
+        target_date: selectedDate,
+        items,
+        note: orderNote
       });
       const data = await res.json();
       if (data.success) {
@@ -853,11 +855,11 @@ export default function App() {
     setLoading(true);
     try {
       const res = await gasPost({
-          action: 'cancelOrder',
-          accessToken: liff.getAccessToken(),
-          userId: authUserId,
-          orderId: activeOrderId,
-          date: selectedDate
+        action: 'cancelOrder',
+        accessToken: liff.getAccessToken(),
+        userId: authUserId,
+        orderId: activeOrderId,
+        date: selectedDate
       });
       const data = await res.json();
       if (data.success) {
@@ -1044,12 +1046,12 @@ export default function App() {
     setTopupLoading(true);
     try {
       const res = await gasPost({
-          action: 'topUpBalance',
-          accessToken: liff.getAccessToken(),
-          adminUserId: authUserId,
-          targetUserId: selectedTopupUser.userId,
-          amount,
-          note: topupNote.trim()
+        action: 'topUpBalance',
+        accessToken: liff.getAccessToken(),
+        adminUserId: authUserId,
+        targetUserId: selectedTopupUser.userId,
+        amount,
+        note: topupNote.trim()
       });
       const data = await res.json();
       if (!data.success) {
@@ -1062,7 +1064,7 @@ export default function App() {
           ? { ...user, balance: data.newBalance }
           : user
       )));
-    if (selectedTopupUser.userId === authUserId) {
+      if (selectedTopupUser.userId === authUserId) {
         setUserBalance(data.newBalance);
         setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
       }
@@ -1342,7 +1344,7 @@ export default function App() {
                 onClick={fetchBalanceHistory}
                 className="text-xs text-emerald-200 hover:underline flex items-center gap-1 mt-0.5 focus:outline-none"
               >
-                儲值餘額：
+                💰 餘額
                 <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${displayBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
                   {formatBalanceAmount(displayBalance)}
                 </span>
@@ -1865,78 +1867,29 @@ export default function App() {
         </div>
       )}
 
-      <Modal
+      <PickupFloorModal
         open={showFloorModal}
-        title="設定預設領取樓層"
+        floor={floorDraft}
+        loading={floorLoading}
+        error={floorError}
+        onChange={setFloorDraft}
+        onSave={handleSaveDefaultFloor}
         onClose={() => {
           if (!floorLoading) setShowFloorModal(false);
         }}
-        ariaLabel="關閉預設領取樓層設定"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-gray-500">未來新增訂單將預設使用這個領取樓層。</p>
-          <div className="grid grid-cols-2 gap-3">
-            {['1樓', '9樓'].map((option) => (
-              <button
-                key={option}
-                type="button"
-                onClick={() => setFloorDraft(option)}
-                aria-pressed={floorDraft === option}
-                disabled={floorLoading}
-                className={`rounded-2xl border px-4 py-3 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-emerald-500 ${floorDraft === option ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-gray-200 bg-gray-50 text-gray-600'} disabled:cursor-not-allowed disabled:opacity-50`}
-              >
-                {option}
-              </button>
-            ))}
-          </div>
-          {floorError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{floorError}</p>}
-          <button
-            type="button"
-            onClick={handleSaveDefaultFloor}
-            disabled={floorLoading}
-            className="w-full rounded-2xl bg-[#2C4A3E] py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
-          >
-            {floorLoading ? '儲存中...' : '儲存設定'}
-          </button>
-        </div>
-      </Modal>
+      />
 
-      <Modal
+      <ChangelogModal
         open={showChangelogModal}
-        title={`開發歷程 v${APP_VERSION}`}
+        version={APP_VERSION}
+        changelog={CHANGELOG}
         onClose={() => setShowChangelogModal(false)}
-        className="max-w-lg"
-      >
-        <div className="space-y-5">
-          {CHANGELOG.map((release) => (
-            <section key={release.version} className="space-y-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <h3 className="font-bold text-[#2C4A3E]">v{release.version}</h3>
-                <time className="text-xs text-gray-400" dateTime={release.date}>{release.date}</time>
-              </div>
-              <ul className="list-disc space-y-1 pl-5 text-sm text-gray-600">
-                {release.changes.map((change) => <li key={change}>{change}</li>)}
-              </ul>
-            </section>
-          ))}
-        </div>
-      </Modal>
+      />
 
-      <Modal
-        open={Boolean(imagePreview)}
-        title={imagePreview?.alt || '餐點圖片'}
+      <ImagePreviewModal
+        imagePreview={imagePreview}
         onClose={() => setImagePreview(null)}
-        ariaLabel="關閉餐點圖片預覽"
-        className="max-w-3xl"
-      >
-        {imagePreview && (
-          <img
-            src={imagePreview.imageUrl}
-            alt={imagePreview.alt}
-            className="max-h-[70vh] w-full rounded-2xl object-contain"
-          />
-        )}
-      </Modal>
+      />
 
     </div>
   );
