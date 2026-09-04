@@ -60,3 +60,37 @@ function getAllUserSummaries(userSheet) {
   }));
 }
 
+function updateMyPickupFloor(userId, pickupFloor) {
+  const normalizedFloor = String(pickupFloor || '').trim();
+  if (!isValidPickupFloor(normalizedFloor)) {
+    return { success: false, message: "預設領取樓層只允許 1樓 或 9樓" };
+  }
+
+  const lock = LockService.getScriptLock();
+  let lockAcquired = false;
+  try {
+    lock.waitLock(10000);
+    lockAcquired = true;
+
+    const user = getRegisteredUser(userId);
+    if (!user) return { success: false, message: UNREGISTERED_USER_MESSAGE };
+
+    const userSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(USERS_SHEET);
+    if (!userSheet) return { success: false, message: "找不到 Users 資料表，無法更新預設領取樓層" };
+
+    userSheet.getRange(user.rowIndex, 3).setValue(normalizedFloor);
+    const updatedUser = getRegisteredUser(user.userId);
+    if (!updatedUser) {
+      return { success: false, message: "預設領取樓層更新後無法重新取得使用者資料" };
+    }
+
+    return {
+      success: true,
+      user: toPublicUser(updatedUser)
+    };
+  } catch (err) {
+    return { success: false, message: "預設領取樓層更新失敗" };
+  } finally {
+    if (lockAcquired) lock.releaseLock();
+  }
+}

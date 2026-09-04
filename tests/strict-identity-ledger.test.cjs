@@ -527,6 +527,71 @@ test('first registration uses only LINE Profile identity and is idempotent', () 
   assert.equal(spreadsheet.sheets.Users.getCell(2, 3), '9樓');
 });
 
+test('token-authenticated pickup floor update changes only the canonical Users row', () => {
+  const spreadsheet = orderSpreadsheet();
+  const ordersBefore = spreadsheet.sheets.Orders.rows.map(row => row.slice());
+  const gas = loadGas(spreadsheet, {
+    userId: 'user-id',
+    displayName: 'Leo Wu Leo'
+  });
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'updateMyPickupFloor',
+        accessToken: 'access-token',
+        userId: 'admin-id',
+        pickupFloor: '1樓'
+      })
+    }
+  });
+  const result = JSON.parse(output.text);
+
+  assert.equal(result.success, true);
+  assert.equal(result.user.userId, 'user-id');
+  assert.equal(result.user.defaultFloor, '1樓');
+  assert.equal(spreadsheet.sheets.Users.getCell(2, 3), '9樓');
+  assert.equal(spreadsheet.sheets.Users.getCell(3, 3), '1樓');
+  assert.deepEqual(spreadsheet.sheets.Orders.rows, ordersBefore);
+});
+
+test('pickup floor update rejects invalid floors and unregistered identities', () => {
+  const spreadsheet = orderSpreadsheet();
+  const before = spreadsheet.sheets.Users.rows.map(row => row.slice());
+  const gas = loadGas(spreadsheet, {
+    userId: 'user-id',
+    displayName: 'Leo Wu Leo'
+  });
+
+  const invalid = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'updateMyPickupFloor',
+        accessToken: 'access-token',
+        pickupFloor: '2樓'
+      })
+    }
+  });
+  assert.equal(JSON.parse(invalid.text).success, false);
+  assert.deepEqual(spreadsheet.sheets.Users.rows, before);
+
+  const unregisteredGas = loadGas(spreadsheet, {
+    userId: 'unknown-id',
+    displayName: 'Unknown User'
+  });
+  const unregistered = unregisteredGas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'updateMyPickupFloor',
+        accessToken: 'access-token',
+        pickupFloor: '1樓'
+      })
+    }
+  });
+  assert.equal(JSON.parse(unregistered.text).success, false);
+  assert.deepEqual(spreadsheet.sheets.Users.rows, before);
+});
+
 test('registration rejects invalid floor and failed LINE Profile API validation', () => {
   const spreadsheet = new MockSpreadsheet({ Users: new MockSheet([[
     'LINE_UserID', '姓名', '樓層', 'Balance', 'Role'
@@ -947,10 +1012,11 @@ test('central permission model keeps ProxyAdmin operational read access without 
 
   assert.equal(gas.hasPermission('User', 'orderOwn'), true);
   assert.equal(gas.hasPermission('User', 'viewMemberBalances'), false);
+  assert.equal(gas.hasPermission('User', 'topupMember'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'viewAdminOrderSummary'), true);
   assert.equal(gas.hasPermission('ProxyAdmin', 'viewAllOrders'), true);
   assert.equal(gas.hasPermission('ProxyAdmin', 'viewOrderStatistics'), true);
-  assert.equal(gas.hasPermission('ProxyAdmin', 'viewMemberBalances'), true);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'viewMemberBalances'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'topupMember'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'manageUsers'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'manageRoles'), false);
@@ -958,7 +1024,7 @@ test('central permission model keeps ProxyAdmin operational read access without 
   assert.equal(gas.hasPermission('Admin', 'viewAsUser'), true);
 });
 
-test('ProxyAdmin can read admin summary and member balances but cannot top up', () => {
+test('ProxyAdmin retains operations access but cannot read balances or top up', () => {
   const spreadsheet = orderSpreadsheet();
   spreadsheet.sheets.Users = usersWithProxySheet();
   const gas = loadGas(spreadsheet);
@@ -970,8 +1036,7 @@ test('ProxyAdmin can read admin summary and member balances but cannot top up', 
   assert.equal(summary.success, true);
   assert.equal(summary.requesterRole, 'ProxyAdmin');
   assert.deepEqual(JSON.parse(JSON.stringify(summary.usersSummary)), []);
-  assert.equal(balances.success, true);
-  assert.equal(balances.members.length, 3);
+  assert.equal(balances.success, false);
   assert.equal(topup.success, false);
   assert.equal(spreadsheet.sheets.Users.getCell(3, 4), -80);
 });
@@ -1143,6 +1208,34 @@ test('frontend separates auth/view-as identity, guards writes, and keeps date ch
   const selectViewAsHandler = appSource.match(/const handleSelectViewAs = \(user\) => \{[\s\S]*?\n  \};/);
   assert.ok(selectViewAsHandler);
   assert.doesNotMatch(selectViewAsHandler[0], /setAuthUser|setLineUserId/);
+});
+
+test('frontend wires floor editing, version history, modal preview, and corrected finance permissions', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
+  const changelogSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'data', 'changelog.js'), 'utf8');
+  const modalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'Modal.jsx'), 'utf8');
+  const orderSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderPage.jsx'), 'utf8');
+  const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+
+  assert.equal(packageJson.version, '0.6.0');
+  assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
+  assert.match(changelogSource, /version: '0\.1\.0'/);
+  assert.match(changelogSource, /version: '0\.6\.0'/);
+  assert.match(changelogSource, /commits:/);
+  assert.match(modalSource, /role="dialog"/);
+  assert.match(modalSource, /Escape/);
+  assert.match(appSource, /APP_VERSION/);
+  assert.match(appSource, /CHANGELOG/);
+  assert.match(appSource, /updateMyPickupFloor/);
+  assert.match(appSource, /showFloorModal/);
+  assert.match(appSource, /showChangelogModal/);
+  assert.match(appSource, /imagePreview/);
+  assert.match(orderSource, /onImagePreview/);
+  assert.match(orderSource, /w-20 h-20 sm:w-24 sm:h-24/);
+  assert.match(orderSource, /aria-label/);
+  assert.match(permissionsSource, /ProxyAdmin:[\s\S]*?viewMemberBalances: false[\s\S]*?topupMember: false/);
+  assert.match(permissionsSource, /Admin:[\s\S]*?viewMemberBalances: true[\s\S]*?topupMember: true/);
 });
 
 test('month navigation crosses calendar year boundaries', async () => {

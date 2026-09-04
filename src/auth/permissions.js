@@ -4,7 +4,9 @@ export const ROLE_PERMISSIONS = Object.freeze({
     editOwnOrder: true,
     cancelOwnOrder: true,
     viewOwnBalance: true,
-    viewOwnTransactions: true
+    viewOwnTransactions: true,
+    viewMemberBalances: false,
+    topupMember: false
   }),
   ProxyAdmin: Object.freeze({
     orderOwn: true,
@@ -15,7 +17,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     viewAdminOrderSummary: true,
     viewAllOrders: true,
     viewOrderStatistics: true,
-    viewMemberBalances: true
+    viewMemberBalances: false,
+    topupMember: false
   }),
   Admin: Object.freeze({
     orderOwn: true,

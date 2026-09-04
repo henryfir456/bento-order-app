@@ -49,6 +49,8 @@ function doPost(e) {
       return jsonResponse(getUserInfo(data.accessToken));
     } else if (action === 'registerUser') {
       return jsonResponse(registerUser(data));
+    } else if (action === 'updateMyPickupFloor') {
+      return jsonResponse(updateMyPickupFloorForAccessToken(data));
     } else if (action === 'getAdminSummary') {
       return jsonResponse(getAdminSummaryForAccessToken(data));
     } else if (action === 'getBalanceHistoryByMonth') {
@@ -85,6 +87,12 @@ function cancelOrderForAccessToken(data) {
   const authenticated = getAuthenticatedUser(data && data.accessToken);
   if (!authenticated.success) return authenticated;
   return cancelOrder(Object.assign({}, data, { userId: authenticated.user.userId }));
+}
+
+function updateMyPickupFloorForAccessToken(data) {
+  const authenticated = getAuthenticatedUser(data && data.accessToken);
+  if (!authenticated.success) return authenticated;
+  return updateMyPickupFloor(authenticated.user.userId, data && data.pickupFloor);
 }
 
 function toggleLikeForAccessToken(data) {
@@ -142,4 +150,3 @@ function getMemberBalancesForAccessToken(data) {
 }
 
 // 簡易農曆初一、十五計算邏輯
-

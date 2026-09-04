@@ -4,7 +4,9 @@ const ROLE_PERMISSIONS = {
     editOwnOrder: true,
     cancelOwnOrder: true,
     viewOwnBalance: true,
-    viewOwnTransactions: true
+    viewOwnTransactions: true,
+    viewMemberBalances: false,
+    topupMember: false
   },
   ProxyAdmin: {
     orderOwn: true,
@@ -15,7 +17,8 @@ const ROLE_PERMISSIONS = {
     viewAdminOrderSummary: true,
     viewAllOrders: true,
     viewOrderStatistics: true,
-    viewMemberBalances: true
+    viewMemberBalances: false,
+    topupMember: false
   },
   Admin: {
     orderOwn: true,

@@ -5,6 +5,8 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 import { formatDateInput, getTaipeiYearMonth, shiftYearMonth } from './dateUtils';
 import { gasGet, gasPost } from './api/gasApi';
 import { hasPermission } from './auth/permissions';
+import { APP_VERSION, CHANGELOG } from './data/changelog';
+import Modal from './components/Modal';
 import ViewAsBanner from './components/ViewAsBanner';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import OrderPage from './features/orders/OrderPage';
@@ -120,6 +122,12 @@ export default function App() {
   const [memberBalancesLoaded, setMemberBalancesLoaded] = useState(false);
   const memberBalancesRequestRef = useRef(0);
   const [showViewAsModal, setShowViewAsModal] = useState(false);
+  const [showFloorModal, setShowFloorModal] = useState(false);
+  const [floorDraft, setFloorDraft] = useState('');
+  const [floorLoading, setFloorLoading] = useState(false);
+  const [floorError, setFloorError] = useState('');
+  const [showChangelogModal, setShowChangelogModal] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
 
   // 餘額歷史彈窗狀態
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -190,6 +198,11 @@ export default function App() {
     setMemberBalancesError('');
     setMemberBalancesLoaded(false);
     setShowViewAsModal(false);
+    setShowFloorModal(false);
+    setFloorDraft('');
+    setFloorError('');
+    setShowChangelogModal(false);
+    setImagePreview(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
@@ -948,6 +961,69 @@ export default function App() {
     }
   };
 
+  const handleOpenFloorModal = () => {
+    if (!isRegistered || isViewAsMode || !authUser) return;
+    setFloorDraft(authUser.defaultFloor || authUser.floor || defaultFloor || '1樓');
+    setFloorError('');
+    setShowFloorModal(true);
+  };
+
+  const handleSaveDefaultFloor = async () => {
+    if (!authUser || isViewAsMode || floorLoading) return;
+
+    const nextFloor = String(floorDraft || '').trim();
+    if (!['1樓', '9樓'].includes(nextFloor)) {
+      setFloorError('預設領取樓層只允許 1樓 或 9樓');
+      return;
+    }
+
+    const accessToken = liff.getAccessToken();
+    if (!accessToken) {
+      setFloorError('目前無法驗證身份，請重新登入後再試。');
+      return;
+    }
+
+    setFloorLoading(true);
+    setFloorError('');
+    try {
+      const res = await gasPost({
+        action: 'updateMyPickupFloor',
+        accessToken,
+        pickupFloor: nextFloor
+      });
+      if (!res.ok) {
+        setFloorError(`更新失敗（HTTP ${res.status}）`);
+        return;
+      }
+
+      const data = await res.json();
+      if (!data.success || !data.user) {
+        setFloorError(data.message || '目前無法更新預設領取樓層，請稍後再試。');
+        return;
+      }
+
+      const canonicalFloor = data.user.defaultFloor || data.user.floor || nextFloor;
+      setAuthUser(prev => prev ? {
+        ...prev,
+        ...data.user,
+        floor: canonicalFloor,
+        defaultFloor: canonicalFloor
+      } : prev);
+      setDefaultFloor(canonicalFloor);
+      if (!hasExistingOrder) setFloor(canonicalFloor);
+      setShowFloorModal(false);
+    } catch {
+      setFloorError('目前無法更新預設領取樓層，請稍後再試。');
+    } finally {
+      setFloorLoading(false);
+    }
+  };
+
+  const handleImagePreview = (imageUrl, alt) => {
+    if (!imageUrl) return;
+    setImagePreview({ imageUrl, alt: alt || '餐點圖片' });
+  };
+
   const handleOpenTopupModal = (user) => {
     setSelectedTopupUser(user);
     setTopupAmount('');
@@ -1238,7 +1314,7 @@ export default function App() {
   const weekendEvents = renderWeekendEvents();
 
   return (
-    <div className="min-h-screen bg-[#F7F5F0] text-gray-800 pb-24">
+    <div className="flex min-h-screen flex-col bg-[#F7F5F0] pb-24 text-gray-800">
       <header className="bg-[#2C4A3E] text-white p-4 shadow-md">
         <div className="max-w-xl mx-auto flex justify-between items-center">
           <div>
@@ -1246,7 +1322,20 @@ export default function App() {
             <div className="mt-1 text-xs text-emerald-100 flex flex-wrap items-center gap-1.5">
               <span>👤 {displayName}</span>
               {effectiveUser && isRegistered && <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">{effectiveRole}</span>}
-              {displayFloor && <span className="text-emerald-200">預設領取：{displayFloor}</span>}
+              {displayFloor && (isViewAsMode ? (
+                <span className="rounded px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
+                  {displayFloor}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleOpenFloorModal}
+                  aria-label={`修改預設領取樓層，目前為 ${displayFloor}`}
+                  className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100 transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                >
+                  {displayFloor}
+                </button>
+              ))}
             </div>
             {isRegistered && !isViewAsMode && can('viewOwnBalance') && (
               <button
@@ -1315,7 +1404,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-xl mx-auto p-4">
+      <main className="max-w-xl mx-auto flex-1 p-4">
         {authState === AUTH_STATES.AUTH_REQUIRED && !loading && (
           <div className="mb-4 text-center bg-white rounded-3xl p-6 shadow-sm border border-emerald-900/10 space-y-4">
             <div className="text-4xl">🔐</div>
@@ -1427,6 +1516,7 @@ export default function App() {
             groupedMenu={groupedMenu}
             imageLoadErrors={imageLoadErrors}
             onImageError={(groupName) => setImageLoadErrors(prev => ({ ...prev, [groupName]: true }))}
+            onImagePreview={handleImagePreview}
             orderItems={orderItems}
             onDecreaseItem={(itemId, qty) => setOrderItems(prev => ({ ...prev, [itemId]: Math.max(0, qty - 1) }))}
             onIncreaseItem={(itemId, qty) => setOrderItems(prev => ({ ...prev, [itemId]: qty + 1 }))}
@@ -1461,6 +1551,17 @@ export default function App() {
         )}
 
       </main>
+
+      <footer className="mx-auto mt-auto w-full max-w-xl px-4 pb-5 text-right text-xs text-gray-400">
+        <button
+          type="button"
+          onClick={() => setShowChangelogModal(true)}
+          aria-label={`查看開發歷程，目前版本 ${APP_VERSION}`}
+          className="rounded px-2 py-1 transition hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        >
+          v{APP_VERSION}
+        </button>
+      </footer>
 
       {/* 底部導覽/操作列 */}
       {isRegistered && viewMode === 'order' && (
@@ -1763,6 +1864,79 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <Modal
+        open={showFloorModal}
+        title="設定預設領取樓層"
+        onClose={() => {
+          if (!floorLoading) setShowFloorModal(false);
+        }}
+        ariaLabel="關閉預設領取樓層設定"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">未來新增訂單將預設使用這個領取樓層。</p>
+          <div className="grid grid-cols-2 gap-3">
+            {['1樓', '9樓'].map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => setFloorDraft(option)}
+                aria-pressed={floorDraft === option}
+                disabled={floorLoading}
+                className={`rounded-2xl border px-4 py-3 text-sm font-bold transition focus:outline-none focus:ring-2 focus:ring-emerald-500 ${floorDraft === option ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-gray-200 bg-gray-50 text-gray-600'} disabled:cursor-not-allowed disabled:opacity-50`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+          {floorError && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-700">{floorError}</p>}
+          <button
+            type="button"
+            onClick={handleSaveDefaultFloor}
+            disabled={floorLoading}
+            className="w-full rounded-2xl bg-[#2C4A3E] py-3 text-sm font-bold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            {floorLoading ? '儲存中...' : '儲存設定'}
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showChangelogModal}
+        title={`開發歷程 v${APP_VERSION}`}
+        onClose={() => setShowChangelogModal(false)}
+        className="max-w-lg"
+      >
+        <div className="space-y-5">
+          {CHANGELOG.map((release) => (
+            <section key={release.version} className="space-y-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="font-bold text-[#2C4A3E]">v{release.version}</h3>
+                <time className="text-xs text-gray-400" dateTime={release.date}>{release.date}</time>
+              </div>
+              <ul className="list-disc space-y-1 pl-5 text-sm text-gray-600">
+                {release.changes.map((change) => <li key={change}>{change}</li>)}
+              </ul>
+            </section>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(imagePreview)}
+        title={imagePreview?.alt || '餐點圖片'}
+        onClose={() => setImagePreview(null)}
+        ariaLabel="關閉餐點圖片預覽"
+        className="max-w-3xl"
+      >
+        {imagePreview && (
+          <img
+            src={imagePreview.imageUrl}
+            alt={imagePreview.alt}
+            className="max-h-[70vh] w-full rounded-2xl object-contain"
+          />
+        )}
+      </Modal>
 
     </div>
   );

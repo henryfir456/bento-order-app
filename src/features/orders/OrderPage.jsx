@@ -10,6 +10,7 @@ export default function OrderPage({
   groupedMenu,
   imageLoadErrors,
   onImageError,
+  onImagePreview,
   orderItems,
   onDecreaseItem,
   onIncreaseItem,
@@ -73,14 +74,24 @@ export default function OrderPage({
                 groupedMenu.map((group) => (
                   <div key={group.baseName} className="flex gap-3 py-3 border-b last:border-0">
                     {group.imageUrl && !imageLoadErrors[group.baseName] ? (
-                      <img
-                        src={group.imageUrl}
-                        alt={group.baseName}
-                        onError={() => onImageError(group.baseName)}
-                        className="w-14 h-14 object-cover rounded-xl shadow-sm border border-gray-100 shrink-0"
-                      />
+                      <button
+                        type="button"
+                        aria-label={`預覽${group.baseName}圖片`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onImagePreview(group.imageUrl, group.baseName);
+                        }}
+                        className="w-20 h-20 sm:w-24 sm:h-24 shrink-0 overflow-hidden rounded-xl border border-gray-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        <img
+                          src={group.imageUrl}
+                          alt={group.baseName}
+                          onError={() => onImageError(group.baseName)}
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
                     ) : (
-                      <div className="w-14 h-14 bg-gray-50 rounded-xl flex items-center justify-center border border-gray-100 text-gray-400 text-xs shadow-sm shrink-0">
+                      <div className="w-20 h-20 sm:w-24 sm:h-24 shrink-0 rounded-xl border border-gray-100 bg-gray-50 flex items-center justify-center text-xs text-gray-400 shadow-sm">
                         無圖片
                       </div>
                     )}
@@ -160,4 +171,3 @@ export default function OrderPage({
           </div>
   );
 }
-
