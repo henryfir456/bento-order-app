@@ -3,9 +3,16 @@ import liff from '@line/liff';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { formatDateInput, getTaipeiYearMonth, shiftYearMonth } from './dateUtils';
+import { gasGet, gasPost } from './api/gasApi';
+import { hasPermission } from './auth/permissions';
+import ViewAsBanner from './components/ViewAsBanner';
+import CalendarManagement from './features/calendar/CalendarManagement';
+import OrderPage from './features/orders/OrderPage';
+import AdminOrderSummary from './features/admin/AdminOrderSummary';
+import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
+import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
 
 // 自動根據目前環境讀取對應的變數
-const GAS_API_URL = import.meta.env.VITE_GAS_API_URL;
 const LIFF_ID = import.meta.env.VITE_LIFF_ID;
 
 const AUTH_STATES = Object.freeze({
@@ -16,47 +23,6 @@ const AUTH_STATES = Object.freeze({
   REGISTERED: 'REGISTERED'
 });
 
-const ROLE_PERMISSIONS = Object.freeze({
-  User: Object.freeze({
-    orderOwn: true,
-    editOwnOrder: true,
-    cancelOwnOrder: true,
-    viewOwnBalance: true,
-    viewOwnTransactions: true
-  }),
-  ProxyAdmin: Object.freeze({
-    orderOwn: true,
-    editOwnOrder: true,
-    cancelOwnOrder: true,
-    viewOwnBalance: true,
-    viewOwnTransactions: true,
-    viewAdminOrderSummary: true,
-    viewAllOrders: true,
-    viewOrderStatistics: true,
-    viewMemberBalances: true
-  }),
-  Admin: Object.freeze({
-    orderOwn: true,
-    editOwnOrder: true,
-    cancelOwnOrder: true,
-    viewOwnBalance: true,
-    viewOwnTransactions: true,
-    viewAdminOrderSummary: true,
-    viewAllOrders: true,
-    viewOrderStatistics: true,
-    viewMemberBalances: true,
-    viewMemberTransactions: true,
-    topupMember: true,
-    manageCalendar: true,
-    manageMenu: true,
-    manageUsers: true,
-    manageRoles: true,
-    viewAsUser: true
-  })
-});
-
-const hasPermission = (role, permission) => Boolean(ROLE_PERMISSIONS[role]?.[permission]);
-
 const redactAuthSecrets = (value) => String(value || 'Unknown error')
   .replace(/(access[_-]?token|id[_-]?token|authorization)\s*[:=]?\s*[^\s,;]+/gi, '$1=[REDACTED]')
   .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]');
@@ -66,10 +32,6 @@ const logAuthDiagnostic = (message) => {
     console.info(`[AUTH] ${message}`);
   }
 };
-
-if (!GAS_API_URL) {
-  throw new Error('Missing VITE_GAS_API_URL');
-}
 
 if (!LIFF_ID) {
   throw new Error('Missing VITE_LIFF_ID');
@@ -97,16 +59,6 @@ const parseMenuItemName = (itemName = '') => {
     baseName: match[1].trim(),
     variant: (match[2] ?? match[3] ?? '').trim()
   };
-};
-
-const formatSignedAmount = (value) => {
-  const amount = Number(value || 0);
-  return `${amount >= 0 ? '+' : '-'}$${Math.abs(amount)}`;
-};
-
-const formatBalanceAmount = (value) => {
-  const balance = Number(value || 0);
-  return `${balance < 0 ? '-' : ''}$${Math.abs(balance)}`;
 };
 
 const getConfiguredVendor = (event) => {
@@ -372,15 +324,11 @@ export default function App() {
         setAdminSummaryError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'getAdminSummary',
           accessToken,
           targetDate,
           includeMemberBalances: false
-        })
       });
       const data = await res.json();
       if (requestId !== adminSummaryRequestRef.current) return;
@@ -432,13 +380,9 @@ export default function App() {
         setMemberBalancesError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'getMemberBalances',
           accessToken
-        })
       });
       const data = await res.json();
       if (requestId !== memberBalancesRequestRef.current) return;
@@ -464,13 +408,9 @@ export default function App() {
         return { success: false, message: 'LIFF accessToken 不存在' };
       }
 
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'getUserInfo',
           accessToken
-        })
       });
       if (!res.ok) {
         return { success: false, message: `backend HTTP ${res.status}` };
@@ -531,14 +471,10 @@ export default function App() {
     setAuthStage('REGISTER_REQUEST');
     logAuthDiagnostic('REGISTER_REQUEST_START');
     try {
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'registerUser',
           accessToken,
           pickupFloor: registrationFloor
-        })
       });
       if (!res.ok) {
         throw new Error(`backend HTTP ${res.status}`);
@@ -585,7 +521,7 @@ export default function App() {
     const targetId = uId || authUserId;
     if (!targetId) return;
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getCalendarEvents&userId=${targetId}&t=${Date.now()}`);
+      const res = await gasGet(`?action=getCalendarEvents&userId=${targetId}&t=${Date.now()}`);
       const data = await res.json();
       if (data.success) {
         setCalendarEvents(data.events || {});
@@ -598,7 +534,7 @@ export default function App() {
   const fetchUserAllOrders = async (uId) => {
     if (!uId) return;
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getUserAllOrdersMap&userId=${encodeURIComponent(uId)}&t=${Date.now()}`);
+      const res = await gasGet(`?action=getUserAllOrdersMap&userId=${encodeURIComponent(uId)}&t=${Date.now()}`);
       const data = await res.json();
       if (data.success) {
         setUserOrdersMap(data.ordersMap || {});
@@ -623,15 +559,11 @@ export default function App() {
         setHistoryError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'getBalanceHistoryByMonth',
           accessToken,
           year,
           month
-        })
       });
       const data = await res.json();
       if (requestId !== historyRequestRef.current) return;
@@ -707,15 +639,11 @@ export default function App() {
     });
 
     try {
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'toggleLike',
           date: dateStr,
           accessToken: liff.getAccessToken(),
           userId: authUserId
-        })
       });
       const data = await res.json();
       if (data.success) {
@@ -755,7 +683,7 @@ export default function App() {
     setHasExistingOrder(false);
 
     try {
-      const res = await fetch(`${GAS_API_URL}?action=getOrderPageData&targetDate=${encodeURIComponent(dateStr)}&userId=${encodeURIComponent(authUserId)}&t=${Date.now()}`);
+      const res = await gasGet(`?action=getOrderPageData&targetDate=${encodeURIComponent(dateStr)}&userId=${encodeURIComponent(authUserId)}&t=${Date.now()}`);
       const data = await res.json();
       if (data.success && data.myOrder && Array.isArray(data.myOrder.items)) {
         const orderMap = {};
@@ -789,16 +717,12 @@ export default function App() {
     if (!(await guardWrite('月曆設定'))) return;
     setLoading(true);
     try {
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'adminSetVendor',
           accessToken: liff.getAccessToken(),
           adminUserId: authUserId,
           dateStr,
           vendor
-        })
       });
       const data = await res.json();
       if (data.success) {
@@ -863,10 +787,7 @@ export default function App() {
 
     setLoading(true);
     try {
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'submitOrder',
           accessToken: liff.getAccessToken(),
           userId: authUserId,
@@ -874,7 +795,6 @@ export default function App() {
           target_date: selectedDate,
           items,
           note: orderNote
-        })
       });
       const data = await res.json();
       if (data.success) {
@@ -919,16 +839,12 @@ export default function App() {
 
     setLoading(true);
     try {
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'cancelOrder',
           accessToken: liff.getAccessToken(),
           userId: authUserId,
           orderId: activeOrderId,
           date: selectedDate
-        })
       });
       const data = await res.json();
       if (data.success) {
@@ -1051,17 +967,13 @@ export default function App() {
 
     setTopupLoading(true);
     try {
-      const res = await fetch(GAS_API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: JSON.stringify({
+      const res = await gasPost({
           action: 'topUpBalance',
           accessToken: liff.getAccessToken(),
           adminUserId: authUserId,
           targetUserId: selectedTopupUser.userId,
           amount,
           note: topupNote.trim()
-        })
       });
       const data = await res.json();
       if (!data.success) {
@@ -1347,23 +1259,11 @@ export default function App() {
                 </span>
               </button>
             )}
-            {isViewAsMode && (
-              <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-                預覽餘額：{formatBalanceAmount(displayBalance)}（僅供介面預覽）
-              </div>
-            )}
-            {isViewAsMode && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border-2 border-amber-300 bg-amber-100 px-3 py-2 text-xs font-bold text-amber-950">
-                <span>👁 正以 {viewAsUser.name}（{viewAsUser.role}）身分檢視</span>
-                <button
-                  type="button"
-                  onClick={handleExitViewAs}
-                  className="rounded-lg bg-[#2C4A3E] px-2.5 py-1.5 text-white shadow-sm"
-                >
-                  返回 Admin
-                </button>
-              </div>
-            )}
+            <ViewAsBanner
+              viewAsUser={isViewAsMode ? viewAsUser : null}
+              displayBalance={displayBalance}
+              onExit={handleExitViewAs}
+            />
           </div>
           <div className="flex gap-2">
             {isRegistered && canAuth('viewAsUser') && !isViewAsMode && (
@@ -1498,404 +1398,68 @@ export default function App() {
         )}
 
         {isRegistered && viewMode === 'calendar' && !loading && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-emerald-900/10 space-y-3">
-            <div className="flex justify-between items-center px-1">
-              <h2 className="text-lg font-bold text-[#2C4A3E]">
-                {currentMonth.getFullYear()} 年 {currentMonth.getMonth() + 1} 月 預訂月曆
-              </h2>
-              <div className="flex gap-1 items-center">
-                <button
-                  onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
-                  className="p-1.5 hover:bg-gray-100 rounded-lg text-sm"
-                >
-                  ◀
-                </button>
-                <button
-                  onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
-                  className="p-1.5 hover:bg-gray-100 rounded-lg text-sm"
-                >
-                  ▶
-                </button>
-              </div>
-            </div>
-
-            {adminManageMode && (
-              <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-xs text-rose-800 space-y-3">
-                <p className="font-medium">🛠️ 管理者模式啟用中：點擊月曆日期可編輯該日開團設定。</p>
-                <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2 items-end">
-                  <div>
-                    <label className="block font-bold mb-1" htmlFor="calendar-special-date">指定日期</label>
-                    <input
-                      id="calendar-special-date"
-                      type="date"
-                      value={specialAdminDate}
-                      onChange={(e) => handleSpecialAdminDateChange(e.target.value)}
-                      className="w-full min-w-0 border border-rose-200 rounded-xl p-2.5 bg-white text-sm focus:outline-rose-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-bold mb-1" htmlFor="calendar-special-vendor">店家</label>
-                    <select
-                      id="calendar-special-vendor"
-                      value={specialAdminVendorChoice}
-                      onChange={(e) => setSpecialAdminVendorChoice(e.target.value)}
-                      className="w-full min-w-0 border border-rose-200 rounded-xl p-2.5 bg-white text-sm focus:outline-rose-500"
-                    >
-                      <option value="蔡老師">蔡老師</option>
-                      <option value="禾拾">禾拾</option>
-                      <option value="合十">合十</option>
-                      <option value="">不開團</option>
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSpecialAdminSaveVendor}
-                    disabled={!specialAdminDate || loading}
-                    className="bg-[#2C4A3E] text-white px-3 py-2.5 rounded-xl font-bold hover:bg-emerald-800 disabled:bg-gray-300 whitespace-nowrap"
-                  >
-                    儲存設定
-                  </button>
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-5 gap-1 text-center font-medium text-xs text-gray-500 mb-1">
-              <div>一</div><div>二</div><div>三</div><div>四</div><div>五</div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-1.5">
-              {renderCalendarDays()}
-            </div>
-
-            {weekendEvents.length > 0 && (
-              <div className="border-t border-emerald-100 pt-3 space-y-2">
-                <h3 className="font-bold text-sm text-[#2C4A3E]">週末特別開團</h3>
-                <div className="space-y-2">
-                  {weekendEvents}
-                </div>
-              </div>
-            )}
-          </div>
+          <CalendarManagement
+            currentMonth={currentMonth}
+            onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+            onNextMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))}
+            adminManageMode={adminManageMode}
+            specialAdminDate={specialAdminDate}
+            onSpecialAdminDateChange={handleSpecialAdminDateChange}
+            specialAdminVendorChoice={specialAdminVendorChoice}
+            onVendorChange={setSpecialAdminVendorChoice}
+            onSaveVendor={handleSpecialAdminSaveVendor}
+            loading={loading}
+            renderCalendarDays={renderCalendarDays}
+            weekendEvents={weekendEvents}
+          />
         )}
 
         {isRegistered && viewMode === 'order' && !loading && (
-          <div className="space-y-4">
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 flex justify-between items-center">
-              <div>
-                <span className="text-xs text-gray-500">預訂日期</span>
-                <h2 className="text-lg font-bold text-[#2C4A3E]">{selectedDate} ({setting?.vendor})</h2>
-              </div>
-              <div className="text-right">
-                {isExpired ? (
-                  <span className="bg-amber-100 text-amber-800 text-xs px-2.5 py-1 rounded-full font-bold">
-                    🔒 已截止 (唯讀)
-                  </span>
-                ) : (
-                  <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">
-                    🟢 訂餐中
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <h3 className="font-bold text-sm text-[#2C4A3E]">我的訂購設定</h3>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">當日領取樓層</label>
-                  <select
-                    value={floor}
-                    onChange={(e) => setFloor(e.target.value)}
-                    disabled={isExpired || isViewAsMode}
-                    className="w-full border rounded-xl px-3 py-2 text-sm bg-white focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                  >
-                    <option value="1樓">1樓</option>
-                    <option value="9樓">9樓</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1" htmlFor="order-note">備註</label>
-                  <input
-                    id="order-note"
-                    type="text"
-                    placeholder="備註 (如：不要菇)"
-                    value={orderNote}
-                    onChange={(e) => setOrderNote(e.target.value)}
-                    disabled={isExpired || isViewAsMode}
-                    className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-              <h3 className="font-bold text-sm text-[#2C4A3E]">今日菜單</h3>
-              {groupedMenu.length === 0 ? (
-                <p className="text-xs text-gray-400 text-center py-4">本日無可選菜單</p>
-              ) : (
-                groupedMenu.map((group) => (
-                  <div key={group.baseName} className="flex gap-3 py-3 border-b last:border-0">
-                    {group.imageUrl && !imageLoadErrors[group.baseName] ? (
-                      <img
-                        src={group.imageUrl}
-                        alt={group.baseName}
-                        onError={() => setImageLoadErrors(prev => ({ ...prev, [group.baseName]: true }))}
-                        className="w-14 h-14 object-cover rounded-xl shadow-sm border border-gray-100 shrink-0"
-                      />
-                    ) : (
-                      <div className="w-14 h-14 bg-gray-50 rounded-xl flex items-center justify-center border border-gray-100 text-gray-400 text-xs shadow-sm shrink-0">
-                        無圖片
-                      </div>
-                    )}
-
-                    <div className="flex-1 min-w-0 space-y-1">
-                      {group.items.map((item) => {
-                        const qty = orderItems[item.item_id] || 0;
-                        const isSelected = qty > 0;
-                        return (
-                          <div
-                            key={item.item_id}
-                            className={`flex justify-between items-center gap-2 rounded-xl border-l-4 px-2 py-2 transition-colors ${isSelected
-                              ? 'bg-emerald-50 border-l-[#2C4A3E] shadow-sm'
-                              : 'border-l-transparent'
-                              }`}
-                          >
-                            <div className="min-w-0">
-                              <div className="font-bold text-sm text-gray-800 truncate">
-                                {item.displayVariant || group.baseName}
-                              </div>
-                              <div className="text-xs text-emerald-700 font-bold flex items-center gap-1 mt-1">
-                                <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200 shadow-sm">
-                                  ${item.price}
-                                </span>
-                                {item.note && <span className="text-gray-400 font-normal bg-gray-50 px-1.5 py-0.5 rounded truncate">({item.note})</span>}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                onClick={() => setOrderItems(prev => ({ ...prev, [item.item_id]: Math.max(0, qty - 1) }))}
-                                disabled={isExpired || isViewAsMode}
-                                className={`w-7 h-7 rounded-full font-bold transition-all ${isExpired || isViewAsMode
-                                  ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
-                                  : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-                                  }`}
-                              >
-                                -
-                              </button>
-                              <span className={`w-7 h-7 flex items-center justify-center text-sm font-bold rounded-lg border ${isSelected
-                                ? 'bg-[#2C4A3E] text-white border-[#2C4A3E]'
-                                : 'bg-gray-100 text-gray-800 border-gray-200'
-                                }`}>
-                                {qty}
-                              </span>
-                              <button
-                                onClick={() => setOrderItems(prev => ({ ...prev, [item.item_id]: qty + 1 }))}
-                                disabled={isExpired || isViewAsMode}
-                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${isExpired || isViewAsMode
-                                  ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                  : 'bg-[#2C4A3E] hover:bg-emerald-800'
-                                  }`}
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {isExpired && (
-              <div className="text-center text-xs font-bold p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200">
-                🔒 訂餐已截止或暫停服務
-              </div>
-            )}
-
-            {message && (
-              <div className="text-center text-sm font-bold p-2 rounded-lg bg-emerald-50 text-emerald-800">
-                {message}
-              </div>
-            )}
-          </div>
+          <OrderPage
+            selectedDate={selectedDate}
+            setting={setting}
+            isExpired={isExpired}
+            isViewAsMode={isViewAsMode}
+            floor={floor}
+            onFloorChange={setFloor}
+            orderNote={orderNote}
+            onOrderNoteChange={setOrderNote}
+            groupedMenu={groupedMenu}
+            imageLoadErrors={imageLoadErrors}
+            onImageError={(groupName) => setImageLoadErrors(prev => ({ ...prev, [groupName]: true }))}
+            orderItems={orderItems}
+            onDecreaseItem={(itemId, qty) => setOrderItems(prev => ({ ...prev, [itemId]: Math.max(0, qty - 1) }))}
+            onIncreaseItem={(itemId, qty) => setOrderItems(prev => ({ ...prev, [itemId]: qty + 1 }))}
+            message={message}
+          />
         )}
 
         {isRegistered && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
             {adminSection === 'orders' && (
-              <>
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-                  <div className="flex flex-wrap justify-between items-center gap-3">
-                    <h3 className="font-bold text-base text-[#2C4A3E]">📋 訂單管理</h3>
-                    <label className="flex items-center gap-2 text-xs font-bold text-gray-600" htmlFor="admin-order-date">
-                      訂單日期
-                      <input
-                        id="admin-order-date"
-                        type="date"
-                        value={selectedOrderDate}
-                        onChange={(e) => handleAdminDateChange(e.target.value)}
-                        className="min-w-0 border border-gray-200 rounded-xl px-2.5 py-2 bg-white text-sm focus:outline-emerald-600"
-                      />
-                    </label>
-                  </div>
-                  {adminSummary.targetDate && (
-                    <p className="text-xs text-gray-500">目前顯示：{adminSummary.targetDate}</p>
-                  )}
-                </div>
-
-                {adminSummaryLoading ? (
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
-                    讀取指定日期總覽中...
-                  </div>
-                ) : adminSummaryError ? (
-                  <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">
-                    {adminSummaryError}
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
-                        <div className="text-xs text-gray-500">總份數</div>
-                        <div className="text-xl font-bold text-[#2C4A3E]">{adminSummary.totalItems}</div>
-                      </div>
-                      <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
-                        <div className="text-xs text-gray-500">總金額</div>
-                        <div className="text-xl font-bold text-[#2C4A3E]">${adminSummary.totalAmount}</div>
-                      </div>
-                    </div>
-
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-                      <h3 className="font-bold text-base text-[#2C4A3E]">📦 便購種類匯總</h3>
-                      {Object.keys(aggregatedOrders).length === 0 ? (
-                        <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                          {Object.entries(aggregatedOrders).map(([itemKey, qty], idx) => (
-                            <div key={idx} className="bg-emerald-50/60 border border-emerald-100 p-2.5 rounded-xl flex justify-between items-center">
-                              <span className="text-xs font-bold text-emerald-900">{itemKey}</span>
-                              <span className="text-xs font-extrabold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200 shadow-sm">
-                                x {qty}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
-                      <h3 className="font-bold text-base text-[#2C4A3E]">🍱 {selectedOrderDate} 訂單明細 (依樓層分組)</h3>
-                      {adminSummary.todayOrders.length === 0 ? (
-                        <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
-                      ) : (
-                        <div className="space-y-4">
-                          {Object.entries(
-                            adminSummary.todayOrders.reduce((acc, order) => {
-                              const floor = order.pickup_floor || '其他';
-                              if (!acc[floor]) acc[floor] = [];
-                              acc[floor].push(order);
-                              return acc;
-                            }, {})
-                          ).map(([floor, orders]) => (
-                            <div key={floor} className="space-y-2">
-                              <h4 className="text-sm font-bold text-emerald-800 border-b border-emerald-100 pb-1">{floor} 訂單</h4>
-                              {orders.map((o, idx) => (
-                                <div key={idx} className="flex justify-between items-center text-xs p-3 border border-gray-100 bg-gray-50/80 rounded-xl hover:bg-emerald-50/50 transition-colors">
-                                  <div>
-                                    <div className="font-bold text-gray-800">
-                                      {o.name}
-                                      {o.note && <span className="ml-2 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-normal shadow-sm">📝 {o.note}</span>}
-                                    </div>
-                                    <div className="text-gray-600 mt-1">
-                                      {o.item_name} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
-                                    </div>
-                                  </div>
-                                  <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">
-                                    ${o.subtotal}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-              </>
+              <AdminOrderSummary
+                selectedOrderDate={selectedOrderDate}
+                onDateChange={handleAdminDateChange}
+                adminSummary={adminSummary}
+                adminSummaryLoading={adminSummaryLoading}
+                adminSummaryError={adminSummaryError}
+                aggregatedOrders={aggregatedOrders}
+              />
             )}
 
             {adminSection === 'balances' && can('viewMemberBalances') && (
-              <div className="space-y-4">
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-2">
-                  <h3 className="font-bold text-base text-[#2C4A3E]">💰 餘額管理</h3>
-                  <p className="text-xs text-gray-500">成員餘額為目前帳戶總額，與訂單日期無關。</p>
-                </div>
-
-                {memberBalancesLoading ? (
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
-                    讀取成員餘額中...
-                  </div>
-                ) : memberBalancesError ? (
-                  <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">
-                    {memberBalancesError}
-                  </div>
-                ) : memberBalances.length === 0 ? (
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-gray-400">
-                    目前沒有成員餘額資料
-                  </div>
-                ) : (
-                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-gray-100 text-gray-600">
-                          <tr>
-                            <th className="p-2">姓名</th>
-                            <th className="p-2">樓層</th>
-                            <th className="p-2">餘額</th>
-                            <th className="p-2">角色</th>
-                            {can('topupMember') && !isViewAsMode && <th className="p-2">操作</th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {memberBalances.map((u, idx) => (
-                            <tr key={u.userId || `member-${idx}`} className="border-b last:border-0">
-                              <td className="p-2 font-medium">{u.name}</td>
-                              <td className="p-2">{u.floor}</td>
-                              <td className="p-2">
-                                <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${u.balance < 0 ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'}`}>
-                                  {formatBalanceAmount(u.balance)}
-                                </span>
-                              </td>
-                              <td className="p-2">{u.role}</td>
-                              {can('topupMember') && !isViewAsMode && (
-                                <td className="p-2">
-                                  {u.userId ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenTopupModal(u)}
-                                      className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm whitespace-nowrap"
-                                    >
-                                      儲值
-                                    </button>
-                                  ) : (
-                                    <span className="text-gray-400">—</span>
-                                  )}
-                                </td>
-                              )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <MemberBalanceManagement
+                memberBalances={memberBalances}
+                memberBalancesLoading={memberBalancesLoading}
+                memberBalancesError={memberBalancesError}
+                canTopup={can('topupMember')}
+                isViewAsMode={isViewAsMode}
+                onOpenTopupModal={handleOpenTopupModal}
+              />
             )}
           </div>
         )}
+
       </main>
 
       {/* 底部導覽/操作列 */}

@@ -179,8 +179,21 @@ function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBe
     __logs: logs
   };
   vm.createContext(context);
-  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'code.gs'), 'utf8');
-  vm.runInContext(source, context);
+  const sourceFiles = [
+    'Utils.gs',
+    'Permissions.gs',
+    'Auth.gs',
+    'Users.gs',
+    'Orders.gs',
+    'Balances.gs',
+    'Calendar.gs',
+    'Admin.gs',
+    'Code.gs'
+  ];
+  sourceFiles.forEach((fileName) => {
+    const source = fs.readFileSync(path.join(__dirname, '..', 'gas', fileName), 'utf8');
+    vm.runInContext(source, context, { filename: fileName });
+  });
   return context;
 }
 
@@ -1098,17 +1111,20 @@ test('token-authenticated order writes ignore forged user ids', () => {
 
 test('frontend separates auth/view-as identity, guards writes, and keeps date changes off member balances', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
+  const viewAsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ViewAsBanner.jsx'), 'utf8');
   const dateHandler = appSource.match(/const handleAdminDateChange = \(dateStr\) => \{[\s\S]*?\n  \};/);
   const exitViewAsHandler = appSource.match(/const handleExitViewAs = \(\) => \{[\s\S]*?\n  \};/);
 
-  assert.match(appSource, /const ROLE_PERMISSIONS/);
-  assert.match(appSource, /const hasPermission/);
+  assert.match(permissionsSource, /export const ROLE_PERMISSIONS/);
+  assert.match(permissionsSource, /export const hasPermission/);
+  assert.match(appSource, /from ['"]\.\/auth\/permissions['"]/);
   assert.match(appSource, /const \[authUser, setAuthUser\]/);
   assert.match(appSource, /const \[viewAsUser, setViewAsUser\]/);
   assert.match(appSource, /const effectiveUser = viewAsUser \|\| authUser/);
   assert.match(appSource, /const effectiveRole = effectiveUser\?\.role/);
   assert.match(appSource, /showViewAsModal/);
-  assert.match(appSource, /返回 Admin/);
+  assert.match(viewAsSource, /返回 Admin/);
   assert.match(appSource, /action: 'getMemberBalances'/);
   assert.match(appSource, /includeMemberBalances: false/);
   assert.doesNotMatch(appSource, /adminSummary\.usersSummary\.map/);
