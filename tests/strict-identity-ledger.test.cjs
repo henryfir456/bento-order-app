@@ -186,6 +186,7 @@ function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBe
     'Users.gs',
     'Orders.gs',
     'Balances.gs',
+    'Announcements.gs',
     'Calendar.gs',
     'Admin.gs',
     'Code.gs'
@@ -403,6 +404,99 @@ function orderSpreadsheet() {
     ])
   });
 }
+
+function announcementSpreadsheet(rows) {
+  const spreadsheet = orderSpreadsheet();
+  spreadsheet.sheets.Announcements = new MockSheet([
+    ['id', 'title', 'content', 'start_date', 'end_date', 'enabled'],
+    ...rows
+  ]);
+  return spreadsheet;
+}
+
+const announcementAsOfDate = new Date('2026-09-04T04:00:00.000Z');
+
+test('latest announcement selects the latest start date and later sheet row for ties', () => {
+  const gas = loadGas(announcementSpreadsheet([
+    ['old', '舊公告', '舊內容', '2020-09-01', '2100-12-31', true],
+    ['same-day-first', '同日公告一', '內容一', '2020-09-03', '2100-12-31', true],
+    ['same-day-latest', '同日公告二', '內容二', '2020-09-03', '2100-12-31', true]
+  ]));
+
+  const expected = {
+    id: 'same-day-latest',
+    title: '同日公告二',
+    content: '內容二',
+    start_date: '2020-09-03',
+    end_date: '2100-12-31'
+  };
+
+  assert.deepEqual(JSON.parse(JSON.stringify(gas.getLatestAnnouncement(announcementAsOfDate))), expected);
+  assert.deepEqual(JSON.parse(JSON.stringify(gas.getCalendarEvents('admin-id').announcement)), expected);
+});
+
+test('announcement filtering ignores disabled, future, and expired rows', () => {
+  const gas = loadGas(announcementSpreadsheet([
+    ['disabled', '停用公告', '不應顯示', '2026-09-01', '2026-09-30', false],
+    ['future', '尚未開始', '不應顯示', '2026-09-05', '2026-09-30', true],
+    ['expired', '已結束', '不應顯示', '2026-08-01', '2026-09-03', true]
+  ]));
+
+  assert.equal(gas.getLatestAnnouncement(announcementAsOfDate), null);
+});
+
+test('announcement start and end dates are inclusive boundaries', () => {
+  const gas = loadGas(announcementSpreadsheet([
+    ['boundary', '邊界公告', '首尾日都有效', '2026-09-04', '2026-09-04', true]
+  ]));
+
+  assert.equal(gas.getLatestAnnouncement(announcementAsOfDate).id, 'boundary');
+});
+
+test('malformed announcement rows are ignored with warnings without hiding valid rows', () => {
+  const spreadsheet = announcementSpreadsheet([
+    ['', '缺少 id', '不應顯示', '2026-09-01', '2026-09-30', true],
+    ['reversed', '日期顛倒', '不應顯示', '2026-09-30', '2026-09-01', true],
+    ['valid', '有效公告', '應正常回傳', '2020-09-01', '2100-12-31', true]
+  ]);
+  const gas = loadGas(spreadsheet);
+
+  const result = gas.getCalendarEvents('admin-id');
+
+  assert.equal(result.success, true);
+  assert.equal(result.announcement.id, 'valid');
+  assert.equal(gas.__logs.length, 2);
+  assert.match(gas.__logs[0], /malformed row 2/);
+  assert.match(gas.__logs[1], /malformed row 3/);
+});
+
+test('missing Announcements sheet returns null and keeps calendar initialization successful', () => {
+  const gas = loadGas(orderSpreadsheet());
+
+  const result = gas.getCalendarEvents('admin-id');
+
+  assert.equal(result.success, true);
+  assert.equal(result.announcement, null);
+  assert.ok(result.events['2026-09-10']);
+  assert.match(gas.__logs[0], /Announcements sheet not found/);
+});
+
+test('calendar page data includes the effective announcement without another frontend request', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const barSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'AnnouncementBar.jsx'), 'utf8');
+  const modalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'AnnouncementModal.jsx'), 'utf8');
+
+  assert.match(appSource, /import AnnouncementBar from ['"]\.\/components\/AnnouncementBar['"]/);
+  assert.match(appSource, /import AnnouncementModal from ['"]\.\/components\/AnnouncementModal['"]/);
+  assert.match(appSource, /setAnnouncement\(data\.announcement \?\? null\)/);
+  assert.match(appSource, /onClick=\{\(\) => setShowAnnouncementModal\(true\)\}/);
+  assert.match(appSource, /<AnnouncementBar[\s\S]*announcement=\{announcement\}/);
+  assert.match(appSource, /<AnnouncementModal[\s\S]*announcement=\{announcement\}/);
+  assert.match(barSource, /truncate/);
+  assert.match(barSource, /onClick/);
+  assert.match(modalSource, /title=\{announcement\?\.title\}/);
+  assert.match(modalSource, /announcement\?\.content/);
+});
 
 test('getOrderPageData returns menu and the matching active user order together', () => {
   const spreadsheet = orderSpreadsheet();

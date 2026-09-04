@@ -166,7 +166,11 @@ function getCalendarEvents(currentUserId) {
     }
   });
 
-  return { success: true, events: events };
+  return {
+    success: true,
+    events: events,
+    announcement: getLatestAnnouncement()
+  };
 }
 
 // 切換愛心狀態與自動開團/取消
@@ -404,4 +408,3 @@ function getInitData(targetDateStr) {
     menu: menuItems
   };
 }
-

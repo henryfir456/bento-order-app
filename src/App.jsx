@@ -9,6 +9,8 @@ import { APP_VERSION, CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
 import PickupFloorModal from './components/PickupFloorModal';
 import ViewAsBanner from './components/ViewAsBanner';
+import AnnouncementBar from './components/AnnouncementBar';
+import AnnouncementModal from './components/AnnouncementModal';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import OrderPage from './features/orders/OrderPage';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
@@ -129,6 +131,8 @@ export default function App() {
   const [floorLoading, setFloorLoading] = useState(false);
   const [floorError, setFloorError] = useState('');
   const [showChangelogModal, setShowChangelogModal] = useState(false);
+  const [announcement, setAnnouncement] = useState(null);
+  const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
 
   // 餘額歷史彈窗狀態
@@ -204,6 +208,8 @@ export default function App() {
     setFloorDraft('');
     setFloorError('');
     setShowChangelogModal(false);
+    setAnnouncement(null);
+    setShowAnnouncementModal(false);
     setImagePreview(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
@@ -540,6 +546,7 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         setCalendarEvents(data.events || {});
+        setAnnouncement(data.announcement ?? null);
       }
     } catch (err) {
       console.error("無法讀取月曆資料", err);
@@ -1407,6 +1414,13 @@ export default function App() {
       </header>
 
       <main className="max-w-xl mx-auto flex-1 p-4">
+        {isRegistered && viewMode === 'calendar' && !loading && (
+          <AnnouncementBar
+            announcement={announcement}
+            onClick={() => setShowAnnouncementModal(true)}
+          />
+        )}
+
         {authState === AUTH_STATES.AUTH_REQUIRED && !loading && (
           <div className="mb-4 text-center bg-white rounded-3xl p-6 shadow-sm border border-emerald-900/10 space-y-4">
             <div className="text-4xl">🔐</div>
@@ -1843,7 +1857,6 @@ export default function App() {
                 >
                   <option value="蔡老師">蔡老師</option>
                   <option value="禾拾">禾拾</option>
-                  <option value="合十">合十</option>
                   <option value="">不開團</option>
                 </select>
               </div>
@@ -1884,6 +1897,12 @@ export default function App() {
         version={APP_VERSION}
         changelog={CHANGELOG}
         onClose={() => setShowChangelogModal(false)}
+      />
+
+      <AnnouncementModal
+        open={showAnnouncementModal && Boolean(announcement)}
+        announcement={announcement}
+        onClose={() => setShowAnnouncementModal(false)}
       />
 
       <ImagePreviewModal
