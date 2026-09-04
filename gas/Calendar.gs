@@ -94,12 +94,26 @@ function getDeadlineInfo(orderDateStr, mode) {
 }
 
 function getCalendarEvents(currentUserId) {
+  const totalStart = Date.now();
+  let settingsMs = 0;
+  let likesMs = 0;
+  let announcementsMs = 0;
+  let computeMs = 0;
+
+  try {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const settingsSheet = ss.getSheetByName('Settings');
   const likesSheet = ss.getSheetByName('Likes');
   
+  const settingsStart = Date.now();
   const settingsData = settingsSheet ? settingsSheet.getDataRange().getValues() : [];
+  settingsMs = Date.now() - settingsStart;
+
+  const likesStart = Date.now();
   const likesData = likesSheet ? likesSheet.getDataRange().getValues() : [];
+  likesMs = Date.now() - likesStart;
+
+  const computeStart = Date.now();
 
   // 1. 整理 Likes 資料
   const likesCountMap = {};
@@ -166,7 +180,11 @@ function getCalendarEvents(currentUserId) {
     }
   });
 
+  computeMs = Date.now() - computeStart;
+
+  const announcementsStart = Date.now();
   const announcements = getActiveAnnouncements();
+  announcementsMs = Date.now() - announcementsStart;
 
   return {
     success: true,
@@ -175,6 +193,13 @@ function getCalendarEvents(currentUserId) {
     // Transitional compatibility for older frontends; announcements is the canonical API.
     announcement: announcements[0] ?? null
   };
+  } finally {
+    logPerformanceTiming('SETTINGS', settingsMs);
+    logPerformanceTiming('LIKES', likesMs);
+    logPerformanceTiming('ANNOUNCEMENTS', announcementsMs);
+    logPerformanceTiming('COMPUTE', computeMs);
+    logPerformanceTiming('TOTAL', Date.now() - totalStart);
+  }
 }
 
 // 切換愛心狀態與自動開團/取消

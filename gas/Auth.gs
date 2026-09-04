@@ -97,30 +97,46 @@ function getAuthenticatedUser(accessToken) {
 }
 
 function getUserInfo(accessToken) {
-  const profile = getLineProfile(accessToken);
-  if (!profile.success) return profile;
+  const totalStart = Date.now();
+  let lineProfileMs = 0;
+  let usersLookupMs = 0;
 
-  let user;
   try {
-    user = getRegisteredUser(profile.userId);
-  } catch (err) {
-    logIdentityException("USER_LOOKUP_FAILED", err);
-    return identityError("USER_LOOKUP_FAILED");
-  }
-  if (!user) {
+    const profileStart = Date.now();
+    const profile = getLineProfile(accessToken);
+    lineProfileMs = Date.now() - profileStart;
+    if (!profile.success) return profile;
+
+    let user;
+    const usersLookupStart = Date.now();
+    try {
+      user = getRegisteredUser(profile.userId);
+    } catch (err) {
+      logIdentityException("USER_LOOKUP_FAILED", err);
+      return identityError("USER_LOOKUP_FAILED");
+    } finally {
+      usersLookupMs = Date.now() - usersLookupStart;
+    }
+
+    if (!user) {
+      return {
+        success: true,
+        registered: false,
+        lineUserId: profile.userId,
+        displayName: profile.displayName
+      };
+    }
+
     return {
       success: true,
-      registered: false,
-      lineUserId: profile.userId,
-      displayName: profile.displayName
+      registered: true,
+      user: toPublicUser(user)
     };
+  } finally {
+    logPerformanceTiming('LINE_PROFILE', lineProfileMs);
+    logPerformanceTiming('USERS_LOOKUP', usersLookupMs);
+    logPerformanceTiming('TOTAL', Date.now() - totalStart);
   }
-
-  return {
-    success: true,
-    registered: true,
-    user: toPublicUser(user)
-  };
 }
 
 function registerUser(data) {
@@ -184,4 +200,3 @@ function registerUser(data) {
     if (lockAcquired) lock.releaseLock();
   }
 }
-

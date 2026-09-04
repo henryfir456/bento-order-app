@@ -73,3 +73,22 @@ function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+function logPerformanceTiming(label, elapsedMs) {
+  const safeElapsedMs = Math.max(0, Number(elapsedMs) || 0);
+  const message = '[PERF] ' + label + '_MS=' + Math.round(safeElapsedMs);
+  if (typeof Logger !== 'undefined' && typeof Logger.log === 'function') {
+    Logger.log(message);
+    return;
+  }
+  if (typeof console !== 'undefined') {
+    if (typeof console.info === 'function') {
+      console.info(message);
+      return;
+    }
+    if (typeof console.log === 'function') {
+      console.log(message);
+      return;
+    }
+  }
+}

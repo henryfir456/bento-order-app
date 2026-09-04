@@ -39,6 +39,17 @@ const logAuthDiagnostic = (message) => {
   }
 };
 
+const getPerformanceNow = () => (
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+);
+
+const logPerformanceTiming = (label, startTime) => {
+  const elapsedMs = getPerformanceNow() - startTime;
+  console.info(`[PERF] ${label}_MS=${elapsedMs.toFixed(1)}`);
+};
+
 if (!LIFF_ID) {
   throw new Error('Missing VITE_LIFF_ID');
 }
@@ -238,6 +249,7 @@ export default function App() {
     }
 
     authInitInFlightRef.current = true;
+    const bootStartTime = getPerformanceNow();
     let currentStage = 'LIFF_INIT_START';
     setLoading(true);
     setAuthState(AUTH_STATES.AUTH_LOADING);
@@ -247,7 +259,12 @@ export default function App() {
 
     try {
       logAuthDiagnostic('LIFF_INIT_START');
-      await liff.init({ liffId: LIFF_ID });
+      const liffInitStartTime = getPerformanceNow();
+      try {
+        await liff.init({ liffId: LIFF_ID });
+      } finally {
+        logPerformanceTiming('LIFF_INIT', liffInitStartTime);
+      }
       currentStage = 'LIFF_INIT_SUCCESS';
       setAuthStage(currentStage);
       logAuthDiagnostic(currentStage);
@@ -272,17 +289,6 @@ export default function App() {
         return;
       }
 
-      currentStage = 'LIFF_PROFILE_START';
-      setAuthStage(currentStage);
-      try {
-        await liff.getProfile();
-        logAuthDiagnostic('LIFF_PROFILE_SUCCESS=true');
-      } catch (profileError) {
-        logAuthDiagnostic('LIFF_PROFILE_SUCCESS=false');
-        failAuthentication('LIFF_PROFILE_FAILED', profileError);
-        return;
-      }
-
       currentStage = 'BACKEND_IDENTITY_VERIFY_START';
       setAuthStage(currentStage);
       const identity = await fetchUserInfo(accessToken);
@@ -295,9 +301,6 @@ export default function App() {
         logAuthDiagnostic('USER_REGISTERED=true');
         logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
         setLineUserId(canonicalUserId);
-        if (hasPermission(identity.user.role, 'viewAdminOrderSummary')) {
-          prefetchAdminSummary(canonicalUserId);
-        }
         fetchUserAllOrders(canonicalUserId);
         await fetchCalendarEvents(canonicalUserId);
       } else if (identity?.success && identity.registered === false) {
@@ -313,6 +316,7 @@ export default function App() {
     } catch (err) {
       failAuthentication(currentStage, err);
     } finally {
+      logPerformanceTiming('BOOT_TOTAL', bootStartTime);
       setLoading(false);
       authInitInFlightRef.current = false;
     }
@@ -380,12 +384,6 @@ export default function App() {
     }
   };
 
-  const prefetchAdminSummary = async (uId) => {
-    const targetUserId = uId || authUserId;
-    if (!targetUserId) return;
-    await loadAdminSummary(selectedOrderDate, targetUserId, false);
-  };
-
   const loadMemberBalances = async (force = false) => {
     const visibleRole = viewAsUser?.role || authUser?.role;
     if (!authUser?.userId || !hasPermission(visibleRole, 'viewMemberBalances')) return;
@@ -424,6 +422,7 @@ export default function App() {
   };
 
   const fetchUserInfo = async (accessToken) => {
+    const requestStartTime = getPerformanceNow();
     try {
       if (!accessToken) {
         return { success: false, message: 'LIFF accessToken 不存在' };
@@ -474,6 +473,8 @@ export default function App() {
       const safeMessage = redactAuthSecrets(err instanceof Error ? err.message : err);
       logAuthDiagnostic(`BACKEND_IDENTITY_VERIFY_SUCCESS=false stage=BACKEND_IDENTITY_VERIFY_REQUEST error=${safeMessage}`);
       return { success: false, message: safeMessage };
+    } finally {
+      logPerformanceTiming('GET_USER_INFO', requestStartTime);
     }
   };
 
@@ -524,9 +525,6 @@ export default function App() {
       logAuthDiagnostic('USER_REGISTERED=true');
       logAuthDiagnostic(`USER_ROLE=${identity.user.role || 'User'}`);
       setLineUserId(canonicalUserId);
-      if (hasPermission(identity.user.role, 'viewAdminOrderSummary')) {
-        prefetchAdminSummary(canonicalUserId);
-      }
       fetchUserAllOrders(canonicalUserId);
       await fetchCalendarEvents(canonicalUserId);
     } catch (err) {
@@ -541,6 +539,7 @@ export default function App() {
   const fetchCalendarEvents = async (uId) => {
     const targetId = uId || authUserId;
     if (!targetId) return;
+    const requestStartTime = getPerformanceNow();
     try {
       const res = await gasGet(`?action=getCalendarEvents&userId=${targetId}&t=${Date.now()}`);
       const data = await res.json();
@@ -554,11 +553,14 @@ export default function App() {
       }
     } catch (err) {
       console.error("無法讀取月曆資料", err);
+    } finally {
+      logPerformanceTiming('CALENDAR', requestStartTime);
     }
   };
 
   const fetchUserAllOrders = async (uId) => {
     if (!uId) return;
+    const requestStartTime = getPerformanceNow();
     try {
       const res = await gasGet(`?action=getUserAllOrdersMap&userId=${encodeURIComponent(uId)}&t=${Date.now()}`);
       const data = await res.json();
@@ -567,6 +569,8 @@ export default function App() {
       }
     } catch (err) {
       console.error("讀取個人訂單圖譜失敗", err);
+    } finally {
+      logPerformanceTiming('ORDERS_MAP', requestStartTime);
     }
   };
 
