@@ -2,7 +2,7 @@
 name: ap-verification-core
 description: Execute and report repository verification declared by agent.yaml, including evidence-based baseline attribution and a separate defect-first review handoff.
 metadata:
-  version: "0.1.1"
+  version: "0.2.0"
 ---
 
 # ap-verification-core
@@ -101,15 +101,42 @@ review evidence.
 
 ## Handoff contract
 
-The final verification handoff should include:
+For every bounded governance or maintenance task, the final handoff must
+be self-contained and include these sections:
 
-- one result for every required command and manual entry;
-- exact commands, exit statuses, material evidence, and limitations;
-- attribution labels for every failure;
-- independent-review status and findings as a separate section;
-- scope or baseline-debt follow-up items; and
-- one suggested Conventional Commit title derived from the actual diff,
-  or multiple titles when the diff contains multiple bounded changes.
+- `Status / outcome`: state whether the task is complete, blocked, or
+  partial, with a concise reason.
+- `Changed files`: list changed repository-relative paths, grouped by
+  repository; write `none` when there is no diff.
+- `Verification evidence`: include one result for every required command
+  and manual entry, with exact commands, exit statuses, material evidence,
+  limitations, and an attribution label for every failure.
+- `Independent review`: report the review status and findings separately
+  from automated and manual verification.
+- `Pre-existing changes preserved / collisions`: state which pre-existing
+  changes were preserved and report direct collisions, or explicitly state
+  `none`.
+- `Commit status`: report whether each affected repository is committed.
+  If an uncommitted diff remains, include at least one suggested
+  Conventional Commit title derived from the actual diff. If no diff
+  remains, write `no commit needed`. If changes were committed, include the
+  actual full commit SHA and commit message.
+- `Tag status / release ref`: when applicable, report the tag or release
+  ref, resolved source commit, and whether a new immutable local tag was
+  created; otherwise write `not applicable`.
+- `Push status`: explicitly state whether commits or tags were pushed.
+- `Deploy status`: explicitly state whether anything was deployed.
+- `Remaining follow-up / debt`: list unresolved verification, release or
+  sync limitations, baseline debt, and other bounded follow-up; write
+  `none` when there is no remaining item.
+
+When a task spans canonical and consumer repositories, report each
+repository's commit boundary separately. Provide a separate suggested
+commit title for every repository that still has uncommitted changes.
+
+The completion handoff is a reporting contract only. It does not authorize
+mutation, commit, tag creation, push, or deploy; authority remains defined
+by the applicable repository `AGENTS.md` and the current user request.
 
 Suggested titles are recommendations only. Verification never performs
 `git add`, `git commit`, or `git push`.
