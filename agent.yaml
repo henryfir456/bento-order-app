@@ -18,7 +18,7 @@ shared_skills:
     version: "0.2.0"
     path: ".agents/skills/ap-safe-preflight"
   - id: ap-verification-core
-    version: "0.1.0"
+    version: "0.1.1"
     path: ".agents/skills/ap-verification-core"
 
 project_skills: []
