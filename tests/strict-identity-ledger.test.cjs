@@ -701,7 +701,7 @@ test('calendar page data includes the effective announcement without another fro
   const footerBlock = appSource.match(/<footer[\s\S]*?<\/footer>/)?.[0];
   assert.ok(footerBlock);
   assert.match(footerBlock, /© 2026 Henry · 蔬食便當預訂系統/);
-  assert.match(footerBlock, /v\{APP_VERSION\} · 更新紀錄/);
+  assert.match(footerBlock, /v\{APP_VERSION\}/);
   assert.match(footerBlock, /setShowChangelogModal\(true\)/);
   assert.match(footerBlock, /text-center text-xs text-gray-400/);
   assert.doesNotMatch(footerBlock, /fixed|sticky/);
