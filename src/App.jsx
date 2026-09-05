@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import liff from '@line/liff';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { formatDateInput, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
 import { gasGet, gasPost } from './api/gasApi';
+import { authClient } from './auth/liffClient';
 import { hasPermission } from './auth/permissions';
 import { APP_VERSION, CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
 import PickupFloorModal from './components/PickupFloorModal';
 import ViewAsBanner from './components/ViewAsBanner';
+import DevAuthBadge from './components/DevAuthBadge';
 import AnnouncementBar from './components/AnnouncementBar';
 import AnnouncementModal from './components/AnnouncementModal';
 import CalendarManagement from './features/calendar/CalendarManagement';
@@ -19,8 +20,6 @@ import MemberBalanceManagement from './features/balances/MemberBalanceManagement
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
 
 // 自動根據目前環境讀取對應的變數
-const LIFF_ID = import.meta.env.VITE_LIFF_ID;
-
 const AUTH_STATES = Object.freeze({
   AUTH_LOADING: 'AUTH_LOADING',
   AUTH_REQUIRED: 'AUTH_REQUIRED',
@@ -49,10 +48,6 @@ const logPerformanceTiming = (label, startTime) => {
   const elapsedMs = getPerformanceNow() - startTime;
   console.info(`[PERF] ${label}_MS=${elapsedMs.toFixed(1)}`);
 };
-
-if (!LIFF_ID) {
-  throw new Error('Missing VITE_LIFF_ID');
-}
 
 const showPopup = (options) => Swal.fire({
   confirmButtonText: '確定',
@@ -294,10 +289,17 @@ export default function App() {
     clearIdentityData();
 
     try {
+      let identity;
+      let usingLegacyStartup = false;
+      if (authClient.isMock) {
+        currentStage = 'MOCK_IDENTITY_READY';
+        setAuthStage(currentStage);
+        identity = authClient.getMockIdentity();
+      } else {
       logAuthDiagnostic('LIFF_INIT_START');
       const liffInitStartTime = getPerformanceNow();
       try {
-        await liff.init({ liffId: LIFF_ID });
+        await authClient.init();
       } finally {
         logPerformanceTiming('LIFF_INIT', liffInitStartTime);
       }
@@ -305,20 +307,20 @@ export default function App() {
       setAuthStage(currentStage);
       logAuthDiagnostic(currentStage);
 
-      const isLoggedIn = liff.isLoggedIn();
+      const isLoggedIn = authClient.isLoggedIn();
       logAuthDiagnostic(`LIFF_IS_LOGGED_IN=${isLoggedIn}`);
-      logAuthDiagnostic(`LIFF_IS_IN_CLIENT=${liff.isInClient()}`);
+      logAuthDiagnostic(`LIFF_IS_IN_CLIENT=${authClient.isInClient()}`);
       if (!isLoggedIn) {
         setAuthState(AUTH_STATES.AUTH_REQUIRED);
         setAuthStage(AUTH_STATES.AUTH_REQUIRED);
         logAuthDiagnostic('AUTH_REQUIRED');
-        liff.login();
+        authClient.login();
         return;
       }
 
       currentStage = 'LIFF_ACCESS_TOKEN_READ';
       setAuthStage(currentStage);
-      const accessToken = liff.getAccessToken();
+      const accessToken = authClient.getAccessToken();
       logAuthDiagnostic(`LIFF_ACCESS_TOKEN_PRESENT=${Boolean(accessToken)}`);
       if (!accessToken) {
         failAuthentication('LIFF_ACCESS_TOKEN_MISSING', 'LIFF accessToken 不存在');
@@ -327,10 +329,11 @@ export default function App() {
 
       currentStage = 'BACKEND_IDENTITY_VERIFY_START';
       setAuthStage(currentStage);
-      let identity = await fetchBootstrapData(accessToken);
-      const usingLegacyStartup = identity?.code === 'INVALID_ACTION';
+      identity = await fetchBootstrapData(accessToken);
+      usingLegacyStartup = identity?.code === 'INVALID_ACTION';
       if (usingLegacyStartup) {
         identity = await fetchUserInfo(accessToken);
+      }
       }
       if (identity?.success && identity.registered && identity.user) {
         applyUserInfoData(identity);
@@ -391,7 +394,7 @@ export default function App() {
     }));
 
     try {
-      const accessToken = liff.getAccessToken();
+      const accessToken = authClient.getAccessToken();
       if (!accessToken) {
         setAdminSummaryError('目前無法驗證身份，請重新登入後再試。');
         return;
@@ -441,7 +444,7 @@ export default function App() {
     setMemberBalancesError('');
 
     try {
-      const accessToken = liff.getAccessToken();
+      const accessToken = authClient.getAccessToken();
       if (!accessToken) {
         setMemberBalancesError('目前無法驗證身份，請重新登入後再試。');
         return;
@@ -520,7 +523,7 @@ export default function App() {
   const handleRegister = async () => {
     if (registrationLoading || authState !== AUTH_STATES.UNREGISTERED) return;
 
-    const accessToken = liff.getAccessToken();
+    const accessToken = authClient.getAccessToken();
     if (!accessToken) {
       failAuthentication('REGISTER_ACCESS_TOKEN_MISSING', 'LIFF accessToken 不存在');
       await showPopup({ icon: 'error', title: '身份驗證失敗', text: '目前無法取得 LINE 身份驗證，請重新驗證。' });
@@ -547,7 +550,7 @@ export default function App() {
       }
 
       // Backend 會回傳 canonical row；這裡再重新取得一次，確保後續狀態來自 Users。
-      const canonicalAccessToken = liff.getAccessToken();
+      const canonicalAccessToken = authClient.getAccessToken();
       logAuthDiagnostic(`LIFF_ACCESS_TOKEN_PRESENT=${Boolean(canonicalAccessToken)}`);
       const identity = await fetchUserInfo(canonicalAccessToken);
       if (!identity?.success || !identity.registered || !identity.user) {
@@ -623,7 +626,7 @@ export default function App() {
     setHistorySummary({ openingBalance: 0, totalCredit: 0, totalDebit: 0, closingBalance: 0 });
 
     try {
-      const accessToken = liff.getAccessToken();
+      const accessToken = authClient.getAccessToken();
       if (!accessToken) {
         setHistoryError('目前無法驗證身份，請重新登入後再試。');
         return;
@@ -711,7 +714,7 @@ export default function App() {
       const res = await gasPost({
         action: 'toggleLike',
         date: dateStr,
-        accessToken: liff.getAccessToken(),
+        accessToken: authClient.getAccessToken(),
         userId: authUserId
       });
       const data = await res.json();
@@ -788,7 +791,7 @@ export default function App() {
     try {
       const res = await gasPost({
         action: 'adminSetVendor',
-        accessToken: liff.getAccessToken(),
+        accessToken: authClient.getAccessToken(),
         adminUserId: authUserId,
         dateStr,
         vendor
@@ -858,7 +861,7 @@ export default function App() {
     try {
       const res = await gasPost({
         action: 'submitOrder',
-        accessToken: liff.getAccessToken(),
+        accessToken: authClient.getAccessToken(),
         userId: authUserId,
         pickup_floor: floor,
         target_date: selectedDate,
@@ -910,7 +913,7 @@ export default function App() {
     try {
       const res = await gasPost({
         action: 'cancelOrder',
-        accessToken: liff.getAccessToken(),
+        accessToken: authClient.getAccessToken(),
         userId: authUserId,
         orderId: activeOrderId,
         date: selectedDate
@@ -1033,7 +1036,7 @@ export default function App() {
       return;
     }
 
-    const accessToken = liff.getAccessToken();
+    const accessToken = authClient.getAccessToken();
     if (!accessToken) {
       setFloorError('目前無法驗證身份，請重新登入後再試。');
       return;
@@ -1101,7 +1104,7 @@ export default function App() {
     try {
       const res = await gasPost({
         action: 'topUpBalance',
-        accessToken: liff.getAccessToken(),
+        accessToken: authClient.getAccessToken(),
         adminUserId: authUserId,
         targetUserId: selectedTopupUser.userId,
         amount,
@@ -1384,6 +1387,7 @@ export default function App() {
             <div className="mt-1 text-xs text-emerald-100 flex flex-wrap items-center gap-1.5">
               <span>👤 {displayName}</span>
               {effectiveUser && isRegistered && <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">{effectiveRole}</span>}
+              <DevAuthBadge mode={authClient.mode} mockUser={authClient.mockUser} />
               {displayFloor && (isViewAsMode ? (
                 <span className="rounded px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
                   {displayFloor}

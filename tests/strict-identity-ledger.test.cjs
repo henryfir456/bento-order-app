@@ -1594,3 +1594,105 @@ test('frontend wires monthly balance and selected-date admin summary queries', (
   assert.match(appSource, /adminSummaryRequestRef\.current \+= 1/);
   assert.match(appSource, /historyRequestRef\.current \+= 1/);
 });
+
+test('auth mode defaults to LIFF and production cannot enable mock mode', async () => {
+  const { resolveAuthConfig } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'auth', 'authMode.js')).href);
+
+  assert.equal(resolveAuthConfig({ DEV: true }).mode, 'liff');
+  assert.equal(resolveAuthConfig({ DEV: true, VITE_AUTH_MODE: 'mock' }).mode, 'mock');
+  assert.equal(resolveAuthConfig({ DEV: false, VITE_AUTH_MODE: 'mock' }).mode, 'liff');
+});
+
+test('DEV mock auth never calls LIFF lifecycle or access-token methods', async () => {
+  const { createAuthClient } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'auth', 'authClient.js')).href);
+  const calls = [];
+  const liffClient = {
+    init: () => calls.push('init'),
+    isLoggedIn: () => calls.push('isLoggedIn'),
+    isInClient: () => calls.push('isInClient'),
+    login: () => calls.push('login'),
+    getAccessToken: () => calls.push('getAccessToken')
+  };
+  const client = createAuthClient({
+    env: { DEV: true, VITE_AUTH_MODE: 'mock', VITE_MOCK_USER: 'admin' },
+    liffClient,
+    logger: { info() {} }
+  });
+
+  await client.init();
+  assert.equal(client.isLoggedIn(), true);
+  assert.equal(client.isInClient(), false);
+  assert.equal(client.getAccessToken(), 'local-mock-session');
+  assert.deepEqual(calls, []);
+});
+
+test('frontend keeps LIFF and GAS transport behind the auth and API boundaries', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const mockApiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'mockGasApi.js'), 'utf8');
+  const gasApiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'gasApi.js'), 'utf8');
+
+  assert.doesNotMatch(appSource, /@line\/liff|\bliff\./);
+  assert.match(appSource, /authClient\.getAccessToken/);
+  assert.doesNotMatch(mockApiSource, /\bfetch\s*\(/);
+  assert.match(gasApiSource, /authClient\.isMock/);
+});
+
+test('production auth client delegates to LIFF even when mock is requested', async () => {
+  const { createAuthClient } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'auth', 'authClient.js')).href);
+  const calls = [];
+  const liffClient = {
+    init: (options) => calls.push(['init', options]),
+    isLoggedIn: () => true,
+    isInClient: () => false,
+    login: () => calls.push(['login']),
+    getAccessToken: () => 'real-line-token'
+  };
+  const client = createAuthClient({
+    env: { DEV: false, VITE_AUTH_MODE: 'mock', VITE_LIFF_ID: 'test-liff-id' },
+    liffClient,
+    logger: { info() {} }
+  });
+
+  assert.equal(client.mode, 'liff');
+  await client.init();
+  assert.deepEqual(calls, [['init', { liffId: 'test-liff-id' }]]);
+  assert.equal(client.getAccessToken(), 'real-line-token');
+});
+
+test('mock identities preserve canonical user roles and unregistered shape', async () => {
+  const { getMockIdentityResponse } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'auth', 'mockData.js')).href);
+
+  for (const [mockUser, role] of [['user', 'User'], ['admin', 'Admin'], ['proxy-admin', 'ProxyAdmin']]) {
+    const identity = getMockIdentityResponse(mockUser);
+    assert.equal(identity.success, true);
+    assert.equal(identity.registered, true);
+    assert.equal(identity.user.role, role);
+    assert.ok(identity.user.userId);
+    assert.ok(identity.calendar.events);
+    assert.ok(identity.ordersMap);
+  }
+
+  const unregistered = getMockIdentityResponse('unregistered');
+  assert.deepEqual(unregistered, {
+    success: true,
+    registered: false,
+    lineUserId: 'mock-unregistered-id',
+    displayName: 'Mock Unregistered'
+  });
+});
+
+test('mock API reuses bootstrap and order-page response contracts', async () => {
+  const { createMockGasApi } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'mockGasApi.js')).href);
+  const api = createMockGasApi({ mockUser: 'admin' });
+  const bootstrap = await (await api.post({ action: 'getBootstrapData' })).json();
+  const orderPage = await (await api.get('?action=getOrderPageData&targetDate=2099-01-02')).json();
+
+  assert.equal(bootstrap.registered, true);
+  assert.ok(bootstrap.user.userId);
+  assert.ok(bootstrap.calendar.events);
+  assert.ok(bootstrap.ordersMap);
+  assert.deepEqual(Object.keys(orderPage), ['success', 'setting', 'deadline', 'menu', 'myOrder']);
+  assert.equal(orderPage.success, true);
+  assert.ok(Array.isArray(orderPage.menu));
+  assert.ok(Array.isArray(orderPage.myOrder.items));
+});
