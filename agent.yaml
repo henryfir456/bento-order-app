@@ -1,0 +1,44 @@
+schema_version: 1
+
+project:
+  name: bento-order-app
+  type: react-gas-liff
+  stack:
+    - react
+    - vite
+    - gas
+    - liff
+
+# The platform source is intentionally pending because this change does
+# not create a commit. Replace the value with the full 40-character SHA
+# when a user-authorized agent-platform commit exists.
+shared_source:
+  repository: "agent-platform"
+  commit: "<pending: replace with full 40-character commit SHA>"
+
+shared_skills:
+  - id: ap-safe-preflight
+    path: ".agents/skills/ap-safe-preflight"
+  - id: ap-verification-core
+    path: ".agents/skills/ap-verification-core"
+
+project_skills: []
+
+commands:
+  test:
+    - "node --test tests/strict-identity-ledger.test.cjs"
+  lint:
+    - "npm run lint"
+  build:
+    - "npm run build"
+
+verification:
+  required:
+    - test
+    - lint
+    - build
+  manual:
+    - "Real LIFF authentication"
+    - "View As and identity flow"
+    - "GAS deployment and production contract"
+
