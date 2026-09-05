@@ -1,6 +1,8 @@
 ---
 name: ap-verification-core
 description: Execute and report repository verification declared by agent.yaml, distinguishing PASS, FAIL, NOT RUN, and NOT VERIFIED while preserving evidence and never treating manifest commands as authorization.
+metadata:
+  version: "0.1.0"
 ---
 
 # ap-verification-core
@@ -43,4 +45,3 @@ complete enough to verify.
 Report one result per required command and one result per manual entry,
 followed by the evidence and limitations. An absent result is not a
 passing result.
-

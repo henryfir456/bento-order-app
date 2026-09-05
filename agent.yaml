@@ -1,4 +1,4 @@
-schema_version: 1
+schema_version: 2
 
 project:
   name: bento-order-app
@@ -9,17 +9,16 @@ project:
     - gas
     - liff
 
-# The platform source is intentionally pending because this change does
-# not create a commit. Replace the value with the full 40-character SHA
-# when a user-authorized agent-platform commit exists.
 shared_source:
   repository: "agent-platform"
-  commit: "<pending: replace with full 40-character commit SHA>"
+  ref: "v0.2.0"
 
 shared_skills:
   - id: ap-safe-preflight
+    version: "0.2.0"
     path: ".agents/skills/ap-safe-preflight"
   - id: ap-verification-core
+    version: "0.1.0"
     path: ".agents/skills/ap-verification-core"
 
 project_skills: []
@@ -41,4 +40,3 @@ verification:
     - "Real LIFF authentication"
     - "View As and identity flow"
     - "GAS deployment and production contract"
-
