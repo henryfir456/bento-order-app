@@ -17,6 +17,17 @@ const BOOT_METRICS = new Set([
   'BOOT_TOTAL_MS'
 ]);
 
+const BACKEND_METRICS = new Set([
+  'BOOTSTRAP_TOTAL_MS',
+  'LINE_PROFILE_MS',
+  'USER_LOOKUP_MS',
+  'SETTINGS_MS',
+  'LIKES_MS',
+  'ANNOUNCEMENTS_MS',
+  'ORDERS_MS',
+  'CALENDAR_MS'
+]);
+
 const BOOT_STATUSES = new Set(['success', 'error', 'fallback']);
 
 const roundDuration = (durationMs) => {
@@ -41,10 +52,10 @@ export const createBootTimingLogger = (bootId, logger = console) => {
     ? String(bootId)
     : 'BOOT-INVALID-ID';
 
-  const emit = (fields) => {
+  const emit = (source, fields) => {
     try {
       if (logger && typeof logger.info === 'function') {
-        logger.info(`[PERF][BOOT][${safeBootId}] frontend ${JSON.stringify(fields)}`);
+        logger.info(`[PERF][BOOT][${safeBootId}] ${source} ${JSON.stringify(fields)}`);
       }
     } catch {
       // Performance instrumentation must never interrupt startup.
@@ -53,7 +64,7 @@ export const createBootTimingLogger = (bootId, logger = console) => {
 
   return {
     milestone(name) {
-      if (BOOT_MILESTONES.has(name)) emit({ milestone: name });
+      if (BOOT_MILESTONES.has(name)) emit('frontend', { milestone: name });
     },
 
     metric(name, durationMs, status, fallback) {
@@ -64,8 +75,28 @@ export const createBootTimingLogger = (bootId, logger = console) => {
       if (typeof fallback === 'boolean') fields.fallback = fallback;
       fields.metric = name;
       fields.durationMs = roundDuration(durationMs);
-      emit(fields);
+      emit('frontend', fields);
+    },
+
+    backend(summary, responseBootId) {
+      if (responseBootId !== safeBootId) return;
+      if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return;
+      if (!BOOT_STATUSES.has(summary.status)) return;
+      if (!summary.metrics || typeof summary.metrics !== 'object' || Array.isArray(summary.metrics)) return;
+
+      BACKEND_METRICS.forEach((metric) => {
+        if (!Object.prototype.hasOwnProperty.call(summary.metrics, metric)) return;
+        const durationMs = Number(summary.metrics[metric]);
+        if (!Number.isFinite(durationMs)) return;
+
+        const fields = {
+          status: summary.status,
+          metric,
+          durationMs: roundDuration(durationMs)
+        };
+        if (typeof summary.fallback === 'boolean') fields.fallback = summary.fallback;
+        emit('backend', fields);
+      });
     }
   };
 };
-

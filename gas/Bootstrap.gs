@@ -1,18 +1,33 @@
 function getBootstrapData(accessToken, targetDateStr, bootId) {
   const resolvedBootId = resolveBootId(bootId);
   const totalStart = Date.now();
-  let lineProfileMs = 0;
-  let userLookupMs = 0;
-  let settingsMs = 0;
-  let likesMs = 0;
-  let announcementsMs = 0;
-  let ordersMs = 0;
-  let calendarMs = 0;
+  let lineProfileMs = null;
+  let userLookupMs = null;
+  let settingsMs = null;
+  let likesMs = null;
+  let announcementsMs = null;
+  let ordersMs = null;
+  let calendarMs = null;
   let bootstrapStatus = 'error';
+  const timingSummary = {
+    status: 'error',
+    metrics: {}
+  };
+
+  const recordTiming = (metric, elapsedMs) => {
+    if (!BOOTSTRAP_METRICS[metric]) return;
+    timingSummary.metrics[metric] = Math.max(0, Math.round(Number(elapsedMs) || 0));
+  };
 
   const finish = (result, status) => {
-    bootstrapStatus = status;
-    return Object.assign({}, result, { bootId: resolvedBootId });
+    bootstrapStatus = BOOTSTRAP_STATUSES[status] ? status : 'error';
+    timingSummary.status = bootstrapStatus;
+    return Object.assign({}, result, {
+      bootId: resolvedBootId,
+      observability: {
+        timing: timingSummary
+      }
+    });
   };
 
   try {
@@ -84,6 +99,15 @@ function getBootstrapData(accessToken, targetDateStr, bootId) {
       targetDate: String(targetDateStr || '').trim() || null
     }, 'success');
   } finally {
+    if (lineProfileMs !== null) recordTiming('LINE_PROFILE_MS', lineProfileMs);
+    if (userLookupMs !== null) recordTiming('USER_LOOKUP_MS', userLookupMs);
+    if (settingsMs !== null) recordTiming('SETTINGS_MS', settingsMs);
+    if (likesMs !== null) recordTiming('LIKES_MS', likesMs);
+    if (announcementsMs !== null) recordTiming('ANNOUNCEMENTS_MS', announcementsMs);
+    if (ordersMs !== null) recordTiming('ORDERS_MS', ordersMs);
+    if (calendarMs !== null) recordTiming('CALENDAR_MS', calendarMs);
+    const totalMs = Date.now() - totalStart;
+    recordTiming('BOOTSTRAP_TOTAL_MS', totalMs);
     logBootstrapTiming(resolvedBootId, 'LINE_PROFILE_MS', lineProfileMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'USER_LOOKUP_MS', userLookupMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'SETTINGS_MS', settingsMs, bootstrapStatus);
@@ -91,6 +115,6 @@ function getBootstrapData(accessToken, targetDateStr, bootId) {
     logBootstrapTiming(resolvedBootId, 'ANNOUNCEMENTS_MS', announcementsMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'ORDERS_MS', ordersMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'CALENDAR_MS', calendarMs, bootstrapStatus);
-    logBootstrapTiming(resolvedBootId, 'BOOTSTRAP_TOTAL_MS', Date.now() - totalStart, bootstrapStatus);
+    logBootstrapTiming(resolvedBootId, 'BOOTSTRAP_TOTAL_MS', totalMs, bootstrapStatus);
   }
 }

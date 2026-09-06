@@ -340,6 +340,7 @@ export default function App() {
       bootTiming.milestone('BOOTSTRAP_REQUEST_START');
       try {
         identity = await fetchBootstrapData(accessToken, bootId);
+        bootTiming.backend(identity?.observability?.timing, identity?.bootId);
         usingLegacyStartup = identity?.code === 'INVALID_ACTION';
         if (usingLegacyStartup) {
           identity = await fetchUserInfo(accessToken);

@@ -499,6 +499,17 @@ test('bootstrap authenticates canonically and reads each startup sheet once', ()
   assert.ok(perfLines.some(line => line.includes('"metric":"ORDERS_MS"')));
   assert.ok(perfLines.some(line => line.includes('"metric":"BOOTSTRAP_TOTAL_MS"')));
   assert.doesNotMatch(perfLines.join('\n'), /access-token|user-id|LINE Profile Name|Authorization/i);
+  assert.equal(result.observability.timing.status, 'success');
+  assert.deepEqual(Object.keys(result.observability.timing.metrics).sort(), [
+    'ANNOUNCEMENTS_MS',
+    'BOOTSTRAP_TOTAL_MS',
+    'CALENDAR_MS',
+    'LIKES_MS',
+    'LINE_PROFILE_MS',
+    'ORDERS_MS',
+    'SETTINGS_MS',
+    'USER_LOOKUP_MS'
+  ]);
   assert.equal(spreadsheet.sheets.Users.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 1);
@@ -517,13 +528,22 @@ test('unregistered bootstrap preserves identity response and skips non-critical 
 
   const result = gas.getBootstrapData('access-token', '', 'BOOT-20260906-unreg1');
 
-  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+  const { observability, ...identityResponse } = result;
+  assert.deepEqual(JSON.parse(JSON.stringify(identityResponse)), {
     success: true,
     registered: false,
     lineUserId: 'unknown-id',
     displayName: 'LINE Profile Name',
     bootId: 'BOOT-20260906-unreg1'
   });
+  assert.equal(observability.timing.status, 'success');
+  assert.deepEqual(Object.keys(observability.timing.metrics).sort(), [
+    'BOOTSTRAP_TOTAL_MS',
+    'LINE_PROFILE_MS',
+    'USER_LOOKUP_MS'
+  ]);
+  assert.equal(Object.prototype.hasOwnProperty.call(observability.timing.metrics, 'SETTINGS_MS'), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(observability.timing.metrics, 'ORDERS_MS'), false);
   assert.equal(spreadsheet.sheets.Users.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 0);
   assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 0);
@@ -546,12 +566,19 @@ test('invalid bootstrap token returns the existing LINE error without reading Sh
   });
   const result = JSON.parse(output.text);
 
-  assert.deepEqual(result, {
+  const { observability, ...errorResponse } = result;
+  assert.deepEqual(errorResponse, {
     success: false,
     code: 'LINE_PROFILE_401',
     message: 'LINE_PROFILE_401',
     bootId: 'BOOT-20260906-error1'
   });
+  assert.equal(observability.timing.status, 'error');
+  assert.deepEqual(Object.keys(observability.timing.metrics).sort(), [
+    'BOOTSTRAP_TOTAL_MS',
+    'LINE_PROFILE_MS'
+  ]);
+  assert.doesNotMatch(JSON.stringify(observability), /secret-token|Authorization|stack|message/i);
   const perfLines = gas.__logs.filter(line => line.includes('[PERF][BOOT][BOOT-20260906-error1] backend'));
   assert.ok(perfLines.every(line => line.includes('"status":"error"')));
   assert.doesNotMatch(perfLines.join('\n'), /secret-token|Authorization/i);
@@ -603,6 +630,33 @@ test('frontend boot timing logger emits only the Phase 3 allowlist', async () =>
     metric: 'LIFF_INIT_MS',
     durationMs: 12.3
   });
+
+  timing.backend({
+    status: 'success',
+    metrics: {
+      BOOTSTRAP_TOTAL_MS: 40.45,
+      LINE_PROFILE_MS: 12,
+      SECRET_MS: 99,
+      USER_LOOKUP_MS: 'not-a-duration'
+    }
+  }, 'BOOT-20260906-abc123');
+  timing.backend({
+    status: 'success',
+    metrics: { SETTINGS_MS: 0 }
+  }, 'BOOT-20260906-other1');
+
+  assert.equal(lines.length, 4);
+  assert.match(lines[2], /^\[PERF\]\[BOOT\]\[BOOT-20260906-abc123\] backend /);
+  assert.deepEqual(JSON.parse(lines[2].split(' backend ')[1]), {
+    status: 'success',
+    metric: 'BOOTSTRAP_TOTAL_MS',
+    durationMs: 40.5
+  });
+  assert.deepEqual(JSON.parse(lines[3].split(' backend ')[1]), {
+    status: 'success',
+    metric: 'LINE_PROFILE_MS',
+    durationMs: 12
+  });
   assert.doesNotMatch(lines.join('\n'), /accessToken|Authorization|userId|displayName|response|Error|stack/i);
 });
 
@@ -631,6 +685,7 @@ test('frontend bootstrap wires the correlated Phase 3 waterfall without extra re
   }
   assert.match(initSource, /const bootId = createBootId\(\)/);
   assert.match(initSource, /createBootTimingLogger\(bootId\)/);
+  assert.match(initSource, /bootTiming\.backend\(identity\?\.observability\?\.timing, identity\?\.bootId\)/);
   assert.match(appSource, /action: 'getBootstrapData',[\s\S]*bootId/);
   assert.match(appSource, /useEffect\(\(\) => \{[\s\S]*BOOTSTRAP_STATE_READY[\s\S]*BOOT_READY/);
   const normalBranchStart = initSource.indexOf('} else {', initSource.indexOf('if (usingLegacyStartup) {'));
