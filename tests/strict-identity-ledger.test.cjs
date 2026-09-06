@@ -129,7 +129,9 @@ function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBe
   let contentReads = 0;
   const logger = fetchBehavior.logger || {
     warn: (...args) => logs.push(args.join(' ')),
-    error: (...args) => logs.push(args.join(' '))
+    error: (...args) => logs.push(args.join(' ')),
+    info: (...args) => logs.push(args.join(' ')),
+    log: (...args) => logs.push(args.join(' '))
   };
   const responseBody = Object.prototype.hasOwnProperty.call(fetchBehavior, 'responseBody')
     ? fetchBehavior.responseBody
@@ -471,7 +473,11 @@ test('bootstrap authenticates canonically and reads each startup sheet once', ()
 
   const output = gas.doPost({
     postData: {
-      contents: JSON.stringify({ action: 'getBootstrapData', accessToken: 'access-token' })
+      contents: JSON.stringify({
+        action: 'getBootstrapData',
+        accessToken: 'access-token',
+        bootId: 'BOOT-20260906-abc123'
+      })
     }
   });
   const result = JSON.parse(output.text);
@@ -486,6 +492,13 @@ test('bootstrap authenticates canonically and reads each startup sheet once', ()
     '2026-09-10': true,
     '2026-09-11': true
   });
+  assert.equal(result.bootId, 'BOOT-20260906-abc123');
+  const perfLines = gas.__logs.filter(line => line.includes('[PERF][BOOT][BOOT-20260906-abc123] backend'));
+  assert.ok(perfLines.some(line => line.includes('"metric":"LINE_PROFILE_MS"')));
+  assert.ok(perfLines.some(line => line.includes('"metric":"USER_LOOKUP_MS"')));
+  assert.ok(perfLines.some(line => line.includes('"metric":"ORDERS_MS"')));
+  assert.ok(perfLines.some(line => line.includes('"metric":"BOOTSTRAP_TOTAL_MS"')));
+  assert.doesNotMatch(perfLines.join('\n'), /access-token|user-id|LINE Profile Name|Authorization/i);
   assert.equal(spreadsheet.sheets.Users.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 1);
@@ -502,13 +515,14 @@ test('unregistered bootstrap preserves identity response and skips non-critical 
     displayName: 'LINE Profile Name'
   });
 
-  const result = gas.getBootstrapData('access-token');
+  const result = gas.getBootstrapData('access-token', '', 'BOOT-20260906-unreg1');
 
   assert.deepEqual(JSON.parse(JSON.stringify(result)), {
     success: true,
     registered: false,
     lineUserId: 'unknown-id',
-    displayName: 'LINE Profile Name'
+    displayName: 'LINE Profile Name',
+    bootId: 'BOOT-20260906-unreg1'
   });
   assert.equal(spreadsheet.sheets.Users.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 0);
@@ -521,13 +535,26 @@ test('invalid bootstrap token returns the existing LINE error without reading Sh
   const spreadsheet = bootstrapSpreadsheet();
   const gas = loadGas(spreadsheet, {}, 401);
 
-  const result = gas.getBootstrapData('access-token');
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'getBootstrapData',
+        accessToken: 'secret-token',
+        bootId: 'BOOT-20260906-error1'
+      })
+    }
+  });
+  const result = JSON.parse(output.text);
 
-  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+  assert.deepEqual(result, {
     success: false,
     code: 'LINE_PROFILE_401',
-    message: 'LINE_PROFILE_401'
+    message: 'LINE_PROFILE_401',
+    bootId: 'BOOT-20260906-error1'
   });
+  const perfLines = gas.__logs.filter(line => line.includes('[PERF][BOOT][BOOT-20260906-error1] backend'));
+  assert.ok(perfLines.every(line => line.includes('"status":"error"')));
+  assert.doesNotMatch(perfLines.join('\n'), /secret-token|Authorization/i);
   assert.equal(spreadsheet.sheets.Users.dataRangeReads, 0);
   assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 0);
   assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 0);
@@ -543,12 +570,78 @@ test('frontend bootstrap owns initial state and only uses legacy startup on INVA
   const bootstrapBranchStart = initSource.indexOf('} else {', initSource.indexOf('if (usingLegacyStartup) {'));
   const bootstrapBranch = initSource.slice(bootstrapBranchStart);
 
-  assert.match(initSource, /fetchBootstrapData\(accessToken\)/);
+  assert.match(initSource, /fetchBootstrapData\(accessToken, bootId\)/);
   assert.match(initSource, /identity\?\.code === 'INVALID_ACTION'/);
   assert.match(initSource, /identity = await fetchUserInfo\(accessToken\)/);
   assert.match(bootstrapBranch, /setCalendarEvents\(identity\.calendar\?\.events/);
   assert.match(bootstrapBranch, /setUserOrdersMap\(identity\.ordersMap/);
   assert.doesNotMatch(bootstrapBranch, /fetchUserAllOrders|fetchCalendarEvents/);
+});
+
+test('frontend boot timing logger emits only the Phase 3 allowlist', async () => {
+  const { createBootTimingLogger } = await import(pathToFileURL(
+    path.join(__dirname, '..', 'src', 'observability', 'bootTiming.js')
+  ).href);
+  const lines = [];
+  const timing = createBootTimingLogger('BOOT-20260906-abc123', {
+    info(message) {
+      lines.push(message);
+    }
+  });
+
+  timing.milestone('BOOT_START');
+  timing.metric('LIFF_INIT_MS', 12.345, 'success', false);
+  timing.milestone('NOT_ALLOWED');
+  timing.metric('SECRET_MS', 99, 'success', false);
+
+  assert.equal(lines.length, 2);
+  assert.match(lines[0], /^\[PERF\]\[BOOT\]\[BOOT-20260906-abc123\] frontend /);
+  assert.deepEqual(JSON.parse(lines[0].split(' frontend ')[1]), { milestone: 'BOOT_START' });
+  assert.deepEqual(JSON.parse(lines[1].split(' frontend ')[1]), {
+    status: 'success',
+    fallback: false,
+    metric: 'LIFF_INIT_MS',
+    durationMs: 12.3
+  });
+  assert.doesNotMatch(lines.join('\n'), /accessToken|Authorization|userId|displayName|response|Error|stack/i);
+});
+
+test('frontend bootstrap wires the correlated Phase 3 waterfall without extra requests', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const initStart = appSource.indexOf('const initLiffAndFetchData');
+  const initEnd = appSource.indexOf('  useEffect(() => {', initStart);
+  const initSource = appSource.slice(initStart, initEnd);
+
+  assert.match(appSource, /createBootId/);
+  assert.match(appSource, /createBootTimingLogger/);
+  assert.match(appSource, /if \(!import\.meta\.env\.DEV\) return;/);
+  for (const milestone of [
+    'BOOT_START',
+    'LIFF_INIT_START',
+    'LIFF_INIT_END',
+    'BOOTSTRAP_REQUEST_START',
+    'BOOTSTRAP_REQUEST_END',
+    'BOOTSTRAP_STATE_READY',
+    'BOOT_READY'
+  ]) {
+    assert.match(appSource, new RegExp(milestone));
+  }
+  for (const metric of ['LIFF_INIT_MS', 'BOOTSTRAP_NETWORK_MS', 'STATE_APPLY_MS', 'BOOT_TOTAL_MS']) {
+    assert.match(appSource, new RegExp(metric));
+  }
+  assert.match(initSource, /const bootId = createBootId\(\)/);
+  assert.match(initSource, /createBootTimingLogger\(bootId\)/);
+  assert.match(appSource, /action: 'getBootstrapData',[\s\S]*bootId/);
+  assert.match(appSource, /useEffect\(\(\) => \{[\s\S]*BOOTSTRAP_STATE_READY[\s\S]*BOOT_READY/);
+  const normalBranchStart = initSource.indexOf('} else {', initSource.indexOf('if (usingLegacyStartup) {'));
+  const normalBranch = initSource.slice(normalBranchStart);
+  assert.doesNotMatch(normalBranch, /fetchUserAllOrders|fetchCalendarEvents/);
+
+  const bootstrapFetchStart = appSource.indexOf('const fetchBootstrapData');
+  const bootstrapFetchEnd = appSource.indexOf('  const handleRegister', bootstrapFetchStart);
+  const bootstrapFetchSource = appSource.slice(bootstrapFetchStart, bootstrapFetchEnd);
+  assert.equal((bootstrapFetchSource.match(/gasPost\(/g) || []).length, 1);
+  assert.match(bootstrapFetchSource, /action: 'getBootstrapData',[\s\S]*accessToken,[\s\S]*bootId/);
 });
 
 const announcementAsOfDate = new Date('2026-09-04T04:00:00.000Z');
@@ -644,9 +737,10 @@ test('malformed announcement rows are ignored with warnings without hiding valid
   assert.equal(result.success, true);
   assert.equal(result.announcements.length, 1);
   assert.equal(result.announcement.id, 'valid');
-  assert.equal(gas.__logs.length, 2);
-  assert.match(gas.__logs[0], /malformed row 2/);
-  assert.match(gas.__logs[1], /malformed row 3/);
+  const warningLogs = gas.__logs.filter(line => line.includes('[ANNOUNCEMENT]'));
+  assert.equal(warningLogs.length, 2);
+  assert.match(warningLogs[0], /malformed row 2/);
+  assert.match(warningLogs[1], /malformed row 3/);
 });
 
 test('missing Announcements sheet returns null and keeps calendar initialization successful', () => {
@@ -1684,13 +1778,17 @@ test('mock identities preserve canonical user roles and unregistered shape', asy
 test('mock API reuses bootstrap and order-page response contracts', async () => {
   const { createMockGasApi } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'mockGasApi.js')).href);
   const api = createMockGasApi({ mockUser: 'admin' });
-  const bootstrap = await (await api.post({ action: 'getBootstrapData' })).json();
+  const bootstrap = await (await api.post({
+    action: 'getBootstrapData',
+    bootId: 'BOOT-20260906-mock01'
+  })).json();
   const orderPage = await (await api.get('?action=getOrderPageData&targetDate=2099-01-02')).json();
 
   assert.equal(bootstrap.registered, true);
   assert.ok(bootstrap.user.userId);
   assert.ok(bootstrap.calendar.events);
   assert.ok(bootstrap.ordersMap);
+  assert.equal(bootstrap.bootId, 'BOOT-20260906-mock01');
   assert.deepEqual(Object.keys(orderPage), ['success', 'setting', 'deadline', 'menu', 'myOrder']);
   assert.equal(orderPage.success, true);
   assert.ok(Array.isArray(orderPage.menu));

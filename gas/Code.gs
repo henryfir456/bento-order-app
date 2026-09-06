@@ -48,7 +48,8 @@ function doPost(e) {
     } else if (action === 'getUserInfo') {
       return jsonResponse(getUserInfo(data.accessToken));
     } else if (action === 'getBootstrapData') {
-      return jsonResponse(getBootstrapData(data.accessToken, data.targetDate));
+      const bootId = resolveBootId(data.bootId);
+      return jsonResponse(getBootstrapData(data.accessToken, data.targetDate, bootId));
     } else if (action === 'registerUser') {
       return jsonResponse(registerUser(data));
     } else if (action === 'updateMyPickupFloor') {
@@ -75,7 +76,11 @@ function doPost(e) {
       : "REQUEST_FAILED";
     const sensitiveValues = data && isIdentityAction(data.action) ? data.accessToken : [];
     logIdentityException(code, err, sensitiveValues);
-    return jsonResponse(identityError(code));
+    const response = identityError(code);
+    if (data && data.action === 'getBootstrapData') {
+      response.bootId = resolveBootId(data.bootId);
+    }
+    return jsonResponse(response);
   }
 }
 

@@ -63,7 +63,10 @@ export const createMockGasApi = ({ mockUser }) => {
     const user = state.user;
 
     if (action === 'getBootstrapData') {
-      return jsonResponse(getMockIdentityResponse(mockUser));
+      return jsonResponse({
+        ...getMockIdentityResponse(mockUser),
+        bootId: payload.bootId
+      });
     }
 
     if (action === 'getUserInfo') {

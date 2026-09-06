@@ -92,3 +92,55 @@ function logPerformanceTiming(label, elapsedMs) {
     }
   }
 }
+
+const BOOT_ID_PATTERN = /^BOOT-\d{8,17}-[a-z0-9]{4,12}$/i;
+const BOOTSTRAP_METRICS = {
+  BOOTSTRAP_TOTAL_MS: true,
+  LINE_PROFILE_MS: true,
+  USER_LOOKUP_MS: true,
+  SETTINGS_MS: true,
+  LIKES_MS: true,
+  ANNOUNCEMENTS_MS: true,
+  ORDERS_MS: true,
+  CALENDAR_MS: true
+};
+const BOOTSTRAP_STATUSES = { success: true, error: true, fallback: true };
+
+function createBootId() {
+  const source = typeof Utilities !== 'undefined' && typeof Utilities.getUuid === 'function'
+    ? Utilities.getUuid()
+    : String(Math.random());
+  const suffix = source.replace(/[^a-z0-9]/gi, '').toLowerCase().substring(0, 6) || '000000';
+  return 'BOOT-' + Date.now() + '-' + suffix;
+}
+
+function resolveBootId(rawBootId) {
+  const normalizedBootId = String(rawBootId || '').trim();
+  return BOOT_ID_PATTERN.test(normalizedBootId) ? normalizedBootId : createBootId();
+}
+
+function logBootstrapTiming(bootId, metric, elapsedMs, status, fallback) {
+  if (!BOOTSTRAP_METRICS[metric]) return;
+
+  const payload = {
+    status: BOOTSTRAP_STATUSES[status] ? status : 'error',
+    metric: metric,
+    durationMs: Math.max(0, Math.round(Number(elapsedMs) || 0))
+  };
+  if (typeof fallback === 'boolean') payload.fallback = fallback;
+
+  const message = '[PERF][BOOT][' + resolveBootId(bootId) + '] backend ' + JSON.stringify(payload);
+  if (typeof console !== 'undefined') {
+    if (typeof console.info === 'function') {
+      console.info(message);
+      return;
+    }
+    if (typeof console.log === 'function') {
+      console.log(message);
+      return;
+    }
+  }
+  if (typeof Logger !== 'undefined' && typeof Logger.log === 'function') {
+    Logger.log(message);
+  }
+}

@@ -1,33 +1,40 @@
-function getBootstrapData(accessToken, targetDateStr) {
+function getBootstrapData(accessToken, targetDateStr, bootId) {
+  const resolvedBootId = resolveBootId(bootId);
   const totalStart = Date.now();
-  let authMs = 0;
-  let usersMs = 0;
+  let lineProfileMs = 0;
+  let userLookupMs = 0;
   let settingsMs = 0;
   let likesMs = 0;
   let announcementsMs = 0;
   let ordersMs = 0;
   let calendarMs = 0;
+  let bootstrapStatus = 'error';
+
+  const finish = (result, status) => {
+    bootstrapStatus = status;
+    return Object.assign({}, result, { bootId: resolvedBootId });
+  };
 
   try {
-    const authStart = Date.now();
+    const profileStart = Date.now();
     const profile = getLineProfile(accessToken);
-    authMs = Date.now() - authStart;
-    if (!profile.success) return profile;
+    lineProfileMs = Date.now() - profileStart;
+    if (!profile.success) return finish(profile, 'error');
 
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const usersSheet = ss.getSheetByName(USERS_SHEET);
     const usersStart = Date.now();
     const usersData = usersSheet ? usersSheet.getDataRange().getValues() : [];
     const user = getRegisteredUser(profile.userId, usersData);
-    usersMs = Date.now() - usersStart;
+    userLookupMs = Date.now() - usersStart;
 
     if (!user) {
-      return {
+      return finish({
         success: true,
         registered: false,
         lineUserId: profile.userId,
         displayName: profile.displayName
-      };
+      }, 'success');
     }
 
     const settingsSheet = ss.getSheetByName('Settings');
@@ -50,7 +57,7 @@ function getBootstrapData(accessToken, targetDateStr) {
     const orderValues = ordersSheet ? ordersSheet.getDataRange().getValues() : [];
     const ordersMap = getUserAllOrdersMap(user.userId, user, orderValues);
     ordersMs = Date.now() - ordersStart;
-    if (!ordersMap.success) return ordersMap;
+    if (!ordersMap.success) return finish(ordersMap, 'error');
 
     const calendarStart = Date.now();
     const calendar = getCalendarEvents(user.userId, {
@@ -59,9 +66,9 @@ function getBootstrapData(accessToken, targetDateStr) {
       announcements: announcements
     });
     calendarMs = Date.now() - calendarStart;
-    if (!calendar.success) return calendar;
+    if (!calendar.success) return finish(calendar, 'error');
 
-    return {
+    return finish({
       success: true,
       registered: true,
       user: Object.assign({}, toPublicUser(user), {
@@ -75,15 +82,15 @@ function getBootstrapData(accessToken, targetDateStr) {
       },
       ordersMap: ordersMap.ordersMap,
       targetDate: String(targetDateStr || '').trim() || null
-    };
+    }, 'success');
   } finally {
-    logPerformanceTiming('BOOTSTRAP_AUTH', authMs);
-    logPerformanceTiming('BOOTSTRAP_USERS', usersMs);
-    logPerformanceTiming('BOOTSTRAP_SETTINGS', settingsMs);
-    logPerformanceTiming('BOOTSTRAP_LIKES', likesMs);
-    logPerformanceTiming('BOOTSTRAP_ANNOUNCEMENTS', announcementsMs);
-    logPerformanceTiming('BOOTSTRAP_ORDERS', ordersMs);
-    logPerformanceTiming('BOOTSTRAP_CALENDAR', calendarMs);
-    logPerformanceTiming('BOOTSTRAP_TOTAL', Date.now() - totalStart);
+    logBootstrapTiming(resolvedBootId, 'LINE_PROFILE_MS', lineProfileMs, bootstrapStatus);
+    logBootstrapTiming(resolvedBootId, 'USER_LOOKUP_MS', userLookupMs, bootstrapStatus);
+    logBootstrapTiming(resolvedBootId, 'SETTINGS_MS', settingsMs, bootstrapStatus);
+    logBootstrapTiming(resolvedBootId, 'LIKES_MS', likesMs, bootstrapStatus);
+    logBootstrapTiming(resolvedBootId, 'ANNOUNCEMENTS_MS', announcementsMs, bootstrapStatus);
+    logBootstrapTiming(resolvedBootId, 'ORDERS_MS', ordersMs, bootstrapStatus);
+    logBootstrapTiming(resolvedBootId, 'CALENDAR_MS', calendarMs, bootstrapStatus);
+    logBootstrapTiming(resolvedBootId, 'BOOTSTRAP_TOTAL_MS', Date.now() - totalStart, bootstrapStatus);
   }
 }

@@ -5,6 +5,7 @@ import { formatDateInput, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shift
 import { gasGet, gasPost } from './api/gasApi';
 import { authClient } from './auth/liffClient';
 import { hasPermission } from './auth/permissions';
+import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
 import { APP_VERSION, CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
 import PickupFloorModal from './components/PickupFloorModal';
@@ -38,13 +39,8 @@ const logAuthDiagnostic = (message) => {
   }
 };
 
-const getPerformanceNow = () => (
-  typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? performance.now()
-    : Date.now()
-);
-
 const logPerformanceTiming = (label, startTime) => {
+  if (!import.meta.env.DEV) return;
   const elapsedMs = getPerformanceNow() - startTime;
   console.info(`[PERF] ${label}_MS=${elapsedMs.toFixed(1)}`);
 };
@@ -96,6 +92,7 @@ export default function App() {
   const [registrationFloor, setRegistrationFloor] = useState('1樓');
   const [registrationLoading, setRegistrationLoading] = useState(false);
   const authInitInFlightRef = useRef(false);
+  const bootRenderPendingRef = useRef(null);
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [activeOrderId, setActiveOrderId] = useState('');
@@ -280,8 +277,16 @@ export default function App() {
     }
 
     authInitInFlightRef.current = true;
+    const bootId = createBootId();
+    const bootTiming = createBootTimingLogger(bootId);
     const bootStartTime = getPerformanceNow();
+    let bootstrapNetworkMs = null;
+    let bootStatus = 'error';
+    let isFallback = false;
+    let awaitingRender = false;
     let currentStage = 'LIFF_INIT_START';
+    bootRenderPendingRef.current = null;
+    bootTiming.milestone('BOOT_START');
     setLoading(true);
     setAuthState(AUTH_STATES.AUTH_LOADING);
     setAuthStage(currentStage);
@@ -297,11 +302,13 @@ export default function App() {
         identity = authClient.getMockIdentity();
       } else {
       logAuthDiagnostic('LIFF_INIT_START');
+      bootTiming.milestone('LIFF_INIT_START');
       const liffInitStartTime = getPerformanceNow();
       try {
         await authClient.init();
       } finally {
-        logPerformanceTiming('LIFF_INIT', liffInitStartTime);
+        bootTiming.milestone('LIFF_INIT_END');
+        bootTiming.metric('LIFF_INIT_MS', getPerformanceNow() - liffInitStartTime);
       }
       currentStage = 'LIFF_INIT_SUCCESS';
       setAuthStage(currentStage);
@@ -329,13 +336,21 @@ export default function App() {
 
       currentStage = 'BACKEND_IDENTITY_VERIFY_START';
       setAuthStage(currentStage);
-      identity = await fetchBootstrapData(accessToken);
-      usingLegacyStartup = identity?.code === 'INVALID_ACTION';
-      if (usingLegacyStartup) {
-        identity = await fetchUserInfo(accessToken);
+      const bootstrapRequestStartTime = getPerformanceNow();
+      bootTiming.milestone('BOOTSTRAP_REQUEST_START');
+      try {
+        identity = await fetchBootstrapData(accessToken, bootId);
+        usingLegacyStartup = identity?.code === 'INVALID_ACTION';
+        if (usingLegacyStartup) {
+          identity = await fetchUserInfo(accessToken);
+        }
+      } finally {
+        bootstrapNetworkMs = getPerformanceNow() - bootstrapRequestStartTime;
+        bootTiming.milestone('BOOTSTRAP_REQUEST_END');
       }
       }
       if (identity?.success && identity.registered && identity.user) {
+        const stateApplyStartedAt = getPerformanceNow();
         applyUserInfoData(identity);
         const canonicalUserId = identity.user.userId;
         setAuthState(AUTH_STATES.REGISTERED);
@@ -352,13 +367,36 @@ export default function App() {
           setAnnouncements(Array.isArray(identity.calendar?.announcements) ? identity.calendar.announcements : []);
           setUserOrdersMap(identity.ordersMap || {});
         }
+        bootStatus = usingLegacyStartup ? 'fallback' : 'success';
+        isFallback = usingLegacyStartup;
+        bootRenderPendingRef.current = {
+          timing: bootTiming,
+          startedAt: bootStartTime,
+          stateApplyStartedAt,
+          status: bootStatus,
+          fallback: isFallback,
+          bootstrapNetworkMs
+        };
+        awaitingRender = true;
       } else if (identity?.success && identity.registered === false) {
+        const stateApplyStartedAt = getPerformanceNow();
         applyUserInfoData(identity);
         setAuthState(AUTH_STATES.UNREGISTERED);
         setAuthStage('UNREGISTERED');
         setAuthError('');
         logAuthDiagnostic('BACKEND_IDENTITY_VERIFY_SUCCESS=true');
         logAuthDiagnostic('USER_REGISTERED=false');
+        bootStatus = usingLegacyStartup ? 'fallback' : 'success';
+        isFallback = usingLegacyStartup;
+        bootRenderPendingRef.current = {
+          timing: bootTiming,
+          startedAt: bootStartTime,
+          stateApplyStartedAt,
+          status: bootStatus,
+          fallback: isFallback,
+          bootstrapNetworkMs
+        };
+        awaitingRender = true;
       } else {
         logAuthDiagnostic('BACKEND_IDENTITY_VERIFY_SUCCESS=false');
         failAuthentication('BACKEND_IDENTITY_VERIFY_FAILED', identity?.message || 'backend 未回傳有效身份狀態');
@@ -366,11 +404,46 @@ export default function App() {
     } catch (err) {
       failAuthentication(currentStage, err);
     } finally {
-      logPerformanceTiming('BOOT_TOTAL', bootStartTime);
       setLoading(false);
+      if (!awaitingRender) {
+        if (typeof bootstrapNetworkMs === 'number') {
+          bootTiming.metric('BOOTSTRAP_NETWORK_MS', bootstrapNetworkMs, bootStatus, isFallback);
+        }
+        bootTiming.metric('BOOT_TOTAL_MS', getPerformanceNow() - bootStartTime, bootStatus, isFallback);
+      }
       authInitInFlightRef.current = false;
     }
   };
+
+  useEffect(() => {
+    const pendingBoot = bootRenderPendingRef.current;
+    if (!pendingBoot || loading) return;
+    if (authState !== AUTH_STATES.REGISTERED && authState !== AUTH_STATES.UNREGISTERED) return;
+
+    bootRenderPendingRef.current = null;
+    pendingBoot.timing.milestone('BOOTSTRAP_STATE_READY');
+    if (typeof pendingBoot.bootstrapNetworkMs === 'number') {
+      pendingBoot.timing.metric(
+        'BOOTSTRAP_NETWORK_MS',
+        pendingBoot.bootstrapNetworkMs,
+        pendingBoot.status,
+        pendingBoot.fallback
+      );
+    }
+    pendingBoot.timing.metric(
+      'STATE_APPLY_MS',
+      getPerformanceNow() - pendingBoot.stateApplyStartedAt,
+      pendingBoot.status,
+      pendingBoot.fallback
+    );
+    pendingBoot.timing.milestone('BOOT_READY');
+    pendingBoot.timing.metric(
+      'BOOT_TOTAL_MS',
+      getPerformanceNow() - pendingBoot.startedAt,
+      pendingBoot.status,
+      pendingBoot.fallback
+    );
+  }, [authState, authUser, calendarEvents, userOrdersMap, announcements, loading]);
 
   useEffect(() => {
     initLiffAndFetchData();
@@ -496,8 +569,7 @@ export default function App() {
     }
   };
 
-  const fetchBootstrapData = async (accessToken) => {
-    const requestStartTime = getPerformanceNow();
+  const fetchBootstrapData = async (accessToken, bootId) => {
     try {
       if (!accessToken) {
         return { success: false, message: 'LIFF accessToken 不存在' };
@@ -505,7 +577,8 @@ export default function App() {
 
       const res = await gasPost({
         action: 'getBootstrapData',
-        accessToken
+        accessToken,
+        bootId
       });
       if (!res.ok) {
         return { success: false, message: `backend HTTP ${res.status}` };
@@ -515,8 +588,6 @@ export default function App() {
       const safeMessage = redactAuthSecrets(err instanceof Error ? err.message : err);
       logAuthDiagnostic(`BOOTSTRAP_REQUEST_SUCCESS=false error=${safeMessage}`);
       return { success: false, message: safeMessage };
-    } finally {
-      logPerformanceTiming('BOOTSTRAP_TOTAL', requestStartTime);
     }
   };
 
