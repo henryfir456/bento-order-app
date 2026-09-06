@@ -2,7 +2,7 @@
 name: ap-verification-core
 description: Execute and report repository verification declared by agent.yaml, including evidence-based baseline attribution and a separate defect-first review handoff.
 metadata:
-  version: "0.2.0"
+  version: "0.3.0"
 ---
 
 # ap-verification-core
@@ -98,6 +98,78 @@ or high-risk changes. This is a preference for independent blind spots,
 not a requirement to add a dependency. If diversity or an independent
 reviewer is unavailable, record that fallback explicitly; do not fabricate
 review evidence.
+
+## Change-aware verification profiles
+
+Classify the complete changed-file ledger and the risk evidence produced by
+`ap-safe-preflight`. The profile is a verification decision, not an
+authorization decision. Apply this precedence in order:
+
+1. `IDENTITY_AUTH_HIGH_RISK` when authentication, identity, permissions,
+   migration, data integrity, or irreversible behavior is implicated.
+2. `UNKNOWN_MIXED` when a path is unrecognized, governance and runtime
+   changes are mixed, or scope evidence is incomplete.
+3. `FRONTEND` for `src/**`, JSX/CSS, Vite, or frontend configuration.
+4. `BACKEND_GAS` for `gas/**` or backend/GAS contract files.
+5. `GOVERNANCE_ONLY` for `AGENTS.md`, `README.md`/docs, `skills/**`,
+   governance `tools/**`, `agent.yaml`, and `.agents/skills/**`, only when
+   no runtime-impact evidence exists.
+
+High-risk evidence overrides path-based classification. Unknown scope or a
+mixed governance/runtime diff cannot be downgraded to save time.
+
+Use these default verification depths:
+
+| Profile | Default depth | Required behavior |
+| --- | --- | --- |
+| `GOVERNANCE_ONLY` | `FAST` | Scoped static, Git, shared-Skill, and release checks only |
+| `FRONTEND` | `STANDARD` | Targeted tests plus applicable lint/build |
+| `BACKEND_GAS` | `STANDARD` | Relevant GAS/static/contract checks |
+| `IDENTITY_AUTH_HIGH_RISK` | `HIGH_RISK` | Full risk-appropriate verification and independent review |
+| `UNKNOWN_MIXED` | `STANDARD` minimum | Fail closed or escalate to `HIGH_RISK`; never `FAST` |
+
+For `GOVERNANCE_ONLY`, minimum checks are `git diff --check`, relevant
+Skill/static checks, PowerShell syntax/static checks when a `.ps1` changes,
+shared Skill verify/sync consistency, and immutable tag/blob equality when
+applicable. Bento frontend full test, full lint, Vite build, LIFF, View As,
+and GAS production checks are `NOT RUN` unless changed-file or other evidence
+shows runtime impact. A skipped check is not a PASS.
+
+## Fast-path eligibility and escalation
+
+Select `FAST` only when every gate below passes:
+
+- repository roots, manifest, declared paths, and the start-state ledger are
+  valid and complete;
+- there is no target collision, unrelated changed file, or unowned change;
+- the complete scope is `GOVERNANCE_ONLY` with no runtime-impact evidence;
+- no high-risk signal exists;
+- release/tag sequence and canonical/consumer repository boundaries are
+  valid;
+- deterministic governance tools are available;
+- capability probe output contains no required `UNKNOWN`; and
+- prior verification contains no mismatch, unresolved classification, or
+  `UNKNOWN_ATTRIBUTION`.
+
+Record every gate as `PASS` or `FAIL`. If any gate fails, record the exact
+reason and escalate from `FAST` to `STANDARD`, or to `HIGH_RISK` when
+high-risk evidence is present. Escalation never bypasses authority,
+collision protection, immutable-tag rules, or pre-existing-change
+preservation.
+
+## Capability and profile handoff
+
+The completion handoff must report the selected profile and depth, the
+changed-file and risk summary, every fast-path gate and result, and the
+exact read-only capability probe command, exit status, and concise output.
+It must list scoped checks that ran and profile-excluded checks as `NOT RUN`
+with their reasons, and include the escalation reason whenever `FAST` was
+not eligible. Use `tools/get-toolchain-capabilities.ps1` for deterministic
+capability discovery; it reports capability only and does not run test,
+lint, build, release, or deployment commands. On Windows, declared `npm`
+commands must select `npm.cmd` when available without trying `npm.ps1`
+first. Missing optional `python` or `py` must be reported once as
+`UNAVAILABLE`, with no trial execution.
 
 ## Handoff contract
 

@@ -11,14 +11,14 @@ project:
 
 shared_source:
   repository: "agent-platform"
-  ref: "v0.2.3"
+  ref: "v0.3.0"
 
 shared_skills:
   - id: ap-safe-preflight
     version: "0.2.0"
     path: ".agents/skills/ap-safe-preflight"
   - id: ap-verification-core
-    version: "0.1.1"
+    version: "0.3.0"
     path: ".agents/skills/ap-verification-core"
 
 project_skills: []
