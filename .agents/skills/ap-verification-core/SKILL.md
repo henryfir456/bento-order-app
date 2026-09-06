@@ -220,6 +220,20 @@ by the applicable repository `AGENTS.md` and the current user request.
 Suggested titles are recommendations only. Verification never performs
 `git add`, `git commit`, or `git push`.
 
+## Mutation-capable negative-path test isolation
+
+Any verification that intentionally mutates state to exercise a negative,
+collision, stale-evidence, no-op, or partial-failure path MUST use disposable
+canonical and consumer fixture repositories. The real canonical or consumer
+repository may be used for read-only before/after snapshots, or when the task
+explicitly authorizes the real lifecycle; it must not be a mutation target for
+negative-path tests.
+
+The fixture harness MUST use an explicit test mode and an approved temporary
+root, resolve both repository identities before invoking the runner, reject
+the real repositories, and fail closed on junction, symlink, or other reparse
+point escape. No fixture helper may rely on repository-name strings alone.
+
 ## Runner COMPLETE no-repeat contract
 
 When `tools/invoke-shared-skill-lifecycle.ps1` returns `COMPLETE` with a
