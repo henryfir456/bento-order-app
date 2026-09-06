@@ -220,6 +220,20 @@ by the applicable repository `AGENTS.md` and the current user request.
 Suggested titles are recommendations only. Verification never performs
 `git add`, `git commit`, or `git push`.
 
+## Runner COMPLETE no-repeat contract
+
+When `tools/invoke-shared-skill-lifecycle.ps1` returns `COMPLETE` with a
+machine-readable summary containing consistent canonical commit, release
+tag target, consumer commit, phase status, sync/post-sync verification, and
+push/deploy fields, consume that summary directly in the handoff. Do not
+independently repeat deterministic Git status, HEAD, tag, blob, sync, or
+consumer verification commands.
+
+Targeted verification is allowed only when the runner is non-zero or
+`BLOCKED`, the summary is incomplete or machine-unparseable, or its SHA/tag/
+phase fields are inconsistent. This rule reduces orchestration overhead; it
+does not weaken fail-closed behavior or authorize any mutation.
+
 ## Output
 
 Report one result per required command and one result per manual entry,
