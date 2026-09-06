@@ -171,6 +171,13 @@ commands must select `npm.cmd` when available without trying `npm.ps1`
 first. Missing optional `python` or `py` must be reported once as
 `UNAVAILABLE`, with no trial execution.
 
+For `GOVERNANCE_ONLY` / `FAST`, profile-excluded runtime checks may be
+compressed into one handoff line, for example: `Profile-excluded runtime
+checks: NOT RUN — GOVERNANCE_ONLY/FAST, no runtime-impact evidence
+(frontend full test/lint/build, LIFF, View As, GAS production checks).`
+This compression applies only to excluded checks; every required check that
+ran and every failure still needs its own result and evidence.
+
 ## Handoff contract
 
 For every bounded governance or maintenance task, the final handoff must
