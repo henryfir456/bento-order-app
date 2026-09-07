@@ -1,0 +1,28 @@
+{
+  "sourceCounts": {
+    "Settings": 1,
+    "Likes": 1,
+    "Users": 2,
+    "Menu": 3,
+    "Announcements": 1,
+    "Orders": 2,
+    "TopupHistory": 1
+  },
+  "acceptedCounts": {
+    "Settings": 1,
+    "Likes": 1,
+    "Users": 2,
+    "Menu": 3,
+    "Announcements": 1,
+    "Orders": 1,
+    "TopupHistory": 0
+  },
+  "quarantineByReason": {
+    "ORPHAN_ORDER_USER": 1,
+    "INCOMPLETE_LEDGER_POLICY": 1
+  },
+  "warningByCode": {
+    "INFERRED_MODE": 1,
+    "DUPLICATE_MENU_WARNING": 1
+  }
+}
