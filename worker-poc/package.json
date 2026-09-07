@@ -1,0 +1,18 @@
+{
+  "name": "bento-api-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "test": "node --test tests/index.test.js",
+    "db:list": "wrangler d1 list",
+    "db:info": "wrangler d1 info bento-poc",
+    "db:migrations:local": "wrangler d1 migrations apply bento-poc --local",
+    "db:migrations:remote": "node scripts/require-database-id.mjs && wrangler d1 migrations apply bento-poc --remote",
+    "deploy": "node scripts/require-database-id.mjs && wrangler deploy",
+    "verify": "npm run test"
+  },
+  "devDependencies": {
+    "wrangler": "4.129.0"
+  }
+}
