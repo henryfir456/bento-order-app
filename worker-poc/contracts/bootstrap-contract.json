@@ -1,0 +1,275 @@
+{
+  "contractVersion": 1,
+  "timezone": "Asia/Taipei",
+  "dateFormats": {
+    "dateOnly": "YYYY-MM-DD",
+    "timestamp": "ISO-8601"
+  },
+  "surfaces": {
+    "primaryBootstrap": {
+      "gas": {
+        "method": "POST",
+        "action": "getBootstrapData",
+        "requestInputs": [
+          "accessToken",
+          "targetDate",
+          "bootId",
+          "deferUiData"
+        ],
+        "deferUiData": true
+      },
+      "worker": {
+        "method": "GET",
+        "path": "/api/bootstrap",
+        "requestInputs": [
+          "userId",
+          "targetDate",
+          "bootId"
+        ]
+      },
+      "requiredTopLevelKeys": [
+        "success",
+        "registered",
+        "user",
+        "calendar",
+        "ordersMap",
+        "targetDate"
+      ],
+      "optionalTopLevelKeys": [
+        "bootId",
+        "observability"
+      ],
+      "userRequiredKeys": [
+        "userId",
+        "name",
+        "floor",
+        "defaultFloor",
+        "balance",
+        "role",
+        "lineUserId",
+        "displayName"
+      ],
+      "calendarRequiredKeys": [
+        "events",
+        "announcements",
+        "announcement"
+      ],
+      "eventRequiredKeys": [
+        "order_date",
+        "vendor",
+        "mode",
+        "deadline",
+        "isExpired",
+        "lunarLabel"
+      ],
+      "deferredFields": [
+        "likes",
+        "active announcements"
+      ],
+      "orderPageFields": [
+        "menu",
+        "deadline",
+        "setting"
+      ],
+      "emptyCollections": {
+        "calendar.announcements": [],
+        "calendar.announcement": null,
+        "ordersMap": {}
+      },
+      "ordering": {
+        "calendar.events": "source calendar-settings row order; date keys remain YYYY-MM-DD",
+        "ordersMap": "source order row order; only the first insertion of each date is observable"
+      }
+    },
+    "deferredBootstrap": {
+      "gas": {
+        "method": "POST",
+        "action": "getDeferredBootstrapData",
+        "requestInputs": [
+          "accessToken",
+          "bootId"
+        ]
+      },
+      "worker": {
+        "method": "GET",
+        "path": "/api/bootstrap/deferred",
+        "requestInputs": [
+          "userId",
+          "bootId"
+        ]
+      },
+      "requiredTopLevelKeys": [
+        "success",
+        "registered",
+        "likes",
+        "announcements",
+        "announcement"
+      ],
+      "optionalTopLevelKeys": [
+        "bootId",
+        "observability"
+      ],
+      "likeRequiredKeys": [
+        "likeCount",
+        "isUserLiked",
+        "calendarEvent"
+      ],
+      "likeCalendarEventKeys": [
+        "order_date",
+        "vendor",
+        "mode",
+        "deadline",
+        "isExpired",
+        "lunarLabel"
+      ],
+      "emptyCollections": {
+        "likes": {},
+        "announcements": [],
+        "announcement": null
+      },
+      "ordering": {
+        "announcements": "start_date descending, source row number descending for ties"
+      }
+    },
+    "invalidActionFallback": {
+      "trigger": "primary response has code INVALID_ACTION",
+      "requestsInOrder": [
+        "POST getUserInfo",
+        "GET getUserAllOrdersMap",
+        "GET getCalendarEvents"
+      ],
+      "frontendConsumed": {
+        "identity": [
+          "success",
+          "registered",
+          "user",
+          "lineUserId",
+          "displayName"
+        ],
+        "orders": [
+          "success",
+          "ordersMap"
+        ],
+        "calendar": [
+          "success",
+          "events",
+          "announcements",
+          "announcement"
+        ]
+      },
+      "workerEquivalent": false,
+      "reason": "The Worker is not wired into the production React startup and does not emulate GAS action dispatch."
+    },
+    "orderPage": {
+      "gas": {
+        "method": "GET",
+        "action": "getOrderPageData",
+        "requestInputs": [
+          "targetDate",
+          "userId"
+        ]
+      },
+      "worker": {
+        "method": "GET",
+        "path": "/api/order-page",
+        "requestInputs": [
+          "targetDate",
+          "userId"
+        ]
+      },
+      "requiredTopLevelKeys": [
+        "success",
+        "setting",
+        "deadline",
+        "menu",
+        "myOrder"
+      ],
+      "menuItemKeys": [
+        "item_id",
+        "item_name",
+        "price",
+        "note",
+        "image_url"
+      ],
+      "myOrderKeys": [
+        "orderId",
+        "items",
+        "note"
+      ],
+      "ordering": {
+        "menu": "latest menu_date at or before targetDate for the selected vendor, then source menu row order",
+        "myOrder.items": "source order row order"
+      }
+    }
+  },
+  "errorCodes": {
+    "gasPrimary": [
+      "TOKEN_MISSING",
+      "LINE_PROFILE_401",
+      "LINE_PROFILE_403",
+      "LINE_PROFILE_429",
+      "LINE_PROFILE_HTTP_<status>",
+      "PROFILE_RESPONSE_INVALID_JSON",
+      "PROFILE_RESPONSE_INVALID",
+      "USER_LOOKUP_FAILED",
+      "UNREGISTERED_USER_MESSAGE",
+      "INVALID_ACTION",
+      "IDENTITY_BACKEND_ERROR"
+    ],
+    "worker": [
+      "USER_ID_REQUIRED",
+      "USER_NOT_FOUND",
+      "INVALID_DATE",
+      "ORDER_PAGE_SETTING_NOT_FOUND",
+      "INVALID_USER_ID",
+      "METHOD_NOT_ALLOWED",
+      "NOT_FOUND",
+      "DATABASE_UNAVAILABLE",
+      "INTERNAL_SERVER_ERROR"
+    ]
+  },
+  "intentionalDifferences": [
+    {
+      "id": "worker-auth-input",
+      "surface": "all",
+      "difference": "GAS authenticates a LINE access token; the diagnostic Worker contract receives a D1 userId.",
+      "frontendImpact": "None while React remains on GAS; the benchmark uses the same logical user row but excludes authentication time."
+    },
+    {
+      "id": "worker-display-name-source",
+      "surface": "primaryBootstrap",
+      "difference": "The current D1 POC has one display_name source, while GAS can distinguish the registered Users name from the current LINE profile displayName.",
+      "frontendImpact": "None for a representative dataset where the values agree; a mismatch must block live parity rather than be silently normalized."
+    },
+    {
+      "id": "worker-http-errors",
+      "surface": "all",
+      "difference": "GAS web-app errors are JSON envelopes normally returned through HTTP 200; Worker uses explicit 4xx/5xx statuses.",
+      "frontendImpact": "None because the Worker is not production-routed. Error body codes remain stable for diagnostics."
+    },
+    {
+      "id": "runtime-observability",
+      "surface": "primaryBootstrap",
+      "difference": "GAS backend timing contains LINE and Apps Script stages; Worker timing contains D1/query stages and cannot reproduce LINE_PROFILE_MS.",
+      "frontendImpact": "None; timing fields are diagnostic and excluded from semantic parity comparison."
+    },
+    {
+      "id": "invalid-action-fallback",
+      "surface": "invalidActionFallback",
+      "difference": "Worker does not emulate GAS action dispatch or the legacy fallback waterfall.",
+      "frontendImpact": "None while production remains on the existing GAS route."
+    },
+    {
+      "id": "bootstrap-side-contracts",
+      "surface": "primaryBootstrap",
+      "difference": "Menu, deadline, setting, and active likes/announcements are deliberately absent from primary bootstrap and live in deferred/order-page contracts.",
+      "frontendImpact": "Matches current React startup consumption and prevents deferred or order-page data from inflating the primary benchmark payload."
+    },
+    {
+      "id": "diagnostic-endpoints",
+      "surface": "diagnostic",
+      "difference": "Worker /api/users/:id and /api/orders?userId= remain POC diagnostics and are not primary bootstrap parity inputs.",
+      "frontendImpact": "None."
+    }
+  ]
+}

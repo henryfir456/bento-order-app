@@ -1,26 +1,50 @@
 # Bento API Cloudflare Worker POC
 
-This directory is an isolated proof of concept for the existing Cloudflare
-resources:
+This directory is the existing isolated `bento-api-poc` Worker and
+`bento-poc` D1 proof of concept. It does not change the React production
+frontend, GAS backend, Netlify deployment, or Google Sheets. It does not
+implement LINE authentication, access-token handling, View As behavior,
+order writes, or balance writes.
 
-- Worker: `bento-api-poc`
-- D1 database: `bento-poc`
-- Worker binding: `env.DB`
+## Contract boundaries
 
-It does not change the React production frontend, GAS production backend,
-Netlify deployment, or Google Sheets. The POC is read-only and does not
-implement LINE authentication, access tokens, View As, order writes, or
-balance writes.
+The machine-readable authority is
+`contracts/bootstrap-contract.json`. The four separate surfaces are:
+
+- `GET /api/bootstrap?userId=<id>`: the production GAS
+  `getBootstrapData(..., deferUiData: true)` frontend-observable primary
+  contract.
+- `GET /api/bootstrap/deferred?userId=<id>`: the production deferred likes
+  and announcements contract.
+- `GET /api/order-page?userId=<id>&targetDate=<date>`: the production
+  `getOrderPageData` side contract for setting, deadline, menu, and active
+  order lines.
+- GAS `INVALID_ACTION` fallback is documented in the fixture as the legacy
+  three-request waterfall. The Worker does not emulate GAS action dispatch.
+
+`/api/users/:id` and `/api/orders?userId=<id>` remain diagnostic POC
+endpoints. They are not used for primary bootstrap parity or benchmark
+comparison.
+
+Primary bootstrap intentionally does not include likes, active announcements,
+menu, deadline, or setting. This matches the current React startup waterfall.
+Those fields stay in the deferred/order-page contracts.
 
 ## Directory layout
 
 ```text
 worker-poc/
+  contracts/bootstrap-contract.json
+  src/contract.js
   src/index.js
   migrations/0000_initial_schema.sql
+  migrations/0001_bootstrap_parity.sql
+  scripts/benchmark-bootstrap.mjs
+  scripts/benchmark-report.mjs
   tests/index.test.js
+  tests/contract.test.js
+  tests/parity.test.js
   wrangler.jsonc
-  package.json
 ```
 
 ## First-time setup and database ID
@@ -36,119 +60,102 @@ npm.cmd run db:list
 ```
 
 Find the entry whose name is exactly `bento-poc` and copy its `uuid`/database
-ID into the `database_id` field in `wrangler.jsonc`, replacing only
-`<SET_FROM_WRANGLER_D1_INFO>`. If Wrangler is not authenticated, run the
-interactive login command locally:
+ID into `database_id`. If Wrangler is not authenticated, use the interactive
+login command locally:
 
 ```powershell
 npm.cmd exec -- wrangler login
 npm.cmd run db:info
 ```
 
-For a non-interactive environment, set `CLOUDFLARE_API_TOKEN` only in the
-local process environment or CI secret store. Never put the token in this
-repository, `.env` files tracked by Git, or this README.
+For non-interactive use, set `CLOUDFLARE_API_TOKEN` only in the local process
+environment or CI secret store. Never put it in this repository or an
+`.env` file tracked by Git.
 
-The Dashboard alternative is Cloudflare Dashboard → D1 → `bento-poc` →
-database details → copy the database ID. No Dashboard schema setup is
-needed; the checked-in migration is the schema authority.
+## Local migrations and tests
 
-## Local development
+`0000_initial_schema.sql` is unchanged. `0001_bootstrap_parity.sql` is an
+append-only migration that adds calendar settings, likes, and an order-status
+overlay without inserting production data or destructively changing the
+initial schema.
 
-Run the migration against the local D1 state, then start the Worker:
+Run local migration verification twice, then run Worker tests:
 
 ```powershell
 npm.cmd run db:migrations:local
-npm.cmd run dev
-```
-
-Wrangler stores local D1 state under `.wrangler/`, which is ignored by Git.
-The local endpoint is normally `http://localhost:8787`.
-
-## API
-
-```text
-GET /api/health
-GET /api/users/:lineUserId
-GET /api/orders?userId=<id>
-GET /api/bootstrap?userId=<id>
-```
-
-The verified response shapes are:
-
-- `/api/health`: `{ "ok": true, "database": true, "users": <number> }`.
-- `/api/users/:lineUserId`: the public user object with
-  `line_user_id`, `display_name`, `pickup_floor`, `balance`, and `role`.
-- `/api/orders`: `{ "orders": [...] }`; missing `userId` is HTTP 400 with
-  `{ "error": "USER_ID_REQUIRED" }`.
-- `/api/bootstrap`: `{ "user": {}, "orders": [], "settings": {},
-  "announcements": [], "menu": [] }`.
-
-An unknown user returns HTTP 404 with `{ "error": "USER_NOT_FOUND" }`.
-
-## Migration commands
-
-The migration is tracked by Wrangler's D1 migration table and uses guarded
-`CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS` statements. Run
-it from this directory; do not manually create schema in the Dashboard:
-
-```powershell
-# local D1 only
 npm.cmd run db:migrations:local
-
-# existing remote D1; intentionally not run by this task
-npm.cmd run db:migrations:remote
-```
-
-The remote command is a write operation. Review the remote schema and
-migration status before using it. The script refuses to continue unless
-`database_id` has been replaced with a valid UUID.
-
-## Deploy
-
-Deployment is intentionally not performed in this task. The deploy script
-also refuses the placeholder `database_id`. After local tests, remote
-migration review, exact UUID configuration, and explicit authorization to
-deploy, use:
-
-```powershell
-npm.cmd run deploy
-```
-
-## Tests and verification
-
-The tests use Node's built-in test runner and a deterministic fake D1 adapter;
-they do not require Cloudflare credentials:
-
-```powershell
 npm.cmd test
 npm.cmd run verify
 ```
 
-For repository-level verification, run the unchanged root checks from the
-repository root:
+Local tests use Node's built-in test runner and deterministic fake D1 data.
+They verify the four contract surfaces, required keys/types, nullable and
+empty behavior, ordering, stable errors, migration guards, and credential
+scans. They do not prove remote D1 contents or production traffic.
+
+## Remote migration and deployment
+
+Remote migration and deploy are external writes. Run them only after local
+Worker/parity tests and root verification pass, and only against the existing
+`bento-poc` resource:
 
 ```powershell
-node --test tests/strict-identity-ledger.test.cjs
-npm.cmd run lint
-npm.cmd run build
+npm.cmd run db:migrations:remote
+npm.cmd run deploy
 ```
 
-Local tests do not prove real Cloudflare authentication, remote D1 state,
-Worker deployment, or production traffic.
+The package guard refuses remote writes when `wrangler.jsonc` contains an
+invalid database ID. After deployment, smoke-test the existing Worker URL
+with `/api/health`, `/api/bootstrap`, `/api/bootstrap/deferred`, and
+`/api/order-page` using a representative D1 user. Do not route React to the
+Worker in this task.
 
-## GAS + Sheets vs Worker + D1 bootstrap comparison
+## Serial primary benchmark
 
-After both sides contain equivalent rows for the same user, compare the same
-five logical outputs: `user`, `orders`, `settings`, `announcements`, and
-`menu`. Keep the dataset, region, network conditions, and request shape
-constant. Record at least 30 cold-start and 30 warm samples for each backend,
-then report median, p95, response bytes, and error count separately.
+The benchmark compares only equivalent primary requests:
 
-For the Worker, call `/api/bootstrap?userId=...` directly and record client
-elapsed time plus `Content-Length` (or downloaded byte count). For GAS, call
-the existing bootstrap POST with the normal production authentication flow
-and use its existing bootstrap timing observability alongside client elapsed
-time. Do not route the production frontend to the POC just to benchmark it.
-Interpret cold starts, geographic placement, and authentication overhead
-separately; only compare the data/bootstrap portion on an equivalent basis.
+- GAS POST `getBootstrapData` with `deferUiData: true`.
+- Worker GET `/api/bootstrap`.
+
+It does not initialize LIFF or include login time. It records one cold-ish
+first request separately, then at least 30 serial warm requests (default 50).
+It reports elapsed latency, P50, P95, min, max, mean, payload bytes, HTTP
+status/error counts, GAS response timing, and Worker `Server-Timing` values
+when available. It performs a live primary semantic comparison before warm
+sampling; a mismatch stops the benchmark.
+
+Set values only in the local PowerShell process. `GAS_ACCESS_TOKEN` is a
+sensitive LINE access token and must never be committed or written to the
+benchmark JSON:
+
+```powershell
+$env:GAS_API_URL = $env:VITE_GAS_API_URL
+$env:WORKER_BOOTSTRAP_URL = 'https://<existing-worker-host>/api/bootstrap'
+$env:BENCH_USER_ID = '<same-logical-user-in-both-datasets>'
+$env:GAS_ACCESS_TOKEN = '<set-locally-only>'
+$env:BENCH_TARGET_DATE = '2026-09-10'
+$env:BENCH_ITERATIONS = '50'
+$env:BENCH_JSON_OUT = Join-Path $env:TEMP 'bento-bootstrap-benchmark.json'
+$env:BENCH_MARKDOWN_OUT = Join-Path $env:TEMP 'bento-bootstrap-benchmark.md'
+
+npm.cmd run benchmark
+npm.cmd run benchmark:report -- $env:BENCH_JSON_OUT
+```
+
+The benchmark runs the local migration gate twice and the Worker/parity test
+gate before making network requests. If `GAS_ACCESS_TOKEN` is unavailable,
+implementation and local verification can still be completed, but the live
+benchmark stops at that external-input gate and no speed conclusion is valid.
+
+## Intentional differences
+
+The fixture records the differences that are not frontend parity defects:
+
+- GAS authenticates a LINE access token; this read-only Worker contract uses
+  a query `userId`.
+- GAS normally returns JSON error envelopes through the web-app transport;
+  Worker uses explicit HTTP error statuses.
+- GAS timing includes LINE/Apps Script stages; Worker timing includes D1 and
+  Worker stages.
+- The Worker does not emulate the legacy `INVALID_ACTION` action waterfall.
+- Diagnostic `/api/users` and `/api/orders` are outside primary parity.

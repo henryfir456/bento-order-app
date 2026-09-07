@@ -4,13 +4,15 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --local",
-    "test": "node --test tests/index.test.js",
+    "test": "node --test tests/index.test.js tests/contract.test.js tests/parity.test.js",
     "db:list": "wrangler d1 list",
     "db:info": "wrangler d1 info bento-poc",
     "db:migrations:local": "wrangler d1 migrations apply bento-poc --local",
     "db:migrations:remote": "node scripts/require-database-id.mjs && wrangler d1 migrations apply bento-poc --remote",
     "deploy": "node scripts/require-database-id.mjs && wrangler deploy",
-    "verify": "npm run test"
+    "verify": "npm run test",
+    "benchmark": "node scripts/benchmark-bootstrap.mjs",
+    "benchmark:report": "node scripts/benchmark-report.mjs"
   },
   "devDependencies": {
     "wrangler": "4.129.0"
