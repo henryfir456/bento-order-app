@@ -12,8 +12,16 @@ function warnMalformedAnnouncement(rowNumber, reason) {
   console.warn(`[ANNOUNCEMENT] Ignored malformed row ${rowNumber}: ${reason}`);
 }
 
-function getActiveAnnouncements(now) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Announcements');
+function getActiveAnnouncements(existingSpreadsheetOrNow, maybeNow) {
+  const hasExistingSpreadsheet = Boolean(
+    existingSpreadsheetOrNow
+    && typeof existingSpreadsheetOrNow.getSheetByName === 'function'
+  );
+  const spreadsheet = hasExistingSpreadsheet
+    ? existingSpreadsheetOrNow
+    : SpreadsheetApp.getActiveSpreadsheet();
+  const now = hasExistingSpreadsheet ? maybeNow : existingSpreadsheetOrNow;
+  const sheet = spreadsheet.getSheetByName('Announcements');
   if (!sheet) {
     console.warn('[ANNOUNCEMENT] Announcements sheet not found');
     return [];

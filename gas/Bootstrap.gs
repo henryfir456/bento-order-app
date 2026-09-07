@@ -65,7 +65,7 @@ function getBootstrapData(accessToken, targetDateStr, bootId) {
     likesMs = Date.now() - likesStart;
 
     const announcementsStart = Date.now();
-    const announcements = getActiveAnnouncements();
+    const announcements = getActiveAnnouncements(ss);
     announcementsMs = Date.now() - announcementsStart;
 
     const ordersStart = Date.now();

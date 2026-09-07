@@ -124,6 +124,7 @@ class MockSpreadsheet {
 
 function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBehavior = {}) {
   let uuid = 0;
+  let activeSpreadsheetCalls = 0;
   const fetchCalls = [];
   const logs = [];
   let contentReads = 0;
@@ -138,7 +139,10 @@ function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBe
     : JSON.stringify(lineProfile);
   const context = {
     SpreadsheetApp: {
-      getActiveSpreadsheet: () => spreadsheet
+      getActiveSpreadsheet: () => {
+        activeSpreadsheetCalls += 1;
+        return spreadsheet;
+      }
     },
     LockService: {
       getScriptLock: () => ({
@@ -177,6 +181,7 @@ function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBe
     },
     console: logger,
     __fetchCalls: fetchCalls,
+    __activeSpreadsheetCalls: () => activeSpreadsheetCalls,
     __contentReads: () => contentReads,
     __logs: logs
   };
@@ -517,6 +522,7 @@ test('bootstrap authenticates canonically and reads each startup sheet once', ()
   assert.equal(spreadsheet.sheets.Orders.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Menu.dataRangeReads, 0);
   assert.equal(gas.__fetchCalls.length, 1);
+  assert.equal(gas.__activeSpreadsheetCalls(), 1);
 });
 
 test('unregistered bootstrap preserves identity response and skips non-critical sheets', () => {
@@ -808,6 +814,7 @@ test('missing Announcements sheet returns null and keeps calendar initialization
   assert.equal(result.announcement, null);
   assert.ok(result.events['2026-09-10']);
   assert.match(gas.__logs[0], /Announcements sheet not found/);
+  assert.equal(gas.__activeSpreadsheetCalls(), 2);
 });
 
 test('calendar page data includes the effective announcement without another frontend request', () => {
