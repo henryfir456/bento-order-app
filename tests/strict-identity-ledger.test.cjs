@@ -197,6 +197,7 @@ function loadGas(spreadsheet, lineProfile = {}, lineProfileStatus = 200, fetchBe
     'Calendar.gs',
     'Admin.gs',
     'Bootstrap.gs',
+    'DeferredBootstrap.gs',
     'Code.gs'
   ];
   sourceFiles.forEach((fileName) => {
@@ -481,7 +482,8 @@ test('bootstrap authenticates canonically and reads each startup sheet once', ()
       contents: JSON.stringify({
         action: 'getBootstrapData',
         accessToken: 'access-token',
-        bootId: 'BOOT-20260906-abc123'
+        bootId: 'BOOT-20260906-abc123',
+        deferUiData: true
       })
     }
   });
@@ -493,6 +495,8 @@ test('bootstrap authenticates canonically and reads each startup sheet once', ()
   assert.equal(result.user.lineUserId, 'user-id');
   assert.equal(result.user.displayName, 'LINE Profile Name');
   assert.equal(result.calendar.events['2026-09-10'].vendor, '蔡老師');
+  assert.equal(Object.prototype.hasOwnProperty.call(result.calendar.events['2026-09-10'], 'likeCount'), false);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.calendar.announcements)), []);
   assert.deepEqual(JSON.parse(JSON.stringify(result.ordersMap)), {
     '2026-09-10': true,
     '2026-09-11': true
@@ -503,13 +507,12 @@ test('bootstrap authenticates canonically and reads each startup sheet once', ()
   assert.ok(perfLines.some(line => line.includes('"metric":"USER_LOOKUP_MS"')));
   assert.ok(perfLines.some(line => line.includes('"metric":"ORDERS_MS"')));
   assert.ok(perfLines.some(line => line.includes('"metric":"BOOTSTRAP_TOTAL_MS"')));
+  assert.doesNotMatch(perfLines.join('\n'), /metric":"(?:LIKES_MS|ANNOUNCEMENTS_MS)/);
   assert.doesNotMatch(perfLines.join('\n'), /access-token|user-id|LINE Profile Name|Authorization/i);
   assert.equal(result.observability.timing.status, 'success');
   assert.deepEqual(Object.keys(result.observability.timing.metrics).sort(), [
-    'ANNOUNCEMENTS_MS',
     'BOOTSTRAP_TOTAL_MS',
     'CALENDAR_MS',
-    'LIKES_MS',
     'LINE_PROFILE_MS',
     'ORDERS_MS',
     'SETTINGS_MS',
@@ -517,12 +520,135 @@ test('bootstrap authenticates canonically and reads each startup sheet once', ()
   ]);
   assert.equal(spreadsheet.sheets.Users.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 1);
-  assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 1);
-  assert.equal(spreadsheet.sheets.Announcements.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Announcements.dataRangeReads, 0);
   assert.equal(spreadsheet.sheets.Orders.dataRangeReads, 1);
   assert.equal(spreadsheet.sheets.Menu.dataRangeReads, 0);
   assert.equal(gas.__fetchCalls.length, 1);
   assert.equal(gas.__activeSpreadsheetCalls(), 1);
+});
+
+test('bootstrap without deferUiData keeps the legacy Likes and Announcements response', () => {
+  const spreadsheet = bootstrapSpreadsheet();
+  spreadsheet.sheets.Likes.rows.push(['2026-09-10', 'user-id', '2026-09-01T01:00:00.000Z']);
+  spreadsheet.sheets.Announcements.rows.push([
+    'legacy-announcement',
+    'Legacy announcement',
+    'Legacy content',
+    '2020-01-01',
+    '2100-12-31',
+    true
+  ]);
+  const gas = loadGas(spreadsheet, {
+    userId: 'user-id',
+    displayName: 'LINE Profile Name'
+  });
+
+  const result = gas.getBootstrapData('access-token', '', 'BOOT-20260906-legacy1');
+
+  assert.equal(result.success, true);
+  assert.equal(result.calendar.events['2026-09-10'].likeCount, 1);
+  assert.equal(result.calendar.events['2026-09-10'].isUserLiked, true);
+  assert.equal(result.calendar.announcements[0].id, 'legacy-announcement');
+  assert.ok(Object.prototype.hasOwnProperty.call(result.observability.timing.metrics, 'LIKES_MS'));
+  assert.ok(Object.prototype.hasOwnProperty.call(result.observability.timing.metrics, 'ANNOUNCEMENTS_MS'));
+  assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Announcements.dataRangeReads, 1);
+});
+
+test('deferred bootstrap authenticates canonically and reads Likes and Announcements once', () => {
+  const spreadsheet = bootstrapSpreadsheet();
+  spreadsheet.sheets.Likes.rows.push(
+    ['2026-09-10', 'user-id', '2026-09-01T01:00:00.000Z'],
+    ['2026-09-10', 'other-user', '2026-09-01T01:00:00.000Z']
+  );
+  spreadsheet.sheets.Announcements.rows.push([
+    'deferred-announcement',
+    'Deferred announcement',
+    'Deferred content',
+    '2020-01-01',
+    '2100-12-31',
+    true
+  ]);
+  const gas = loadGas(spreadsheet, {
+    userId: 'user-id',
+    displayName: 'LINE Profile Name'
+  });
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'getDeferredBootstrapData',
+        accessToken: 'access-token',
+        bootId: 'BOOT-20260906-defer1'
+      })
+    }
+  });
+  const result = JSON.parse(output.text);
+
+  assert.equal(result.success, true);
+  assert.equal(result.registered, true);
+  assert.equal(result.bootId, 'BOOT-20260906-defer1');
+  assert.equal(result.likes['2026-09-10'].likeCount, 2);
+  assert.equal(result.likes['2026-09-10'].isUserLiked, true);
+  assert.equal(result.likes['2026-09-10'].calendarEvent.order_date, '2026-09-10');
+  assert.equal(result.likes['2026-09-10'].calendarEvent.vendor, '');
+  assert.equal(result.likes['2026-09-10'].calendarEvent.mode, 'A');
+  assert.equal(typeof result.likes['2026-09-10'].calendarEvent.deadline, 'string');
+  assert.equal(typeof result.likes['2026-09-10'].calendarEvent.isExpired, 'boolean');
+  assert.equal(result.announcements[0].id, 'deferred-announcement');
+  assert.deepEqual(Object.keys(result.observability.timing.metrics).sort(), [
+    'ANNOUNCEMENTS_MS',
+    'DEFERRED_UI_TOTAL_MS',
+    'LIKES_MS'
+  ]);
+  const perfLines = gas.__logs.filter(line => line.includes('[PERF][BOOT][BOOT-20260906-defer1] deferred-backend'));
+  assert.ok(perfLines.some(line => line.includes('"metric":"LIKES_MS"')));
+  assert.ok(perfLines.some(line => line.includes('"metric":"ANNOUNCEMENTS_MS"')));
+  assert.ok(perfLines.some(line => line.includes('"metric":"DEFERRED_UI_TOTAL_MS"')));
+  assert.doesNotMatch(perfLines.join('\n'), /access-token|user-id|LINE Profile Name|Authorization/i);
+  assert.doesNotMatch(JSON.stringify(result), /access-token|user-id|lineUserId|displayName|Authorization/i);
+  assert.equal(spreadsheet.sheets.Users.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Settings.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Orders.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 1);
+  assert.equal(spreadsheet.sheets.Announcements.dataRangeReads, 1);
+  assert.equal(gas.__fetchCalls.length, 1);
+  assert.equal(gas.__activeSpreadsheetCalls(), 1);
+});
+
+test('deferred bootstrap token failures remain safe and do not read deferred sheets', () => {
+  const spreadsheet = bootstrapSpreadsheet();
+  const gas = loadGas(spreadsheet, {}, 401);
+
+  const output = gas.doPost({
+    postData: {
+      contents: JSON.stringify({
+        action: 'getDeferredBootstrapData',
+        accessToken: 'secret-token',
+        bootId: 'BOOT-20260906-defer2'
+      })
+    }
+  });
+  const result = JSON.parse(output.text);
+
+  assert.deepEqual(result, {
+    success: false,
+    code: 'LINE_PROFILE_401',
+    message: 'LINE_PROFILE_401',
+    bootId: 'BOOT-20260906-defer2',
+    observability: {
+      timing: {
+        status: 'error',
+        metrics: { DEFERRED_UI_TOTAL_MS: result.observability.timing.metrics.DEFERRED_UI_TOTAL_MS }
+      }
+    }
+  });
+  assert.equal(spreadsheet.sheets.Likes.dataRangeReads, 0);
+  assert.equal(spreadsheet.sheets.Announcements.dataRangeReads, 0);
+  assert.doesNotMatch(JSON.stringify(result), /secret-token|Authorization|stack/i);
+  assert.doesNotMatch(gas.__logs.join('\n'), /secret-token|Authorization/i);
+  assert.doesNotMatch(gas.__logs.join('\n'), /metric":"(?:LIKES_MS|ANNOUNCEMENTS_MS)/);
 });
 
 test('unregistered bootstrap preserves identity response and skips non-critical sheets', () => {
@@ -650,8 +776,17 @@ test('frontend boot timing logger emits only the Phase 3 allowlist', async () =>
     status: 'success',
     metrics: { SETTINGS_MS: 0 }
   }, 'BOOT-20260906-other1');
+  timing.deferredBackend({
+    status: 'success',
+    metrics: {
+      DEFERRED_UI_TOTAL_MS: 88.8,
+      LIKES_MS: 20,
+      ANNOUNCEMENTS_MS: 30,
+      BOOTSTRAP_TOTAL_MS: 999
+    }
+  }, 'BOOT-20260906-abc123');
 
-  assert.equal(lines.length, 4);
+  assert.equal(lines.length, 7);
   assert.match(lines[2], /^\[PERF\]\[BOOT\]\[BOOT-20260906-abc123\] backend /);
   assert.deepEqual(JSON.parse(lines[2].split(' backend ')[1]), {
     status: 'success',
@@ -663,6 +798,14 @@ test('frontend boot timing logger emits only the Phase 3 allowlist', async () =>
     metric: 'LINE_PROFILE_MS',
     durationMs: 12
   });
+  assert.match(lines[4], /^\[PERF\]\[BOOT\]\[BOOT-20260906-abc123\] deferred-backend /);
+  assert.deepEqual(JSON.parse(lines[4].split(' deferred-backend ')[1]), {
+    status: 'success',
+    metric: 'DEFERRED_UI_TOTAL_MS',
+    durationMs: 88.8
+  });
+  assert.match(lines[5], /"metric":"LIKES_MS"/);
+  assert.match(lines[6], /"metric":"ANNOUNCEMENTS_MS"/);
   assert.doesNotMatch(lines.join('\n'), /accessToken|Authorization|userId|displayName|response|Error|stack/i);
 });
 
@@ -693,6 +836,12 @@ test('frontend bootstrap wires the correlated Phase 3 waterfall without extra re
   assert.match(initSource, /createBootTimingLogger\(bootId\)/);
   assert.match(initSource, /bootTiming\.backend\(identity\?\.observability\?\.timing, identity\?\.bootId\)/);
   assert.match(appSource, /action: 'getBootstrapData',[\s\S]*bootId/);
+  assert.match(appSource, /action: 'getDeferredBootstrapData',[\s\S]*bootId/);
+  assert.match(appSource, /\.timing\.deferredBackend/);
+  assert.match(appSource, /deferredUiGenerationRef/);
+  assert.match(appSource, /deferredUiBootRef/);
+  assert.match(appSource, /likesLoaded/);
+  assert.match(appSource, /announcementsLoaded/);
   assert.match(appSource, /useEffect\(\(\) => \{[\s\S]*BOOTSTRAP_STATE_READY[\s\S]*BOOT_READY/);
   const normalBranchStart = initSource.indexOf('} else {', initSource.indexOf('if (usingLegacyStartup) {'));
   const normalBranch = initSource.slice(normalBranchStart);
@@ -702,7 +851,13 @@ test('frontend bootstrap wires the correlated Phase 3 waterfall without extra re
   const bootstrapFetchEnd = appSource.indexOf('  const handleRegister', bootstrapFetchStart);
   const bootstrapFetchSource = appSource.slice(bootstrapFetchStart, bootstrapFetchEnd);
   assert.equal((bootstrapFetchSource.match(/gasPost\(/g) || []).length, 1);
-  assert.match(bootstrapFetchSource, /action: 'getBootstrapData',[\s\S]*accessToken,[\s\S]*bootId/);
+  assert.match(bootstrapFetchSource, /action: 'getBootstrapData',[\s\S]*accessToken,[\s\S]*bootId,[\s\S]*deferUiData: true/);
+
+  const deferredFetchStart = appSource.indexOf('const fetchDeferredBootstrapData');
+  const deferredFetchEnd = appSource.indexOf('const showPopup', deferredFetchStart);
+  const deferredFetchSource = appSource.slice(deferredFetchStart, deferredFetchEnd);
+  assert.equal((deferredFetchSource.match(/gasPost\(/g) || []).length, 1);
+  assert.match(deferredFetchSource, /action: 'getDeferredBootstrapData',[\s\S]*accessToken,[\s\S]*bootId/);
 });
 
 const announcementAsOfDate = new Date('2026-09-04T04:00:00.000Z');
@@ -832,8 +987,8 @@ test('calendar page data includes the effective announcement without another fro
   assert.match(appSource, /setAnnouncements\(nextAnnouncements\)/);
   assert.match(appSource, /announcements is canonical/);
   assert.match(appSource, /onClick=\{\(\) => setShowAnnouncementModal\(true\)\}/);
-  assert.match(appSource, /<AnnouncementBar[\s\S]*announcement=\{announcements\[0\] \?\? null\}/);
-  assert.match(appSource, /<AnnouncementModal[\s\S]*announcements=\{announcements\}/);
+  assert.match(appSource, /<AnnouncementBar[\s\S]*announcement=\{announcements\[0\]\}/);
+  assert.match(appSource, /<AnnouncementModal[\s\S]*announcements=\{announcements\}[\s\S]*loading=\{!announcementsLoaded\}/);
   assert.match(barSource, /truncate/);
   assert.match(barSource, /onClick/);
   assert.match(modalSource, /announcements\.map/);
@@ -1842,6 +1997,11 @@ test('mock API reuses bootstrap and order-page response contracts', async () => 
   const api = createMockGasApi({ mockUser: 'admin' });
   const bootstrap = await (await api.post({
     action: 'getBootstrapData',
+    deferUiData: true,
+    bootId: 'BOOT-20260906-mock01'
+  })).json();
+  const deferred = await (await api.post({
+    action: 'getDeferredBootstrapData',
     bootId: 'BOOT-20260906-mock01'
   })).json();
   const orderPage = await (await api.get('?action=getOrderPageData&targetDate=2099-01-02')).json();
@@ -1850,7 +2010,21 @@ test('mock API reuses bootstrap and order-page response contracts', async () => 
   assert.ok(bootstrap.user.userId);
   assert.ok(bootstrap.calendar.events);
   assert.ok(bootstrap.ordersMap);
+  const primaryDate = Object.keys(bootstrap.calendar.events)[0];
+  assert.deepEqual(Object.keys(bootstrap.calendar.events[primaryDate]).sort(), [
+    'deadline',
+    'isExpired',
+    'lunarLabel',
+    'mode',
+    'order_date',
+    'vendor'
+  ]);
   assert.equal(bootstrap.bootId, 'BOOT-20260906-mock01');
+  assert.equal(deferred.success, true);
+  assert.equal(deferred.registered, true);
+  assert.equal(deferred.bootId, 'BOOT-20260906-mock01');
+  assert.ok(deferred.likes[primaryDate]);
+  assert.ok(Array.isArray(deferred.announcements));
   assert.deepEqual(Object.keys(orderPage), ['success', 'setting', 'deadline', 'menu', 'myOrder']);
   assert.equal(orderPage.success, true);
   assert.ok(Array.isArray(orderPage.menu));

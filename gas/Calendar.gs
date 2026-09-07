@@ -93,6 +93,45 @@ function getDeadlineInfo(orderDateStr, mode) {
   };
 }
 
+function getCalendarLikeState(currentUserId, likesData) {
+  const likes = {};
+
+  for (let i = 1; i < likesData.length; i++) {
+    const row = likesData[i];
+    if (!row[0]) continue;
+
+    const dateStr = Utilities.formatDate(new Date(row[0]), TIMEZONE, "yyyy-MM-dd");
+    const userId = String(row[1] || '').trim();
+    const current = likes[dateStr] || { likeCount: 0, isUserLiked: false };
+    current.likeCount += 1;
+    if (currentUserId && userId === currentUserId) current.isUserLiked = true;
+    likes[dateStr] = current;
+  }
+
+  return likes;
+}
+
+function getDeferredCalendarLikeState(currentUserId, likesData) {
+  const likes = getCalendarLikeState(currentUserId, likesData);
+
+  return Object.keys(likes).reduce((result, dateStr) => {
+    const deadlineInfo = getDeadlineInfo(dateStr, 'A');
+    const [year, month, day] = dateStr.split('-').map(Number);
+    result[dateStr] = {
+      ...likes[dateStr],
+      calendarEvent: {
+        order_date: dateStr,
+        vendor: '',
+        mode: 'A',
+        deadline: deadlineInfo.deadline,
+        isExpired: deadlineInfo.isExpired,
+        lunarLabel: getLunarLabel(year, month, day)
+      }
+    };
+    return result;
+  }, {});
+}
+
 function getCalendarEvents(currentUserId, preloadedData) {
   const totalStart = Date.now();
   let settingsMs = 0;
@@ -102,14 +141,21 @@ function getCalendarEvents(currentUserId, preloadedData) {
   const hasSettingsData = Boolean(preloadedData && Array.isArray(preloadedData.settingsData));
   const hasLikesData = Boolean(preloadedData && Array.isArray(preloadedData.likesData));
   const hasAnnouncements = Boolean(preloadedData && Array.isArray(preloadedData.announcements));
-  const hasPreloadedCalendarData = hasSettingsData && hasLikesData && hasAnnouncements;
+  const skipLikes = Boolean(preloadedData && preloadedData.skipLikes === true);
+  const skipAnnouncements = Boolean(preloadedData && preloadedData.skipAnnouncements === true);
+  const includeLikes = !skipLikes;
+  const hasPreloadedCalendarData = hasSettingsData
+    && (hasLikesData || skipLikes)
+    && (hasAnnouncements || skipAnnouncements);
 
   try {
-  const ss = hasPreloadedCalendarData
-    ? null
-    : SpreadsheetApp.getActiveSpreadsheet();
+  const needsSettingsSheet = !hasSettingsData;
+  const needsLikesSheet = !hasLikesData && !skipLikes;
+  const ss = needsSettingsSheet || needsLikesSheet
+    ? SpreadsheetApp.getActiveSpreadsheet()
+    : null;
   const settingsSheet = hasSettingsData ? null : ss.getSheetByName('Settings');
-  const likesSheet = hasLikesData ? null : ss.getSheetByName('Likes');
+  const likesSheet = hasLikesData || skipLikes ? null : ss.getSheetByName('Likes');
   
   const settingsStart = Date.now();
   const settingsData = hasSettingsData
@@ -120,26 +166,24 @@ function getCalendarEvents(currentUserId, preloadedData) {
   const likesStart = Date.now();
   const likesData = hasLikesData
     ? preloadedData.likesData
-    : likesSheet ? likesSheet.getDataRange().getValues() : [];
+    : skipLikes
+      ? []
+      : likesSheet ? likesSheet.getDataRange().getValues() : [];
   likesMs = Date.now() - likesStart;
 
   const computeStart = Date.now();
 
   // 1. 整理 Likes 資料
-  const likesCountMap = {};
-  const userLikedDates = new Set();
-
-  for (let i = 1; i < likesData.length; i++) {
-    const row = likesData[i];
-    if (!row[0]) continue;
-    const dStr = Utilities.formatDate(new Date(row[0]), TIMEZONE, "yyyy-MM-dd");
-    const uId = String(row[1] || '').trim();
-
-    likesCountMap[dStr] = (likesCountMap[dStr] || 0) + 1;
-    if (currentUserId && uId === currentUserId) {
-      userLikedDates.add(dStr);
-    }
-  }
+  const likesState = includeLikes
+    ? getCalendarLikeState(currentUserId, likesData)
+    : {};
+  const likesCountMap = Object.keys(likesState).reduce((result, dateStr) => {
+    result[dateStr] = likesState[dateStr].likeCount;
+    return result;
+  }, {});
+  const userLikedDates = new Set(
+    Object.keys(likesState).filter(dateStr => likesState[dateStr].isUserLiked)
+  );
 
   // 2. 整理 Settings 資料
   const events = {};
@@ -160,7 +204,7 @@ function getCalendarEvents(currentUserId, preloadedData) {
     const deadlineInfo = getDeadlineInfo(orderDateStr, mode);
     const [y, m, d] = orderDateStr.split('-').map(Number);
 
-    events[orderDateStr] = {
+    const event = {
       order_date: orderDateStr,
       vendor: vendor,
       mode: mode,
@@ -170,6 +214,11 @@ function getCalendarEvents(currentUserId, preloadedData) {
       isUserLiked: userLikedDates.has(orderDateStr),
       lunarLabel: getLunarLabel(y, m, d)
     };
+    if (!includeLikes) {
+      delete event.likeCount;
+      delete event.isUserLiked;
+    }
+    events[orderDateStr] = event;
   }
 
   // 3. 補充有愛心但尚未開團的日期
@@ -177,7 +226,7 @@ function getCalendarEvents(currentUserId, preloadedData) {
     if (!existingSettingsDates.has(dStr)) {
       const deadlineInfo = getDeadlineInfo(dStr, 'A');
       const [y, m, d] = dStr.split('-').map(Number);
-      events[dStr] = {
+      const event = {
         order_date: dStr,
         vendor: "", // 未開團
         mode: 'A',
@@ -187,6 +236,11 @@ function getCalendarEvents(currentUserId, preloadedData) {
         isUserLiked: userLikedDates.has(dStr),
         lunarLabel: getLunarLabel(y, m, d)
       };
+      if (!includeLikes) {
+        delete event.likeCount;
+        delete event.isUserLiked;
+      }
+      events[dStr] = event;
     }
   });
 
@@ -195,7 +249,9 @@ function getCalendarEvents(currentUserId, preloadedData) {
   const announcementsStart = Date.now();
   const announcements = hasAnnouncements
     ? preloadedData.announcements
-    : getActiveAnnouncements();
+    : skipAnnouncements
+      ? []
+      : getActiveAnnouncements();
   announcementsMs = Date.now() - announcementsStart;
 
   return {
@@ -208,8 +264,8 @@ function getCalendarEvents(currentUserId, preloadedData) {
   } finally {
     if (!hasPreloadedCalendarData) {
       logPerformanceTiming('SETTINGS', settingsMs);
-      logPerformanceTiming('LIKES', likesMs);
-      logPerformanceTiming('ANNOUNCEMENTS', announcementsMs);
+      if (!skipLikes) logPerformanceTiming('LIKES', likesMs);
+      if (!skipAnnouncements) logPerformanceTiming('ANNOUNCEMENTS', announcementsMs);
       logPerformanceTiming('COMPUTE', computeMs);
       logPerformanceTiming('TOTAL', Date.now() - totalStart);
     }

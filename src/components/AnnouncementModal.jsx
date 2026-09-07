@@ -2,8 +2,8 @@ import Modal from './Modal';
 
 const formatAnnouncementDate = (date) => String(date || '').replace(/-/g, '/');
 
-export default function AnnouncementModal({ open, announcements = [], onClose }) {
-  if (announcements.length === 0) return null;
+export default function AnnouncementModal({ open, announcements = [], loading = false, onClose }) {
+  if (!open || (!loading && announcements.length === 0)) return null;
 
   return (
     <Modal
@@ -13,7 +13,9 @@ export default function AnnouncementModal({ open, announcements = [], onClose })
       className="max-w-lg"
     >
       <div className="space-y-5">
-        {announcements.map((announcement) => (
+        {loading ? (
+          <div role="status" className="text-sm text-gray-500">Announcement loading…</div>
+        ) : announcements.map((announcement) => (
           <article key={announcement.id} className="space-y-2">
             <h3 className="font-bold text-[#2C4A3E]">{announcement.title}</h3>
             <time dateTime={announcement.start_date} className="block text-xs text-gray-400">

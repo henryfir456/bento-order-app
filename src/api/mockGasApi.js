@@ -26,6 +26,44 @@ const parseQuery = (query) => {
 
 const errorResponse = (message) => jsonResponse({ success: false, message });
 
+const getMockCoreIdentityResponse = (mockUser) => {
+  const identity = getMockIdentityResponse(mockUser);
+  if (!identity.registered) return identity;
+
+  const events = Object.fromEntries(Object.entries(identity.calendar.events).map(([date, event]) => {
+    const { likeCount: _likeCount, isUserLiked: _isUserLiked, ...coreEvent } = event;
+    return [date, coreEvent];
+  }));
+
+  return {
+    ...identity,
+    calendar: {
+      events,
+      announcements: [],
+      announcement: null
+    }
+  };
+};
+
+const getMockDeferredUiResponse = (mockUser) => {
+  const identity = getMockIdentityResponse(mockUser);
+  const likes = Object.fromEntries(Object.entries(identity.calendar?.events || {}).map(([date, event]) => [
+    date,
+    {
+      likeCount: event.likeCount,
+      isUserLiked: event.isUserLiked
+    }
+  ]));
+
+  return {
+    success: true,
+    registered: true,
+    likes,
+    announcements: identity.calendar?.announcements || [],
+    announcement: identity.calendar?.announcement || null
+  };
+};
+
 export const createMockGasApi = ({ mockUser }) => {
   const getState = () => getMockSessionState(mockUser);
   const getUser = () => getState().user;
@@ -64,9 +102,17 @@ export const createMockGasApi = ({ mockUser }) => {
 
     if (action === 'getBootstrapData') {
       return jsonResponse({
-        ...getMockIdentityResponse(mockUser),
+        ...(payload.deferUiData === true
+          ? getMockCoreIdentityResponse(mockUser)
+          : getMockIdentityResponse(mockUser)),
         bootId: payload.bootId
       });
+    }
+
+    if (action === 'getDeferredBootstrapData') {
+      return getUser()
+        ? jsonResponse({ ...getMockDeferredUiResponse(mockUser), bootId: payload.bootId })
+        : errorResponse('Mock user is not registered.');
     }
 
     if (action === 'getUserInfo') {

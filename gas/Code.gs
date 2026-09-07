@@ -49,7 +49,15 @@ function doPost(e) {
       return jsonResponse(getUserInfo(data.accessToken));
     } else if (action === 'getBootstrapData') {
       const bootId = resolveBootId(data.bootId);
-      return jsonResponse(getBootstrapData(data.accessToken, data.targetDate, bootId));
+      return jsonResponse(getBootstrapData(
+        data.accessToken,
+        data.targetDate,
+        bootId,
+        data.deferUiData === true
+      ));
+    } else if (action === 'getDeferredBootstrapData') {
+      const bootId = resolveBootId(data.bootId);
+      return jsonResponse(getDeferredBootstrapData(data.accessToken, bootId));
     } else if (action === 'registerUser') {
       return jsonResponse(registerUser(data));
     } else if (action === 'updateMyPickupFloor') {
@@ -77,7 +85,7 @@ function doPost(e) {
     const sensitiveValues = data && isIdentityAction(data.action) ? data.accessToken : [];
     logIdentityException(code, err, sensitiveValues);
     const response = identityError(code);
-    if (data && data.action === 'getBootstrapData') {
+    if (data && (data.action === 'getBootstrapData' || data.action === 'getDeferredBootstrapData')) {
       response.bootId = resolveBootId(data.bootId);
     }
     return jsonResponse(response);

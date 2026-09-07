@@ -22,10 +22,14 @@ const BACKEND_METRICS = new Set([
   'LINE_PROFILE_MS',
   'USER_LOOKUP_MS',
   'SETTINGS_MS',
-  'LIKES_MS',
-  'ANNOUNCEMENTS_MS',
   'ORDERS_MS',
   'CALENDAR_MS'
+]);
+
+const DEFERRED_BACKEND_METRICS = new Set([
+  'DEFERRED_UI_TOTAL_MS',
+  'LIKES_MS',
+  'ANNOUNCEMENTS_MS'
 ]);
 
 const BOOT_STATUSES = new Set(['success', 'error', 'fallback']);
@@ -62,6 +66,27 @@ export const createBootTimingLogger = (bootId, logger = console) => {
     }
   };
 
+  const emitSummary = (source, summary, responseBootId, allowedMetrics) => {
+    if (responseBootId !== safeBootId) return;
+    if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return;
+    if (!BOOT_STATUSES.has(summary.status)) return;
+    if (!summary.metrics || typeof summary.metrics !== 'object' || Array.isArray(summary.metrics)) return;
+
+    allowedMetrics.forEach((metric) => {
+      if (!Object.prototype.hasOwnProperty.call(summary.metrics, metric)) return;
+      const durationMs = Number(summary.metrics[metric]);
+      if (!Number.isFinite(durationMs)) return;
+
+      const fields = {
+        status: summary.status,
+        metric,
+        durationMs: roundDuration(durationMs)
+      };
+      if (typeof summary.fallback === 'boolean') fields.fallback = summary.fallback;
+      emit(source, fields);
+    });
+  };
+
   return {
     milestone(name) {
       if (BOOT_MILESTONES.has(name)) emit('frontend', { milestone: name });
@@ -79,24 +104,11 @@ export const createBootTimingLogger = (bootId, logger = console) => {
     },
 
     backend(summary, responseBootId) {
-      if (responseBootId !== safeBootId) return;
-      if (!summary || typeof summary !== 'object' || Array.isArray(summary)) return;
-      if (!BOOT_STATUSES.has(summary.status)) return;
-      if (!summary.metrics || typeof summary.metrics !== 'object' || Array.isArray(summary.metrics)) return;
+      emitSummary('backend', summary, responseBootId, BACKEND_METRICS);
+    },
 
-      BACKEND_METRICS.forEach((metric) => {
-        if (!Object.prototype.hasOwnProperty.call(summary.metrics, metric)) return;
-        const durationMs = Number(summary.metrics[metric]);
-        if (!Number.isFinite(durationMs)) return;
-
-        const fields = {
-          status: summary.status,
-          metric,
-          durationMs: roundDuration(durationMs)
-        };
-        if (typeof summary.fallback === 'boolean') fields.fallback = summary.fallback;
-        emit('backend', fields);
-      });
+    deferredBackend(summary, responseBootId) {
+      emitSummary('deferred-backend', summary, responseBootId, DEFERRED_BACKEND_METRICS);
     }
   };
 };

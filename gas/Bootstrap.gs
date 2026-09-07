@@ -1,4 +1,5 @@
-function getBootstrapData(accessToken, targetDateStr, bootId) {
+function getBootstrapData(accessToken, targetDateStr, bootId, deferUiDataFlag) {
+  const deferUiData = deferUiDataFlag === true;
   const resolvedBootId = resolveBootId(bootId);
   const totalStart = Date.now();
   let lineProfileMs = null;
@@ -53,20 +54,24 @@ function getBootstrapData(accessToken, targetDateStr, bootId) {
     }
 
     const settingsSheet = ss.getSheetByName('Settings');
-    const likesSheet = ss.getSheetByName('Likes');
+    const likesSheet = deferUiData ? null : ss.getSheetByName('Likes');
     const ordersSheet = ss.getSheetByName(ORDERS_SHEET);
+    let likesData = [];
+    let announcements = [];
 
     const settingsStart = Date.now();
     const settingsData = settingsSheet ? settingsSheet.getDataRange().getValues() : [];
     settingsMs = Date.now() - settingsStart;
 
-    const likesStart = Date.now();
-    const likesData = likesSheet ? likesSheet.getDataRange().getValues() : [];
-    likesMs = Date.now() - likesStart;
+    if (!deferUiData) {
+      const likesStart = Date.now();
+      likesData = likesSheet ? likesSheet.getDataRange().getValues() : [];
+      likesMs = Date.now() - likesStart;
 
-    const announcementsStart = Date.now();
-    const announcements = getActiveAnnouncements(ss);
-    announcementsMs = Date.now() - announcementsStart;
+      const announcementsStart = Date.now();
+      announcements = getActiveAnnouncements(ss);
+      announcementsMs = Date.now() - announcementsStart;
+    }
 
     const ordersStart = Date.now();
     const orderValues = ordersSheet ? ordersSheet.getDataRange().getValues() : [];
@@ -75,11 +80,17 @@ function getBootstrapData(accessToken, targetDateStr, bootId) {
     if (!ordersMap.success) return finish(ordersMap, 'error');
 
     const calendarStart = Date.now();
-    const calendar = getCalendarEvents(user.userId, {
-      settingsData: settingsData,
-      likesData: likesData,
-      announcements: announcements
-    });
+    const calendar = getCalendarEvents(user.userId, deferUiData
+      ? {
+        settingsData: settingsData,
+        skipLikes: true,
+        skipAnnouncements: true
+      }
+      : {
+        settingsData: settingsData,
+        likesData: likesData,
+        announcements: announcements
+      });
     calendarMs = Date.now() - calendarStart;
     if (!calendar.success) return finish(calendar, 'error');
 
@@ -111,8 +122,8 @@ function getBootstrapData(accessToken, targetDateStr, bootId) {
     logBootstrapTiming(resolvedBootId, 'LINE_PROFILE_MS', lineProfileMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'USER_LOOKUP_MS', userLookupMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'SETTINGS_MS', settingsMs, bootstrapStatus);
-    logBootstrapTiming(resolvedBootId, 'LIKES_MS', likesMs, bootstrapStatus);
-    logBootstrapTiming(resolvedBootId, 'ANNOUNCEMENTS_MS', announcementsMs, bootstrapStatus);
+    if (likesMs !== null) logBootstrapTiming(resolvedBootId, 'LIKES_MS', likesMs, bootstrapStatus);
+    if (announcementsMs !== null) logBootstrapTiming(resolvedBootId, 'ANNOUNCEMENTS_MS', announcementsMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'ORDERS_MS', ordersMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'CALENDAR_MS', calendarMs, bootstrapStatus);
     logBootstrapTiming(resolvedBootId, 'BOOTSTRAP_TOTAL_MS', totalMs, bootstrapStatus);

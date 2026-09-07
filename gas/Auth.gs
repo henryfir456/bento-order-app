@@ -24,6 +24,7 @@ function logIdentityException(code, error, sensitiveValues) {
 function isIdentityAction(action) {
   return action === "getUserInfo"
     || action === "getBootstrapData"
+    || action === "getDeferredBootstrapData"
     || action === "registerUser";
 }
 

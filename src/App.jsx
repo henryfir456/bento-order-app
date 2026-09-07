@@ -45,6 +45,93 @@ const logPerformanceTiming = (label, startTime) => {
   console.info(`[PERF] ${label}_MS=${elapsedMs.toFixed(1)}`);
 };
 
+const normalizeDeferredLikes = (rawLikes) => {
+  if (!rawLikes || typeof rawLikes !== 'object' || Array.isArray(rawLikes)) return null;
+
+  return Object.entries(rawLikes).reduce((result, [dateStr, state]) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return result;
+
+    const likeCount = Number(state?.likeCount);
+    if (!Number.isFinite(likeCount) || likeCount < 0 || typeof state?.isUserLiked !== 'boolean') {
+      return result;
+    }
+
+    result[dateStr] = {
+      likeCount: Math.floor(likeCount),
+      isUserLiked: state.isUserLiked,
+      calendarEvent: state.calendarEvent && typeof state.calendarEvent === 'object'
+        ? {
+          order_date: String(state.calendarEvent.order_date || '').trim(),
+          vendor: String(state.calendarEvent.vendor || ''),
+          mode: String(state.calendarEvent.mode || ''),
+          deadline: String(state.calendarEvent.deadline || ''),
+          isExpired: Boolean(state.calendarEvent.isExpired),
+          lunarLabel: state.calendarEvent.lunarLabel == null
+            ? null
+            : String(state.calendarEvent.lunarLabel)
+        }
+        : null
+    };
+    return result;
+  }, {});
+};
+
+const normalizeDeferredAnnouncements = (rawAnnouncements) => {
+  if (!Array.isArray(rawAnnouncements)) return null;
+
+  return rawAnnouncements.reduce((result, announcement) => {
+    const id = String(announcement?.id || '').trim();
+    const title = String(announcement?.title || '').trim();
+    const content = String(announcement?.content || '');
+    const startDate = String(announcement?.start_date || '').trim();
+    const endDate = String(announcement?.end_date || '').trim();
+
+    if (!id || !title || !content.trim()) return result;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+      return result;
+    }
+
+    result.push({
+      id,
+      title,
+      content,
+      start_date: startDate,
+      end_date: endDate
+    });
+    return result;
+  }, []);
+};
+
+const mergeDeferredLikes = (events, likes) => Object.entries(likes).reduce((result, [dateStr, likeState]) => {
+  const { calendarEvent, ...likeStateWithoutEvent } = likeState;
+  if (!result[dateStr] && calendarEvent?.order_date === dateStr && calendarEvent.mode) {
+    result[dateStr] = { ...calendarEvent, ...likeStateWithoutEvent };
+  } else if (result[dateStr]) {
+    result[dateStr] = { ...result[dateStr], ...likeStateWithoutEvent };
+  }
+  return result;
+}, { ...events });
+
+const fetchDeferredBootstrapData = async (accessToken, bootId) => {
+  try {
+    if (!accessToken) {
+      return { success: false, code: 'DEFERRED_UI_TOKEN_MISSING' };
+    }
+
+    const res = await gasPost({
+      action: 'getDeferredBootstrapData',
+      accessToken,
+      bootId
+    });
+    if (!res.ok) {
+      return { success: false, code: 'DEFERRED_UI_HTTP_ERROR' };
+    }
+    return await res.json();
+  } catch {
+    return { success: false, code: 'DEFERRED_UI_REQUEST_FAILED' };
+  }
+};
+
 const showPopup = (options) => Swal.fire({
   confirmButtonText: '確定',
   confirmButtonColor: '#2C4A3E',
@@ -93,6 +180,8 @@ export default function App() {
   const [registrationLoading, setRegistrationLoading] = useState(false);
   const authInitInFlightRef = useRef(false);
   const bootRenderPendingRef = useRef(null);
+  const deferredUiGenerationRef = useRef(0);
+  const deferredUiBootRef = useRef('');
 
   const [selectedDate, setSelectedDate] = useState(null);
   const [activeOrderId, setActiveOrderId] = useState('');
@@ -135,6 +224,8 @@ export default function App() {
   const [floorError, setFloorError] = useState('');
   const [showChangelogModal, setShowChangelogModal] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
+  const [likesLoaded, setLikesLoaded] = useState(false);
+  const [announcementsLoaded, setAnnouncementsLoaded] = useState(false);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
 
@@ -170,6 +261,8 @@ export default function App() {
     adminSummaryRequestRef.current += 1;
     historyRequestRef.current += 1;
     memberBalancesRequestRef.current += 1;
+    deferredUiGenerationRef.current += 1;
+    deferredUiBootRef.current = '';
     setLineUserId('');
     setAuthUser(null);
     setViewAsUser(null);
@@ -212,6 +305,8 @@ export default function App() {
     setFloorError('');
     setShowChangelogModal(false);
     setAnnouncements([]);
+    setLikesLoaded(false);
+    setAnnouncementsLoaded(false);
     setShowAnnouncementModal(false);
     setImagePreview(null);
     setAdminManageMode(false);
@@ -365,7 +460,9 @@ export default function App() {
           await fetchCalendarEvents(canonicalUserId);
         } else {
           setCalendarEvents(identity.calendar?.events || {});
-          setAnnouncements(Array.isArray(identity.calendar?.announcements) ? identity.calendar.announcements : []);
+          setLikesLoaded(false);
+          setAnnouncements([]);
+          setAnnouncementsLoaded(false);
           setUserOrdersMap(identity.ordersMap || {});
         }
         bootStatus = usingLegacyStartup ? 'fallback' : 'success';
@@ -376,7 +473,10 @@ export default function App() {
           stateApplyStartedAt,
           status: bootStatus,
           fallback: isFallback,
-          bootstrapNetworkMs
+          bootstrapNetworkMs,
+          bootId,
+          deferredUi: !usingLegacyStartup,
+          deferredUiGeneration: deferredUiGenerationRef.current
         };
         awaitingRender = true;
       } else if (identity?.success && identity.registered === false) {
@@ -444,6 +544,47 @@ export default function App() {
       pendingBoot.status,
       pendingBoot.fallback
     );
+
+    if (pendingBoot.deferredUi && deferredUiBootRef.current !== pendingBoot.bootId) {
+      deferredUiBootRef.current = pendingBoot.bootId;
+      const deferredGeneration = pendingBoot.deferredUiGeneration;
+      const accessToken = authClient.getAccessToken();
+      void fetchDeferredBootstrapData(accessToken, pendingBoot.bootId)
+        .then((data) => {
+          if (deferredGeneration !== deferredUiGenerationRef.current) return;
+
+          pendingBoot.timing.deferredBackend(data?.observability?.timing, data?.bootId);
+          if (data?.bootId !== pendingBoot.bootId) {
+            setAnnouncementsLoaded(true);
+            logAuthDiagnostic('DEFERRED_UI_RESPONSE_MISMATCH');
+            return;
+          }
+          if (!data?.success) {
+            setAnnouncementsLoaded(true);
+            logAuthDiagnostic('DEFERRED_UI_REQUEST_FAILED');
+            return;
+          }
+
+          const nextLikes = normalizeDeferredLikes(data.likes);
+          const nextAnnouncements = normalizeDeferredAnnouncements(data.announcements);
+          if (nextLikes !== null) {
+            setCalendarEvents(prev => mergeDeferredLikes(prev, nextLikes));
+            setLikesLoaded(true);
+          }
+          if (nextAnnouncements !== null) {
+            setAnnouncements(nextAnnouncements);
+            setAnnouncementsLoaded(true);
+          } else {
+            setAnnouncementsLoaded(true);
+            logAuthDiagnostic('DEFERRED_UI_RESPONSE_INVALID');
+          }
+        })
+        .catch(() => {
+          if (deferredGeneration !== deferredUiGenerationRef.current) return;
+          setAnnouncementsLoaded(true);
+          logAuthDiagnostic('DEFERRED_UI_REQUEST_FAILED');
+        });
+    }
   }, [authState, authUser, calendarEvents, userOrdersMap, announcements, loading]);
 
   useEffect(() => {
@@ -579,7 +720,8 @@ export default function App() {
       const res = await gasPost({
         action: 'getBootstrapData',
         accessToken,
-        bootId
+        bootId,
+        deferUiData: true
       });
       if (!res.ok) {
         return { success: false, message: `backend HTTP ${res.status}` };
@@ -659,11 +801,13 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         setCalendarEvents(data.events || {});
+        setLikesLoaded(true);
         // announcements is canonical; the singular fallback supports the deployment transition.
         const nextAnnouncements = Array.isArray(data.announcements)
           ? data.announcements
           : (data.announcement ? [data.announcement] : []);
         setAnnouncements(nextAnnouncements);
+        setAnnouncementsLoaded(true);
       }
     } catch (err) {
       console.error("無法讀取月曆資料", err);
@@ -765,6 +909,7 @@ export default function App() {
       await showPopup({ icon: 'warning', title: '需要已註冊 LINE 身份', text: authError || '請先完成 LINE 身份驗證' });
       return;
     }
+    if (!likesLoaded) return;
     if (!(await guardWrite('愛心投票'))) return;
 
     // 樂觀更新前端 UI
@@ -1297,17 +1442,26 @@ export default function App() {
 
           <div className="flex justify-between items-end mt-1">
             {/* 愛心投票按鈕 */}
-            <button
-              onClick={(e) => handleToggleLike(e, dateStr)}
-              disabled={isViewAsMode}
-              className="flex items-center gap-0.5 text-xs focus:outline-none hover:scale-110 transition-transform disabled:cursor-not-allowed disabled:opacity-50"
-              title="點愛心開蔡老師團"
-            >
-              <span>{event?.isUserLiked ? '❤️' : '🤍'}</span>
-              <span className={`text-[10px] font-bold ${event?.likeCount > 0 ? 'text-rose-600' : 'text-gray-400'}`}>
-                {event?.likeCount || 0}
+            {likesLoaded ? (
+              <button
+                onClick={(e) => handleToggleLike(e, dateStr)}
+                disabled={isViewAsMode}
+                className="flex items-center gap-0.5 text-xs focus:outline-none hover:scale-110 transition-transform disabled:cursor-not-allowed disabled:opacity-50"
+                title="點愛心開蔡老師團"
+              >
+                <span>{event?.isUserLiked ? '❤️' : '🤍'}</span>
+                <span className={`text-[10px] font-bold ${event?.likeCount > 0 ? 'text-rose-600' : 'text-gray-400'}`}>
+                  {event?.likeCount || 0}
+                </span>
+              </button>
+            ) : (
+              <span
+                aria-label="Like status loading"
+                className="flex h-4 w-8 items-center justify-center text-xs text-gray-300"
+              >
+                …
               </span>
-            </button>
+            )}
 
             {statusBadge}
           </div>
@@ -1544,10 +1698,19 @@ export default function App() {
 
       <main className="w-full max-w-xl min-w-0 mx-auto flex-1 p-4">
         {isRegistered && viewMode === 'calendar' && !loading && (
-          <AnnouncementBar
-            announcement={announcements[0] ?? null}
-            onClick={() => setShowAnnouncementModal(true)}
-          />
+          <div className="mb-4 min-h-[3rem]">
+            {announcementsLoaded && announcements[0] ? (
+              <AnnouncementBar
+                announcement={announcements[0]}
+                onClick={() => setShowAnnouncementModal(true)}
+              />
+            ) : !announcementsLoaded ? (
+              <div
+                aria-label="Announcements loading"
+                className="h-12 rounded-2xl border border-transparent"
+              />
+            ) : null}
+          </div>
         )}
 
         {authState === AUTH_STATES.AUTH_REQUIRED && !loading && (
@@ -2030,8 +2193,9 @@ export default function App() {
       />
 
       <AnnouncementModal
-        open={showAnnouncementModal && announcements.length > 0}
+        open={showAnnouncementModal}
         announcements={announcements}
+        loading={!announcementsLoaded}
         onClose={() => setShowAnnouncementModal(false)}
       />
 
