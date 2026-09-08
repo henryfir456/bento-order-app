@@ -1,7 +1,7 @@
 # Formal Worker + D1 Backend Design Specification
 
 **Date:** 2026-09-08
-**Status:** Architecture approved; Wave 0–6 local implementation baseline; Option 1 migration policy approved; real-workbook validation pending; not deployed
+**Status:** Architecture approved; Wave 0–6 local implementation baseline; Option 1 migration policy approved; real-workbook validation complete; not deployed
 **Decision:** Strategy B — rebuild the formal backend on a clean D1 schema
 
 ## 1. Decision summary
@@ -22,7 +22,8 @@ VITE_BACKEND_MODE.
 
 This execution phase updates the approved specification/plan and formal
 Worker modules/tests only. It does not activate React cutover, execute a
-database reset, deploy, push, commit, or modify the real workbook.
+database reset, deploy, push, or modify the real workbook. The resulting
+repository checkpoint may be committed only after its authorized final review.
 
 ## 2. Normative constraints
 
@@ -435,10 +436,10 @@ The formal routes are:
 
 | Method and route | Legacy source | Contract purpose |
 |---|---|---|
-| GET /api/me | getUserInfo | Return canonical registration state and public user |
+| GET /api/me | getUserInfo | Return canonical registration state and public user, or token-derived identity for an unregistered actor |
 | POST /api/register | registerUser | Register token-derived user with validated floor |
 | GET /api/bootstrap?targetDate=YYYY-MM-DD | getBootstrapData | Return core user, calendar, order map, and target context |
-| GET /api/bootstrap/deferred?targetDate=YYYY-MM-DD | getDeferredBootstrapData | Return likes and active announcements |
+| GET /api/bootstrap/deferred?bootId=BOOT-... | getDeferredBootstrapData | Return likes and active announcements while echoing the caller boot ID |
 | GET /api/calendar?from=YYYY-MM-DD&to=YYYY-MM-DD | getCalendarEvents | Return dated events and active announcements |
 | GET /api/orders/map | getUserAllOrdersMap | Return actor's active orders grouped by date |
 | GET /api/order-page?targetDate=YYYY-MM-DD | getOrderPageData | Return deadline, selected menu, and actor's active order |
@@ -460,12 +461,20 @@ DEADLINE_CLOSED, MENU_ITEM_INVALID, IDEMPOTENCY_CONFLICT, and
 IMPORT_QUARANTINED. Internal stack traces, access
 tokens, and database details are never returned.
 
+The canonical formal startup flow is `GET /api/me` with a LINE Bearer token,
+then registration with `POST /api/register` when `registered` is false, then
+registered `GET /api/bootstrap`, followed by
+`GET /api/bootstrap/deferred?bootId=<caller boot id>`. The `/api/me` unregistered
+response is token-derived and does not create a D1 user row; the deferred
+response must echo the valid caller boot ID.
+
 ## 9. Import and migration strategy
 
 ### 9.1 Strategy B execution shape
 
-1. Keep the current POC source and its local/remote state identifiable as POC
-   reference material.
+1. Keep the current POC source and its local-only state identifiable as POC
+   reference material; no legacy POC remote migration, deploy, or seed path is
+   permitted.
 2. Build a formal migration chain containing only the schema in section 6.
 3. Before any remote formal migration, obtain a separately authorized clean-D1
    operation. That operation is not part of this documentation phase.
@@ -605,3 +614,14 @@ behaviors.
 This document is a design artifact plus implementation contract. Local Wave 0–3
 automated evidence is reported by the implementation session; this document does
 not claim remote deployment, remote migration, or real-user flows are verified.
+
+Current external/manual evidence status (2026-09-08):
+
+| Evidence | Status | Boundary |
+|---|---|---|
+| Real LIFF authentication | NOT VERIFIED | No real LIFF session or live LINE token was exercised. |
+| Cloudflare-backed non-production D1 | NOT VERIFIED | Local Wrangler D1 was verified; Cloudflare-backed credentials were unavailable. |
+| View As and actor/effective-subject separation | NOT VERIFIED | Automated contract tests pass; no production/manual View As session was exercised. |
+| Production GAS contract | NOT VERIFIED | React remains GAS-bound; no production GAS deployment/contract exercise was performed in this slice. |
+| Production Worker deployment | NOT RUN | No Cloudflare deployment was performed. |
+| React cutover | NOT RUN | React transport remains unchanged and GAS-bound. |

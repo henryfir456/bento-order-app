@@ -1,5 +1,10 @@
 # Cloudflare Worker + D1 POC Implementation Plan
 
+> Historical POC plan. The formal Worker is now the default runtime through
+> `worker-poc/wrangler.jsonc`; the retained POC is local-only through
+> `worker-poc/wrangler-poc.jsonc`. Do not use the remote migration/deploy
+> examples in this historical document.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add an isolated, locally managed Cloudflare Worker + D1 POC that implements the four verified GET endpoints and the expanded five-part bootstrap response.

@@ -125,6 +125,25 @@ test('GET /api/me returns canonical user and ignores forged userId', async () =>
   assert.equal(body.user.role, 'User');
 });
 
+test('GET /api/me returns token-derived identity for an unregistered actor without creating a user', async () => {
+  const database = new SqliteD1();
+  const { response, body } = await call(
+    database,
+    '/api/me?userId=forged-user',
+    { token: 'token-new' },
+    { token: 'token-new', lineUserId: 'new-user', displayName: 'New User' }
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(body, {
+    success: true,
+    registered: false,
+    user: null,
+    lineUserId: 'new-user',
+    displayName: 'New User'
+  });
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 0);
+});
+
 test('GET /api/order-page exposes enabled menu rows with stable internal keys', async () => {
   const database = seedReadOnlyDatabase();
   const { response, body } = await call(
@@ -158,7 +177,7 @@ test('bootstrap and deferred responses are actor-scoped and preserve split data'
 
   const deferred = await call(
     database,
-    '/api/bootstrap/deferred',
+    '/api/bootstrap/deferred?bootId=BOOT-20260907-defer1',
     { token: 'token-user' },
     { token: 'token-user', lineUserId: 'user-1' }
   );
@@ -166,6 +185,35 @@ test('bootstrap and deferred responses are actor-scoped and preserve split data'
   assert.equal(deferred.body.likes['2026-09-08'].isUserLiked, true);
   assert.equal(deferred.body.announcements.length, 1);
   assert.equal(deferred.body.announcement.id, 'announcement-active');
+  assert.equal(deferred.body.bootId, 'BOOT-20260907-defer1');
+
+  const independentDeferred = await call(
+    database,
+    '/api/bootstrap/deferred?bootId=BOOT-20260907-defer2',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(independentDeferred.response.status, 200);
+  assert.equal(independentDeferred.body.bootId, 'BOOT-20260907-defer2');
+  assert.deepEqual(independentDeferred.body.likes, deferred.body.likes);
+  assert.deepEqual(independentDeferred.body.announcements, deferred.body.announcements);
+});
+
+test('deferred bootstrap rejects missing and invalid boot IDs without inventing one', async () => {
+  const database = seedReadOnlyDatabase();
+  for (const path of [
+    '/api/bootstrap/deferred',
+    '/api/bootstrap/deferred?bootId=not-a-boot-id'
+  ]) {
+    const { response, body } = await call(
+      database,
+      path,
+      { token: 'token-user' },
+      { token: 'token-user', lineUserId: 'user-1' }
+    );
+    assert.equal(response.status, 400);
+    assert.deepEqual(body, { error: 'INVALID_BOOT_ID' });
+  }
 });
 
 test('admin View As changes read subject but never authorization actor', async () => {
@@ -218,4 +266,14 @@ test('formal route registration and floor update retain canonical identity', asy
   );
   assert.equal(floor.response.status, 200);
   assert.equal(floor.body.user.floor, '9樓');
+
+  const readback = await call(
+    database,
+    '/api/me',
+    { token: 'token-new' },
+    { token: 'token-new', lineUserId: 'new-user', displayName: 'New User' }
+  );
+  assert.equal(readback.response.status, 200);
+  assert.equal(readback.body.registered, true);
+  assert.equal(readback.body.user.userId, 'new-user');
 });

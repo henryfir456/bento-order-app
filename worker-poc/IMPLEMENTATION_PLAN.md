@@ -1,10 +1,20 @@
-# Bootstrap Contract Parity and Benchmark Implementation Plan
+# Bootstrap Contract Parity and Benchmark Implementation Plan (Historical POC)
+
+> This document records the retained legacy POC parity work. The formal
+> Worker is now the default runtime through `wrangler.jsonc`; the legacy POC is
+> local-only through `wrangler-poc.jsonc`. Do not use the historical POC
+> remote-migration, deploy, or seed examples below as operational commands.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the existing `bento-api-poc` Worker expose a production-GAS-equivalent primary bootstrap, separate deferred and order-page contracts, verify parity from a machine-readable fixture, and provide a serial cold/warm benchmark harness.
 
-**Architecture:** Keep the existing Worker and D1 POC as one service. The default `/api/bootstrap` is the GAS primary bootstrap contract; `/api/bootstrap/deferred` and `/api/order-page` model the production follow-up contracts. Existing `/api/users/:id` and `/api/orders` remain diagnostic endpoints and are excluded from primary parity.
+**Architecture:** Keep the retained Worker and D1 POC as a local-only parity
+reference. The formal Worker is the default runtime; the default
+`/api/bootstrap` is the GAS primary bootstrap contract, while
+`/api/bootstrap/deferred` and `/api/order-page` model the production follow-up
+contracts. Existing `/api/users/:id` and `/api/orders` remain diagnostic POC
+endpoints and are excluded from primary parity.
 
 **Tech Stack:** Cloudflare Workers modules, D1/SQLite SQL, Wrangler 4.129.0, Node.js built-in `node:test`, PowerShell-compatible Node scripts, JSON fixtures.
 
@@ -15,7 +25,8 @@
 - Modify only `worker-poc/**`; do not change React, GAS, Netlify, Google Sheets, root scripts, or `0000_initial_schema.sql`.
 - Do not change LIFF identity, View As, production writes, payment/order-write flows, or production routing.
 - Do not commit or push.
-- Keep the existing Worker/D1 POC resource names and remote deployment; do not create a second POC.
+- Keep the retained POC source and migrations identifiable, but use only its
+  distinct local-only target; do not create or use a remote POC database.
 - `/api/bootstrap` compares only to GAS `getBootstrapData` with `deferUiData: true`.
 - Deferred likes/announcements stay under `/api/bootstrap/deferred`; menu/deadline stay under `/api/order-page`.
 - New migration `0001_bootstrap_parity.sql` is append-only, non-destructive, contains no production data, and is locally testable.
@@ -135,7 +146,7 @@ Keep the fixture list synchronized with the Worker implementation and assert tha
 - Modify: `worker-poc/README.md`
 
 **Interfaces:**
-- Reads `GAS_API_URL` or `VITE_GAS_API_URL`, `WORKER_BOOTSTRAP_URL`, `BENCH_USER_ID`, `GAS_ACCESS_TOKEN`, `BENCH_ITERATIONS`, `BENCH_TIMEOUT_MS`, and optional output paths from the environment.
+- Reads `GAS_API_URL` or `VITE_GAS_API_URL`, `POC_WORKER_BOOTSTRAP_URL`, `BENCH_USER_ID`, `GAS_ACCESS_TOKEN`, `BENCH_ITERATIONS`, `BENCH_TIMEOUT_MS`, and optional output paths from the environment.
 - Emits raw JSON with request samples and a Markdown/console summary without request headers, tokens, or response bodies.
 
 - [ ] **Step 1: Implement one request runner per backend**
@@ -166,12 +177,12 @@ Before benchmark execution, call the local parity test command or require a reco
 
 - [ ] **Step 2: Run root manifest test, lint, and build**
 
-- [ ] **Step 3: If Cloudflare authentication is available, apply the new migration remotely, deploy the existing Worker, and smoke-test `/api/health`, `/api/bootstrap`, `/api/bootstrap/deferred`, and `/api/order-page`**
+- [ ] **Step 3: If separately authorized, apply the formal migration remotely and deploy the formal Worker with the default `wrangler.jsonc`; never use the legacy POC config for remote operations**
 
 - [ ] **Step 4: If `GAS_ACCESS_TOKEN` is missing, stop at the external-input gate**
 
 Report the exact required environment variable without writing the token to the repository.
 
-- [ ] **Step 5: Run the benchmark only after parity PASS**
+- [ ] **Step 5: Run the explicitly named POC benchmark only after parity PASS**
 
 Report `KEEP GAS`, `CONTINUE D1 MIGRATION`, or `INCONCLUSIVE` only from recorded results and limitations.

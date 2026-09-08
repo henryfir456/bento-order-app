@@ -1,5 +1,10 @@
 # Cloudflare Worker + D1 POC Design
 
+> Historical POC specification. The formal Worker is now the default runtime
+> through `worker-poc/wrangler.jsonc`; the retained POC is local-only through
+> `worker-poc/wrangler-poc.jsonc`. Do not use the remote migration/deploy
+> examples in this historical document.
+
 **Date:** 2026-09-07
 
 **Status:** Approved for implementation in the current task.

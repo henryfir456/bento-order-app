@@ -1,14 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "bento-api-poc",
-  "main": "src/index.js",
+  "main": "src/formalWorker.js",
   "compatibility_date": "2026-09-07",
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "bento-poc",
       "database_id": "f9a437b9-6811-4260-86cc-ed2c11ab34f9",
-      "migrations_dir": "migrations"
+      "migrations_dir": "migrations-formal"
     }
   ]
 }

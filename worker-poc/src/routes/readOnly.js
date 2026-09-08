@@ -11,7 +11,9 @@ import { getCustomerMenu } from '../domain/menu.js';
 import { getActiveOrder, getActiveOrdersMap } from '../domain/ordersRead.js';
 import { notFound, badRequest, forbidden } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
+import { getMe } from '../domain/users.js';
 import { publicUser } from '../db/users.js';
+import { normalizeBootId } from '../contract.js';
 
 const requireRegistered = (identity) => {
   if (!identity?.actor?.registered) throw forbidden('NOT_REGISTERED');
@@ -21,6 +23,12 @@ const requireRegistered = (identity) => {
 const bootId = () => (
   'BOOT-' + Date.now().toString() + '-' + Math.random().toString(36).slice(2, 8)
 );
+
+const requiredBootId = (url) => {
+  const value = normalizeBootId(url.searchParams.get('bootId'), null);
+  if (!value) throw badRequest('INVALID_BOOT_ID');
+  return value;
+};
 
 export const handleReadOnlyRequest = async (request, env, {
   fetchImpl = globalThis.fetch,
@@ -32,11 +40,7 @@ export const handleReadOnlyRequest = async (request, env, {
   const identity = await resolveCanonicalIdentity(request, env, fetchImpl, { allowViewAs });
 
   if (url.pathname === '/api/me') {
-    return jsonResponse({
-      success: true,
-      registered: Boolean(identity.actor.registered),
-      user: identity.actor.registered ? publicUser(identity.actor) : null
-    });
+    return jsonResponse(getMe(identity));
   }
 
   requireRegistered(identity);
@@ -77,6 +81,7 @@ export const handleReadOnlyRequest = async (request, env, {
   }
 
   if (url.pathname === '/api/bootstrap/deferred') {
+    const requestedBootId = requiredBootId(url);
     const announcements = await getActiveAnnouncements(env.DB, now);
     return jsonResponse({
       success: true,
@@ -84,7 +89,7 @@ export const handleReadOnlyRequest = async (request, env, {
       likes: await getLikes(env.DB, { lineUserId: subject.lineUserId, now }),
       announcements,
       announcement: announcements[0] || null,
-      bootId: bootId()
+      bootId: requestedBootId
     });
   }
 

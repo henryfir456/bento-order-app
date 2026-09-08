@@ -1,6 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { assertPocRemoteOperationBlocked } from './poc-target-guard.mjs';
+
+assertPocRemoteOperationBlocked();
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const workerDirectory = path.resolve(scriptDirectory, '..');
@@ -83,8 +86,8 @@ for (const row of orderRows) {
 
 const command = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const commandArgs = [
-  'exec', '--', 'wrangler', 'd1', 'execute', 'bento-poc', '--remote',
-  '--command', `${statements.join(';')};`, '--json'
+  'exec', '--', 'wrangler', 'd1', 'execute', 'bento-poc-legacy-local', '--remote',
+  '--command', `${statements.join(';')};`, '--json', '--config', 'wrangler-poc.jsonc'
 ];
 const isWindowsCommand = process.platform === 'win32';
 const executable = isWindowsCommand ? (process.env.ComSpec || 'cmd.exe') : command;

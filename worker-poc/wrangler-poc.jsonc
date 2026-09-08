@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bento-api-poc-legacy",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-07",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bento-poc-legacy-local",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

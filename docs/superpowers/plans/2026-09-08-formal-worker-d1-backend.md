@@ -12,7 +12,7 @@
 - Do not run another GAS live benchmark.
 - Do not build a dual-backend migration, adapter, feature flag, or VITE_BACKEND_MODE.
 - Keep React on GAS until all backend gates and required manual evidence are PASS.
-- Do not deploy, push, commit, or perform a remote D1 destructive reset during this execution session.
+- Do not deploy, push, or perform a remote D1 destructive reset during this execution session; commit only after the authorized final review checkpoint.
 - Preserve the existing GAS behavior that an order may make a balance negative; do not add an insufficient-balance business rule in this replacement.
 - The real workbook is a local-only importer input and must never be committed.
 - Duplicate menu rows remain separate; generate stable internal menu_item_id values and never make legacy item_id unique.
@@ -42,8 +42,9 @@ The work is executed in eight waves:
 
 Execution tracking is maintained below. Completed Wave 0 through Wave 6
 implementation tasks are marked [x]. Option 1 snapshot-only migration policy
-is approved; Wave 6 real-workbook review remains pending because the local
-workbook is not present in this workspace.
+is approved; Wave 6 real-workbook validation is complete. Cloudflare-backed
+formal D1 behavior, real LIFF authentication, and production deployment or
+cutover remain NOT VERIFIED/NOT RUN.
 
 ## Wave 0 — execution boundary and formal baseline
 
@@ -394,6 +395,17 @@ into tracked files.
 
 **Verification:** each manual item is labeled PASS, FAIL, NOT RUN, or NOT VERIFIED with date, environment, and evidence reference.
 
+#### Current Wave 7 evidence status — 2026-09-08
+
+| Evidence | Status | Boundary |
+|---|---|---|
+| Real LIFF authentication | NOT VERIFIED | No real LIFF session or live LINE token was exercised. |
+| Cloudflare-backed non-production D1 | NOT VERIFIED | Local Wrangler D1 was verified; Cloudflare-backed credentials were unavailable. |
+| View As and actor/effective-subject separation | NOT VERIFIED | Automated contract tests pass; no production/manual View As session was exercised. |
+| Production GAS contract | NOT VERIFIED | React remains GAS-bound; no production GAS deployment/contract exercise was performed in this slice. |
+| Production Worker deployment | NOT RUN | No Cloudflare deployment was performed. |
+| React cutover | NOT RUN | React transport remains unchanged and GAS-bound. |
+
 ### Task 7.4: Make the cutover decision
 
 **Files:** docs/superpowers/specs/2026-09-08-formal-worker-d1-backend-design.md, docs/superpowers/plans/2026-09-08-formal-worker-d1-backend.md.
@@ -455,8 +467,10 @@ into tracked files.
 ## Execution handoff
 
 Wave 0–6 implementation tasks are implemented and locally verified in the
-current execution session. The formal handler remains isolated from the active
-POC and React/GAS client. Wave 6 real-workbook validation remains pending until
-the local-only workbook is supplied; remote operations still require separate
-authorization. This environment executed the work inline with task-level
-verification checkpoints.
+current execution session. The first production-cutover slice activates the
+formal handler as the default Wrangler runtime while React remains on the
+GAS client. Wave 6 real-workbook validation is complete. Cloudflare-backed
+formal D1 behavior and real LIFF authentication remain NOT VERIFIED; formal
+production deployment and React cutover are NOT RUN. Remote operations still
+require separate authorization. This environment executed the work inline
+with task-level verification checkpoints.

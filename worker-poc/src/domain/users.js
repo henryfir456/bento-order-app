@@ -35,11 +35,18 @@ const writeAudit = async (
   ).run();
 };
 
-export const getMe = (identity) => ({
-  success: true,
-  registered: Boolean(identity?.actor?.registered),
-  user: identity?.actor?.registered ? publicUser(identity.actor) : null
-});
+export const getMe = (identity) => {
+  const registered = Boolean(identity?.actor?.registered);
+  return {
+    success: true,
+    registered,
+    user: registered ? publicUser(identity.actor) : null,
+    ...(!registered ? {
+      lineUserId: identity?.actor?.lineUserId || '',
+      displayName: identity?.actor?.displayName || ''
+    } : {})
+  };
+};
 
 export const registerUser = async (database, identity, { pickupFloor }, clock = new Date()) => {
   if (identity?.actor?.registered) return getMe(identity);

@@ -103,7 +103,7 @@ const requestJson = async ({ backend, url, init, timeoutMs }) => {
   return { sample, body };
 };
 
-const workerUrlForScenario = (baseUrl, userId, targetDate, bootId) => {
+const pocWorkerUrlForScenario = (baseUrl, userId, targetDate, bootId) => {
   const url = new URL(baseUrl);
   url.searchParams.set('userId', userId);
   if (targetDate) url.searchParams.set('targetDate', targetDate);
@@ -289,8 +289,8 @@ const runCommand = (command, args) => {
 
 const runCorrectnessGate = () => {
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-  runCommand(npmCommand, ['run', 'db:migrations:local']);
-  runCommand(npmCommand, ['run', 'db:migrations:local']);
+  runCommand(npmCommand, ['run', 'db:migrations:poc:local']);
+  runCommand(npmCommand, ['run', 'db:migrations:poc:local']);
   runCommand(process.execPath, ['--test', 'tests/index.test.js', 'tests/contract.test.js', 'tests/parity.test.js']);
 };
 
@@ -311,7 +311,7 @@ const main = async () => {
   runCorrectnessGate();
 
   const gasUrl = String(process.env.GAS_API_URL || process.env.VITE_GAS_API_URL || '').trim();
-  const workerUrl = requiredEnv('WORKER_BOOTSTRAP_URL');
+  const pocWorkerUrl = requiredEnv('POC_WORKER_BOOTSTRAP_URL');
   const userId = requiredEnv('BENCH_USER_ID');
   const accessToken = requiredEnv('GAS_ACCESS_TOKEN');
   const targetDate = String(process.env.BENCH_TARGET_DATE || '').trim();
@@ -324,6 +324,7 @@ const main = async () => {
   const result = {
     schemaVersion: 1,
     createdAt: new Date().toISOString(),
+    benchmark: 'legacy-poc-bootstrap-parity',
     methodology: {
       primaryOnly: true,
       liFFLoginIncluded: false,
@@ -357,7 +358,7 @@ const main = async () => {
 
   const workerCold = await requestJson({
     backend: 'Worker',
-    url: workerUrlForScenario(workerUrl, userId, targetDate, bootId),
+    url: pocWorkerUrlForScenario(pocWorkerUrl, userId, targetDate, bootId),
     init: { method: 'GET' },
     timeoutMs
   });
@@ -398,7 +399,7 @@ const main = async () => {
     })
     : requestJson({
       backend: 'Worker',
-      url: workerUrlForScenario(workerUrl, userId, targetDate, createBootId()),
+      url: pocWorkerUrlForScenario(pocWorkerUrl, userId, targetDate, createBootId()),
       init: { method: 'GET' },
       timeoutMs
     });

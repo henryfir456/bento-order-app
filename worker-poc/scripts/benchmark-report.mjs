@@ -94,11 +94,12 @@ export const renderSummary = (result) => {
     ['Error rate', value(gasWarm.errorRate === null ? null : gasWarm.errorRate * 100, '%'), value(workerWarm.errorRate === null ? null : workerWarm.errorRate * 100, '%'), value(delta.errorRate === null ? null : delta.errorRate * 100, '%')]
   ];
   const lines = [
-    '| Metric | GAS + Sheets | Worker + D1 | Difference |',
+    'Benchmark: legacy-poc-bootstrap-parity',
+    '| Metric | GAS + Sheets | Legacy POC Worker + D1 | Difference |',
     '| --- | ---: | ---: | ---: |',
     ...rows.map(([metric, gas, worker, deltaValue]) => `| ${metric} | ${gas} | ${worker} | ${deltaValue} |`),
     '',
-    `Warm samples: GAS ${gasWarm.count}, Worker ${workerWarm.count}`,
+    `Warm samples: GAS ${gasWarm.count}, Legacy POC Worker ${workerWarm.count}`,
     `Latency improvement (mean): ${value(delta.latencyImprovementPct, '%')}`,
     `Tail latency improvement (P95): ${value(delta.tailLatencyImprovementPct, '%')}`
   ];

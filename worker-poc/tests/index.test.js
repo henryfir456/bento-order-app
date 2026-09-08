@@ -4,7 +4,7 @@ import { before, test } from 'node:test';
 
 const migrationUrl = new URL('../migrations/0000_initial_schema.sql', import.meta.url);
 const parityMigrationUrl = new URL('../migrations/0001_bootstrap_parity.sql', import.meta.url);
-const configUrl = new URL('../wrangler.jsonc', import.meta.url);
+const configUrl = new URL('../wrangler-poc.jsonc', import.meta.url);
 const packageUrl = new URL('../package.json', import.meta.url);
 const deployGuardUrl = new URL('../scripts/require-database-id.mjs', import.meta.url);
 const migrationSql = fs.readFileSync(migrationUrl, 'utf8');
@@ -438,15 +438,12 @@ test('bootstrap parity migration is append-only and guarded', () => {
   assert.match(parityMigrationSql, /REFERENCES\s+orders\(id\)/i);
 });
 
-test('Wrangler binds DB to bento-poc and remote writes require an explicit database ID', () => {
-  assert.equal(wranglerConfig.name, 'bento-api-poc');
+test('POC inspection Wrangler config is local-only and formal remote writes remain guarded', () => {
+  assert.equal(wranglerConfig.name, 'bento-api-poc-legacy');
   assert.equal(wranglerConfig.d1_databases.length, 1);
   assert.deepEqual(wranglerConfig.d1_databases[0].binding, 'DB');
-  assert.deepEqual(wranglerConfig.d1_databases[0].database_name, 'bento-poc');
-  assert.match(
-    wranglerConfig.d1_databases[0].database_id,
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-  );
+  assert.deepEqual(wranglerConfig.d1_databases[0].database_name, 'bento-poc-legacy-local');
+  assert.equal(wranglerConfig.d1_databases[0].database_id, undefined);
   assert.equal(wranglerConfig.d1_databases[0].migrations_dir, 'migrations');
   assert.match(packageConfig.scripts['db:migrations:remote'], /require-database-id\.mjs/);
   assert.match(packageConfig.scripts.deploy, /require-database-id\.mjs/);
