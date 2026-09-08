@@ -10,8 +10,6 @@ import { API_TRANSPORTS, resolveApiTransportConfig } from './transportConfig.js'
 const WORKER_GAP_REASONS = Object.freeze({
   getBalanceHistory: 'Formal balance history exists, but its opening-policy boundary and response contract need a reviewed frontend adapter.',
   toggleLike: 'Formal like mutation exists, but its idempotency-free toggle semantics and response contract need a reviewed frontend adapter.',
-  submitOrder: 'Formal order mutation exists, but the current UI does not provide the formal idempotency-key contract.',
-  cancelOrder: 'Formal order cancellation exists, but the current UI does not provide the formal idempotency-key contract.',
   assignRole: 'No current React caller or approved frontend adapter exists for formal role assignment.'
 });
 
@@ -285,8 +283,33 @@ const createWorkerOperations = ({ workerRequest }) => ({
     `/api/admin/calendar/${encodeURIComponent(String(dateStr || '').trim())}`,
     { body: { vendor, mode: calendarMode(vendor, mode) } }
   ),
-  submitOrder: async () => contractGap('submitOrder', 'ADAPTER_REQUIRED'),
-  cancelOrder: async () => contractGap('cancelOrder', 'ADAPTER_REQUIRED'),
+  submitOrder: ({ pickup_floor, target_date, items, note, idempotencyKey } = {}) => workerRequest(
+    'submitOrder',
+    'POST',
+    '/api/orders',
+    {
+      extraHeaders: { 'Idempotency-Key': String(idempotencyKey || '').trim() },
+      body: {
+        targetDate: target_date,
+        pickupFloor: pickup_floor,
+        replaceExisting: true,
+        items: Array.isArray(items)
+          ? items.map(({ item_id, menu_item_id, quantity }) => ({
+            ...(menu_item_id !== undefined ? { menu_item_id } : {}),
+            ...(item_id !== undefined ? { item_id } : {}),
+            quantity
+          }))
+          : [],
+        note
+      }
+    }
+  ),
+  cancelOrder: ({ orderId, idempotencyKey } = {}) => workerRequest(
+    'cancelOrder',
+    'POST',
+    `/api/orders/${encodeURIComponent(String(orderId || '').trim())}/cancel`,
+    { extraHeaders: { 'Idempotency-Key': String(idempotencyKey || '').trim() } }
+  ),
   topUpBalance: ({ targetUserId, amount, note, idempotencyKey } = {}) => workerRequest(
     'topUpBalance',
     'POST',

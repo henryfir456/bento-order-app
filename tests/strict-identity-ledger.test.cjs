@@ -2283,9 +2283,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   assert.equal(gasCalls.length, 0);
 
   for (const operation of [
-    'toggleLike',
-    'submitOrder',
-    'cancelOrder'
+    'toggleLike'
   ]) {
     await assert.rejects(
       worker[operation]({}),
@@ -2524,6 +2522,188 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
       && error.code === 'INTERNAL_SERVER_ERROR'
       && error.status === 500
   );
+});
+
+test('Worker order mutation adapters map canonical requests and isolate GAS', async () => {
+  const { createApiClient } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js')).href);
+  const { ApiAuthenticationError, ApiAuthorizationError, ApiBackendError } = await import(
+    pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiErrors.js')).href
+  );
+  const jsonResponse = (body = {}, status = 200) => new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const calls = [];
+  const gasCalls = [];
+  const gasApi = {
+    get: async (query) => {
+      gasCalls.push({ method: 'GET', query });
+      return jsonResponse({ success: true });
+    },
+    post: async (payload) => {
+      gasCalls.push({ method: 'POST', payload });
+      return jsonResponse({ success: true });
+    }
+  };
+  const authClient = { getAccessToken: () => 'line-token' };
+  const worker = createApiClient({
+    env: {
+      VITE_API_TRANSPORT: 'worker',
+      VITE_WORKER_API_URL: 'https://worker.example.test'
+    },
+    authClient,
+    gasApi,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ success: true, orderId: 'ORD-1', newBalance: -10 });
+    }
+  });
+
+  await worker.submitOrder({
+    userId: 'forged-user',
+    pickup_floor: '1樓',
+    target_date: '2026-09-08',
+    items: [
+      { item_id: 'legacy-duplicate', menu_item_id: 'menu-a', item_name: 'client name', unit_price: 1, quantity: 2 },
+      { item_id: 'legacy-duplicate', menu_item_id: 'menu-b', quantity: 1 }
+    ],
+    note: '  no mushrooms  ',
+    idempotencyKey: 'order-key-1'
+  });
+  await worker.cancelOrder({
+    userId: 'forged-user',
+    orderId: 'ORD-1',
+    date: '2026-09-08',
+    idempotencyKey: 'cancel-key-1'
+  });
+
+  assert.equal(calls.length, 2);
+  assert.equal(new URL(calls[0].url).pathname, '/api/orders');
+  assert.equal(calls[0].options.method, 'POST');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer line-token');
+  assert.equal(calls[0].options.headers['Idempotency-Key'], 'order-key-1');
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    targetDate: '2026-09-08',
+    pickupFloor: '1樓',
+    replaceExisting: true,
+    items: [
+      { item_id: 'legacy-duplicate', menu_item_id: 'menu-a', quantity: 2 },
+      { item_id: 'legacy-duplicate', menu_item_id: 'menu-b', quantity: 1 }
+    ],
+    note: '  no mushrooms  '
+  });
+  assert.equal(JSON.parse(calls[0].options.body).userId, undefined);
+  assert.equal(new URL(calls[1].url).pathname, '/api/orders/ORD-1/cancel');
+  assert.equal(calls[1].options.method, 'POST');
+  assert.equal(calls[1].options.headers.Authorization, 'Bearer line-token');
+  assert.equal(calls[1].options.headers['Idempotency-Key'], 'cancel-key-1');
+  assert.equal(calls[1].options.body, undefined);
+  assert.equal(gasCalls.length, 0);
+
+  const gas = createApiClient({
+    env: { VITE_GAS_API_URL: 'https://gas.example.test/exec' },
+    authClient,
+    gasApi,
+    fetchImpl: () => {
+      throw new Error('GAS mode must not use Worker fetch.');
+    }
+  });
+  await gas.submitOrder({
+    userId: 'user-1',
+    pickup_floor: '1樓',
+    target_date: '2026-09-08',
+    items: [{ item_id: 'legacy-a', quantity: 1 }],
+    note: 'legacy',
+    idempotencyKey: 'ignored-by-gas'
+  });
+  await gas.cancelOrder({
+    userId: 'user-1',
+    orderId: 'ORD-1',
+    date: '2026-09-08',
+    idempotencyKey: 'ignored-by-gas'
+  });
+  assert.deepEqual(gasCalls.slice(-2), [
+    {
+      method: 'POST',
+      payload: {
+        action: 'submitOrder',
+        accessToken: 'line-token',
+        userId: 'user-1',
+        pickup_floor: '1樓',
+        target_date: '2026-09-08',
+        items: [{ item_id: 'legacy-a', quantity: 1 }],
+        note: 'legacy'
+      }
+    },
+    {
+      method: 'POST',
+      payload: {
+        action: 'cancelOrder',
+        accessToken: 'line-token',
+        userId: 'user-1',
+        orderId: 'ORD-1',
+        date: '2026-09-08'
+      }
+    }
+  ]);
+
+  const responses = [
+    [401, ApiAuthenticationError, 'API_AUTH_REJECTED'],
+    [403, ApiAuthorizationError, 'ORDER_FORBIDDEN'],
+    [409, ApiBackendError, 'IDEMPOTENCY_CONFLICT']
+  ];
+  for (const [status, ErrorType, code] of responses) {
+    const rejected = createApiClient({
+      env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+      authClient,
+      fetchImpl: async () => jsonResponse({ error: code }, status)
+    });
+    await assert.rejects(
+      () => rejected.submitOrder({
+        target_date: '2026-09-08',
+        pickup_floor: '1樓',
+        items: [{ item_id: 'legacy-a', quantity: 1 }],
+        idempotencyKey: 'order-error'
+      }),
+      (error) => error instanceof ErrorType
+        && error.operation === 'submitOrder'
+        && error.code === code
+        && error.status === status
+    );
+  }
+});
+
+test('frontend order idempotency keys are stable per action and block duplicate execution', async () => {
+  const {
+    clearClientRequestKey,
+    getStableClientRequestKey
+  } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'clientRequestKeys.js')).href);
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const submitRef = { current: null };
+  const firstPayload = {
+    targetDate: '2026-09-08',
+    pickupFloor: '1樓',
+    items: [{ item_id: 'legacy-a', quantity: 1 }],
+    note: ''
+  };
+  const firstKey = getStableClientRequestKey(submitRef, 'order', firstPayload);
+  const retryKey = getStableClientRequestKey(submitRef, 'order', { ...firstPayload });
+  const laterKey = getStableClientRequestKey(submitRef, 'order', {
+    ...firstPayload,
+    items: [{ item_id: 'legacy-a', quantity: 2 }]
+  });
+  assert.equal(retryKey, firstKey);
+  assert.notEqual(laterKey, firstKey);
+  clearClientRequestKey(submitRef);
+  assert.notEqual(getStableClientRequestKey(submitRef, 'order', firstPayload), laterKey);
+
+  assert.match(appSource, /orderMutationInFlightRef\.current/);
+  assert.match(appSource, /getStableClientRequestKey/);
+  assert.match(appSource, /clearClientRequestKey/);
+  assert.match(appSource, /item_id: item\.menu_item_id \|\| item\.item_id/);
+  assert.match(appSource, /menu_item_id: menuItem\.menu_item_id/);
+  assert.match(appSource, /idempotencyKey: requestKey/);
+  assert.match(appSource, /idempotencyKey: cancelRequestKey/);
 });
 
 test('production auth client delegates to LIFF even when mock is requested', async () => {

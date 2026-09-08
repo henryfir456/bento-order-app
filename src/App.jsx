@@ -3,6 +3,11 @@ import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { formatDateInput, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
 import { apiClient } from './api/apiClient';
+import {
+  clearClientRequestKey,
+  createClientRequestKey,
+  getStableClientRequestKey
+} from './api/clientRequestKeys';
 import { authClient } from './auth/liffClient';
 import { hasPermission } from './auth/permissions';
 import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
@@ -37,13 +42,6 @@ const logAuthDiagnostic = (message) => {
   if (import.meta.env.DEV) {
     console.info(`[AUTH] ${message}`);
   }
-};
-
-const createClientRequestKey = (prefix) => {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  return uuid
-    ? `${prefix}-${uuid}`
-    : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 };
 
 const logPerformanceTiming = (label, startTime) => {
@@ -164,6 +162,11 @@ const getConfiguredVendor = (event) => {
   return vendor === undefined || vendor === null ? '蔡老師' : vendor;
 };
 
+const normalizeWorkerOrderMenu = (items) => (Array.isArray(items) ? items : []).map(item => ({
+  ...item,
+  item_id: item.menu_item_id || item.item_id
+}));
+
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
   const [calendarEvents, setCalendarEvents] = useState({});
@@ -199,6 +202,9 @@ export default function App() {
   const [hasExistingOrder, setHasExistingOrder] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const orderSubmitRequestRef = useRef(null);
+  const orderCancelRequestRef = useRef(null);
+  const orderMutationInFlightRef = useRef(false);
 
   const [selectedOrderDate, setSelectedOrderDate] = useState(() => formatDateInput());
   const [adminSummary, setAdminSummary] = useState({
@@ -285,6 +291,9 @@ export default function App() {
     setOrderItems({});
     setHasExistingOrder(false);
     setMessage('');
+    clearClientRequestKey(orderSubmitRequestRef);
+    clearClientRequestKey(orderCancelRequestRef);
+    orderMutationInFlightRef.current = false;
     setSelectedOrderDate(formatDateInput());
     setAdminSummary({
       usersSummary: [],
@@ -947,6 +956,8 @@ export default function App() {
     }
 
     setSelectedDate(dateStr);
+    clearClientRequestKey(orderSubmitRequestRef);
+    clearClientRequestKey(orderCancelRequestRef);
     setLoading(true);
     setMessage('');
     setOrderNote('');
@@ -958,14 +969,18 @@ export default function App() {
       const res = await apiClient.getOrderPage({ targetDate: dateStr, userId: authUserId });
       const data = await res.json();
       if (data.success && data.myOrder && Array.isArray(data.myOrder.items)) {
+        const workerOrderMode = apiClient.transport === 'worker';
         const orderMap = {};
         data.myOrder.items.forEach(item => {
-          orderMap[item.item_id] = item.quantity;
+          const selectionId = workerOrderMode
+            ? item.menu_item_id || item.item_id
+            : item.item_id;
+          orderMap[selectionId] = item.quantity;
         });
 
         setSetting(data.setting);
         setDeadline(data.deadline);
-        setMenu(data.menu);
+        setMenu(workerOrderMode ? normalizeWorkerOrderMenu(data.menu) : data.menu);
         setImageLoadErrors({});
         setOrderItems(orderMap);
         setActiveOrderId(data.myOrder.orderId || '');
@@ -1027,105 +1042,149 @@ export default function App() {
   const handleSpecialAdminSaveVendor = () => saveAdminVendor(specialAdminDate, specialAdminVendorChoice);
 
   const handleSubmit = async () => {
-    if (loading || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
-    if (!(await guardWrite('訂單送出'))) return;
-    if (isExpired) {
-      await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
-      return;
-    }
-
-    const items = Object.entries(orderItems)
-      .map(([item_id, quantity]) => {
-        const menuItem = menu.find(m => m.item_id === item_id);
-        return {
-          item_id,
-          item_name: menuItem?.item_name || '',
-          quantity,
-          unit_price: menuItem?.price || 0
-        };
-      })
-      .filter(i => i.quantity > 0);
-
-    if (items.length === 0) {
-      await showPopup({ icon: 'warning', title: '尚未選擇餐點', text: '請至少選擇一份便購' });
-      return;
-    }
-
-    setLoading(true);
+    if (loading || orderMutationInFlightRef.current || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    orderMutationInFlightRef.current = true;
     try {
-      const res = await apiClient.submitOrder({
-        userId: authUserId,
-        pickup_floor: floor,
-        target_date: selectedDate,
-        items,
-        note: orderNote
-      });
-      const data = await res.json();
-      if (data.success) {
-        setMessage("✅ 訂單送出/扣款成功！");
-        setHasExistingOrder(true);
-        if (data.newBalance !== undefined) {
-          setUserBalance(data.newBalance);
-        }
-        setActiveOrderId(data.orderId || '');
-        fetchCalendarEvents();
-        fetchUserAllOrders(authUserId);
-      } else {
-        setMessage("❌ " + data.message);
+      if (!(await guardWrite('訂單送出'))) return;
+      if (isExpired) {
+        await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
+        return;
       }
-    } catch (err) {
-      setMessage("❌ 網路連線失敗");
+
+      const workerOrderMutation = apiClient.transport === 'worker';
+      const items = Object.entries(orderItems)
+        .map(([item_id, quantity]) => {
+          const menuItem = menu.find(m => m.item_id === item_id);
+          return {
+            item_id,
+            ...(workerOrderMutation && menuItem?.menu_item_id
+              ? { menu_item_id: menuItem.menu_item_id }
+              : {}),
+            item_name: menuItem?.item_name || '',
+            quantity,
+            unit_price: menuItem?.price || 0
+          };
+        })
+        .filter(i => i.quantity > 0);
+
+      if (items.length === 0) {
+        await showPopup({ icon: 'warning', title: '尚未選擇餐點', text: '請至少選擇一份便購' });
+        return;
+      }
+
+      const requestKey = workerOrderMutation
+        ? getStableClientRequestKey(orderSubmitRequestRef, 'order', {
+          targetDate: selectedDate,
+          pickupFloor: floor,
+          items: items.map(({ item_id, quantity }) => ({ item_id, quantity })),
+          note: orderNote.trim()
+        })
+        : null;
+
+      setLoading(true);
+      try {
+        const res = await apiClient.submitOrder({
+          userId: authUserId,
+          pickup_floor: floor,
+          target_date: selectedDate,
+          items,
+          note: orderNote,
+          ...(workerOrderMutation ? { idempotencyKey: requestKey } : {})
+        });
+        const data = await res.json();
+        if (data.success) {
+          setMessage("✅ 訂單送出/扣款成功！");
+          setHasExistingOrder(true);
+          if (data.newBalance !== undefined) {
+            setUserBalance(data.newBalance);
+          }
+          setActiveOrderId(data.orderId || '');
+          clearClientRequestKey(orderSubmitRequestRef);
+          clearClientRequestKey(orderCancelRequestRef);
+          fetchCalendarEvents();
+          fetchUserAllOrders(authUserId);
+        } else {
+          setMessage("❌ " + data.message);
+        }
+      } catch (err) {
+        setMessage(err?.code === 'IDEMPOTENCY_CONFLICT'
+          ? '❌ 訂單內容已變更，請重新確認後再送出。'
+          : err?.code === 'IDEMPOTENCY_IN_PROGRESS'
+            ? '❌ 訂單仍在處理中，請稍候再試。'
+            : "❌ 網路連線失敗");
+      } finally {
+        setLoading(false);
+      }
     } finally {
-      setLoading(false);
+      orderMutationInFlightRef.current = false;
     }
   };
 
   const handleCancelOrder = async () => {
-    if (loading || authState !== AUTH_STATES.REGISTERED || !activeOrderId || !authUserId) return;
-    if (!(await guardWrite('取消訂單'))) return;
-    if (isExpired) {
-      await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
-      return;
-    }
-    const result = await showPopup({
-      icon: 'question',
-      title: '確認取消訂單？',
-      text: `取消 ${selectedDate} 後將自動辦理退款。`,
-      showCancelButton: true,
-      confirmButtonText: '確定取消',
-      cancelButtonText: '返回',
-      cancelButtonColor: '#9CA3AF',
-      reverseButtons: true
-    });
-    if (!result.isConfirmed) {
-      return;
-    }
-
-    setLoading(true);
+    if (loading || orderMutationInFlightRef.current || authState !== AUTH_STATES.REGISTERED || !activeOrderId || !authUserId) return;
+    orderMutationInFlightRef.current = true;
     try {
-      const res = await apiClient.cancelOrder({
-        userId: authUserId,
-        orderId: activeOrderId,
-        date: selectedDate
-      });
-      const data = await res.json();
-      if (data.success) {
-        setMessage("✅ 訂單已取消並完成退款");
-        setOrderItems({});
-        setActiveOrderId('');
-        setHasExistingOrder(false);
-        if (data.newBalance !== undefined && data.newBalance !== null) {
-          setUserBalance(data.newBalance);
-        }
-        fetchCalendarEvents();
-        fetchUserAllOrders(authUserId);
-      } else {
-        setMessage("❌ " + (data.message || "取消失敗"));
+      if (!(await guardWrite('取消訂單'))) return;
+      if (isExpired) {
+        await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
+        return;
       }
-    } catch (err) {
-      setMessage("❌ 網路連線失敗");
+      const orderId = activeOrderId;
+      const result = await showPopup({
+        icon: 'question',
+        title: '確認取消訂單？',
+        text: `取消 ${selectedDate} 後將自動辦理退款。`,
+        showCancelButton: true,
+        confirmButtonText: '確定取消',
+        cancelButtonText: '返回',
+        cancelButtonColor: '#9CA3AF',
+        reverseButtons: true
+      });
+      if (!result.isConfirmed) return;
+
+      const workerOrderMutation = apiClient.transport === 'worker';
+      const cancelRequestKey = workerOrderMutation
+        ? getStableClientRequestKey(orderCancelRequestRef, 'cancel', {
+          orderId,
+          targetDate: selectedDate
+        })
+        : null;
+
+      setLoading(true);
+      try {
+        const res = await apiClient.cancelOrder({
+          userId: authUserId,
+          orderId,
+          date: selectedDate,
+          ...(workerOrderMutation ? { idempotencyKey: cancelRequestKey } : {})
+        });
+        const data = await res.json();
+        if (data.success) {
+          setMessage("✅ 訂單已取消並完成退款");
+          setOrderItems({});
+          setActiveOrderId('');
+          setHasExistingOrder(false);
+          if (data.newBalance !== undefined && data.newBalance !== null) {
+            setUserBalance(data.newBalance);
+          }
+          clearClientRequestKey(orderCancelRequestRef);
+          clearClientRequestKey(orderSubmitRequestRef);
+          fetchCalendarEvents();
+          fetchUserAllOrders(authUserId);
+        } else {
+          setMessage("❌ " + (data.message || "取消失敗"));
+        }
+      } catch (err) {
+        setMessage(err?.code === 'IDEMPOTENCY_CONFLICT'
+          ? '❌ 取消請求內容已變更，請重新確認後再試。'
+          : err?.code === 'IDEMPOTENCY_IN_PROGRESS'
+            ? '❌ 取消仍在處理中，請稍候再試。'
+            : "❌ 網路連線失敗");
+      } finally {
+        setLoading(false);
+      }
     } finally {
-      setLoading(false);
+      orderMutationInFlightRef.current = false;
     }
   };
 
@@ -1136,6 +1195,8 @@ export default function App() {
     setOrderNote('');
     setMessage('');
     setHasExistingOrder(false);
+    clearClientRequestKey(orderSubmitRequestRef);
+    clearClientRequestKey(orderCancelRequestRef);
     setViewMode('calendar');
   };
 
