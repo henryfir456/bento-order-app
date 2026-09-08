@@ -10,6 +10,8 @@ import { normalizeLegacyWorkbook } from './lib/import-normalizer.mjs';
 import { createImportReport, writeImportReport } from './lib/quarantine-report.mjs';
 import { validateImport } from './lib/import-validator.mjs';
 import { readLegacyWorkbook } from './lib/workbook-reader.mjs';
+import { stageImport } from './lib/import-writer.js';
+import { openLocalFormalDatabase } from './lib/local-db.mjs';
 
 export const runImport = async ({
   inputPath,
@@ -17,12 +19,14 @@ export const runImport = async ({
   outputPath,
   adapter,
   importerVersion = IMPORTER_VERSION,
-  ledgerPolicyApproved = false
+  ledgerPolicyApproved = false,
+  database,
+  clock = new Date()
 } = {}) => {
-  if (mode !== 'validate') {
+  if (!['validate', 'stage'].includes(mode)) {
     throw new ImportContractError(
       'IMPORT_MODE_UNAVAILABLE',
-      'Wave 1 supports validation only; staging requires a later policy gate.'
+      'Importer mode must be validate or stage.'
     );
   }
   if (!asText(outputPath).trim()) {
@@ -38,10 +42,17 @@ export const runImport = async ({
     importerVersion
   });
   const validation = validateImport(normalized, { ledgerPolicyApproved });
-  const report = createImportReport(validation);
+  const staged = mode === 'stage'
+    ? await stageImport(database, validation, { clock })
+    : null;
+  const report = createImportReport(validation, staged ? {
+    balanceReconciliation: staged.balanceReconciliation,
+    stagedCounts: staged.stagedCounts
+  } : {});
   const writtenPath = await writeImportReport(report, outputPath);
   return {
     ...report,
+    staged,
     writtenPath
   };
 };
@@ -74,16 +85,25 @@ const main = async () => {
       'Validation output must be written to an explicit local report path.'
     );
   }
-  const result = await runImport({
-    inputPath: args.input,
-    mode: args.mode || 'validate',
-    outputPath: resolve(args.output),
-    importerVersion: args['importer-version'] || IMPORTER_VERSION
-  });
-  console.log(JSON.stringify({
-    writtenPath: result.writtenPath,
-    reconciliation: result.reconciliation
-  }, null, 2));
+  const mode = args.mode || 'validate';
+  const database = mode === 'stage'
+    ? (args.database ? openLocalFormalDatabase(resolve(args.database)) : null)
+    : null;
+  try {
+    const result = await runImport({
+      inputPath: args.input,
+      mode,
+      outputPath: resolve(args.output),
+      importerVersion: args['importer-version'] || IMPORTER_VERSION,
+      database
+    });
+    console.log(JSON.stringify({
+      writtenPath: result.writtenPath,
+      reconciliation: result.reconciliation
+    }, null, 2));
+  } finally {
+    database?.close();
+  }
 };
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

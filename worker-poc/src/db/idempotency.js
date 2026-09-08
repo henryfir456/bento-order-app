@@ -135,6 +135,23 @@ export const mutationResponseSpec = ({
   params: [message, orderId, balanceUserId]
 });
 
+export const balanceMutationResponseSpec = ({
+  message,
+  targetLineUserId,
+  balanceUserId,
+  transactionId
+}) => ({
+  trusted: true,
+  expression: `json_object(
+    'success', json('true'),
+    'message', ?,
+    'targetUserId', ?,
+    'transactionId', ?,
+    'newBalance', (SELECT balance FROM users WHERE line_user_id = ?)
+  )`,
+  params: [message, targetLineUserId, transactionId, balanceUserId]
+});
+
 export const parseStoredResponse = (record) => {
   try {
     return JSON.parse(record.response_json);

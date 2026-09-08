@@ -1,4 +1,4 @@
-export const buildReconciliation = (validation) => {
+export const buildReconciliation = (validation, { balanceReconciliation = null, stagedCounts = null } = {}) => {
   const quarantine = validation?.quarantine || [];
   const warnings = validation?.warnings || [];
   return {
@@ -19,6 +19,8 @@ export const buildReconciliation = (validation) => {
     )).length,
     incompleteLedgerCount: quarantine.filter((item) => (
       item.reasonCode === 'INCOMPLETE_LEDGER_POLICY'
-    )).length
+    )).length,
+    ...(balanceReconciliation ? { balanceReconciliation } : {}),
+    ...(stagedCounts ? { stagedCounts } : {})
   };
 };

@@ -40,9 +40,9 @@ The work is executed in eight waves:
 7. Backend verification and required manual/external evidence.
 8. Direct React-to-Worker cutover and post-cutover removal assessment.
 
-Execution tracking is maintained below. Completed Wave 0, Wave 1, Wave 2, and
-Wave 3 tasks are marked [x]; later waves remain pending until their gates are
-verified.
+Execution tracking is maintained below. Completed Wave 0 through Wave 6
+implementation tasks are marked [x]; Wave 6 real-workbook review remains
+pending because the local workbook is not present in this workspace.
 
 ## Wave 0 — execution boundary and formal baseline
 
@@ -237,11 +237,11 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/src/domain/ledger.js, worker-poc/src/db/ledgerQueries.js, worker-poc/tests/ledger.test.js.
 
-- [ ] Implement appendLedgerEntry(db, entry) with integer amount, balance_after, type, reference, operator, and UTC timestamp validation.
-- [ ] Require every ORDER and REFUND ledger row to reference an order mutation.
-- [ ] Require every TOPUP row to reference an audited admin operation.
-- [ ] Keep ledger rows append-only and update users.balance in the same transaction.
-- [ ] Provide month filtering by UTC timestamp while presenting the existing business-date context to the UI.
+- [x] Implement appendLedgerEntry(db, entry) with integer amount, balance_after, type, reference, operator, and UTC timestamp validation.
+- [x] Require every ORDER and REFUND ledger row to reference an order mutation.
+- [x] Require every TOPUP row to reference an audited admin operation.
+- [x] Keep ledger rows append-only and update users.balance in the same transaction.
+- [x] Provide month filtering by UTC timestamp while presenting the existing business-date context to the UI.
 
 **Verification:** ledger.test.js proves amount/balance conservation for order, refund, and top-up sequences and rejects floating-point or orphan ledger rows.
 
@@ -249,10 +249,10 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/src/routes/balance.js, worker-poc/src/routes/admin.js, worker-poc/tests/balance-history.test.js, worker-poc/tests/admin-topup.test.js.
 
-- [ ] Expose GET /api/me/balance/history?month=YYYY-MM from ledger rows rather than reconstructing missing history.
-- [ ] Expose POST /api/admin/balances/top-up with explicit target, integer amount, idempotency key, note, and audit attribution.
-- [ ] Reject non-admin actors, non-positive amounts, unknown targets, and idempotency conflicts.
-- [ ] Return a policy-boundary response for legacy users whose opening balance has not yet been promoted by an approved policy.
+- [x] Expose GET /api/me/balance/history?month=YYYY-MM from ledger rows rather than reconstructing missing history.
+- [x] Expose POST /api/admin/balances/top-up with explicit target, integer amount, idempotency key, note, and audit attribution.
+- [x] Reject non-admin actors, non-positive amounts, unknown targets, and idempotency conflicts.
+- [x] Return a policy-boundary response for legacy users whose opening balance has not yet been promoted by an approved policy.
 
 **Verification:** history and top-up tests prove actor scope, admin scope, integer amounts, audit rows, idempotency, and no fabricated opening transaction.
 
@@ -260,10 +260,10 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/docs/opening-balance-policy.md, worker-poc/tests/opening-balance-policy.test.js, worker-poc/scripts/reconcile-balances.mjs.
 
-- [ ] Produce a local reconciliation report comparing Users.balance, TopupHistory, order effects, and imported quarantine rows.
-- [ ] Keep unresolved legacy balances in import evidence until a human-approved policy specifies opening date, operator, reference, and adjustment type.
-- [ ] Add policy tests for the selected behavior before allowing those balances into formal operational users.
-- [ ] Do not add a synthetic ledger row merely to make totals appear reconciled.
+- [x] Produce a local reconciliation report comparing Users.balance, TopupHistory, order effects, and imported quarantine rows.
+- [x] Keep unresolved legacy balances in import evidence until a human-approved policy specifies opening date, operator, reference, and adjustment type.
+- [x] Add policy tests for the selected behavior before allowing those balances into formal operational users.
+- [x] Do not add a synthetic ledger row merely to make totals appear reconciled.
 
 **Verification:** opening-balance-policy.test.js fails closed when policy metadata is absent and passes only for an explicit reviewed policy input.
 
@@ -273,10 +273,10 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/src/routes/calendar.js, worker-poc/src/domain/calendar.js, worker-poc/src/domain/announcements.js, worker-poc/tests/calendar-admin.test.js, worker-poc/tests/likes.test.js, worker-poc/tests/announcements.test.js.
 
-- [ ] Implement admin vendor/mode upsert with explicit A/B mode and audit event.
-- [ ] Implement like toggle with composite-key idempotency and the legacy vendor side effect only when the formal rule allows it.
-- [ ] Implement active announcement selection with inclusive date range and deterministic ordering.
-- [ ] Preserve blank vendor settings and distinguish configured vendor from a like-created default.
+- [x] Implement admin vendor/mode upsert with explicit A/B mode and audit event.
+- [x] Implement like toggle with composite-key idempotency and the legacy vendor side effect only when the formal rule allows it.
+- [x] Implement active announcement selection with inclusive date range and deterministic ordering.
+- [x] Preserve blank vendor settings and distinguish configured vendor from a like-created default.
 
 **Verification:** calendar, likes, and announcements tests cover date boundaries, role checks, duplicate toggles, vendor side effects, and response ordering.
 
@@ -284,11 +284,11 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/src/domain/adminSummary.js, worker-poc/src/routes/admin.js, worker-poc/tests/admin-summary.test.js.
 
-- [ ] Aggregate only ACTIVE orders for the requested business date.
-- [ ] Preserve vendor, pickup floor, item, quantity, and total projections used by the existing admin UI.
-- [ ] Enforce ProxyAdmin read capabilities without granting member balances, top-up, menu, calendar, role, or View As mutation capabilities.
-- [ ] Enforce Admin-only member balance and role views.
-- [ ] Record admin read events when policy requires an audit trail for View As or member-sensitive views.
+- [x] Aggregate only ACTIVE orders for the requested business date.
+- [x] Preserve vendor, pickup floor, item, quantity, and total projections used by the existing admin UI.
+- [x] Enforce ProxyAdmin read capabilities without granting member balances, top-up, menu, calendar, role, or View As mutation capabilities.
+- [x] Enforce Admin-only member balance and role views.
+- [x] Record admin read events when policy requires an audit trail for View As or member-sensitive views.
 
 **Verification:** admin-summary.test.js proves role matrix, active-only aggregation, actor/target audit fields, and absence of unauthorized balance data.
 
@@ -296,11 +296,11 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/src/routes/roles.js, worker-poc/src/auth/permissions.js, worker-poc/tests/view-as.test.js, worker-poc/tests/roles.test.js.
 
-- [ ] Restrict role assignment to the formal User, ProxyAdmin, and Admin values.
-- [ ] Require Admin actor and write an admin audit event for every role change.
-- [ ] Implement explicit View As query handling for permitted read routes.
-- [ ] Keep mutation routes bound to authenticated actor even when a View As parameter is present.
-- [ ] Reject View As for User and ProxyAdmin actors.
+- [x] Restrict role assignment to the formal User, ProxyAdmin, and Admin values.
+- [x] Require Admin actor and write an admin audit event for every role change.
+- [x] Implement explicit View As query handling for permitted read routes.
+- [x] Keep mutation routes bound to authenticated actor even when a View As parameter is present.
+- [x] Reject View As for User and ProxyAdmin actors.
 
 **Verification:** View As and role tests prove read-only subject switching, actor-preserving authorization, and role validation.
 
@@ -308,14 +308,14 @@ worker-poc/.gitignore.
 
 ### Task 6.1: Stage master data into a clean local formal database
 
-**Files:** worker-poc/scripts/import-legacy-workbook.mjs, worker-poc/scripts/lib/import-writer.js, worker-poc/scripts/lib/reconciliation.js, worker-poc/tests/import-writer.test.js.
+**Files:** worker-poc/scripts/import-legacy-workbook.mjs, worker-poc/scripts/lib/import-writer.js, worker-poc/scripts/reconcile-balances.mjs, worker-poc/tests/import-writer.test.js.
 
-- [ ] Add a stage mode that writes only validated master data and accepted transactions to a local formal D1 database.
-- [ ] Insert users, calendar settings, menu versions/items, announcements, and likes using deterministic IDs.
-- [ ] Insert only orders with resolved registered users; route orphan orders to import_quarantine.
-- [ ] Preserve duplicate menu rows as independent menu_items.
-- [ ] Keep incomplete ledger rows and balance snapshots in quarantine/evidence until policy approval.
-- [ ] Produce a reconciliation report with source hash, importer version, row counts, and all issue classes.
+- [x] Add a stage mode that writes only validated master data and accepted transactions to a local formal D1 database.
+- [x] Insert users, calendar settings, menu versions/items, announcements, and likes using deterministic IDs.
+- [x] Insert only orders with resolved registered users; route orphan orders to import_quarantine.
+- [x] Preserve duplicate menu rows as independent menu_items.
+- [x] Keep incomplete ledger rows and balance snapshots in quarantine/evidence until policy approval.
+- [x] Produce a reconciliation report with source hash, importer version, row counts, and all issue classes.
 
 **Verification:** import-writer.test.js proves rerunning the same source is deterministic and that no quarantined row enters an operational table.
 
@@ -429,9 +429,9 @@ worker-poc/.gitignore.
 
 ## Execution handoff
 
-Wave 0–3 are implemented and locally verified in the current execution session.
-The formal handler remains isolated from the active POC and React/GAS client.
-Continue with Wave 4 only in a later checkpoint; remote operations still require
-separate authorization. This environment did not provide the requested
-subagent-driven-development skill, so the task was executed inline with
-executing-plans and task-level verification checkpoints.
+Wave 0–6 implementation tasks are implemented and locally verified in the
+current execution session. The formal handler remains isolated from the active
+POC and React/GAS client. Wave 6 real-workbook validation remains pending until
+the local-only workbook is supplied; remote operations still require separate
+authorization. This environment executed the work inline with task-level
+verification checkpoints.

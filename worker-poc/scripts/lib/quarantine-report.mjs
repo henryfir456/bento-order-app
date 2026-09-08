@@ -4,12 +4,12 @@ import { dirname, resolve } from 'node:path';
 import { cloneJson, ImportContractError } from './import-contract.mjs';
 import { buildReconciliation } from './reconciliation.mjs';
 
-export const createImportReport = (validation) => ({
+export const createImportReport = (validation, options = {}) => ({
   schemaVersion: 1,
   importerVersion: validation?.importerVersion || 'unknown-version',
   sourceHash: validation?.sourceHash || 'unknown-source',
   batchId: validation?.batchId || 'unknown-batch',
-  reconciliation: buildReconciliation(validation),
+  reconciliation: buildReconciliation(validation, options),
   warnings: cloneJson(validation?.warnings || []),
   quarantine: cloneJson(validation?.quarantine || [])
 });

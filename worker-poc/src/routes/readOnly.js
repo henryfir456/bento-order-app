@@ -49,7 +49,10 @@ export const handleReadOnlyRequest = async (request, env, {
       events: await getCalendarEvents(env.DB, {
         fromDate: url.searchParams.get('from') || null,
         toDate: url.searchParams.get('to') || null,
-        now
+        now,
+        includeLikes: true,
+        lineUserId: subject.lineUserId,
+        includeSource: true
       }),
       announcements,
       announcement: announcements[0] || null

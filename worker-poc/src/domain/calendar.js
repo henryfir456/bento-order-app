@@ -9,7 +9,7 @@ const effectiveMode = (row) => (row.mode === 'B' ? 'B' : 'A');
 export const getCalendarSetting = async (database, orderDate) => {
   if (!isDateOnly(orderDate)) return null;
   const row = await database.prepare(`
-    SELECT order_date, vendor, mode
+    SELECT order_date, vendor, mode, vendor_source
     FROM calendar_settings
     WHERE order_date = ?
     LIMIT 1
@@ -21,27 +21,72 @@ export const getCalendarSetting = async (database, orderDate) => {
 
 export const getCalendarEvents = async (
   database,
-  { fromDate = null, toDate = null, now = new Date() } = {}
+  {
+    fromDate = null,
+    toDate = null,
+    now = new Date(),
+    includeLikes = false,
+    lineUserId = null,
+    includeSource = false
+  } = {}
 ) => {
   const result = await database.prepare(`
-    SELECT order_date, vendor, mode
+    SELECT order_date, vendor, mode, vendor_source
     FROM calendar_settings
     ORDER BY order_date ASC
   `).all();
   const events = {};
+  const likesResult = includeLikes
+    ? await database.prepare(`
+      SELECT order_date, line_user_id
+      FROM likes
+      ORDER BY order_date ASC, line_user_id ASC
+    `).all()
+    : { results: [] };
+  const likeRows = rowsFrom(likesResult);
+  const likesByDate = likeRows.reduce((result, row) => {
+    const current = result[row.order_date] || { count: 0, users: new Set() };
+    current.count += 1;
+    current.users.add(row.line_user_id);
+    result[row.order_date] = current;
+    return result;
+  }, {});
   for (const row of rowsFrom(result)) {
     if (!isDateOnly(row.order_date)) continue;
     if (fromDate && row.order_date < fromDate) continue;
     if (toDate && row.order_date > toDate) continue;
     const mode = effectiveMode(row);
+    const likeState = likesByDate[row.order_date] || { count: 0, users: new Set() };
     events[row.order_date] = {
       order_date: row.order_date,
       vendor: row.vendor || '',
       mode,
       deadline: deadlineInfo(row.order_date, mode, now)?.deadline || null,
       isExpired: Boolean(deadlineInfo(row.order_date, mode, now)?.isExpired),
-      lunarLabel: null
+      lunarLabel: null,
+      ...(includeLikes ? {
+        likeCount: likeState.count,
+        isUserLiked: likeState.users.has(lineUserId),
+        ...(includeSource ? { vendorSource: row.vendor_source || 'CONFIGURED' } : {})
+      } : {})
     };
+  }
+  if (includeLikes) {
+    for (const [date, likeState] of Object.entries(likesByDate)) {
+      if (events[date] || (fromDate && date < fromDate) || (toDate && date > toDate)) continue;
+      const fallback = deadlineInfo(date, 'A', now);
+      events[date] = {
+        order_date: date,
+        vendor: '',
+        mode: 'A',
+        deadline: fallback?.deadline || null,
+        isExpired: Boolean(fallback?.isExpired),
+        lunarLabel: null,
+        likeCount: likeState.count,
+        isUserLiked: likeState.users.has(lineUserId),
+        ...(includeSource ? { vendorSource: 'LIKE_DEFAULT' } : {})
+      };
+    }
   }
   return events;
 };

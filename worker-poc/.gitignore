@@ -1,5 +1,9 @@
 node_modules/
 .wrangler/
+reports/
+.local/
+*.sqlite
+*.sqlite3
 .dev.vars
 .dev.vars.*
 .env

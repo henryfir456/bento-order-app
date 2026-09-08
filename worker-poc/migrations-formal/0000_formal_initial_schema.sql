@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS calendar_settings (
   vendor TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL DEFAULT 'A'
     CHECK (mode IN ('A', 'B')),
+  vendor_source TEXT NOT NULL DEFAULT 'CONFIGURED'
+    CHECK (vendor_source IN ('CONFIGURED', 'LIKE_DEFAULT')),
   updated_by_line_user_id TEXT REFERENCES users(line_user_id),
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP

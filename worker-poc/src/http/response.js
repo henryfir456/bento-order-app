@@ -1,6 +1,6 @@
 export const CORS_HEADERS = Object.freeze({
   'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS, PATCH, POST',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS, PATCH, POST, PUT',
   'Access-Control-Allow-Origin': '*'
 });
 

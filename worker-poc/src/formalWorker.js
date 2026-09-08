@@ -1,5 +1,9 @@
 import { handleMeRoute } from './routes/me.js';
 import { handleOrderRoute } from './routes/orders.js';
+import { handleBalanceRoute } from './routes/balance.js';
+import { handleAdminRoute } from './routes/admin.js';
+import { handleCalendarRoute } from './routes/calendar.js';
+import { handleRoleRoute } from './routes/roles.js';
 import { handleReadOnlyRequest } from './routes/readOnly.js';
 import { HttpError, toPublicError } from './http/errors.js';
 import { emptyResponse, jsonResponse } from './http/response.js';
@@ -11,6 +15,14 @@ export const handleFormalRequest = async (request, env, options = {}) => {
     if (meResponse) return meResponse;
     const orderResponse = await handleOrderRoute(request, env, options);
     if (orderResponse) return orderResponse;
+    const calendarResponse = await handleCalendarRoute(request, env, options);
+    if (calendarResponse) return calendarResponse;
+    const roleResponse = await handleRoleRoute(request, env, options);
+    if (roleResponse) return roleResponse;
+    const adminResponse = await handleAdminRoute(request, env, options);
+    if (adminResponse) return adminResponse;
+    const balanceResponse = await handleBalanceRoute(request, env, options);
+    if (balanceResponse) return balanceResponse;
     const readResponse = await handleReadOnlyRequest(request, env, options);
     if (readResponse) return readResponse;
     return jsonResponse({ error: 'NOT_FOUND' }, 404);
