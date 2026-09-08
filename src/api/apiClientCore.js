@@ -37,11 +37,28 @@ const buildWorkerUrl = (baseUrl, path, query) => {
   return url.toString();
 };
 
+const readWorkerErrorCode = async (response, fallback) => {
+  try {
+    const body = await response.clone().json();
+    if (typeof body?.error === 'string' && body.error.trim()) return body.error.trim();
+  } catch {
+    // Preserve the typed error category when the error body is not JSON.
+  }
+  return fallback;
+};
+
 const calendarMode = (vendor, mode) => {
   const explicitMode = String(mode || '').trim().toUpperCase();
   if (explicitMode) return explicitMode;
   const normalizedVendor = String(vendor || '').trim();
   return normalizedVendor === '禾拾' || normalizedVendor === '合十' ? 'B' : 'A';
+};
+
+const balanceHistoryMonth = (year, month) => {
+  const yearValue = String(year ?? '').trim();
+  const monthValue = String(month ?? '').trim();
+  if (!yearValue || !monthValue) return '';
+  return `${yearValue}-${monthValue.padStart(2, '0')}`;
 };
 
 const createWorkerRequest = ({ baseUrl, authClient, fetchImpl }) => async (
@@ -81,13 +98,7 @@ const createWorkerRequest = ({ baseUrl, authClient, fetchImpl }) => async (
     );
   }
   if (response.status === 403) {
-    let errorCode = 'API_AUTHORIZATION_REJECTED';
-    try {
-      const body = await response.clone().json();
-      if (typeof body?.error === 'string' && body.error.trim()) errorCode = body.error.trim();
-    } catch {
-      // Preserve the typed authorization category when the error body is not JSON.
-    }
+    const errorCode = await readWorkerErrorCode(response, 'API_AUTHORIZATION_REJECTED');
     throw new ApiAuthorizationError(
       errorCode,
       'Worker API authorization failed.',
@@ -95,8 +106,9 @@ const createWorkerRequest = ({ baseUrl, authClient, fetchImpl }) => async (
     );
   }
   if (!response.ok) {
+    const errorCode = await readWorkerErrorCode(response, 'API_HTTP_ERROR');
     throw new ApiBackendError(
-      'API_HTTP_ERROR',
+      errorCode,
       'Worker API returned an unsuccessful response.',
       { operation, status: response.status }
     );
@@ -249,7 +261,12 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/me/pickup-floor',
     { body: { pickupFloor } }
   ),
-  getBalanceHistory: async () => contractGap('getBalanceHistory', 'ADAPTER_REQUIRED'),
+  getBalanceHistory: ({ year, month } = {}) => workerRequest(
+    'getBalanceHistory',
+    'GET',
+    '/api/me/balance/history',
+    { query: { month: balanceHistoryMonth(year, month) } }
+  ),
   getAdminSummary: ({ targetDate, includeMemberBalances = false, viewAsUserId } = {}) => workerRequest(
     'getAdminSummary',
     'GET',

@@ -840,20 +840,24 @@ export default function App() {
       const data = await res.json();
       if (requestId !== historyRequestRef.current) return;
 
-      if (data.success) {
+      if (data.success && data.openingBalancePolicyRequired) {
+        setHistoryError('目前餘額歷史仍受開戶餘額政策限制，請待政策確認後再試。');
+      } else if (data.success) {
         setHistoryList(data.transactions || []);
         setHistorySummary({
-          openingBalance: data.openingBalance || 0,
-          totalCredit: data.totalCredit || 0,
-          totalDebit: data.totalDebit || 0,
-          closingBalance: data.closingBalance || 0
+          openingBalance: data.openingBalance ?? 0,
+          totalCredit: data.totalCredit ?? 0,
+          totalDebit: data.totalDebit ?? 0,
+          closingBalance: data.closingBalance ?? 0
         });
       } else {
         setHistoryError('目前無法讀取此月份的交易明細，請稍後再試。');
       }
-    } catch {
+    } catch (error) {
       if (requestId === historyRequestRef.current) {
-        setHistoryError('目前無法讀取此月份的交易明細，請稍後再試。');
+        setHistoryError(error?.code === 'OPENING_BALANCE_POLICY_REQUIRED'
+          ? '目前餘額歷史仍受開戶餘額政策限制，請待政策確認後再試。'
+          : '目前無法讀取此月份的交易明細，請稍後再試。');
       }
     } finally {
       if (requestId === historyRequestRef.current) setHistoryLoading(false);

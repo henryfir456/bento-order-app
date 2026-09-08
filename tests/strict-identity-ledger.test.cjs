@@ -1912,6 +1912,9 @@ test('frontend wires monthly balance and selected-date admin summary queries', (
   assert.match(appSource, /selectedOrderDate/);
   assert.match(appSource, /adminSummaryRequestRef\.current \+= 1/);
   assert.match(appSource, /historyRequestRef\.current \+= 1/);
+  assert.match(appSource, /data\.openingBalancePolicyRequired/);
+  assert.match(appSource, /error\?\.code === ['"]OPENING_BALANCE_POLICY_REQUIRED['"]/);
+  assert.match(appSource, /openingBalance: data\.openingBalance \?\? 0/);
 });
 
 test('auth mode defaults to LIFF and production cannot enable mock mode', async () => {
@@ -2009,6 +2012,51 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
           members: [{ userId: 'member-1', name: 'Member', floor: '1樓', balance: -10, role: 'User' }]
         });
       }
+      if (pathname === '/api/me/balance/history') {
+        const month = new URL(url).searchParams.get('month');
+        if (month === '2026-10') {
+          return jsonResponse({
+            success: true,
+            ok: true,
+            month,
+            year: 2026,
+            monthNumber: 10,
+            openingBalance: 0,
+            totalCredit: 0,
+            totalDebit: 0,
+            closingBalance: 0,
+            transactions: [],
+            openingBalancePolicyRequired: false
+          });
+        }
+        return jsonResponse({
+          success: true,
+          ok: true,
+          month,
+          year: 2026,
+          monthNumber: 9,
+          openingBalance: -120,
+          totalCredit: 10,
+          totalDebit: 25,
+          closingBalance: -135,
+          transactions: [{
+            id: 'history-txn-1',
+            transactionId: 'history-txn-1',
+            type: 'ORDER',
+            referenceId: 'history-order-1',
+            description: 'history order',
+            note: '',
+            occurredAt: '2026-09-10T00:00:00.000Z',
+            timestamp: '2026-09-10T00:00',
+            businessDate: '2026-09-10',
+            amount: -25,
+            changeAmount: -25,
+            balanceAfter: -135,
+            balance: -135
+          }],
+          openingBalancePolicyRequired: false
+        });
+      }
       if (pathname === '/api/admin/calendar/2026-09-10') {
         return jsonResponse({
           success: true,
@@ -2050,6 +2098,8 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   await worker.getOrdersMap({ userId: 'forged-user' });
   await worker.getOrderPage({ targetDate: '2026-09-08', userId: 'forged-user' });
   await worker.updatePickupFloor({ pickupFloor: '9樓' });
+  const balanceHistoryResponse = await worker.getBalanceHistory({ year: 2026, month: 9 });
+  const emptyBalanceHistoryResponse = await worker.getBalanceHistory({ year: '2026', month: '10' });
   const memberBalancesResponse = await worker.getMemberBalances();
   const calendarSettingResponse = await worker.setCalendarVendor({
     adminUserId: 'forged-admin',
@@ -2089,6 +2139,46 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     transactionId: 'txn-test',
     newBalance: 15
   });
+  assert.deepEqual(await balanceHistoryResponse.json(), {
+    success: true,
+    ok: true,
+    month: '2026-09',
+    year: 2026,
+    monthNumber: 9,
+    openingBalance: -120,
+    totalCredit: 10,
+    totalDebit: 25,
+    closingBalance: -135,
+    transactions: [{
+      id: 'history-txn-1',
+      transactionId: 'history-txn-1',
+      type: 'ORDER',
+      referenceId: 'history-order-1',
+      description: 'history order',
+      note: '',
+      occurredAt: '2026-09-10T00:00:00.000Z',
+      timestamp: '2026-09-10T00:00',
+      businessDate: '2026-09-10',
+      amount: -25,
+      changeAmount: -25,
+      balanceAfter: -135,
+      balance: -135
+    }],
+    openingBalancePolicyRequired: false
+  });
+  assert.deepEqual(await emptyBalanceHistoryResponse.json(), {
+    success: true,
+    ok: true,
+    month: '2026-10',
+    year: 2026,
+    monthNumber: 10,
+    openingBalance: 0,
+    totalCredit: 0,
+    totalDebit: 0,
+    closingBalance: 0,
+    transactions: [],
+    openingBalancePolicyRequired: false
+  });
   assert.deepEqual(await adminSummaryResponse.json(), {
     success: true,
     requesterRole: 'Admin',
@@ -2127,6 +2217,8 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     ['/api/orders/map', 'GET', 'Bearer line-token', null],
     ['/api/order-page', 'GET', 'Bearer line-token', null],
     ['/api/me/pickup-floor', 'PATCH', 'Bearer line-token', JSON.stringify({ pickupFloor: '9樓' })],
+    ['/api/me/balance/history', 'GET', 'Bearer line-token', null],
+    ['/api/me/balance/history', 'GET', 'Bearer line-token', null],
     ['/api/admin/members/balances', 'GET', 'Bearer line-token', null],
     ['/api/admin/calendar/2026-09-10', 'PUT', 'Bearer line-token', JSON.stringify({ vendor: '禾拾', mode: 'B' })],
     ['/api/admin/balances/top-up', 'POST', 'Bearer line-token', JSON.stringify({ targetUserId: 'member-1', amount: 25, note: 'cash' })],
@@ -2139,13 +2231,17 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   assert.equal(new URL(workerCalls[6].url).searchParams.get('userId'), null);
   assert.equal(new URL(workerCalls[3].url).searchParams.get('userId'), null);
   assert.equal(new URL(workerCalls[7].url).searchParams.get('userId'), null);
+  assert.equal(new URL(workerCalls[9].url).searchParams.get('month'), '2026-09');
+  assert.equal(new URL(workerCalls[10].url).searchParams.get('month'), '2026-10');
+  assert.equal(new URL(workerCalls[9].url).searchParams.get('userId'), null);
+  assert.equal(new URL(workerCalls[10].url).searchParams.get('userId'), null);
   assert.equal(workerCalls[4].options.headers['Content-Type'], 'application/json');
   assert.equal(workerCalls[8].options.headers['Content-Type'], 'application/json');
-  assert.equal(workerCalls[10].options.headers['Content-Type'], 'application/json');
-  assert.equal(workerCalls[11].options.headers['Content-Type'], 'application/json');
-  assert.equal(workerCalls[11].options.headers['Idempotency-Key'], 'top-up-1');
-  const normalSummaryUrl = new URL(workerCalls[12].url);
-  const viewAsSummaryUrl = new URL(workerCalls[13].url);
+  assert.equal(workerCalls[12].options.headers['Content-Type'], 'application/json');
+  assert.equal(workerCalls[13].options.headers['Content-Type'], 'application/json');
+  assert.equal(workerCalls[13].options.headers['Idempotency-Key'], 'top-up-1');
+  const normalSummaryUrl = new URL(workerCalls[14].url);
+  const viewAsSummaryUrl = new URL(workerCalls[15].url);
   assert.equal(normalSummaryUrl.searchParams.get('date'), '2026-09-10');
   assert.equal(normalSummaryUrl.searchParams.get('includeMemberBalances'), 'false');
   assert.equal(normalSummaryUrl.searchParams.get('viewAs'), null);
@@ -2187,7 +2283,6 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   assert.equal(gasCalls.length, 0);
 
   for (const operation of [
-    'getBalanceHistory',
     'toggleLike',
     'submitOrder',
     'cancelOrder'
@@ -2199,7 +2294,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
         && error.operation === operation
     );
   }
-  assert.equal(workerCalls.length, 14);
+  assert.equal(workerCalls.length, 16);
   assert.equal(gasCalls.length, 0);
 
   const gas = createApiClient({
@@ -2222,6 +2317,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     includeMemberBalances: false,
     viewAsUserId: 'viewed-user'
   });
+  await gas.getBalanceHistory({ year: 2026, month: 9 });
   assert.deepEqual(gasCalls.slice(0, 2), [
     { method: 'POST', payload: { action: 'getUserInfo', accessToken: 'line-token' } },
     {
@@ -2269,7 +2365,16 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
       includeMemberBalances: false
     }
   });
-  assert.equal(workerCalls.length, 14);
+  assert.deepEqual(gasCalls[7], {
+    method: 'POST',
+    payload: {
+      action: 'getBalanceHistoryByMonth',
+      accessToken: 'line-token',
+      year: 2026,
+      month: 9
+    }
+  });
+  assert.equal(workerCalls.length, 16);
 
   const mockCalls = [];
   const mock = createApiClient({
@@ -2345,6 +2450,27 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
       && error.code === 'API_AUTH_REJECTED'
       && error.status === 401
   );
+  await assert.rejects(
+    rejected.getBalanceHistory({ year: 2026, month: 9 }),
+    (error) => error instanceof ApiAuthenticationError
+      && error.operation === 'getBalanceHistory'
+      && error.code === 'API_AUTH_REJECTED'
+      && error.status === 401
+  );
+
+  const policyBlocked = createApiClient({
+    env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+    authClient,
+    fetchImpl: async () => jsonResponse({ error: 'OPENING_BALANCE_POLICY_REQUIRED' }, 409)
+  });
+  await assert.rejects(
+    policyBlocked.getBalanceHistory({ year: 2026, month: 9 }),
+    (error) => error instanceof ApiBackendError
+      && error.operation === 'getBalanceHistory'
+      && error.kind === 'backend'
+      && error.code === 'OPENING_BALANCE_POLICY_REQUIRED'
+      && error.status === 409
+  );
 
   const forbidden = createApiClient({
     env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
@@ -2360,6 +2486,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
       && !error.message.includes('line-token')
   );
   for (const [operation, args] of [
+    ['getBalanceHistory', { year: 2026, month: 9 }],
     ['getMemberBalances', {}],
     ['getAdminSummary', { targetDate: '2026-09-10', viewAsUserId: 'user-1' }],
     ['setCalendarVendor', { dateStr: '2026-09-10', vendor: '蔡老師' }],
@@ -2387,7 +2514,14 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   await assert.rejects(
     failed.getIdentity(),
     (error) => error instanceof ApiBackendError
-      && error.code === 'API_HTTP_ERROR'
+      && error.code === 'INTERNAL_SERVER_ERROR'
+      && error.status === 500
+  );
+  await assert.rejects(
+    failed.getBalanceHistory({ year: 2026, month: 9 }),
+    (error) => error instanceof ApiBackendError
+      && error.operation === 'getBalanceHistory'
+      && error.code === 'INTERNAL_SERVER_ERROR'
       && error.status === 500
   );
 });
