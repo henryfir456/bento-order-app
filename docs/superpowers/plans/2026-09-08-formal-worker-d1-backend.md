@@ -327,14 +327,17 @@ worker-poc/.gitignore.
 
 **Files:** local path gas/便當系統設定.xlsx, ignored importer output directory, worker-poc/.gitignore, worker-poc/package.json, worker-poc/package-lock.json.
 
-- [ ] Run validate mode against the real workbook only from the local filesystem.
+- [x] Run validate mode against the real workbook only from the local filesystem.
 - [x] Add and lock the concrete XLSX reader dependency (`xlsx@0.18.5`) for local execution; keep it out of Wave 1 validation tests.
-- [ ] Store reports under an ignored path and inspect counts/issues without copying source rows into repository fixtures.
-- [ ] Compare the real report to the synthetic importer contract.
-- [ ] Confirm duplicate menu, orphan order, and incomplete-ledger classifications are visible in the report.
-- [ ] Remove or retain local output only according to the local workspace policy; do not modify workbook cells.
+- [x] Store the report under an ignored path and inspect counts/issues without copying source rows into repository fixtures.
+- [x] Compare the real report to the synthetic importer contract.
+- [x] Confirm duplicate menu, orphan order, and incomplete-ledger classifications are visible in the report.
+- [x] Retain the ignored local output according to workspace policy; do not modify workbook cells.
 
-**Verification:** manual local review records the report path outside tracked files; Git status proves the workbook and reports are ignored.
+**Verification:** direct filesystem validation found the workbook and wrote
+`worker-poc/reports/real-workbook-validation.json`; aggregate review matched the
+synthetic importer contract, and Git ignore checks confirmed the workbook and
+report paths remain ignored. No workbook cells were modified.
 
 ## Wave 6.5 — approved migration policy and real-workbook checkpoint
 
@@ -344,9 +347,9 @@ worker-poc/.gitignore.
   using Git visibility as an existence check.
 - [x] Pin the local XLSX reader dependency without modifying the workbook or
   any remote database.
-- [ ] Run validate-only mode against `gas/便當系統設定.xlsx` when the local
+- [x] Run validate-only mode against `gas/便當系統設定.xlsx` when the local
   workbook is supplied.
-- [ ] Produce a counts-only reconciliation summary and verify ignored local
+- [x] Produce a counts-only reconciliation summary and verify ignored local
   artifacts contain no committed raw workbook rows or secrets.
 
 Current checkpoint: `C:\Users\SER\Desktop\AI\80_bento-order-app\gas\便當系統設定.xlsx`
