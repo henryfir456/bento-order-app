@@ -16,6 +16,7 @@
     "benchmark:report": "node scripts/benchmark-report.mjs"
   },
   "devDependencies": {
-    "wrangler": "4.129.0"
+    "wrangler": "4.129.0",
+    "xlsx": "0.18.5"
   }
 }

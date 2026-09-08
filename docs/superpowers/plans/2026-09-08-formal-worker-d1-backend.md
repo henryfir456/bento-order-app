@@ -17,7 +17,7 @@
 - The real workbook is a local-only importer input and must never be committed.
 - Duplicate menu rows remain separate; generate stable internal menu_item_id values and never make legacy item_id unique.
 - Orphan orders go to importer quarantine without being dropped or assigned to an inferred user.
-- Do not fabricate incomplete ledger history; hold opening-balance and adjustment policy as explicit release inputs.
+- Apply the approved Option 1 migration policy: preserve signed Users.balance snapshots operationally, quarantine incomplete ledger evidence, and defer any opening adjustment.
 - Store money as INTEGER, business dates as YYYY-MM-DD, and event timestamps as UTC.
 - Preserve authenticated identity, View As identity, and effective identity as separate fields.
 - Do not trust client-provided userId, role, name, balance, or View As values for authorization.
@@ -41,8 +41,9 @@ The work is executed in eight waves:
 8. Direct React-to-Worker cutover and post-cutover removal assessment.
 
 Execution tracking is maintained below. Completed Wave 0 through Wave 6
-implementation tasks are marked [x]; Wave 6 real-workbook review remains
-pending because the local workbook is not present in this workspace.
+implementation tasks are marked [x]. Option 1 snapshot-only migration policy
+is approved; Wave 6 real-workbook review remains pending because the local
+workbook is not present in this workspace.
 
 ## Wave 0 — execution boundary and formal baseline
 
@@ -261,11 +262,13 @@ worker-poc/.gitignore.
 **Files:** worker-poc/docs/opening-balance-policy.md, worker-poc/tests/opening-balance-policy.test.js, worker-poc/scripts/reconcile-balances.mjs.
 
 - [x] Produce a local reconciliation report comparing Users.balance, TopupHistory, order effects, and imported quarantine rows.
-- [x] Keep unresolved legacy balances in import evidence until a human-approved policy specifies opening date, operator, reference, and adjustment type.
-- [x] Add policy tests for the selected behavior before allowing those balances into formal operational users.
+- [x] Record the approved Option 1 policy: import signed Users.balance values as operational snapshots, including zero and negative balances.
+- [x] Keep incomplete or unverifiable TopupHistory rows quarantined as legacy evidence; do not promote them into the formal ledger.
+- [x] Expose OPENING_BALANCE_POLICY_REQUIRED where balance history is not fully explained by formal ledger entries.
+- [x] Defer any opening ADJUSTMENT; a later promotion requires a separate reviewed policy and rollback/compensation rules.
 - [x] Do not add a synthetic ledger row merely to make totals appear reconciled.
 
-**Verification:** opening-balance-policy.test.js fails closed when policy metadata is absent and passes only for an explicit reviewed policy input.
+**Verification:** opening-balance-policy.test.js proves the approved snapshot-only behavior does not fabricate a legacy ledger row; any future explicit adjustment path still fails closed without separately reviewed policy metadata.
 
 ## Wave 5 — admin, calendar, and audit
 
@@ -314,7 +317,8 @@ worker-poc/.gitignore.
 - [x] Insert users, calendar settings, menu versions/items, announcements, and likes using deterministic IDs.
 - [x] Insert only orders with resolved registered users; route orphan orders to import_quarantine.
 - [x] Preserve duplicate menu rows as independent menu_items.
-- [x] Keep incomplete ledger rows and balance snapshots in quarantine/evidence until policy approval.
+- [x] Import signed Users.balance values as operational snapshots; keep incomplete or unverifiable TopupHistory rows in quarantine/evidence.
+- [x] Do not create historical TOPUP, ORDER, REFUND, or ADJUSTMENT rows for legacy balances.
 - [x] Produce a reconciliation report with source hash, importer version, row counts, and all issue classes.
 
 **Verification:** import-writer.test.js proves rerunning the same source is deterministic and that no quarantined row enters an operational table.
@@ -324,13 +328,29 @@ worker-poc/.gitignore.
 **Files:** local path gas/便當系統設定.xlsx, ignored importer output directory, worker-poc/.gitignore, worker-poc/package.json, worker-poc/package-lock.json.
 
 - [ ] Run validate mode against the real workbook only from the local filesystem.
-- [ ] Add and lock the concrete XLSX reader dependency only when this local execution task is authorized and network access is available; keep it out of Wave 1 validation tests.
+- [x] Add and lock the concrete XLSX reader dependency (`xlsx@0.18.5`) for local execution; keep it out of Wave 1 validation tests.
 - [ ] Store reports under an ignored path and inspect counts/issues without copying source rows into repository fixtures.
 - [ ] Compare the real report to the synthetic importer contract.
 - [ ] Confirm duplicate menu, orphan order, and incomplete-ledger classifications are visible in the report.
 - [ ] Remove or retain local output only according to the local workspace policy; do not modify workbook cells.
 
 **Verification:** manual local review records the report path outside tracked files; Git status proves the workbook and reports are ignored.
+
+## Wave 6.5 — approved migration policy and real-workbook checkpoint
+
+- [x] Record Option 1 as the approved formal migration policy in the spec,
+  plan, and opening-balance policy documentation.
+- [x] Discover the expected workbook path by direct filesystem access without
+  using Git visibility as an existence check.
+- [x] Pin the local XLSX reader dependency without modifying the workbook or
+  any remote database.
+- [ ] Run validate-only mode against `gas/便當系統設定.xlsx` when the local
+  workbook is supplied.
+- [ ] Produce a counts-only reconciliation summary and verify ignored local
+  artifacts contain no committed raw workbook rows or secrets.
+
+Current checkpoint: `C:\Users\SER\Desktop\AI\80_bento-order-app\gas\便當系統設定.xlsx`
+was not found, and no matching filename was found under `C:\Users\SER`.
 
 ## Wave 7 — backend gates and external evidence
 

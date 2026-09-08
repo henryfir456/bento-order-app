@@ -1,7 +1,7 @@
 # Formal Worker + D1 Backend Design Specification
 
 **Date:** 2026-09-08
-**Status:** Architecture approved; Wave 0–3 local implementation baseline; not deployed
+**Status:** Architecture approved; Wave 0–6 local implementation baseline; Option 1 migration policy approved; real-workbook validation pending; not deployed
 **Decision:** Strategy B — rebuild the formal backend on a clean D1 schema
 
 ## 1. Decision summary
@@ -48,8 +48,12 @@ The following requirements are binding for implementation:
 8. Orders whose LINE user cannot be resolved are placed in importer quarantine.
    They are not dropped and the importer must not invent or infer a user.
 9. An incomplete legacy ledger is not reconstructed into false historical
-   transactions. Current balance values and ledger rows are retained as source
-   evidence until an explicit opening-balance or adjustment policy is approved.
+   transactions. The approved migration policy imports `Users.balance` as the
+   signed operational opening snapshot, including zero and negative values,
+   without creating historical `TOPUP`, `ORDER`, `REFUND`, or `ADJUSTMENT` rows.
+   Incomplete or unverifiable `TopupHistory` rows remain quarantined evidence.
+   A future cutover adjustment is separately gated and is not authorized by
+   this migration policy.
 10. Cancellation is a state transition and audit event, not deletion.
 11. Money is stored as INTEGER application currency units. Dates are
    YYYY-MM-DD in the application timezone, Asia/Taipei. Timestamps are UTC.
@@ -193,7 +197,7 @@ same.
 |---|---:|---|---|---|
 | Settings | A1:C14; 13 data rows | order_date, vendor, mode | calendar_settings | order_date is the natural key; vendor may be blank; mode is A/B after normalization |
 | Likes | A1:C6; 5 data rows | Date, LINE_UserID, Created_At | likes | composite date + LINE user key; unknown users are import issues |
-| TopupHistory | A1:L3; 2 data rows | Timestamp, LINE_UserID, 姓名, 樓層, 異動金額, 結餘, 備註, TransactionID, Type, ReferenceID, OperatorUserID, OperatorName | balance_ledger after policy validation | source contains snapshots and ledger-like rows; completeness is not assumed |
+| TopupHistory | A1:L3; 2 data rows | Timestamp, LINE_UserID, 姓名, 樓層, 異動金額, 結餘, 備註, TransactionID, Type, ReferenceID, OperatorUserID, OperatorName | import_quarantine/evidence; balance_ledger only after a separate later policy | source contains snapshots and ledger-like rows; completeness is not assumed |
 | Users | A1:E4; 3 data rows | UserID (LINE ID), DisplayName, 樓層, Balance, Role | users plus balance import evidence | role values observed are Admin, ProxyAdmin, and User; balance must not silently become fabricated history |
 | Menu | A1:H29; 28 data rows | date, vendor, item_id, item_name, price, enabled, note, image URL column with blank header | menu_versions and menu_items | duplicate (date, vendor, item_id) group exists; all observed enabled values are true; legacy item_id is non-unique |
 | Announcements | A1:F3; 2 data rows | id, title, content, start_date, end_date, enabled | announcements | active window is inclusive and evaluated in Asia/Taipei |
@@ -333,7 +337,8 @@ userId/displayName only after a successful response. See the
 - Ledger rows are append-only. The user balance snapshot and ledger row are
   changed in one transaction.
 - Historical legacy balances are not emitted as synthetic TOPUP, ORDER, REFUND,
-  or ADJUSTMENT rows until the opening-balance/adjustment policy is approved.
+  or ADJUSTMENT rows under the approved Option 1 snapshot-only policy. A future
+  cutover adjustment or verified-history promotion requires a separate policy.
 
 #### idempotency_keys
 
@@ -475,15 +480,27 @@ sheet and row. It is never written to orders, never assigned to a guessed user,
 and never discarded. A future human mapping workflow may resolve it explicitly;
 that workflow is outside this phase.
 
-### 9.4 Incomplete ledger handling
+### 9.4 Incomplete ledger handling and approved opening-balance policy
 
 TopupHistory is not assumed to be a complete ledger. The importer compares
 available ledger rows, Users.balance snapshots, order effects, and source
-references, then reports gaps. It does not invent opening transactions or
-backfill missing history. The source balance evidence remains in local import
-artifacts under the incomplete-ledger reason until an explicit policy defines
-how to establish the opening balance and which adjustment actor/reference is
-valid.
+references, then reports gaps. Under the approved Option 1 policy, it imports
+the exact signed Users.balance value as the current operational snapshot,
+including zero and negative balances, but it does not invent opening
+transactions or backfill missing history. It does not synthesize historical
+TOPUP, ORDER, REFUND, or ADJUSTMENT rows.
+
+Incomplete or unverifiable TopupHistory rows remain in import quarantine as
+legacy evidence and are not promoted into the formal ledger. Where balance
+history cannot be fully explained by formal ledger entries, the API exposes
+the OPENING_BALANCE_POLICY_REQUIRED boundary. The formal ledger begins with
+future approved mutations, all using the atomic balance + ledger + audit
+boundary.
+
+A future cutover ADJUSTMENT is explicitly deferred. If later approved, it must
+be a separate reviewed policy identifying a policy ID/version, approver,
+approval timestamp, effective timestamp/timezone, target user, signed amount,
+reference/evidence, and rollback/compensation rules.
 
 ### 9.5 Reconciliation outputs
 
@@ -497,6 +514,9 @@ Each local run produces counts and issue classes without committing raw data:
 - unresolved user and menu references;
 - balance/ledger reconciliation gaps;
 - deterministic source hash and importer version.
+
+Reports contain counts, reason codes, references, and gap classes only; raw
+workbook rows are not copied into committed artifacts.
 
 ## 10. Implementation waves and gates
 
@@ -522,7 +542,7 @@ cleanup decision.
 |---|---|
 | Duplicate menu item_id | Stable internal menu_item_id; legacy item_id indexed but non-unique |
 | Null/unknown order user | Import quarantine; no discard and no guessed user |
-| Incomplete ledger | Preserve evidence; no fabricated history; opening/adjustment policy is a later gate |
+| Incomplete ledger | Approved Option 1 preserves the signed Users.balance snapshot and quarantines unverifiable history; no fabricated rows or opening adjustment |
 | Legacy GAS permits negative balances | Formal order path preserves negative-balance behavior; no insufficient-balance business rule is introduced, while integer money, atomic mutations, and ledger conservation remain required |
 | Legacy getInitData does not filter Menu.enabled | Formal customer menu filters enabled rows; disabled rows remain auditable and admin-visible |
 | Legacy quantity handling | Formal writes accept positive integers; zeros are omitted; invalid values are quarantined |

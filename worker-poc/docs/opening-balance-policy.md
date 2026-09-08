@@ -1,23 +1,43 @@
 # Opening Balance and Adjustment Policy Gate
 
-Status: pending explicit product and finance approval.
+Status: APPROVED — Option 1, snapshot-only / defer ledger promotion.
 
-The importer may preserve a legacy `Users.balance` value as source evidence and
-as the current local user snapshot, but it must not emit a synthetic `TOPUP`,
-`ORDER`, `REFUND`, or `ADJUSTMENT` row to explain that value. Incomplete
-`TopupHistory` rows remain in `import_quarantine` with
-`INCOMPLETE_LEDGER_POLICY` until this gate is approved.
+## Approved migration policy
 
-Before any opening balance or adjustment is promoted into the formal ledger, an
-approved policy record must identify all of the following:
+The legacy `Users.balance` value is imported as the current operational opening
+balance snapshot. The signed integer is preserved exactly, including zero and
+negative balances.
+
+The importer must not fabricate historical ledger activity. It must not emit a
+synthetic historical `TOPUP`, `ORDER`, `REFUND`, or `ADJUSTMENT` row to explain a
+legacy snapshot. The formal ledger begins with future approved mutations after
+cutover.
+
+Incomplete or unverifiable `TopupHistory` rows remain legacy evidence in
+`import_quarantine`. They are not promoted into the formal ledger unless a
+later explicit policy approves them.
+
+Where a balance cannot be fully explained by formal ledger entries, balance
+history exposes the `OPENING_BALANCE_POLICY_REQUIRED` policy boundary rather
+than inventing missing transactions.
+
+All post-cutover balance mutations — order deductions, cancellation refunds,
+admin top-ups, and any later approved adjustment — must use the existing
+atomic balance + ledger + audit primitives.
+
+## Deferred cutover adjustment
+
+This approval does not authorize an opening `ADJUSTMENT`. A future cutover
+adjustment requires a separate reviewed policy containing:
 
 - policy identifier and reviewed version;
-- approving operator and UTC approval timestamp;
-- the opening-balance effective date/time and timezone interpretation;
-- the target user and exact integer amount;
-- the explicit adjustment type, reference, and supporting evidence.
+- approving operator and approval timestamp;
+- effective timestamp and timezone interpretation;
+- target user and signed amount;
+- explicit adjustment type, reference, and supporting evidence;
+- rollback or compensation rules.
 
-Until those fields are supplied and reviewed, balance history returns the
-`OPENING_BALANCE_POLICY_REQUIRED` boundary for a non-zero snapshot without
-ledger evidence. This document is not an approval record and does not authorize
-ledger promotion.
+Until that separate policy is approved, no opening adjustment is written.
+
+This document does not authorize real-workbook modification, remote D1 work, or
+promotion of legacy history.
