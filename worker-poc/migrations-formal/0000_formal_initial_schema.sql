@@ -134,6 +134,7 @@ CREATE TABLE IF NOT EXISTS idempotency_keys (
   operation TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
   request_hash TEXT NOT NULL,
+  claim_token TEXT NOT NULL,
   status TEXT NOT NULL
     CHECK (status IN ('IN_PROGRESS', 'COMPLETED', 'FAILED')),
   response_json TEXT,
@@ -192,6 +193,10 @@ CREATE INDEX IF NOT EXISTS idx_orders_actor_date_status
 CREATE INDEX IF NOT EXISTS idx_orders_date_vendor_status
   ON orders(order_date, vendor, status);
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_one_active_actor_date
+  ON orders(line_user_id, order_date)
+  WHERE status = 'ACTIVE';
+
 CREATE INDEX IF NOT EXISTS idx_order_items_menu_item
   ON order_items(menu_item_id);
 
@@ -203,6 +208,10 @@ CREATE INDEX IF NOT EXISTS idx_balance_ledger_actor_time
 
 CREATE INDEX IF NOT EXISTS idx_balance_ledger_reference
   ON balance_ledger(reference_id, type);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_balance_ledger_unique_order_reference
+  ON balance_ledger(type, reference_id)
+  WHERE reference_id IS NOT NULL AND type IN ('ORDER', 'REFUND');
 
 CREATE INDEX IF NOT EXISTS idx_idempotency_actor_operation
   ON idempotency_keys(actor_line_user_id, operation, created_at);

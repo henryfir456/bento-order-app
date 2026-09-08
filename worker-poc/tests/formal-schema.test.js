@@ -62,9 +62,11 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_menu_items_customer',
     'idx_orders_actor_date_status',
     'idx_orders_date_vendor_status',
+    'idx_orders_one_active_actor_date',
     'idx_order_status_history_order_time',
     'idx_balance_ledger_actor_time',
     'idx_balance_ledger_reference',
+    'idx_balance_ledger_unique_order_reference',
     'idx_idempotency_actor_operation',
     'idx_import_quarantine_batch_state'
   ];

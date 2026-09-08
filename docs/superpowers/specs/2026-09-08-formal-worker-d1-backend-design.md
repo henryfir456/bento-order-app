@@ -1,7 +1,7 @@
 # Formal Worker + D1 Backend Design Specification
 
 **Date:** 2026-09-08
-**Status:** Architecture approved; Wave 0–2 local implementation baseline; not deployed
+**Status:** Architecture approved; Wave 0–3 local implementation baseline; not deployed
 **Decision:** Strategy B — rebuild the formal backend on a clean D1 schema
 
 ## 1. Decision summary
@@ -569,6 +569,6 @@ and identity behavior, GAS deployment contract, and any authorized D1 remote
 operation. Local static checks must not be reported as evidence for those
 behaviors.
 
-This document is a design artifact plus implementation contract. Local Wave 0–2
+This document is a design artifact plus implementation contract. Local Wave 0–3
 automated evidence is reported by the implementation session; this document does
 not claim remote deployment, remote migration, or real-user flows are verified.

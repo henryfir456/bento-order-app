@@ -1,4 +1,5 @@
 import { handleMeRoute } from './routes/me.js';
+import { handleOrderRoute } from './routes/orders.js';
 import { handleReadOnlyRequest } from './routes/readOnly.js';
 import { HttpError, toPublicError } from './http/errors.js';
 import { emptyResponse, jsonResponse } from './http/response.js';
@@ -8,6 +9,8 @@ export const handleFormalRequest = async (request, env, options = {}) => {
   try {
     const meResponse = await handleMeRoute(request, env, options);
     if (meResponse) return meResponse;
+    const orderResponse = await handleOrderRoute(request, env, options);
+    if (orderResponse) return orderResponse;
     const readResponse = await handleReadOnlyRequest(request, env, options);
     if (readResponse) return readResponse;
     return jsonResponse({ error: 'NOT_FOUND' }, 404);

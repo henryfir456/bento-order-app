@@ -4,8 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --local",
-    "test": "node --test tests/index.test.js tests/contract.test.js tests/parity.test.js tests/formal-schema.test.js tests/importer.test.js tests/reconciliation.test.js tests/auth.test.js tests/permissions.test.js tests/registration.test.js tests/read-only.test.js",
-    "test:formal": "node --test tests/formal-schema.test.js tests/importer.test.js tests/reconciliation.test.js tests/auth.test.js tests/permissions.test.js tests/registration.test.js tests/read-only.test.js",
+    "test": "node --test tests/index.test.js tests/contract.test.js tests/parity.test.js tests/formal-schema.test.js tests/importer.test.js tests/reconciliation.test.js tests/auth.test.js tests/permissions.test.js tests/registration.test.js tests/read-only.test.js tests/transaction.test.js tests/idempotency.test.js tests/orders-create.test.js tests/orders-cancel.test.js tests/deadline.test.js tests/orders-concurrency.test.js",
+    "test:formal": "node --test tests/formal-schema.test.js tests/importer.test.js tests/reconciliation.test.js tests/auth.test.js tests/permissions.test.js tests/registration.test.js tests/read-only.test.js tests/transaction.test.js tests/idempotency.test.js tests/orders-create.test.js tests/orders-cancel.test.js tests/deadline.test.js tests/orders-concurrency.test.js",
     "db:list": "wrangler d1 list",
     "db:info": "wrangler d1 info bento-poc",
     "db:migrations:local": "wrangler d1 migrations apply bento-poc --local",

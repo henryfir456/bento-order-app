@@ -13,6 +13,7 @@ export class SqliteD1 {
   constructor() {
     this.database = new DatabaseSync(':memory:');
     this.database.exec(migrationSql);
+    this.batchQueue = Promise.resolve();
   }
 
   exec(sql) {
@@ -49,15 +50,19 @@ export class SqliteD1 {
   }
 
   async batch(statements) {
-    this.database.exec('BEGIN');
-    try {
-      const results = [];
-      for (const statement of statements) results.push(await statement.run());
-      this.database.exec('COMMIT');
-      return results;
-    } catch (error) {
-      this.database.exec('ROLLBACK');
-      throw error;
-    }
+    const execute = this.batchQueue.then(async () => {
+      this.database.exec('BEGIN');
+      try {
+        const results = [];
+        for (const statement of statements) results.push(await statement.run());
+        this.database.exec('COMMIT');
+        return results;
+      } catch (error) {
+        this.database.exec('ROLLBACK');
+        throw error;
+      }
+    });
+    this.batchQueue = execute.catch(() => undefined);
+    return execute;
   }
 }

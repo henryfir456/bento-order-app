@@ -12,7 +12,7 @@
 - Do not run another GAS live benchmark.
 - Do not build a dual-backend migration, adapter, feature flag, or VITE_BACKEND_MODE.
 - Keep React on GAS until all backend gates and required manual evidence are PASS.
-- Do not deploy, push, commit, or perform a remote D1 destructive reset during this planning phase.
+- Do not deploy, push, commit, or perform a remote D1 destructive reset during this execution session.
 - Preserve the existing GAS behavior that an order may make a balance negative; do not add an insufficient-balance business rule in this replacement.
 - The real workbook is a local-only importer input and must never be committed.
 - Duplicate menu rows remain separate; generate stable internal menu_item_id values and never make legacy item_id unique.
@@ -40,8 +40,9 @@ The work is executed in eight waves:
 7. Backend verification and required manual/external evidence.
 8. Direct React-to-Worker cutover and post-cutover removal assessment.
 
-Execution tracking is maintained below. Completed Wave 0, Wave 1, and Wave 2
-tasks are marked [x]; later waves remain pending until their gates are verified.
+Execution tracking is maintained below. Completed Wave 0, Wave 1, Wave 2, and
+Wave 3 tasks are marked [x]; later waves remain pending until their gates are
+verified.
 
 ## Wave 0 — execution boundary and formal baseline
 
@@ -185,12 +186,12 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/src/db/transactions.js, worker-poc/src/db/idempotency.js, worker-poc/src/http/errors.js, worker-poc/tests/transaction.test.js, worker-poc/tests/idempotency.test.js.
 
-- [ ] Implement prepared-statement helpers that reject interpolated user input.
-- [ ] Implement runMutationBatch(db, statements) using D1 batch semantics for atomic mutation sequences.
-- [ ] Implement beginIdempotentOperation and completeIdempotentOperation with actor, operation, key, and request hash.
-- [ ] Return the stored response for a repeated completed request with the same request hash.
-- [ ] Reject a reused idempotency key with a different request hash.
-- [ ] Map transaction failures to stable public error codes without exposing SQL details.
+- [x] Implement prepared-statement helpers that reject interpolated user input.
+- [x] Implement runMutationBatch(db, statements) using D1 batch semantics for atomic mutation sequences.
+- [x] Implement beginIdempotentOperation and completeIdempotentOperation with actor, operation, key, and request hash.
+- [x] Return the stored response for a repeated completed request with the same request hash.
+- [x] Reject a reused idempotency key with a different request hash.
+- [x] Map transaction failures to stable public error codes without exposing SQL details.
 
 **Verification:** transaction and idempotency tests prove rollback on injected statement failure and one-result behavior for repeated mutation requests.
 
@@ -198,12 +199,12 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/src/domain/orders.js, worker-poc/src/routes/orders.js, worker-poc/tests/orders-create.test.js.
 
-- [ ] Implement createOrReplaceOrder(db, identityContext, input, clock).
-- [ ] Load menu price, enabled state, vendor, deadline, and actor balance from D1; never trust client price or subtotal.
-- [ ] Normalize positive integer quantities, omit zero quantities, merge repeated internal menu keys only when the formal request contract permits it, and reject invalid values.
-- [ ] In one transaction, resolve idempotency, cancel/refund a prior active order when replacement is requested, read the current integer balance, apply the exact debit while preserving GAS negative-balance behavior, insert parent and line snapshots, append status history and ledger rows, and complete idempotency.
-- [ ] Preserve menu_item_id when resolved and always preserve legacy_item_id/item snapshot fields.
-- [ ] Reject an order for a quarantined/unregistered actor and do not create a guessed account.
+- [x] Implement createOrReplaceOrder(db, identityContext, input, clock).
+- [x] Load menu price, enabled state, vendor, deadline, and actor balance from D1; never trust client price or subtotal.
+- [x] Normalize positive integer quantities, omit zero quantities, merge repeated internal menu keys only when the formal request contract permits it, and reject invalid values.
+- [x] In one transaction, resolve idempotency, cancel/refund a prior active order when replacement is requested, read the current integer balance, apply the exact debit while preserving GAS negative-balance behavior, insert parent and line snapshots, append status history and ledger rows, and complete idempotency.
+- [x] Preserve menu_item_id when resolved and always preserve legacy_item_id/item snapshot fields.
+- [x] Reject an order for a quarantined/unregistered actor and do not create a guessed account.
 
 **Verification:** orders-create.test.js covers server-side pricing, deadline closure, negative-balance compatibility, replacement refund/deduction, duplicate menu internal keys, status history, and balance conservation.
 
@@ -211,10 +212,10 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/src/domain/orders.js, worker-poc/src/routes/orders.js, worker-poc/tests/orders-cancel.test.js.
 
-- [ ] Implement cancelOrder(db, identityContext, orderId, idempotencyKey, clock).
-- [ ] Require the order to be ACTIVE, owned by the actor, and within the deadline rule.
-- [ ] In one transaction, refund the exact stored total, mark the parent CANCELLED, append status history, append REFUND ledger row, and complete idempotency.
-- [ ] Make repeated cancellation return the stored result or a stable already-cancelled error without a second refund.
+- [x] Implement cancelOrder(db, identityContext, orderId, idempotencyKey, clock).
+- [x] Require the order to be ACTIVE, owned by the actor, and within the deadline rule.
+- [x] In one transaction, refund the exact stored total, mark the parent CANCELLED, append status history, append REFUND ledger row, and complete idempotency.
+- [x] Make repeated cancellation return the stored result or a stable already-cancelled error without a second refund.
 
 **Verification:** orders-cancel.test.js proves ownership, deadline, one-refund, cancellation state, and idempotent retry behavior.
 
@@ -222,11 +223,11 @@ worker-poc/.gitignore.
 
 **Files:** worker-poc/tests/orders-concurrency.test.js, worker-poc/tests/deadline.test.js, worker-poc/src/domain/deadlines.js.
 
-- [ ] Freeze time around mode A and mode B boundary instants and assert open/closed behavior.
-- [ ] Run competing replacement/cancel/top-up test operations against the same synthetic user.
-- [ ] Assert that competing order/cancel/top-up mutations do not lose a balance update, issue a duplicate refund, or commit an order state that disagrees with its ledger state.
-- [ ] Assert that competing replacement requests cannot create two active replacement orders for the same actor/date and that competing retries with the same idempotency key produce one result.
-- [ ] Record any D1 serialization limitation as a test-enforced retry policy rather than silently ignoring a conflict.
+- [x] Freeze time around mode A and mode B boundary instants and assert open/closed behavior.
+- [x] Run competing replacement/cancel/top-up-shaped balance mutation test operations against the same synthetic user.
+- [x] Assert that competing order/cancel/top-up-shaped mutations do not lose a balance update, issue a duplicate refund, or commit an order state that disagrees with its ledger state.
+- [x] Assert that competing replacement requests cannot create two active replacement orders for the same actor/date and that competing retries with the same idempotency key produce one result.
+- [x] Record the D1 serialization limitation as a test-enforced retry/conflict policy rather than silently ignoring a conflict.
 
 **Verification:** deadline and concurrency tests pass locally with deterministic clocks and prove no lost update, duplicate refund, or inconsistent ledger/order state.
 
@@ -428,8 +429,9 @@ worker-poc/.gitignore.
 
 ## Execution handoff
 
-This plan is intentionally ready for a future execution session but is not an
-authorization to start implementation or remote operations. After reviewing the
-spec and plan, choose either subagent-driven execution using the required
-subagent-driven-development skill or inline task-by-task execution using
-executing-plans. The current phase ends with documentation review.
+Wave 0–3 are implemented and locally verified in the current execution session.
+The formal handler remains isolated from the active POC and React/GAS client.
+Continue with Wave 4 only in a later checkpoint; remote operations still require
+separate authorization. This environment did not provide the requested
+subagent-driven-development skill, so the task was executed inline with
+executing-plans and task-level verification checkpoints.
