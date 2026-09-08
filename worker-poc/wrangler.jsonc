@@ -6,8 +6,8 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "bento-poc",
-      "database_id": "f9a437b9-6811-4260-86cc-ed2c11ab34f9",
+      "database_name": "bento-formal",
+      "database_id": "e75bc185-afb5-4a5d-abc9-81bd79525cff",
       "migrations_dir": "migrations-formal"
     }
   ]

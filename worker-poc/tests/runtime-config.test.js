@@ -26,8 +26,12 @@ const pocD1 = pocConfig.d1_databases?.find((binding) => binding.binding === 'DB'
 test('default Wrangler runtime and D1 migration directory are formal', () => {
   assert.equal(formalConfig.main, 'src/formalWorker.js');
   assert.equal(formalD1?.binding, 'DB');
-  assert.equal(formalD1?.database_name, 'bento-poc');
+  assert.equal(formalD1?.database_name, 'bento-formal');
   assert.equal(formalD1?.migrations_dir, 'migrations-formal');
+  assert.match(packageConfig.scripts['db:info'], /\bbento-formal\b/);
+  assert.match(packageConfig.scripts['db:migrations:local'], /\bbento-formal\b/);
+  assert.match(packageConfig.scripts['db:migrations:remote'], /\bbento-formal\b/);
+  assert.doesNotMatch(packageConfig.scripts['db:migrations:remote'], /\bbento-poc\b/);
   assert.deepEqual(
     fs.readdirSync(new URL('../migrations-formal/', import.meta.url))
       .filter((name) => name.endsWith('.sql'))
