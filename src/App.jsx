@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { formatDateInput, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
-import { gasGet, gasPost } from './api/gasApi';
+import { apiClient } from './api/apiClient';
 import { authClient } from './auth/liffClient';
 import { hasPermission } from './auth/permissions';
 import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
@@ -118,11 +118,7 @@ const fetchDeferredBootstrapData = async (accessToken, bootId) => {
       return { success: false, code: 'DEFERRED_UI_TOKEN_MISSING' };
     }
 
-    const res = await gasPost({
-      action: 'getDeferredBootstrapData',
-      accessToken,
-      bootId
-    });
+    const res = await apiClient.getDeferredBootstrap({ bootId });
     if (!res.ok) {
       return { success: false, code: 'DEFERRED_UI_HTTP_ERROR' };
     }
@@ -614,9 +610,7 @@ export default function App() {
         setAdminSummaryError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await gasPost({
-        action: 'getAdminSummary',
-        accessToken,
+      const res = await apiClient.getAdminSummary({
         targetDate,
         includeMemberBalances: false
       });
@@ -664,10 +658,7 @@ export default function App() {
         setMemberBalancesError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await gasPost({
-        action: 'getMemberBalances',
-        accessToken
-      });
+      const res = await apiClient.getMemberBalances();
       const data = await res.json();
       if (requestId !== memberBalancesRequestRef.current) return;
 
@@ -693,10 +684,7 @@ export default function App() {
         return { success: false, message: 'LIFF accessToken 不存在' };
       }
 
-      const res = await gasPost({
-        action: 'getUserInfo',
-        accessToken
-      });
+      const res = await apiClient.getIdentity();
       if (!res.ok) {
         return { success: false, message: `backend HTTP ${res.status}` };
       }
@@ -717,12 +705,7 @@ export default function App() {
         return { success: false, message: 'LIFF accessToken 不存在' };
       }
 
-      const res = await gasPost({
-        action: 'getBootstrapData',
-        accessToken,
-        bootId,
-        deferUiData: true
-      });
+      const res = await apiClient.getBootstrap({ bootId });
       if (!res.ok) {
         return { success: false, message: `backend HTTP ${res.status}` };
       }
@@ -749,11 +732,7 @@ export default function App() {
     setAuthStage('REGISTER_REQUEST');
     logAuthDiagnostic('REGISTER_REQUEST_START');
     try {
-      const res = await gasPost({
-        action: 'registerUser',
-        accessToken,
-        pickupFloor: registrationFloor
-      });
+      const res = await apiClient.register({ pickupFloor: registrationFloor });
       if (!res.ok) {
         throw new Error(`backend HTTP ${res.status}`);
       }
@@ -797,7 +776,7 @@ export default function App() {
     if (!targetId) return;
     const requestStartTime = getPerformanceNow();
     try {
-      const res = await gasGet(`?action=getCalendarEvents&userId=${targetId}&t=${Date.now()}`);
+      const res = await apiClient.getCalendar({ userId: targetId });
       const data = await res.json();
       if (data.success) {
         setCalendarEvents(data.events || {});
@@ -820,7 +799,7 @@ export default function App() {
     if (!uId) return;
     const requestStartTime = getPerformanceNow();
     try {
-      const res = await gasGet(`?action=getUserAllOrdersMap&userId=${encodeURIComponent(uId)}&t=${Date.now()}`);
+      const res = await apiClient.getOrdersMap({ userId: uId });
       const data = await res.json();
       if (data.success) {
         setUserOrdersMap(data.ordersMap || {});
@@ -847,12 +826,7 @@ export default function App() {
         setHistoryError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await gasPost({
-        action: 'getBalanceHistoryByMonth',
-        accessToken,
-        year,
-        month
-      });
+      const res = await apiClient.getBalanceHistory({ year, month });
       const data = await res.json();
       if (requestId !== historyRequestRef.current) return;
 
@@ -928,12 +902,7 @@ export default function App() {
     });
 
     try {
-      const res = await gasPost({
-        action: 'toggleLike',
-        date: dateStr,
-        accessToken: authClient.getAccessToken(),
-        userId: authUserId
-      });
+      const res = await apiClient.toggleLike({ date: dateStr, userId: authUserId });
       const data = await res.json();
       if (data.success) {
         fetchCalendarEvents(); // 刷新同步後端開團狀態
@@ -972,7 +941,7 @@ export default function App() {
     setHasExistingOrder(false);
 
     try {
-      const res = await gasGet(`?action=getOrderPageData&targetDate=${encodeURIComponent(dateStr)}&userId=${encodeURIComponent(authUserId)}&t=${Date.now()}`);
+      const res = await apiClient.getOrderPage({ targetDate: dateStr, userId: authUserId });
       const data = await res.json();
       if (data.success && data.myOrder && Array.isArray(data.myOrder.items)) {
         const orderMap = {};
@@ -1006,13 +975,7 @@ export default function App() {
     if (!(await guardWrite('月曆設定'))) return;
     setLoading(true);
     try {
-      const res = await gasPost({
-        action: 'adminSetVendor',
-        accessToken: authClient.getAccessToken(),
-        adminUserId: authUserId,
-        dateStr,
-        vendor
-      });
+      const res = await apiClient.setCalendarVendor({ adminUserId: authUserId, dateStr, vendor });
       const data = await res.json();
       if (data.success) {
         await showPopup({ icon: 'success', title: '更新完成', text: '開團設定已更新！' });
@@ -1076,9 +1039,7 @@ export default function App() {
 
     setLoading(true);
     try {
-      const res = await gasPost({
-        action: 'submitOrder',
-        accessToken: authClient.getAccessToken(),
+      const res = await apiClient.submitOrder({
         userId: authUserId,
         pickup_floor: floor,
         target_date: selectedDate,
@@ -1128,9 +1089,7 @@ export default function App() {
 
     setLoading(true);
     try {
-      const res = await gasPost({
-        action: 'cancelOrder',
-        accessToken: authClient.getAccessToken(),
+      const res = await apiClient.cancelOrder({
         userId: authUserId,
         orderId: activeOrderId,
         date: selectedDate
@@ -1262,11 +1221,7 @@ export default function App() {
     setFloorLoading(true);
     setFloorError('');
     try {
-      const res = await gasPost({
-        action: 'updateMyPickupFloor',
-        accessToken,
-        pickupFloor: nextFloor
-      });
+      const res = await apiClient.updatePickupFloor({ pickupFloor: nextFloor });
       if (!res.ok) {
         setFloorError(`更新失敗（HTTP ${res.status}）`);
         return;
@@ -1319,9 +1274,7 @@ export default function App() {
 
     setTopupLoading(true);
     try {
-      const res = await gasPost({
-        action: 'topUpBalance',
-        accessToken: authClient.getAccessToken(),
+      const res = await apiClient.topUpBalance({
         adminUserId: authUserId,
         targetUserId: selectedTopupUser.userId,
         amount,

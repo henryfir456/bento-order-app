@@ -835,8 +835,8 @@ test('frontend bootstrap wires the correlated Phase 3 waterfall without extra re
   assert.match(initSource, /const bootId = createBootId\(\)/);
   assert.match(initSource, /createBootTimingLogger\(bootId\)/);
   assert.match(initSource, /bootTiming\.backend\(identity\?\.observability\?\.timing, identity\?\.bootId\)/);
-  assert.match(appSource, /action: 'getBootstrapData',[\s\S]*bootId/);
-  assert.match(appSource, /action: 'getDeferredBootstrapData',[\s\S]*bootId/);
+  assert.match(appSource, /apiClient\.getBootstrap\(\{ bootId \}\)/);
+  assert.match(appSource, /apiClient\.getDeferredBootstrap\(\{ bootId \}\)/);
   assert.match(appSource, /\.timing\.deferredBackend/);
   assert.match(appSource, /deferredUiGenerationRef/);
   assert.match(appSource, /deferredUiBootRef/);
@@ -850,14 +850,14 @@ test('frontend bootstrap wires the correlated Phase 3 waterfall without extra re
   const bootstrapFetchStart = appSource.indexOf('const fetchBootstrapData');
   const bootstrapFetchEnd = appSource.indexOf('  const handleRegister', bootstrapFetchStart);
   const bootstrapFetchSource = appSource.slice(bootstrapFetchStart, bootstrapFetchEnd);
-  assert.equal((bootstrapFetchSource.match(/gasPost\(/g) || []).length, 1);
-  assert.match(bootstrapFetchSource, /action: 'getBootstrapData',[\s\S]*accessToken,[\s\S]*bootId,[\s\S]*deferUiData: true/);
+  assert.equal((bootstrapFetchSource.match(/apiClient\.getBootstrap\(/g) || []).length, 1);
+  assert.match(bootstrapFetchSource, /apiClient\.getBootstrap\(\{ bootId \}\)/);
 
   const deferredFetchStart = appSource.indexOf('const fetchDeferredBootstrapData');
   const deferredFetchEnd = appSource.indexOf('const showPopup', deferredFetchStart);
   const deferredFetchSource = appSource.slice(deferredFetchStart, deferredFetchEnd);
-  assert.equal((deferredFetchSource.match(/gasPost\(/g) || []).length, 1);
-  assert.match(deferredFetchSource, /action: 'getDeferredBootstrapData',[\s\S]*accessToken,[\s\S]*bootId/);
+  assert.equal((deferredFetchSource.match(/apiClient\.getDeferredBootstrap\(/g) || []).length, 1);
+  assert.match(deferredFetchSource, /apiClient\.getDeferredBootstrap\(\{ bootId \}\)/);
 });
 
 const announcementAsOfDate = new Date('2026-09-04T04:00:00.000Z');
@@ -1809,7 +1809,8 @@ test('frontend separates auth/view-as identity, guards writes, and keeps date ch
   assert.match(appSource, /const effectiveRole = effectiveUser\?\.role/);
   assert.match(appSource, /showViewAsModal/);
   assert.match(viewAsSource, /返回 Admin/);
-  assert.match(appSource, /action: 'getMemberBalances'/);
+  assert.match(appSource, /apiClient\.getMemberBalances/);
+  assert.match(appSource, /apiClient\.getAdminSummary/);
   assert.match(appSource, /includeMemberBalances: false/);
   assert.doesNotMatch(appSource, /adminSummary\.usersSummary\.map/);
   assert.match(appSource, /const guardWrite = async/);
@@ -1858,7 +1859,7 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   assert.match(modalSource, /Escape/);
   assert.match(appSource, /APP_VERSION/);
   assert.match(appSource, /CHANGELOG/);
-  assert.match(appSource, /updateMyPickupFloor/);
+  assert.match(appSource, /apiClient\.updatePickupFloor/);
   assert.match(appSource, /showFloorModal/);
   assert.match(appSource, /showChangelogModal/);
   assert.match(appSource, /imagePreview/);
@@ -1899,7 +1900,7 @@ test('calendar management owns special-date controls without a separate modal en
 test('frontend wires monthly balance and selected-date admin summary queries', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
 
-  assert.match(appSource, /getBalanceHistoryByMonth/);
+  assert.match(appSource, /apiClient\.getBalanceHistory/);
   assert.match(appSource, /selectedYear/);
   assert.match(appSource, /selectedOrderDate/);
   assert.match(appSource, /adminSummaryRequestRef\.current \+= 1/);
@@ -1941,11 +1942,277 @@ test('frontend keeps LIFF and GAS transport behind the auth and API boundaries',
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const mockApiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'mockGasApi.js'), 'utf8');
   const gasApiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'gasApi.js'), 'utf8');
+  const apiClientSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClient.js'), 'utf8');
 
   assert.doesNotMatch(appSource, /@line\/liff|\bliff\./);
+  assert.doesNotMatch(appSource, /\bgas(Get|Post)\s*\(/);
+  assert.doesNotMatch(appSource, /action\s*:/);
   assert.match(appSource, /authClient\.getAccessToken/);
   assert.doesNotMatch(mockApiSource, /\bfetch\s*\(/);
-  assert.match(gasApiSource, /authClient\.isMock/);
+  assert.match(gasApiSource, /auth = authClient/);
+  assert.match(apiClientSource, /resolveApiTransportConfig/);
+  assert.match(appSource, /from ['"]\.\/api\/apiClient['"]/);
+});
+
+test('API transport boundary isolates Worker, GAS, and mock modes with typed gaps', async () => {
+  const { createApiClient } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js')).href);
+  const {
+    ApiAuthenticationError,
+    ApiAuthorizationError,
+    ApiBackendError,
+    ApiConfigurationError,
+    ApiContractGapError
+  } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiErrors.js')).href);
+  const { resolveApiTransportConfig } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'transportConfig.js')).href);
+
+  const jsonResponse = (body = {}, status = 200) => new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const authClient = {
+    isMock: false,
+    getAccessToken: () => 'line-token'
+  };
+  const workerCalls = [];
+  const gasCalls = [];
+  const gasApi = {
+    get: async (query) => {
+      gasCalls.push({ method: 'GET', query });
+      return jsonResponse({ success: true });
+    },
+    post: async (payload) => {
+      gasCalls.push({ method: 'POST', payload });
+      return jsonResponse({ success: true });
+    }
+  };
+  const worker = createApiClient({
+    env: {
+      VITE_API_TRANSPORT: 'worker',
+      VITE_WORKER_API_URL: 'https://worker.example.test/'
+    },
+    authClient,
+    gasApi,
+    fetchImpl: async (url, options) => {
+      workerCalls.push({ url, options });
+      return jsonResponse({ success: true });
+    }
+  });
+
+  assert.equal(worker.transport, 'worker');
+  await worker.getIdentity();
+  await worker.getBootstrap({ bootId: 'BOOT-20260908-test01', targetDate: '2026-09-08' });
+  await worker.getDeferredBootstrap({ bootId: 'BOOT-20260908-test01' });
+  await worker.register({ pickupFloor: '1樓' });
+  await worker.getCalendar({ userId: 'forged-user' });
+  await worker.getOrdersMap({ userId: 'forged-user' });
+  await worker.getOrderPage({ targetDate: '2026-09-08', userId: 'forged-user' });
+  await worker.updatePickupFloor({ pickupFloor: '9樓' });
+
+  assert.deepEqual(workerCalls.map(({ url, options }) => [
+    new URL(url).pathname,
+    options.method,
+    options.headers.Authorization,
+    options.body || null
+  ]), [
+    ['/api/me', 'GET', 'Bearer line-token', null],
+    ['/api/me', 'GET', 'Bearer line-token', null],
+    ['/api/bootstrap', 'GET', 'Bearer line-token', null],
+    ['/api/bootstrap/deferred', 'GET', 'Bearer line-token', null],
+    ['/api/register', 'POST', 'Bearer line-token', JSON.stringify({ pickupFloor: '1樓' })],
+    ['/api/calendar', 'GET', 'Bearer line-token', null],
+    ['/api/orders/map', 'GET', 'Bearer line-token', null],
+    ['/api/order-page', 'GET', 'Bearer line-token', null],
+    ['/api/me/pickup-floor', 'PATCH', 'Bearer line-token', JSON.stringify({ pickupFloor: '9樓' })]
+  ]);
+  assert.equal(new URL(workerCalls[2].url).searchParams.get('bootId'), 'BOOT-20260908-test01');
+  assert.equal(new URL(workerCalls[3].url).searchParams.get('bootId'), 'BOOT-20260908-test01');
+  assert.equal(new URL(workerCalls[5].url).searchParams.get('userId'), null);
+  assert.equal(new URL(workerCalls[6].url).searchParams.get('userId'), null);
+  assert.equal(new URL(workerCalls[3].url).searchParams.get('userId'), null);
+  assert.equal(new URL(workerCalls[7].url).searchParams.get('userId'), null);
+  assert.equal(workerCalls[4].options.headers['Content-Type'], 'application/json');
+  assert.equal(workerCalls[8].options.headers['Content-Type'], 'application/json');
+  assert.equal(gasCalls.length, 0);
+
+  const unregisteredCalls = [];
+  const unregisteredWorker = createApiClient({
+    env: {
+      VITE_API_TRANSPORT: 'worker',
+      VITE_WORKER_API_URL: 'https://worker.example.test'
+    },
+    authClient,
+    gasApi,
+    fetchImpl: async (url, options) => {
+      unregisteredCalls.push({ url, options });
+      return new URL(url).pathname === '/api/me'
+        ? jsonResponse({
+          success: true,
+          registered: false,
+          lineUserId: 'line-unregistered',
+          displayName: 'Unregistered User'
+        })
+        : jsonResponse({ success: true, registered: true });
+    }
+  });
+  const unregisteredResponse = await unregisteredWorker.getBootstrap({
+    bootId: 'BOOT-20260908-unregistered'
+  });
+  assert.deepEqual(await unregisteredResponse.json(), {
+    success: true,
+    registered: false,
+    lineUserId: 'line-unregistered',
+    displayName: 'Unregistered User'
+  });
+  assert.deepEqual(unregisteredCalls.map(({ url }) => new URL(url).pathname), ['/api/me']);
+  assert.equal(gasCalls.length, 0);
+
+  for (const operation of [
+    'getBalanceHistory',
+    'getAdminSummary',
+    'getMemberBalances',
+    'toggleLike',
+    'setCalendarVendor',
+    'submitOrder',
+    'cancelOrder',
+    'topUpBalance'
+  ]) {
+    await assert.rejects(
+      worker[operation]({}),
+      (error) => error instanceof ApiContractGapError
+        && error.code === 'ADAPTER_REQUIRED'
+        && error.operation === operation
+    );
+  }
+  assert.equal(workerCalls.length, 9);
+  assert.equal(gasCalls.length, 0);
+
+  const gas = createApiClient({
+    env: { VITE_GAS_API_URL: 'https://gas.example.test/exec' },
+    authClient,
+    gasApi,
+    fetchImpl: () => {
+      throw new Error('Worker fetch must not be used in GAS mode.');
+    }
+  });
+  assert.equal(gas.transport, 'gas');
+  await gas.getIdentity();
+  await gas.getBootstrap({ bootId: 'BOOT-20260908-test02' });
+  await gas.getCalendar({ userId: 'user-id' });
+  assert.deepEqual(gasCalls.slice(0, 2), [
+    { method: 'POST', payload: { action: 'getUserInfo', accessToken: 'line-token' } },
+    {
+      method: 'POST',
+      payload: {
+        action: 'getBootstrapData',
+        accessToken: 'line-token',
+        bootId: 'BOOT-20260908-test02',
+        deferUiData: true
+      }
+    }
+  ]);
+  assert.match(gasCalls[2].query, /^\?action=getCalendarEvents&userId=user-id&t=\d+$/);
+  assert.equal(workerCalls.length, 9);
+
+  const mockCalls = [];
+  const mock = createApiClient({
+    env: { DEV: true, VITE_AUTH_MODE: 'mock' },
+    authClient: {
+      isMock: true,
+      getAccessToken: () => 'local-mock-session'
+    },
+    gasApi: {
+      get: async (query) => {
+        mockCalls.push({ method: 'GET', query });
+        return jsonResponse({ success: true });
+      },
+      post: async (payload) => {
+        mockCalls.push({ method: 'POST', payload });
+        return jsonResponse({ success: true });
+      }
+    },
+    fetchImpl: () => {
+      throw new Error('Mock transport must not use network fetch.');
+    }
+  });
+  assert.equal(mock.transport, 'mock');
+  await mock.getIdentity();
+  assert.equal(mockCalls[0].payload.action, 'getUserInfo');
+
+  assert.throws(
+    () => resolveApiTransportConfig({ VITE_API_TRANSPORT: 'invalid' }),
+    (error) => error instanceof ApiConfigurationError && error.code === 'API_TRANSPORT_INVALID'
+  );
+  assert.throws(
+    () => resolveApiTransportConfig({
+      VITE_API_TRANSPORT: 'worker',
+      VITE_WORKER_API_URL: 'ftp://worker.example.test'
+    }),
+    (error) => error instanceof ApiConfigurationError && error.code === 'WORKER_API_URL_INVALID'
+  );
+  assert.throws(
+    () => resolveApiTransportConfig({
+      VITE_API_TRANSPORT: 'worker',
+      VITE_WORKER_API_URL: 'https://worker.example.test'
+    }, { isMock: true }),
+    (error) => error instanceof ApiConfigurationError && error.code === 'API_TRANSPORT_MOCK_CONFLICT'
+  );
+  assert.throws(
+    () => createApiClient({
+      env: { VITE_API_TRANSPORT: 'worker' },
+      authClient,
+      gasApi
+    }),
+    (error) => error instanceof ApiConfigurationError && error.code === 'WORKER_API_URL_MISSING'
+  );
+  const noToken = createApiClient({
+    env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+    authClient: { isMock: false, getAccessToken: () => '' },
+    fetchImpl: async () => {
+      throw new Error('Authentication must stop before fetch.');
+    }
+  });
+  await assert.rejects(
+    noToken.getIdentity(),
+    (error) => error instanceof ApiAuthenticationError && error.code === 'API_AUTH_REQUIRED'
+  );
+
+  const rejected = createApiClient({
+    env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+    authClient,
+    fetchImpl: async () => jsonResponse({ error: 'AUTH_REQUIRED' }, 401)
+  });
+  await assert.rejects(
+    rejected.getIdentity(),
+    (error) => error instanceof ApiAuthenticationError
+      && error.code === 'API_AUTH_REJECTED'
+      && error.status === 401
+  );
+
+  const forbidden = createApiClient({
+    env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+    authClient,
+    fetchImpl: async () => jsonResponse({ error: 'VIEW_AS_FORBIDDEN' }, 403)
+  });
+  await assert.rejects(
+    forbidden.getOrdersMap(),
+    (error) => error instanceof ApiAuthorizationError
+      && error.kind === 'authorization'
+      && error.code === 'VIEW_AS_FORBIDDEN'
+      && error.status === 403
+      && !error.message.includes('line-token')
+  );
+
+  const failed = createApiClient({
+    env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+    authClient,
+    fetchImpl: async () => jsonResponse({ error: 'INTERNAL_SERVER_ERROR' }, 500)
+  });
+  await assert.rejects(
+    failed.getIdentity(),
+    (error) => error instanceof ApiBackendError
+      && error.code === 'API_HTTP_ERROR'
+      && error.status === 500
+  );
 });
 
 test('production auth client delegates to LIFF even when mock is requested', async () => {
