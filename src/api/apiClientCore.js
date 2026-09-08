@@ -9,7 +9,6 @@ import { API_TRANSPORTS, resolveApiTransportConfig } from './transportConfig.js'
 
 const WORKER_GAP_REASONS = Object.freeze({
   getBalanceHistory: 'Formal balance history exists, but its opening-policy boundary and response contract need a reviewed frontend adapter.',
-  getAdminSummary: 'Formal admin summary exists, but its GET/View As query contract is not yet wired to the current GAS-shaped caller.',
   toggleLike: 'Formal like mutation exists, but its idempotency-free toggle semantics and response contract need a reviewed frontend adapter.',
   submitOrder: 'Formal order mutation exists, but the current UI does not provide the formal idempotency-key contract.',
   cancelOrder: 'Formal order cancellation exists, but the current UI does not provide the formal idempotency-key contract.',
@@ -251,7 +250,12 @@ const createWorkerOperations = ({ workerRequest }) => ({
     { body: { pickupFloor } }
   ),
   getBalanceHistory: async () => contractGap('getBalanceHistory', 'ADAPTER_REQUIRED'),
-  getAdminSummary: async () => contractGap('getAdminSummary', 'ADAPTER_REQUIRED'),
+  getAdminSummary: ({ targetDate, includeMemberBalances = false, viewAsUserId } = {}) => workerRequest(
+    'getAdminSummary',
+    'GET',
+    '/api/admin/summary',
+    { query: { date: targetDate, includeMemberBalances, viewAs: viewAsUserId } }
+  ),
   getMemberBalances: () => workerRequest(
     'getMemberBalances',
     'GET',

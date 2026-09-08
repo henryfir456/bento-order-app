@@ -596,8 +596,8 @@ export default function App() {
     initLiffAndFetchData();
   }, []);
 
-  const loadAdminSummary = async (targetDate, targetUserId, shouldShowView) => {
-    if (!targetUserId || !targetDate) return;
+  const loadAdminSummary = async (targetDate, viewAsUserId = null, shouldShowView) => {
+    if (!authUserId || !targetDate) return;
 
     const requestId = ++adminSummaryRequestRef.current;
     if (shouldShowView) setViewMode('admin');
@@ -621,7 +621,8 @@ export default function App() {
       }
       const res = await apiClient.getAdminSummary({
         targetDate,
-        includeMemberBalances: false
+        includeMemberBalances: false,
+        viewAsUserId
       });
       const data = await res.json();
       if (requestId !== adminSummaryRequestRef.current) return;
@@ -1137,14 +1138,14 @@ export default function App() {
   const handleAdminDateChange = (dateStr) => {
     if (!dateStr || authState !== AUTH_STATES.REGISTERED || !authUserId || !can('viewAdminOrderSummary')) return;
     setSelectedOrderDate(dateStr);
-    loadAdminSummary(dateStr, authUserId, true);
+    loadAdminSummary(dateStr, viewAsUser?.userId || null, true);
   };
 
   const handleAdminSectionChange = (section) => {
     if (section === 'orders') {
       if (!can('viewAdminOrderSummary')) return;
       setAdminSection('orders');
-      loadAdminSummary(selectedOrderDate, authUserId, true);
+      loadAdminSummary(selectedOrderDate, viewAsUser?.userId || null, true);
       return;
     }
 
@@ -1182,7 +1183,7 @@ export default function App() {
     if (hasPermission(user.role, 'viewAdminOrderSummary')) {
       setAdminSection('orders');
       setViewMode('admin');
-      loadAdminSummary(selectedOrderDate, authUserId, true);
+      loadAdminSummary(selectedOrderDate, user.userId, true);
     } else {
       setAdminSection('orders');
       setViewMode('calendar');
@@ -1199,7 +1200,7 @@ export default function App() {
     setAdminSection('orders');
     if (hasPermission(authUser?.role, 'viewAdminOrderSummary')) {
       setViewMode('admin');
-      loadAdminSummary(selectedOrderDate, authUserId, true);
+      loadAdminSummary(selectedOrderDate, null, true);
     } else {
       setViewMode('calendar');
     }

@@ -2024,6 +2024,19 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
           newBalance: 15
         });
       }
+      if (pathname === '/api/admin/summary') {
+        return jsonResponse({
+          success: true,
+          requesterRole: 'Admin',
+          targetDate: new URL(url).searchParams.get('date'),
+          usersSummary: [],
+          todayOrders: [],
+          totalItems: 0,
+          totalAmount: 0,
+          items: [],
+          pickupSummary: {}
+        });
+      }
       return jsonResponse({ success: true });
     }
   });
@@ -2050,6 +2063,15 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     note: 'cash',
     idempotencyKey: 'top-up-1'
   });
+  const adminSummaryResponse = await worker.getAdminSummary({
+    targetDate: '2026-09-10',
+    includeMemberBalances: false
+  });
+  const viewAsSummaryResponse = await worker.getAdminSummary({
+    targetDate: '2026-09-10',
+    includeMemberBalances: false,
+    viewAsUserId: 'proxy-1'
+  });
 
   assert.deepEqual(await memberBalancesResponse.json(), {
     success: true,
@@ -2066,6 +2088,28 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     targetUserId: 'member-1',
     transactionId: 'txn-test',
     newBalance: 15
+  });
+  assert.deepEqual(await adminSummaryResponse.json(), {
+    success: true,
+    requesterRole: 'Admin',
+    targetDate: '2026-09-10',
+    usersSummary: [],
+    todayOrders: [],
+    totalItems: 0,
+    totalAmount: 0,
+    items: [],
+    pickupSummary: {}
+  });
+  assert.deepEqual(await viewAsSummaryResponse.json(), {
+    success: true,
+    requesterRole: 'Admin',
+    targetDate: '2026-09-10',
+    usersSummary: [],
+    todayOrders: [],
+    totalItems: 0,
+    totalAmount: 0,
+    items: [],
+    pickupSummary: {}
   });
 
   assert.deepEqual(workerCalls.map(({ url, options }) => [
@@ -2085,7 +2129,9 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     ['/api/me/pickup-floor', 'PATCH', 'Bearer line-token', JSON.stringify({ pickupFloor: '9樓' })],
     ['/api/admin/members/balances', 'GET', 'Bearer line-token', null],
     ['/api/admin/calendar/2026-09-10', 'PUT', 'Bearer line-token', JSON.stringify({ vendor: '禾拾', mode: 'B' })],
-    ['/api/admin/balances/top-up', 'POST', 'Bearer line-token', JSON.stringify({ targetUserId: 'member-1', amount: 25, note: 'cash' })]
+    ['/api/admin/balances/top-up', 'POST', 'Bearer line-token', JSON.stringify({ targetUserId: 'member-1', amount: 25, note: 'cash' })],
+    ['/api/admin/summary', 'GET', 'Bearer line-token', null],
+    ['/api/admin/summary', 'GET', 'Bearer line-token', null]
   ]);
   assert.equal(new URL(workerCalls[2].url).searchParams.get('bootId'), 'BOOT-20260908-test01');
   assert.equal(new URL(workerCalls[3].url).searchParams.get('bootId'), 'BOOT-20260908-test01');
@@ -2098,6 +2144,14 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   assert.equal(workerCalls[10].options.headers['Content-Type'], 'application/json');
   assert.equal(workerCalls[11].options.headers['Content-Type'], 'application/json');
   assert.equal(workerCalls[11].options.headers['Idempotency-Key'], 'top-up-1');
+  const normalSummaryUrl = new URL(workerCalls[12].url);
+  const viewAsSummaryUrl = new URL(workerCalls[13].url);
+  assert.equal(normalSummaryUrl.searchParams.get('date'), '2026-09-10');
+  assert.equal(normalSummaryUrl.searchParams.get('includeMemberBalances'), 'false');
+  assert.equal(normalSummaryUrl.searchParams.get('viewAs'), null);
+  assert.equal(viewAsSummaryUrl.searchParams.get('date'), '2026-09-10');
+  assert.equal(viewAsSummaryUrl.searchParams.get('includeMemberBalances'), 'false');
+  assert.equal(viewAsSummaryUrl.searchParams.get('viewAs'), 'proxy-1');
   assert.equal(gasCalls.length, 0);
 
   const unregisteredCalls = [];
@@ -2134,7 +2188,6 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
 
   for (const operation of [
     'getBalanceHistory',
-    'getAdminSummary',
     'toggleLike',
     'submitOrder',
     'cancelOrder'
@@ -2146,7 +2199,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
         && error.operation === operation
     );
   }
-  assert.equal(workerCalls.length, 12);
+  assert.equal(workerCalls.length, 14);
   assert.equal(gasCalls.length, 0);
 
   const gas = createApiClient({
@@ -2164,6 +2217,11 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   await gas.getMemberBalances();
   await gas.setCalendarVendor({ adminUserId: 'admin-id', dateStr: '2026-09-10', vendor: '禾拾' });
   await gas.topUpBalance({ adminUserId: 'admin-id', targetUserId: 'member-id', amount: 25, note: 'cash' });
+  await gas.getAdminSummary({
+    targetDate: '2026-09-10',
+    includeMemberBalances: false,
+    viewAsUserId: 'viewed-user'
+  });
   assert.deepEqual(gasCalls.slice(0, 2), [
     { method: 'POST', payload: { action: 'getUserInfo', accessToken: 'line-token' } },
     {
@@ -2202,7 +2260,16 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
       note: 'cash'
     }
   });
-  assert.equal(workerCalls.length, 12);
+  assert.deepEqual(gasCalls[6], {
+    method: 'POST',
+    payload: {
+      action: 'getAdminSummary',
+      accessToken: 'line-token',
+      targetDate: '2026-09-10',
+      includeMemberBalances: false
+    }
+  });
+  assert.equal(workerCalls.length, 14);
 
   const mockCalls = [];
   const mock = createApiClient({
@@ -2294,6 +2361,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   );
   for (const [operation, args] of [
     ['getMemberBalances', {}],
+    ['getAdminSummary', { targetDate: '2026-09-10', viewAsUserId: 'user-1' }],
     ['setCalendarVendor', { dateStr: '2026-09-10', vendor: '蔡老師' }],
     ['topUpBalance', {
       targetUserId: 'member-1',
