@@ -1,18 +1,18 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const migrationSql = readFileSync(
-  resolve(here, '../../migrations-formal/0000_formal_initial_schema.sql'),
-  'utf8'
-);
+const migrationSql = readdirSync(resolve(here, '../../migrations-formal'))
+  .filter((name) => name.endsWith('.sql'))
+  .sort()
+  .map((name) => readFileSync(resolve(here, '../../migrations-formal', name), 'utf8'));
 
 export class LocalFormalD1 {
   constructor(databasePath) {
     this.database = new DatabaseSync(databasePath);
-    this.database.exec(migrationSql);
+    migrationSql.forEach((sql) => this.database.exec(sql));
     this.batchQueue = Promise.resolve();
   }
 
@@ -50,4 +50,3 @@ export class LocalFormalD1 {
 }
 
 export const openLocalFormalDatabase = (databasePath) => new LocalFormalD1(databasePath);
-

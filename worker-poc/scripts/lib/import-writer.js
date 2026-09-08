@@ -97,6 +97,17 @@ export const stageImport = async (database, validation, { clock = new Date() } =
         line_user_id, display_name, pickup_floor, balance, role, created_at, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [row.lineUserId, row.displayName, row.pickupFloor, row.balance, row.role, occurredAt, occurredAt]));
+    statements.push(prepareStatement(database, `
+      INSERT OR IGNORE INTO opening_balance_snapshots (
+        line_user_id, snapshot_balance, source_batch_id, policy_status, created_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `, [
+      row.lineUserId,
+      row.balance,
+      validation.batchId,
+      row.balance === 0 ? 'NOT_REQUIRED' : 'REQUIRED',
+      occurredAt
+    ]));
   }
   for (const row of validation.accepted.Settings || []) {
     statements.push(prepareStatement(database, `

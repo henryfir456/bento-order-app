@@ -97,16 +97,26 @@ export const completeIdempotentOperation = (database, {
   if (!responseSpec?.trusted || typeof responseSpec.expression !== 'string') {
     throw new TypeError('A trusted stored response specification is required.');
   }
-  const guard = idempotencyGuard({
-    actorLineUserId, operation, idempotencyKey, requestHash, claimToken
-  });
   return prepareStatement(database, `
     UPDATE idempotency_keys
     SET status = 'COMPLETED',
         response_json = ${responseSpec.expression},
         completed_at = ?
-    WHERE ${guard.sql}
-  `, [...responseSpec.params, occurredAt, ...guard.params]);
+    WHERE actor_line_user_id = ?
+      AND operation = ?
+      AND idempotency_key = ?
+      AND request_hash = ?
+      AND claim_token = ?
+      AND status = 'IN_PROGRESS'
+  `, [
+    ...responseSpec.params,
+    occurredAt,
+    actorLineUserId,
+    operation,
+    idempotencyKey,
+    requestHash,
+    claimToken
+  ]);
 };
 
 export const readIdempotencyRecord = async (

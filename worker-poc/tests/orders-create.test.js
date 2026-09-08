@@ -149,6 +149,19 @@ test('replacement refunds the old order and charges the new order atomically', a
     FROM balance_ledger
     WHERE line_user_id = 'user-1'
   `).amount, -30);
+  const sequence = database.database.prepare(`
+    SELECT bl.type, bl.reference_id, bls.sequence_number
+    FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+    ORDER BY bls.sequence_number ASC
+  `).all();
+  assert.deepEqual(sequence.map((row) => [row.type, row.reference_id]), [
+    ['ORDER', first.body.orderId],
+    ['REFUND', first.body.orderId],
+    ['ORDER', second.body.orderId]
+  ]);
+  assert.equal(sequence[0].sequence_number < sequence[1].sequence_number, true);
+  assert.equal(sequence[1].sequence_number < sequence[2].sequence_number, true);
   assert.equal(database.get(`
     SELECT COUNT(*) AS count
     FROM order_status_history

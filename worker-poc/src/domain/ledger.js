@@ -16,6 +16,13 @@ const monthBounds = (month) => {
   return { month: `${match[1]}-${match[2]}`, start: start.toISOString(), end: end.toISOString() };
 };
 
+const openingBalanceSnapshot = (database, lineUserId) => database.prepare(`
+  SELECT snapshot_balance, policy_status
+  FROM opening_balance_snapshots
+  WHERE line_user_id = ?
+  LIMIT 1
+`).bind(lineUserId).first();
+
 const descriptionFor = (row) => row.note || row.type || 'BALANCE_CHANGE';
 
 export const isApprovedOpeningBalancePolicy = (policy) => Boolean(
@@ -40,7 +47,11 @@ export const assertOpeningBalancePolicy = (policy) => {
 export const getBalanceHistory = async (database, lineUserId, monthInput) => {
   const month = monthBounds(monthInput);
   const user = await getUserByLineId(database, lineUserId);
+  const snapshot = await openingBalanceSnapshot(database, lineUserId);
   if (!user) throw conflict('USER_NOT_FOUND');
+  if (snapshot?.policy_status === 'REQUIRED') {
+    throw conflict('OPENING_BALANCE_POLICY_REQUIRED');
+  }
 
   const allRows = await getLedgerRows(database, lineUserId);
   if (allRows.length === 0 && user.balance !== 0) {

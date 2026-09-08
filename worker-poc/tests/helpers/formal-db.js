@@ -1,18 +1,18 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
-const migrationSql = readFileSync(
-  join(here, '..', '..', 'migrations-formal', '0000_formal_initial_schema.sql'),
-  'utf8'
-);
+const migrationSql = readdirSync(join(here, '..', '..', 'migrations-formal'))
+  .filter((name) => name.endsWith('.sql'))
+  .sort()
+  .map((name) => readFileSync(join(here, '..', '..', 'migrations-formal', name), 'utf8'));
 
 export class SqliteD1 {
   constructor() {
     this.database = new DatabaseSync(':memory:');
-    this.database.exec(migrationSql);
+    migrationSql.forEach((sql) => this.database.exec(sql));
     this.batchQueue = Promise.resolve();
   }
 

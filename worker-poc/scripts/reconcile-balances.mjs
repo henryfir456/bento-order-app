@@ -8,18 +8,23 @@ export const reconcileBalances = async (database) => {
       (
         SELECT bl.balance_after
         FROM balance_ledger bl
+        JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
         WHERE bl.line_user_id = u.line_user_id
-        ORDER BY bl.occurred_at DESC, bl.transaction_id DESC
+        ORDER BY bls.sequence_number DESC
         LIMIT 1
       ) AS latest_ledger_balance,
       (
         SELECT bl.transaction_id
         FROM balance_ledger bl
+        JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
         WHERE bl.line_user_id = u.line_user_id
-        ORDER BY bl.occurred_at DESC, bl.transaction_id DESC
+        ORDER BY bls.sequence_number DESC
         LIMIT 1
-      ) AS latest_transaction_id
+      ) AS latest_transaction_id,
+      obs.snapshot_balance AS opening_balance_snapshot,
+      obs.policy_status AS opening_balance_policy_status
     FROM users u
+    LEFT JOIN opening_balance_snapshots obs ON obs.line_user_id = u.line_user_id
     ORDER BY u.line_user_id ASC
   `).all();
   const users = rowsFrom(result).map((row) => {
@@ -27,8 +32,10 @@ export const reconcileBalances = async (database) => {
     const hasLedger = row.latest_ledger_balance !== null && row.latest_ledger_balance !== undefined;
     const latestLedgerBalance = hasLedger ? Number(row.latest_ledger_balance) : null;
     const difference = hasLedger ? usersBalance - latestLedgerBalance : null;
+    const snapshotPolicyRequired = row.opening_balance_policy_status === 'REQUIRED';
     let status = 'CONSISTENT';
-    if (!hasLedger) status = usersBalance === 0 ? 'NO_LEDGER_EVIDENCE' : 'OPENING_BALANCE_POLICY_REQUIRED';
+    if (snapshotPolicyRequired) status = 'OPENING_BALANCE_POLICY_REQUIRED';
+    else if (!hasLedger) status = usersBalance === 0 ? 'NO_LEDGER_EVIDENCE' : 'OPENING_BALANCE_POLICY_REQUIRED';
     else if (difference !== 0) status = 'BALANCE_MISMATCH';
     return {
       lineUserId: row.line_user_id,
@@ -36,6 +43,11 @@ export const reconcileBalances = async (database) => {
       usersBalance,
       latestLedgerBalance,
       latestTransactionId: row.latest_transaction_id || null,
+      openingBalanceSnapshot: row.opening_balance_snapshot === null
+        || row.opening_balance_snapshot === undefined
+        ? null
+        : Number(row.opening_balance_snapshot),
+      openingBalancePolicyStatus: row.opening_balance_policy_status || null,
       difference,
       status,
       isConsistent: status === 'CONSISTENT'
@@ -57,4 +69,3 @@ export const reconcileBalances = async (database) => {
 };
 
 export const buildBalanceReconciliation = reconcileBalances;
-

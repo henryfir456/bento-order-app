@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const migrationPath = join(here, '..', 'migrations-formal', '0000_formal_initial_schema.sql');
-const migrationSql = readFileSync(migrationPath, 'utf8');
+const migrationDirectory = join(here, '..', 'migrations-formal');
+const migrationSql = readdirSync(migrationDirectory)
+  .filter((name) => name.endsWith('.sql'))
+  .sort()
+  .map((name) => readFileSync(join(migrationDirectory, name), 'utf8'));
 
 const openDatabase = () => {
   const database = new DatabaseSync(':memory:');
-  database.exec(migrationSql);
+  migrationSql.forEach((sql) => database.exec(sql));
   return database;
 };
 
@@ -46,9 +49,11 @@ test('formal migration creates every source-of-truth table', () => {
     'order_items',
     'order_status_history',
     'balance_ledger',
+    'balance_ledger_sequence',
     'idempotency_keys',
     'admin_audit_log',
-    'import_quarantine'
+    'import_quarantine',
+    'opening_balance_snapshots'
   ];
 
   const actual = tableNames(database);
@@ -180,7 +185,57 @@ test('foreign keys protect operational orders from orphan users', () => {
 
 test('formal migration is idempotent', () => {
   const database = new DatabaseSync(':memory:');
-  database.exec(migrationSql);
-  database.exec(migrationSql);
+  migrationSql.forEach((sql) => database.exec(sql));
+  migrationSql.forEach((sql) => database.exec(sql));
   assert.equal(tableNames(database).has('balance_ledger'), true);
+});
+
+test('formal migration assigns a committed sequence on ledger insertion', () => {
+  const database = openDatabase();
+  database.prepare(`
+    INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('sequence-user', 'Sequence User', '1樓', 0, 'User');
+  database.prepare(`
+    INSERT INTO balance_ledger (
+      transaction_id, line_user_id, amount, balance_after, type, reference_id
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `).run('sequence-assigned', 'sequence-user', 1, 1, 'TOPUP', 'audit-missing');
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count
+    FROM balance_ledger_sequence
+    WHERE transaction_id = ?
+  `).get('sequence-assigned').count, 1);
+});
+
+test('sequence migration backfills existing formal ledger rows without changing timestamps', () => {
+  const database = new DatabaseSync(':memory:');
+  database.exec(migrationSql[0]);
+  database.prepare(`
+    INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('backfill-user', 'Backfill User', '1樓', 0, 'User');
+  database.prepare(`
+    INSERT INTO balance_ledger (
+      transaction_id, line_user_id, amount, balance_after, type, reference_id, occurred_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'backfill-transaction',
+    'backfill-user',
+    1,
+    1,
+    'TOPUP',
+    'audit-backfill',
+    '2026-09-07T01:00:00.000Z'
+  );
+
+  database.exec(migrationSql[1]);
+  const row = database.prepare(`
+    SELECT bl.occurred_at, bls.sequence_number
+    FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+    WHERE bl.transaction_id = ?
+  `).get('backfill-transaction');
+  assert.equal(row.occurred_at, '2026-09-07T01:00:00.000Z');
+  assert.equal(row.sequence_number, 1);
 });

@@ -340,6 +340,19 @@ userId/displayName only after a successful response. See the
   or ADJUSTMENT rows under the approved Option 1 snapshot-only policy. A future
   cutover adjustment or verified-history promotion requires a separate policy.
 
+The formal migration chain also includes `balance_ledger_sequence`, a small
+append sequence keyed by transaction_id. `occurred_at` remains the business
+event timestamp and is not a commit-order key; an AFTER INSERT trigger assigns
+the sequence inside the same D1 batch and it is used for balance-chain
+ordering. Replacement mutations insert the REFUND row before the replacement
+ORDER row, so the trigger preserves that sequence.
+
+The chain includes `opening_balance_snapshots` for imported Users.balance
+values. It records the signed snapshot, source batch, and policy status
+separately from post-cutover ledger rows. A REQUIRED status remains a policy
+boundary after later TOPUP, ORDER, or REFUND mutations; it is not cleared by
+matching users.balance to the latest ledger balance.
+
 #### idempotency_keys
 
 - Composite unique key: actor_line_user_id, operation, idempotency_key.
@@ -379,7 +392,7 @@ each mutation:
 - cancel order: idempotency check -> verify actor/order/deadline/status ->
   refund -> mark cancelled -> append status and ledger -> complete idempotency;
 - top-up: authorization -> lock-equivalent serialized transaction -> update
-  balance -> append ledger and audit;
+  balance -> append ledger with its trigger-assigned sequence and audit;
 - registration, floor update, role update, vendor setting, and like toggle use
   their own atomic mutation boundaries.
 

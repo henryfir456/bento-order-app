@@ -205,24 +205,27 @@ export const getLedgerRows = async (database, lineUserId, { from, to } = {}) => 
            bl.type, bl.reference_id, bl.operator_line_user_id, bl.note,
            bl.occurred_at, bl.source_batch_id, o.order_date
     FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
     LEFT JOIN orders o ON o.order_id = bl.reference_id
       AND bl.type IN ('ORDER', 'REFUND')
     WHERE bl.line_user_id = ?
       AND (? IS NULL OR bl.occurred_at >= ?)
       AND (? IS NULL OR bl.occurred_at < ?)
-    ORDER BY bl.occurred_at ASC, bl.transaction_id ASC
+    ORDER BY bls.sequence_number ASC
   `).bind(lineUserId, from || null, from || null, to || null, to || null).all();
   return Array.isArray(result) ? result : (result?.results || []);
 };
 
 export const getLatestLedgerRow = async (database, lineUserId, before = null) => (
   database.prepare(`
-    SELECT transaction_id, line_user_id, amount, balance_after, type,
-           reference_id, operator_line_user_id, note, occurred_at, source_batch_id
-    FROM balance_ledger
-    WHERE line_user_id = ?
-      AND (? IS NULL OR occurred_at < ?)
-    ORDER BY occurred_at DESC, transaction_id DESC
+    SELECT bl.transaction_id, bl.line_user_id, bl.amount, bl.balance_after, bl.type,
+           bl.reference_id, bl.operator_line_user_id, bl.note, bl.occurred_at,
+           bl.source_batch_id
+    FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+    WHERE bl.line_user_id = ?
+      AND (? IS NULL OR bl.occurred_at < ?)
+    ORDER BY bls.sequence_number DESC
     LIMIT 1
   `).bind(lineUserId, before, before).first()
 );

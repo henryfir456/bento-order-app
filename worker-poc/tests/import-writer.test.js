@@ -36,6 +36,10 @@ test('stage mode writes only validated operational rows and quarantines orphans'
   assert.equal(database.get("SELECT COUNT(*) AS count FROM orders WHERE order_id = 'order-orphan'").count, 0);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM order_items').count, 1);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM opening_balance_snapshots').count, 2);
+  assert.equal(database.get(`
+    SELECT policy_status FROM opening_balance_snapshots WHERE line_user_id = 'user-1'
+  `).policy_status, 'REQUIRED');
   assert.equal(database.get('SELECT COUNT(*) AS count FROM import_quarantine').count, 2);
   assert.equal(database.get("SELECT status FROM import_batches WHERE source_hash = 'synthetic-source'").status, 'QUARANTINED');
   assert.equal(first.balanceReconciliation.openingBalancePolicyRequiredCount, 2);
