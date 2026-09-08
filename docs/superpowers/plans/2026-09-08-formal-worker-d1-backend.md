@@ -352,8 +352,10 @@ report paths remain ignored. No workbook cells were modified.
 - [x] Produce a counts-only reconciliation summary and verify ignored local
   artifacts contain no committed raw workbook rows or secrets.
 
-Current checkpoint: `C:\Users\SER\Desktop\AI\80_bento-order-app\gas\便當系統設定.xlsx`
-was not found, and no matching filename was found under `C:\Users\SER`.
+Current checkpoint: direct filesystem validation found
+`gas/便當系統設定.xlsx` and wrote the ignored local report. The report was
+reviewed through aggregate metadata only; no raw workbook rows were copied
+into tracked files.
 
 ## Wave 7 — backend gates and external evidence
 
@@ -361,10 +363,10 @@ was not found, and no matching filename was found under `C:\Users\SER`.
 
 **Files:** worker-poc/package.json, worker-poc/tests/, worker-poc/migrations-formal/.
 
-- [ ] Run the formal Worker test command from worker-poc/package.json.
-- [ ] Run local formal migration application against an empty D1 database.
-- [ ] Run schema, importer, auth, identity, permission, order, deadline, concurrency, ledger, admin, and reconciliation tests.
-- [ ] Run git diff --check and inspect the complete diff for accidental workbook, secret, or environment-file inclusion.
+- [x] Run the formal Worker test command from worker-poc/package.json.
+- [x] Run the formal migration against an empty in-memory D1-compatible database.
+- [x] Run schema, importer, auth, identity, permission, order, deadline, concurrency, ledger, admin, and reconciliation tests.
+- [x] Run git diff --check and inspect the complete diff for accidental workbook, secret, or environment-file inclusion.
 
 **Verification:** all Worker-specific automated tests exit zero and the diff contains only intended source, test, and documentation files.
 
@@ -372,11 +374,11 @@ was not found, and no matching filename was found under `C:\Users\SER`.
 
 **Files:** agent.yaml and repository source.
 
-- [ ] Run node --test tests/strict-identity-ledger.test.cjs.
-- [ ] Run npm run lint.
-- [ ] Run npm run build.
+- [x] Run node --test tests/strict-identity-ledger.test.cjs.
+- [x] Run npm run lint.
+- [x] Run npm run build.
 - [ ] Attribute any pre-existing failure to the baseline before changing unrelated code.
-- [ ] Report automated verification separately from manual and external verification.
+- [x] Report automated verification separately from manual and external verification.
 
 **Verification:** all required commands exit zero before a backend gate can be marked PASS.
 
