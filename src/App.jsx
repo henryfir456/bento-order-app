@@ -39,6 +39,13 @@ const logAuthDiagnostic = (message) => {
   }
 };
 
+const createClientRequestKey = (prefix) => {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return uuid
+    ? `${prefix}-${uuid}`
+    : `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
 const logPerformanceTiming = (label, startTime) => {
   if (!import.meta.env.DEV) return;
   const elapsedMs = getPerformanceNow() - startTime;
@@ -243,6 +250,7 @@ export default function App() {
   const [topupAmount, setTopupAmount] = useState('');
   const [topupNote, setTopupNote] = useState('現金收款');
   const [topupLoading, setTopupLoading] = useState(false);
+  const [topupIdempotencyKey, setTopupIdempotencyKey] = useState('');
 
   // Admin 管理月曆彈窗狀態
   const [adminManageMode, setAdminManageMode] = useState(false);
@@ -308,6 +316,7 @@ export default function App() {
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
+    setTopupIdempotencyKey('');
     setShowHistoryModal(false);
     setHistoryLoading(false);
     setHistoryList([]);
@@ -1259,6 +1268,7 @@ export default function App() {
     setSelectedTopupUser(user);
     setTopupAmount('');
     setTopupNote('現金收款');
+    setTopupIdempotencyKey(createClientRequestKey('topup'));
   };
 
   const handleTopupSubmit = async () => {
@@ -1267,18 +1277,29 @@ export default function App() {
 
     const amountText = String(topupAmount).trim();
     const amount = Number(amountText);
-    if (!amountText || !Number.isFinite(amount) || amount <= 0) {
-      await showPopup({ icon: 'warning', title: '金額不正確', text: '儲值金額必須大於 0。' });
+    const workerTopUp = apiClient.transport === 'worker';
+    const validAmount = workerTopUp
+      ? Number.isSafeInteger(amount) && amount > 0
+      : Number.isFinite(amount) && amount > 0;
+    if (!amountText || !validAmount) {
+      await showPopup({
+        icon: 'warning',
+        title: '金額不正確',
+        text: workerTopUp ? '儲值金額必須是大於 0 的整數。' : '儲值金額必須大於 0。'
+      });
       return;
     }
 
+    const requestKey = topupIdempotencyKey || createClientRequestKey('topup');
+    if (!topupIdempotencyKey) setTopupIdempotencyKey(requestKey);
     setTopupLoading(true);
     try {
       const res = await apiClient.topUpBalance({
         adminUserId: authUserId,
         targetUserId: selectedTopupUser.userId,
         amount,
-        note: topupNote.trim()
+        note: topupNote.trim(),
+        idempotencyKey: requestKey
       });
       const data = await res.json();
       if (!data.success) {
@@ -1296,6 +1317,7 @@ export default function App() {
         setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
       }
       setSelectedTopupUser(null);
+      setTopupIdempotencyKey('');
       await showPopup({ icon: 'success', title: '儲值成功', text: `${selectedTopupUser.name} 的餘額已更新。` });
       setMemberBalancesLoaded(false);
       await loadMemberBalances(true);
@@ -2033,8 +2055,8 @@ export default function App() {
                 <input
                   id="topup-amount"
                   type="number"
-                  min="0.01"
-                  step="any"
+                  min={apiClient.transport === 'worker' ? '1' : '0.01'}
+                  step={apiClient.transport === 'worker' ? '1' : 'any'}
                   inputMode="decimal"
                   value={topupAmount}
                   onChange={(e) => setTopupAmount(e.target.value)}

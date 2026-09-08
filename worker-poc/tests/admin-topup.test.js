@@ -79,6 +79,23 @@ test('top-up rejects changed idempotency payloads, non-admins, invalid amounts, 
   assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 125);
 });
 
+test('top-up rejects unauthenticated requests before any mutation', async () => {
+  const database = seedDatabase();
+  const response = await handleFormalRequest(
+    new Request('https://formal.test/api/admin/balances/top-up', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'unauthenticated-top-up' },
+      body: JSON.stringify({ targetUserId: 'user-1', amount: 25 })
+    }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token: 'admin-token', lineUserId: 'admin-1' }) }
+  );
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'AUTH_REQUIRED' });
+  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 100);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
+});
+
 test('serialized top-ups preserve every positive delta', async () => {
   const database = seedDatabase();
   const results = await Promise.all([

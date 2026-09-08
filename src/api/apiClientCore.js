@@ -10,12 +10,9 @@ import { API_TRANSPORTS, resolveApiTransportConfig } from './transportConfig.js'
 const WORKER_GAP_REASONS = Object.freeze({
   getBalanceHistory: 'Formal balance history exists, but its opening-policy boundary and response contract need a reviewed frontend adapter.',
   getAdminSummary: 'Formal admin summary exists, but its GET/View As query contract is not yet wired to the current GAS-shaped caller.',
-  getMemberBalances: 'Formal member balances exists, but its authorization and response contract need a reviewed frontend adapter.',
   toggleLike: 'Formal like mutation exists, but its idempotency-free toggle semantics and response contract need a reviewed frontend adapter.',
-  setCalendarVendor: 'Formal calendar mutation exists, but its PUT body and authorization contract need a reviewed frontend adapter.',
   submitOrder: 'Formal order mutation exists, but the current UI does not provide the formal idempotency-key contract.',
   cancelOrder: 'Formal order cancellation exists, but the current UI does not provide the formal idempotency-key contract.',
-  topUpBalance: 'Formal top-up exists, but the current UI does not provide the formal idempotency-key contract and response adapter.',
   assignRole: 'No current React caller or approved frontend adapter exists for formal role assignment.'
 });
 
@@ -41,16 +38,24 @@ const buildWorkerUrl = (baseUrl, path, query) => {
   return url.toString();
 };
 
+const calendarMode = (vendor, mode) => {
+  const explicitMode = String(mode || '').trim().toUpperCase();
+  if (explicitMode) return explicitMode;
+  const normalizedVendor = String(vendor || '').trim();
+  return normalizedVendor === '禾拾' || normalizedVendor === '合十' ? 'B' : 'A';
+};
+
 const createWorkerRequest = ({ baseUrl, authClient, fetchImpl }) => async (
   operation,
   method,
   path,
-  { query, body } = {}
+  { query, body, extraHeaders = {} } = {}
 ) => {
   const token = readToken(authClient, operation);
   const headers = {
     Accept: 'application/json',
-    Authorization: `Bearer ${token}`
+    Authorization: `Bearer ${token}`,
+    ...extraHeaders
   };
   const options = { method, headers };
   if (body !== undefined) {
@@ -247,12 +252,29 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   getBalanceHistory: async () => contractGap('getBalanceHistory', 'ADAPTER_REQUIRED'),
   getAdminSummary: async () => contractGap('getAdminSummary', 'ADAPTER_REQUIRED'),
-  getMemberBalances: async () => contractGap('getMemberBalances', 'ADAPTER_REQUIRED'),
+  getMemberBalances: () => workerRequest(
+    'getMemberBalances',
+    'GET',
+    '/api/admin/members/balances'
+  ),
   toggleLike: async () => contractGap('toggleLike', 'ADAPTER_REQUIRED'),
-  setCalendarVendor: async () => contractGap('setCalendarVendor', 'ADAPTER_REQUIRED'),
+  setCalendarVendor: ({ dateStr, vendor, mode } = {}) => workerRequest(
+    'setCalendarVendor',
+    'PUT',
+    `/api/admin/calendar/${encodeURIComponent(String(dateStr || '').trim())}`,
+    { body: { vendor, mode: calendarMode(vendor, mode) } }
+  ),
   submitOrder: async () => contractGap('submitOrder', 'ADAPTER_REQUIRED'),
   cancelOrder: async () => contractGap('cancelOrder', 'ADAPTER_REQUIRED'),
-  topUpBalance: async () => contractGap('topUpBalance', 'ADAPTER_REQUIRED')
+  topUpBalance: ({ targetUserId, amount, note, idempotencyKey } = {}) => workerRequest(
+    'topUpBalance',
+    'POST',
+    '/api/admin/balances/top-up',
+    {
+      extraHeaders: { 'Idempotency-Key': String(idempotencyKey || '').trim() },
+      body: { targetUserId, amount, note }
+    }
+  )
 });
 
 export const createApiClient = ({

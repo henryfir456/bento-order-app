@@ -52,3 +52,19 @@ test('admin calendar upsert requires explicit mode, preserves blank vendor, and 
   }, { token: 'proxy-token', lineUserId: 'proxy-1' });
   assert.equal(proxy.response.status, 403);
 });
+
+test('calendar setting rejects unauthenticated requests before any mutation', async () => {
+  const database = databaseWithActors();
+  const response = await handleFormalRequest(
+    new Request('https://formal.test/api/admin/calendar/2026-09-10', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ vendor: 'Vendor A', mode: 'A' })
+    }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token: 'admin-token', lineUserId: 'admin-1' }) }
+  );
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'AUTH_REQUIRED' });
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM calendar_settings').count, 0);
+});

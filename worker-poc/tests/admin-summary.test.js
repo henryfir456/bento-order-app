@@ -64,3 +64,42 @@ test('admin and proxy summary views aggregate active orders without leaking memb
   );
   assert.equal(user.response.status, 403);
 });
+
+test('member balances are Admin-only, token-derived, and mapped to public member rows', async () => {
+  const database = seedSummary();
+  const admin = await call(
+    database,
+    '/api/admin/members/balances',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(admin.response.status, 200);
+  assert.equal(admin.body.success, true);
+  assert.equal(admin.body.requesterRole, 'Admin');
+  assert.deepEqual(admin.body.members.map((member) => ({
+    userId: member.userId,
+    name: member.name,
+    floor: member.floor,
+    balance: member.balance,
+    role: member.role
+  })), [
+    { userId: 'user-1', name: 'User One', floor: '1樓', balance: 0, role: 'User' },
+    { userId: 'user-2', name: 'User Two', floor: '9樓', balance: 0, role: 'User' },
+    { userId: 'admin-1', name: 'admin-1', floor: '1樓', balance: 0, role: 'Admin' },
+    { userId: 'proxy-1', name: 'proxy-1', floor: '1樓', balance: 0, role: 'ProxyAdmin' }
+  ]);
+
+  const user = await call(
+    database,
+    '/api/admin/members/balances',
+    { token: 'user-token', lineUserId: 'user-1' }
+  );
+  assert.equal(user.response.status, 403);
+
+  const unauthenticatedResponse = await handleFormalRequest(
+    new Request('https://formal.test/api/admin/members/balances'),
+    { DB: database },
+    { fetchImpl: profileFetch({ token: 'admin-token', lineUserId: 'admin-1' }) }
+  );
+  assert.equal(unauthenticatedResponse.status, 401);
+  assert.deepEqual(await unauthenticatedResponse.json(), { error: 'AUTH_REQUIRED' });
+});

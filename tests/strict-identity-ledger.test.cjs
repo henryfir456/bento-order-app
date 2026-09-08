@@ -1811,6 +1811,13 @@ test('frontend separates auth/view-as identity, guards writes, and keeps date ch
   assert.match(viewAsSource, /返回 Admin/);
   assert.match(appSource, /apiClient\.getMemberBalances/);
   assert.match(appSource, /apiClient\.getAdminSummary/);
+  assert.match(appSource, /adminUserId: authUserId,[\s\S]*targetUserId: selectedTopupUser\.userId/);
+  assert.match(appSource, /topupIdempotencyKey/);
+  assert.match(appSource, /idempotencyKey: requestKey/);
+  assert.match(appSource, /const workerTopUp = apiClient\.transport === ['"]worker['"]/);
+  assert.match(appSource, /Number\.isSafeInteger\(amount\)/);
+  assert.match(appSource, /Number\.isFinite\(amount\)/);
+  assert.match(appSource, /min=\{apiClient\.transport === ['"]worker['"] \? ['"]1['"] : ['"]0\.01['"]\}/);
   assert.match(appSource, /includeMemberBalances: false/);
   assert.doesNotMatch(appSource, /adminSummary\.usersSummary\.map/);
   assert.match(appSource, /const guardWrite = async/);
@@ -1994,6 +2001,29 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     gasApi,
     fetchImpl: async (url, options) => {
       workerCalls.push({ url, options });
+      const pathname = new URL(url).pathname;
+      if (pathname === '/api/admin/members/balances') {
+        return jsonResponse({
+          success: true,
+          requesterRole: 'Admin',
+          members: [{ userId: 'member-1', name: 'Member', floor: '1樓', balance: -10, role: 'User' }]
+        });
+      }
+      if (pathname === '/api/admin/calendar/2026-09-10') {
+        return jsonResponse({
+          success: true,
+          setting: { order_date: '2026-09-10', vendor: '禾拾', mode: 'B' }
+        });
+      }
+      if (pathname === '/api/admin/balances/top-up') {
+        return jsonResponse({
+          success: true,
+          message: 'BALANCE_TOPPED_UP',
+          targetUserId: 'member-1',
+          transactionId: 'txn-test',
+          newBalance: 15
+        });
+      }
       return jsonResponse({ success: true });
     }
   });
@@ -2007,6 +2037,36 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   await worker.getOrdersMap({ userId: 'forged-user' });
   await worker.getOrderPage({ targetDate: '2026-09-08', userId: 'forged-user' });
   await worker.updatePickupFloor({ pickupFloor: '9樓' });
+  const memberBalancesResponse = await worker.getMemberBalances();
+  const calendarSettingResponse = await worker.setCalendarVendor({
+    adminUserId: 'forged-admin',
+    dateStr: '2026-09-10',
+    vendor: '禾拾'
+  });
+  const topUpResponse = await worker.topUpBalance({
+    adminUserId: 'forged-admin',
+    targetUserId: 'member-1',
+    amount: 25,
+    note: 'cash',
+    idempotencyKey: 'top-up-1'
+  });
+
+  assert.deepEqual(await memberBalancesResponse.json(), {
+    success: true,
+    requesterRole: 'Admin',
+    members: [{ userId: 'member-1', name: 'Member', floor: '1樓', balance: -10, role: 'User' }]
+  });
+  assert.deepEqual(await calendarSettingResponse.json(), {
+    success: true,
+    setting: { order_date: '2026-09-10', vendor: '禾拾', mode: 'B' }
+  });
+  assert.deepEqual(await topUpResponse.json(), {
+    success: true,
+    message: 'BALANCE_TOPPED_UP',
+    targetUserId: 'member-1',
+    transactionId: 'txn-test',
+    newBalance: 15
+  });
 
   assert.deepEqual(workerCalls.map(({ url, options }) => [
     new URL(url).pathname,
@@ -2022,7 +2082,10 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     ['/api/calendar', 'GET', 'Bearer line-token', null],
     ['/api/orders/map', 'GET', 'Bearer line-token', null],
     ['/api/order-page', 'GET', 'Bearer line-token', null],
-    ['/api/me/pickup-floor', 'PATCH', 'Bearer line-token', JSON.stringify({ pickupFloor: '9樓' })]
+    ['/api/me/pickup-floor', 'PATCH', 'Bearer line-token', JSON.stringify({ pickupFloor: '9樓' })],
+    ['/api/admin/members/balances', 'GET', 'Bearer line-token', null],
+    ['/api/admin/calendar/2026-09-10', 'PUT', 'Bearer line-token', JSON.stringify({ vendor: '禾拾', mode: 'B' })],
+    ['/api/admin/balances/top-up', 'POST', 'Bearer line-token', JSON.stringify({ targetUserId: 'member-1', amount: 25, note: 'cash' })]
   ]);
   assert.equal(new URL(workerCalls[2].url).searchParams.get('bootId'), 'BOOT-20260908-test01');
   assert.equal(new URL(workerCalls[3].url).searchParams.get('bootId'), 'BOOT-20260908-test01');
@@ -2032,6 +2095,9 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   assert.equal(new URL(workerCalls[7].url).searchParams.get('userId'), null);
   assert.equal(workerCalls[4].options.headers['Content-Type'], 'application/json');
   assert.equal(workerCalls[8].options.headers['Content-Type'], 'application/json');
+  assert.equal(workerCalls[10].options.headers['Content-Type'], 'application/json');
+  assert.equal(workerCalls[11].options.headers['Content-Type'], 'application/json');
+  assert.equal(workerCalls[11].options.headers['Idempotency-Key'], 'top-up-1');
   assert.equal(gasCalls.length, 0);
 
   const unregisteredCalls = [];
@@ -2069,12 +2135,9 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   for (const operation of [
     'getBalanceHistory',
     'getAdminSummary',
-    'getMemberBalances',
     'toggleLike',
-    'setCalendarVendor',
     'submitOrder',
-    'cancelOrder',
-    'topUpBalance'
+    'cancelOrder'
   ]) {
     await assert.rejects(
       worker[operation]({}),
@@ -2083,7 +2146,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
         && error.operation === operation
     );
   }
-  assert.equal(workerCalls.length, 9);
+  assert.equal(workerCalls.length, 12);
   assert.equal(gasCalls.length, 0);
 
   const gas = createApiClient({
@@ -2098,6 +2161,9 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   await gas.getIdentity();
   await gas.getBootstrap({ bootId: 'BOOT-20260908-test02' });
   await gas.getCalendar({ userId: 'user-id' });
+  await gas.getMemberBalances();
+  await gas.setCalendarVendor({ adminUserId: 'admin-id', dateStr: '2026-09-10', vendor: '禾拾' });
+  await gas.topUpBalance({ adminUserId: 'admin-id', targetUserId: 'member-id', amount: 25, note: 'cash' });
   assert.deepEqual(gasCalls.slice(0, 2), [
     { method: 'POST', payload: { action: 'getUserInfo', accessToken: 'line-token' } },
     {
@@ -2111,7 +2177,32 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     }
   ]);
   assert.match(gasCalls[2].query, /^\?action=getCalendarEvents&userId=user-id&t=\d+$/);
-  assert.equal(workerCalls.length, 9);
+  assert.deepEqual(gasCalls[3], {
+    method: 'POST',
+    payload: { action: 'getMemberBalances', accessToken: 'line-token' }
+  });
+  assert.deepEqual(gasCalls[4], {
+    method: 'POST',
+    payload: {
+      action: 'adminSetVendor',
+      accessToken: 'line-token',
+      adminUserId: 'admin-id',
+      dateStr: '2026-09-10',
+      vendor: '禾拾'
+    }
+  });
+  assert.deepEqual(gasCalls[5], {
+    method: 'POST',
+    payload: {
+      action: 'topUpBalance',
+      accessToken: 'line-token',
+      adminUserId: 'admin-id',
+      targetUserId: 'member-id',
+      amount: 25,
+      note: 'cash'
+    }
+  });
+  assert.equal(workerCalls.length, 12);
 
   const mockCalls = [];
   const mock = createApiClient({
@@ -2201,6 +2292,24 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
       && error.status === 403
       && !error.message.includes('line-token')
   );
+  for (const [operation, args] of [
+    ['getMemberBalances', {}],
+    ['setCalendarVendor', { dateStr: '2026-09-10', vendor: '蔡老師' }],
+    ['topUpBalance', {
+      targetUserId: 'member-1',
+      amount: 10,
+      note: 'cash',
+      idempotencyKey: 'forbidden-top-up'
+    }]
+  ]) {
+    await assert.rejects(
+      forbidden[operation](args),
+      (error) => error instanceof ApiAuthorizationError
+        && error.kind === 'authorization'
+        && error.code === 'VIEW_AS_FORBIDDEN'
+        && error.status === 403
+    );
+  }
 
   const failed = createApiClient({
     env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
