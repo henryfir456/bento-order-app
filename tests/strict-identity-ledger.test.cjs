@@ -2833,6 +2833,89 @@ test('frontend like adapter keeps authoritative state and rolls back optimistic 
   assert.match(appSource, /apiClient\.toggleLike\(\{ date: dateStr, userId: authUserId \}\)/);
 });
 
+test('Worker read adapters propagate View As only for the effective read subject', async () => {
+  const { createApiClient } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js')).href);
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
+  const authClient = { isMock: false, getAccessToken: () => 'line-token' };
+  const gasCalls = [];
+  const workerCalls = [];
+  const jsonResponse = (body = {}, status = 200) => new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const worker = createApiClient({
+    env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+    authClient,
+    gasApi: {
+      get: async () => { throw new Error('Worker mode must not call GAS.'); },
+      post: async () => { throw new Error('Worker mode must not call GAS.'); }
+    },
+    fetchImpl: async (url) => {
+      workerCalls.push(new URL(url));
+      return jsonResponse({ success: true, transactions: [], events: {}, ordersMap: {}, myOrder: null });
+    }
+  });
+
+  await worker.getCalendar({ userId: 'forged-user' });
+  await worker.getOrdersMap({ userId: 'forged-user' });
+  await worker.getOrderPage({ targetDate: '2026-09-10', userId: 'forged-user' });
+  await worker.getBalanceHistory({ year: 2026, month: 9, viewAsUserId: 'viewed-user' });
+  await worker.getCalendar({ viewAsUserId: 'viewed-user' });
+  await worker.getOrdersMap({ viewAsUserId: 'viewed-user' });
+  await worker.getOrderPage({ targetDate: '2026-09-10', viewAsUserId: 'viewed-user' });
+
+  assert.equal(workerCalls[0].searchParams.get('userId'), null);
+  assert.equal(workerCalls[0].searchParams.get('viewAs'), null);
+  assert.equal(workerCalls[1].searchParams.get('userId'), null);
+  assert.equal(workerCalls[1].searchParams.get('viewAs'), null);
+  assert.equal(workerCalls[2].searchParams.get('userId'), null);
+  assert.equal(workerCalls[2].searchParams.get('viewAs'), null);
+  assert.equal(workerCalls[3].searchParams.get('month'), '2026-09');
+  assert.equal(workerCalls[3].searchParams.get('viewAs'), 'viewed-user');
+  assert.equal(workerCalls[4].searchParams.get('viewAs'), 'viewed-user');
+  assert.equal(workerCalls[5].searchParams.get('viewAs'), 'viewed-user');
+  assert.equal(workerCalls[6].searchParams.get('targetDate'), '2026-09-10');
+  assert.equal(workerCalls[6].searchParams.get('viewAs'), 'viewed-user');
+
+  const gas = createApiClient({
+    env: { VITE_GAS_API_URL: 'https://gas.example.test/exec' },
+    authClient,
+    gasApi: {
+      get: async (query) => { gasCalls.push(['GET', query]); return jsonResponse({ success: true }); },
+      post: async (payload) => { gasCalls.push(['POST', payload]); return jsonResponse({ success: true }); }
+    }
+  });
+  await gas.getCalendar({ userId: 'gas-user' });
+  await gas.getOrdersMap({ userId: 'gas-user' });
+  await gas.getOrderPage({ userId: 'gas-user', targetDate: '2026-09-10' });
+  await gas.getBalanceHistory({ year: 2026, month: 9, viewAsUserId: 'ignored-view' });
+  assert.match(gasCalls[0][1], /userId=gas-user/);
+  assert.match(gasCalls[1][1], /userId=gas-user/);
+  assert.match(gasCalls[2][1], /userId=gas-user/);
+  assert.equal(gasCalls[3][1].viewAsUserId, undefined);
+
+  const unauthorized = createApiClient({
+    env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+    authClient,
+    fetchImpl: async () => jsonResponse({ error: 'VIEW_AS_FORBIDDEN' }, 403)
+  });
+  await assert.rejects(
+    unauthorized.getCalendar({ viewAsUserId: 'viewed-user' }),
+    (error) => error.kind === 'authorization'
+      && error.code === 'VIEW_AS_FORBIDDEN'
+      && error.status === 403
+  );
+
+  assert.match(appSource, /usingLegacyStartup = apiClient\.transport === ['"]gas['"] && identity\?\.code === ['"]INVALID_ACTION['"]/);
+  assert.match(appSource, /fetchCalendarEvents\(user\.userId, user\.userId\)/);
+  assert.match(appSource, /fetchUserAllOrders\(user\.userId, user\.userId\)/);
+  assert.match(appSource, /loadBalanceHistory\(currentMonth\.year, currentMonth\.month, viewAsUser\?\.userId \|\| null\)/);
+  assert.match(appSource, /loadBalanceHistory\(nextMonth\.year, nextMonth\.month, viewAsUser\?\.userId \|\| null\)/);
+  assert.match(appSource, /viewAsUserId: apiClient\.transport === ['"]worker['"] \? viewAsUser\?\.userId : null/);
+  assert.match(permissionsSource, /ProxyAdmin:[\s\S]*?viewMemberBalances: false[\s\S]*?topupMember: false/);
+});
+
 test('production auth client delegates to LIFF even when mock is requested', async () => {
   const { createAuthClient } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'auth', 'authClient.js')).href);
   const calls = [];

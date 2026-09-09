@@ -230,13 +230,23 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/register',
     { body: { pickupFloor } }
   ),
-  getCalendar: () => workerRequest('getCalendar', 'GET', '/api/calendar'),
-  getOrdersMap: () => workerRequest('getOrdersMap', 'GET', '/api/orders/map'),
-  getOrderPage: ({ targetDate } = {}) => workerRequest(
+  getCalendar: ({ viewAsUserId } = {}) => workerRequest(
+    'getCalendar',
+    'GET',
+    '/api/calendar',
+    { query: { viewAs: viewAsUserId } }
+  ),
+  getOrdersMap: ({ viewAsUserId } = {}) => workerRequest(
+    'getOrdersMap',
+    'GET',
+    '/api/orders/map',
+    { query: { viewAs: viewAsUserId } }
+  ),
+  getOrderPage: ({ targetDate, viewAsUserId } = {}) => workerRequest(
     'getOrderPage',
     'GET',
     '/api/order-page',
-    { query: { targetDate } }
+    { query: { targetDate, viewAs: viewAsUserId } }
   ),
   updatePickupFloor: ({ pickupFloor } = {}) => workerRequest(
     'updatePickupFloor',
@@ -244,11 +254,11 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/me/pickup-floor',
     { body: { pickupFloor } }
   ),
-  getBalanceHistory: ({ year, month } = {}) => workerRequest(
+  getBalanceHistory: ({ year, month, viewAsUserId } = {}) => workerRequest(
     'getBalanceHistory',
     'GET',
     '/api/me/balance/history',
-    { query: { month: balanceHistoryMonth(year, month) } }
+    { query: { month: balanceHistoryMonth(year, month), viewAs: viewAsUserId } }
   ),
   getAdminSummary: ({ targetDate, includeMemberBalances = false, viewAsUserId } = {}) => workerRequest(
     'getAdminSummary',

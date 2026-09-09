@@ -455,7 +455,7 @@ export default function App() {
       try {
         identity = await fetchBootstrapData(accessToken, bootId);
         bootTiming.backend(identity?.observability?.timing, identity?.bootId);
-        usingLegacyStartup = identity?.code === 'INVALID_ACTION';
+        usingLegacyStartup = apiClient.transport === 'gas' && identity?.code === 'INVALID_ACTION';
         if (usingLegacyStartup) {
           identity = await fetchUserInfo(accessToken);
         }
@@ -795,12 +795,15 @@ export default function App() {
     }
   };
 
-  const fetchCalendarEvents = async (uId) => {
+  const fetchCalendarEvents = async (uId, viewAsUserId = null) => {
     const targetId = uId || authUserId;
     if (!targetId) return;
     const requestStartTime = getPerformanceNow();
     try {
-      const res = await apiClient.getCalendar({ userId: targetId });
+      const res = await apiClient.getCalendar({
+        userId: targetId,
+        viewAsUserId: apiClient.transport === 'worker' ? viewAsUserId : null
+      });
       const data = await res.json();
       if (data.success) {
         setCalendarEvents(data.events || {});
@@ -819,11 +822,14 @@ export default function App() {
     }
   };
 
-  const fetchUserAllOrders = async (uId) => {
+  const fetchUserAllOrders = async (uId, viewAsUserId = null) => {
     if (!uId) return;
     const requestStartTime = getPerformanceNow();
     try {
-      const res = await apiClient.getOrdersMap({ userId: uId });
+      const res = await apiClient.getOrdersMap({
+        userId: uId,
+        viewAsUserId: apiClient.transport === 'worker' ? viewAsUserId : null
+      });
       const data = await res.json();
       if (data.success) {
         setUserOrdersMap(data.ordersMap || {});
@@ -835,7 +841,7 @@ export default function App() {
     }
   };
 
-  const loadBalanceHistory = async (year, month) => {
+  const loadBalanceHistory = async (year, month, viewAsUserId = null) => {
     if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
 
     const requestId = ++historyRequestRef.current;
@@ -850,7 +856,7 @@ export default function App() {
         setHistoryError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await apiClient.getBalanceHistory({ year, month });
+      const res = await apiClient.getBalanceHistory({ year, month, viewAsUserId });
       const data = await res.json();
       if (requestId !== historyRequestRef.current) return;
 
@@ -884,7 +890,7 @@ export default function App() {
     setSelectedYear(currentMonth.year);
     setSelectedMonth(currentMonth.month);
     setShowHistoryModal(true);
-    loadBalanceHistory(currentMonth.year, currentMonth.month);
+    loadBalanceHistory(currentMonth.year, currentMonth.month, viewAsUser?.userId || null);
   };
 
   const shiftHistoryMonth = (offset) => {
@@ -892,7 +898,7 @@ export default function App() {
     const nextMonth = shiftYearMonth(selectedYear, selectedMonth, offset);
     setSelectedYear(nextMonth.year);
     setSelectedMonth(nextMonth.month);
-    loadBalanceHistory(nextMonth.year, nextMonth.month);
+    loadBalanceHistory(nextMonth.year, nextMonth.month, viewAsUser?.userId || null);
   };
 
   const guardWrite = async (operation) => {
@@ -1011,7 +1017,11 @@ export default function App() {
     setHasExistingOrder(false);
 
     try {
-      const res = await apiClient.getOrderPage({ targetDate: dateStr, userId: authUserId });
+      const res = await apiClient.getOrderPage({
+        targetDate: dateStr,
+        userId: authUserId,
+        viewAsUserId: apiClient.transport === 'worker' ? viewAsUser?.userId : null
+      });
       const data = await res.json();
       if (data.success && data.myOrder && Array.isArray(data.myOrder.items)) {
         const workerOrderMode = apiClient.transport === 'worker';
@@ -1290,6 +1300,10 @@ export default function App() {
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
+    if (apiClient.transport === 'worker') {
+      void fetchCalendarEvents(user.userId, user.userId);
+      void fetchUserAllOrders(user.userId, user.userId);
+    }
     if (hasPermission(user.role, 'viewAdminOrderSummary')) {
       setAdminSection('orders');
       setViewMode('admin');
@@ -1307,6 +1321,10 @@ export default function App() {
     setSelectedTopupUser(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
+    if (apiClient.transport === 'worker') {
+      void fetchCalendarEvents(authUserId, null);
+      void fetchUserAllOrders(authUserId, null);
+    }
     setAdminSection('orders');
     if (hasPermission(authUser?.role, 'viewAdminOrderSummary')) {
       setViewMode('admin');
