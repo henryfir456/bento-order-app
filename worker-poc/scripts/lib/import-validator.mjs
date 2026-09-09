@@ -198,8 +198,20 @@ const validateLikes = (records, accepted, quarantine, userIds) => {
   }
 };
 
-const validateOrders = (records, accepted, quarantine, userIds) => {
+const validateOrders = (records, accepted, quarantine, userIds, exclusions, orderExclusions) => {
   for (const record of records) {
+    const exclusion = orderExclusions.get(record.orderId);
+    if (exclusion) {
+      const source = sourceOf(record);
+      exclusions.push({
+        entityType: 'Orders',
+        orderId: record.orderId,
+        sourceSheet: source.sheet,
+        sourceRow: source.row,
+        reason: exclusion.reason
+      });
+      continue;
+    }
     if (!hasText(record.lineUserId) || !userIds.has(record.lineUserId)) {
       addIssue(quarantine, 'Orders', record, REASON_CODES.ORPHAN_ORDER_USER, {
         lineUserId: record.lineUserId
@@ -270,10 +282,14 @@ const validateTopupHistory = (
   }
 };
 
-export const validateImport = (normalized, { ledgerPolicyApproved = false } = {}) => {
+export const validateImport = (
+  normalized,
+  { ledgerPolicyApproved = false, orderExclusions = new Map() } = {}
+) => {
   const accepted = emptyAccepted();
   const warnings = [];
   const quarantine = [];
+  const exclusions = [];
   const userIds = new Set();
 
   for (const issue of normalized?.shapeIssues || []) {
@@ -293,7 +309,7 @@ export const validateImport = (normalized, { ledgerPolicyApproved = false } = {}
   validateMenu(normalized?.Menu || [], accepted, quarantine, warnings);
   validateAnnouncements(normalized?.Announcements || [], accepted, quarantine);
   validateLikes(normalized?.Likes || [], accepted, quarantine, userIds);
-  validateOrders(normalized?.Orders || [], accepted, quarantine, userIds);
+  validateOrders(normalized?.Orders || [], accepted, quarantine, userIds, exclusions, orderExclusions);
   validateTopupHistory(
     normalized?.TopupHistory || [],
     accepted,
@@ -309,6 +325,7 @@ export const validateImport = (normalized, { ledgerPolicyApproved = false } = {}
     accepted,
     warnings,
     quarantine,
+    exclusions,
     summary: {
       sourceCounts: Object.fromEntries(ENTITY_NAMES.map((name) => [
         name,
@@ -320,6 +337,8 @@ export const validateImport = (normalized, { ledgerPolicyApproved = false } = {}
       ])),
       quarantineCount: quarantine.length,
       warningCount: warnings.length,
+      exclusionCount: exclusions.length,
+      excludedOrderIds: [...new Set(exclusions.map((item) => item.orderId))],
       quarantineByReason: countBy(quarantine, 'reasonCode'),
       warningByCode: countBy(warnings, 'code')
     }

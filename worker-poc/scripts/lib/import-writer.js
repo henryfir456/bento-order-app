@@ -12,7 +12,7 @@ const minTimestamp = (rows, field, fallback) => {
   return values[0] || fallback;
 };
 
-const groupOrders = (rows) => {
+export const groupOrders = (rows) => {
   const groups = new Map();
   for (const row of rows) {
     const current = groups.get(row.orderId) || {
@@ -31,7 +31,7 @@ const groupOrders = (rows) => {
   return [...groups.values()];
 };
 
-const menuItemFor = (menuRows, orderRow) => {
+export const menuItemFor = (menuRows, orderRow) => {
   const candidates = menuRows
     .filter((menu) => (
       menu.vendor === orderRow.vendor
@@ -74,7 +74,7 @@ const insertQuarantineStatements = (database, validation) => (
   ]))
 );
 
-export const stageImport = async (database, validation, { clock = new Date() } = {}) => {
+export const buildImportStatements = (database, validation, { clock = new Date() } = {}) => {
   if (!database || typeof database.batch !== 'function') {
     throw new ImportContractError('LOCAL_DATABASE_REQUIRED', 'Stage mode requires a local D1-compatible database.');
   }
@@ -233,6 +233,11 @@ export const stageImport = async (database, validation, { clock = new Date() } =
     WHERE batch_id = ?
   `, [validation.quarantine?.length ? 'QUARANTINED' : 'STAGED', occurredAt, validation.batchId]));
 
+  return { statements, occurredAt };
+};
+
+export const stageImport = async (database, validation, { clock = new Date() } = {}) => {
+  const { statements } = buildImportStatements(database, validation, { clock });
   await runMutationBatch(database, statements);
   const counts = {};
   for (const name of ['Users', 'Settings', 'Menu', 'Announcements', 'Likes', 'Orders']) {

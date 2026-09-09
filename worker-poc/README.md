@@ -85,8 +85,10 @@ npm.cmd run db:info
 npm.cmd run db:list
 ```
 
-Find the entry whose name is exactly `bento-poc` and copy its `uuid`/database
-ID into `database_id`. If Wrangler is not authenticated, use the interactive
+Find the entry whose name is exactly `bento-formal` and verify that its UUID is
+`e75bc185-afb5-4a5d-abc9-81bd79525cff`. The active formal config already
+contains this non-secret database ID; do not replace it with another resource.
+If Wrangler is not authenticated, use the interactive
 login command locally:
 
 ```powershell
@@ -127,11 +129,81 @@ They verify the four contract surfaces, required keys/types, nullable and
 empty behavior, ordering, stable errors, migration guards, and credential
 scans. They do not prove remote D1 contents or production traffic.
 
+## Formal production replacement import
+
+The formal replacement workflow treats `便當系統設定.xlsx` as the reviewed
+source of production business data. It preserves Wrangler's `d1_migrations`
+metadata, clears formal business and disposable runtime tables in foreign-key
+dependency order, inserts only accepted importer records, preserves
+quarantine rows and opening-balance policy statuses, and never fabricates
+historical ledger entries. The legacy `bento-api-poc-legacy` target remains
+local-only and is not part of this workflow.
+
+The current approved replacement explicitly excludes only
+`ORD-1788326205642` and `ORD-1788415593733` as disposable test data. Their
+source rows and authorization reason are recorded in the review artifact;
+there is no timestamp, prefix, or generic duplicate-order exclusion rule.
+
+Create a review artifact and SQL file without changing any database:
+
+```powershell
+npm.cmd run import:production:dry-run -- `
+  --input "..\gas\便當系統設定.xlsx" `
+  --output ".local-imports/bento-formal-replacement-review.json" `
+  --sql-output ".local-imports/bento-formal-replacement.sql" `
+  --target bento-formal `
+  --database-id e75bc185-afb5-4a5d-abc9-81bd79525cff `
+  --config wrangler.jsonc
+```
+
+The artifact records the target UUID, source SHA-256 fingerprint, importer
+version, accepted/quarantined/warning counts, preserved and cleared tables,
+expected post-import counts, and the exact later destructive command. Review
+the artifact before any replacement authorization.
+
+The future authorized remote command is:
+
+```powershell
+npm.cmd run import:production:replace -- `
+  --input "..\gas\便當系統設定.xlsx" `
+  --target bento-formal `
+  --database-id e75bc185-afb5-4a5d-abc9-81bd79525cff `
+  --reviewed-artifact ".local-imports/bento-formal-replacement-review.json" `
+  --sql-output ".local-imports/bento-formal-replacement.sql" `
+  --confirm-production-replace `
+  --remote `
+  --config wrangler.jsonc
+```
+
+This command is destructive remote D1 mutation and is not part of local
+verification. It performs a read-only duplicate-source preflight before
+submitting the reviewed multi-statement replacement SQL. The in-process local
+replacement uses D1 `batch()` atomicity; Wrangler's SQL execution path does
+not support SQL `BEGIN`/`COMMIT`, so remote execution must be followed by the
+read-only reconciliation checks below. It refuses the wrong
+target, wrong or missing UUID, missing confirmation, missing or mismatched
+review artifact, already-applied source fingerprint, accepted historical
+ledger rows, or an active config whose D1 binding does not match the expected
+formal UUID.
+
+For local destructive simulation, use the same reviewed SQL with Wrangler's
+local D1 target only:
+
+```powershell
+npm.cmd run db:migrations:local
+npm.cmd exec -- wrangler d1 execute bento-formal --local --file ".local-imports/bento-formal-replacement.sql" --yes
+```
+
+The local simulation must seed disposable rows first and verify that those
+rows disappear while `d1_migrations`, accepted workbook rows, quarantine
+records, negative balances, and opening-balance policy statuses remain
+correct.
+
 ## Formal remote migration and deployment
 
 Remote migration and deploy are external writes. Run them only after local
 Worker/parity tests and root verification pass, and only against the existing
-`bento-poc` resource:
+`bento-formal` resource:
 
 ```powershell
 npm.cmd run db:migrations:remote
