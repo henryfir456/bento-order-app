@@ -1970,8 +1970,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     ApiAuthenticationError,
     ApiAuthorizationError,
     ApiBackendError,
-    ApiConfigurationError,
-    ApiContractGapError
+    ApiConfigurationError
   } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiErrors.js')).href);
   const { resolveApiTransportConfig } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'transportConfig.js')).href);
 
@@ -2282,16 +2281,6 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   assert.deepEqual(unregisteredCalls.map(({ url }) => new URL(url).pathname), ['/api/me']);
   assert.equal(gasCalls.length, 0);
 
-  for (const operation of [
-    'toggleLike'
-  ]) {
-    await assert.rejects(
-      worker[operation]({}),
-      (error) => error instanceof ApiContractGapError
-        && error.code === 'ADAPTER_REQUIRED'
-        && error.operation === operation
-    );
-  }
   assert.equal(workerCalls.length, 16);
   assert.equal(gasCalls.length, 0);
 
@@ -2704,6 +2693,144 @@ test('frontend order idempotency keys are stable per action and block duplicate 
   assert.match(appSource, /menu_item_id: menuItem\.menu_item_id/);
   assert.match(appSource, /idempotencyKey: requestKey/);
   assert.match(appSource, /idempotencyKey: cancelRequestKey/);
+});
+
+test('Worker like adapter maps like and unlike responses without GAS fallback', async () => {
+  const { createApiClient } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js')).href);
+  const { ApiAuthenticationError, ApiAuthorizationError, ApiBackendError } = await import(
+    pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiErrors.js')).href
+  );
+  const jsonResponse = (body = {}, status = 200) => new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const calls = [];
+  const gasCalls = [];
+  const gasApi = {
+    get: async (query) => {
+      gasCalls.push({ method: 'GET', query });
+      return jsonResponse({ success: true });
+    },
+    post: async (payload) => {
+      gasCalls.push({ method: 'POST', payload });
+      return jsonResponse({ success: true });
+    }
+  };
+  const authClient = { getAccessToken: () => 'line-token' };
+  const responses = [
+    { success: true, isLiked: true, totalLikes: 3 },
+    { success: true, isLiked: false, totalLikes: 2 }
+  ];
+  const worker = createApiClient({
+    env: {
+      VITE_API_TRANSPORT: 'worker',
+      VITE_WORKER_API_URL: 'https://worker.example.test'
+    },
+    authClient,
+    gasApi,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse(responses.shift());
+    }
+  });
+
+  const liked = await worker.toggleLike({ date: '2026-09-08', userId: 'forged-user' });
+  const unliked = await worker.toggleLike({ date: '2026-09-08', userId: 'forged-user' });
+  assert.deepEqual(await liked.json(), { success: true, isLiked: true, totalLikes: 3 });
+  assert.deepEqual(await unliked.json(), { success: true, isLiked: false, totalLikes: 2 });
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.equal(new URL(call.url).pathname, '/api/calendar/2026-09-08/like');
+    assert.equal(call.options.method, 'POST');
+    assert.equal(call.options.headers.Authorization, 'Bearer line-token');
+    assert.equal(call.options.body, undefined);
+    assert.equal(new URL(call.url).search, '');
+  }
+  assert.equal(gasCalls.length, 0);
+
+  const gas = createApiClient({
+    env: { VITE_GAS_API_URL: 'https://gas.example.test/exec' },
+    authClient,
+    gasApi,
+    fetchImpl: () => {
+      throw new Error('GAS mode must not use Worker fetch.');
+    }
+  });
+  await gas.toggleLike({ date: '2026-09-08', userId: 'user-1' });
+  assert.deepEqual(gasCalls, [{
+    method: 'POST',
+    payload: {
+      action: 'toggleLike',
+      date: '2026-09-08',
+      accessToken: 'line-token',
+      userId: 'user-1'
+    }
+  }]);
+
+  const errors = [
+    [401, ApiAuthenticationError, 'API_AUTH_REJECTED'],
+    [403, ApiAuthorizationError, 'LIKE_FORBIDDEN'],
+    [500, ApiBackendError, 'LIKE_FAILED']
+  ];
+  for (const [status, ErrorType, code] of errors) {
+    const rejected = createApiClient({
+      env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+      authClient,
+      fetchImpl: async () => jsonResponse({ error: code }, status)
+    });
+    await assert.rejects(
+      () => rejected.toggleLike({ date: '2026-09-08', userId: 'forged-user' }),
+      (error) => error instanceof ErrorType
+        && error.operation === 'toggleLike'
+        && error.code === code
+        && error.status === status
+    );
+  }
+});
+
+test('frontend like adapter keeps authoritative state and rolls back optimistic failures', async () => {
+  const {
+    normalizeWorkerLikeResponse,
+    restoreCalendarEvent
+  } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'likeState.js')).href);
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const likeStateSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'likeState.js'), 'utf8');
+  assert.deepEqual(normalizeWorkerLikeResponse({ success: true, isLiked: true, totalLikes: 3 }), {
+    isLiked: true,
+    likeCount: 3
+  });
+  assert.deepEqual(normalizeWorkerLikeResponse({ success: true, isLiked: false, totalLikes: 0 }), {
+    isLiked: false,
+    likeCount: 0
+  });
+  for (const invalid of [
+    { success: true },
+    { success: true, isLiked: 'true', totalLikes: 1 },
+    { success: true, isLiked: true, totalLikes: null },
+    { success: true, isLiked: true, totalLikes: -1 },
+    { success: true, isLiked: true, totalLikes: 1.5 }
+  ]) {
+    assert.equal(normalizeWorkerLikeResponse(invalid), null);
+  }
+  const previousEvent = { order_date: '2026-09-08', isUserLiked: false, likeCount: 2 };
+  assert.deepEqual(
+    restoreCalendarEvent({ '2026-09-08': { isUserLiked: true, likeCount: 3 } }, '2026-09-08', previousEvent),
+    { '2026-09-08': previousEvent }
+  );
+  assert.deepEqual(
+    restoreCalendarEvent({ '2026-09-08': { isUserLiked: true, likeCount: 1 } }, '2026-09-08', undefined),
+    {}
+  );
+  assert.match(appSource, /const previousEvent = calendarEvents\[dateStr\]/);
+  assert.match(appSource, /rollbackOptimisticLike/);
+  assert.match(appSource, /normalizeWorkerLikeResponse/);
+  assert.match(appSource, /isUserLiked: authoritative\.isLiked/);
+  assert.match(appSource, /likeCount: authoritative\.likeCount/);
+  assert.match(likeStateSource, /Number\.isSafeInteger\(data\.totalLikes\)/);
+  assert.match(appSource, /likeMutationInFlightRef\.current/);
+  assert.match(appSource, /disabled=\{isViewAsMode \|\| likeMutationInFlight\}/);
+  assert.match(appSource, /apiClient\.transport === 'worker'/);
+  assert.match(appSource, /apiClient\.toggleLike\(\{ date: dateStr, userId: authUserId \}\)/);
 });
 
 test('production auth client delegates to LIFF even when mock is requested', async () => {

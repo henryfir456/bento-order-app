@@ -8,6 +8,7 @@ import {
   createClientRequestKey,
   getStableClientRequestKey
 } from './api/clientRequestKeys';
+import { normalizeWorkerLikeResponse, restoreCalendarEvent } from './api/likeState';
 import { authClient } from './auth/liffClient';
 import { hasPermission } from './auth/permissions';
 import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
@@ -234,6 +235,8 @@ export default function App() {
   const [showChangelogModal, setShowChangelogModal] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
   const [likesLoaded, setLikesLoaded] = useState(false);
+  const [likeMutationInFlight, setLikeMutationInFlight] = useState(false);
+  const likeMutationInFlightRef = useRef(false);
   const [announcementsLoaded, setAnnouncementsLoaded] = useState(false);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
@@ -325,6 +328,8 @@ export default function App() {
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
+    likeMutationInFlightRef.current = false;
+    setLikeMutationInFlight(false);
     setTopupIdempotencyKey('');
     setShowHistoryModal(false);
     setHistoryLoading(false);
@@ -907,32 +912,72 @@ export default function App() {
       return;
     }
     if (!likesLoaded) return;
-    if (!(await guardWrite('愛心投票'))) return;
+    const workerLikeMutation = apiClient.transport === 'worker';
+    if (workerLikeMutation && likeMutationInFlightRef.current) return;
+    if (workerLikeMutation) {
+      likeMutationInFlightRef.current = true;
+      setLikeMutationInFlight(true);
+    }
 
-    // 樂觀更新前端 UI
-    setCalendarEvents(prev => {
-      const current = prev[dateStr] || { likeCount: 0, isUserLiked: false };
-      const nextLiked = !current.isUserLiked;
-      const nextCount = nextLiked ? current.likeCount + 1 : Math.max(0, current.likeCount - 1);
-      return {
-        ...prev,
-        [dateStr]: {
-          ...current,
-          isUserLiked: nextLiked,
-          likeCount: nextCount
-        }
-      };
-    });
+    const previousEvent = calendarEvents[dateStr];
+    const rollbackOptimisticLike = () => {
+      setCalendarEvents(prev => restoreCalendarEvent(prev, dateStr, previousEvent));
+    };
 
     try {
+      if (!(await guardWrite('愛心投票'))) return;
+
+      // 樂觀更新前端 UI
+      setCalendarEvents(prev => {
+        const current = prev[dateStr] || { likeCount: 0, isUserLiked: false };
+        const nextLiked = !current.isUserLiked;
+        const nextCount = nextLiked ? current.likeCount + 1 : Math.max(0, current.likeCount - 1);
+        return {
+          ...prev,
+          [dateStr]: {
+            ...current,
+            isUserLiked: nextLiked,
+            likeCount: nextCount
+          }
+        };
+      });
+
       const res = await apiClient.toggleLike({ date: dateStr, userId: authUserId });
       const data = await res.json();
-      if (data.success) {
+      if (workerLikeMutation) {
+        const authoritative = normalizeWorkerLikeResponse(data);
+        if (!authoritative) {
+          rollbackOptimisticLike();
+          console.error("愛心回應格式錯誤", { code: 'LIKE_RESPONSE_INVALID' });
+          await fetchCalendarEvents();
+          return;
+        }
+        setCalendarEvents(prev => ({
+          ...prev,
+          [dateStr]: {
+            ...(prev[dateStr] || {}),
+            isUserLiked: authoritative.isLiked,
+            likeCount: authoritative.likeCount
+          }
+        }));
+        await fetchCalendarEvents(); // 刷新同步後端開團狀態
+      } else if (data.success) {
         fetchCalendarEvents(); // 刷新同步後端開團狀態
+      } else {
+        return;
       }
     } catch (err) {
+      if (workerLikeMutation) {
+        rollbackOptimisticLike();
+        await fetchCalendarEvents();
+      }
       console.error("按讚失敗", err);
-      fetchCalendarEvents(); // 失敗則還原
+      if (!workerLikeMutation) fetchCalendarEvents(); // 失敗則還原
+    } finally {
+      if (workerLikeMutation) {
+        likeMutationInFlightRef.current = false;
+        setLikeMutationInFlight(false);
+      }
     }
   };
 
@@ -1486,7 +1531,7 @@ export default function App() {
             {likesLoaded ? (
               <button
                 onClick={(e) => handleToggleLike(e, dateStr)}
-                disabled={isViewAsMode}
+                disabled={isViewAsMode || likeMutationInFlight}
                 className="flex items-center gap-0.5 text-xs focus:outline-none hover:scale-110 transition-transform disabled:cursor-not-allowed disabled:opacity-50"
                 title="點愛心開蔡老師團"
               >

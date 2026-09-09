@@ -78,7 +78,7 @@ Status meanings:
 | `getOrdersMap` | `GET getUserAllOrdersMap&userId=...` | `GET /api/orders/map` with Bearer token | SUPPORTED |
 | `getOrderPage` | `GET getOrderPageData&targetDate=...&userId=...` | `GET /api/order-page?targetDate=...` with Bearer token | SUPPORTED |
 | `updatePickupFloor` | `POST updateMyPickupFloor` | `PATCH /api/me/pickup-floor` with Bearer token and `{pickupFloor}` | SUPPORTED |
-| `toggleLike` | `POST toggleLike` with access token, date, and user ID | No reviewed formal Worker adapter for the current toggle request/response contract | ADAPTER_REQUIRED |
+| `toggleLike` | `POST toggleLike` with access token, date, and user ID | `POST /api/calendar/:date/like` with Bearer token; response maps `isLiked`/`totalLikes` to the existing like state | SUPPORTED |
 | `getBalanceHistory` | `POST getBalanceHistoryByMonth` | `GET /api/me/balance/history?month=YYYY-MM` | ADAPTER_REQUIRED: formal Option 1 policy-boundary errors and response shape must be surfaced deliberately |
 
 ### Order mutations

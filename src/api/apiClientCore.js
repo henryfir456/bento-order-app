@@ -2,16 +2,9 @@ import {
   ApiAuthenticationError,
   ApiAuthorizationError,
   ApiBackendError,
-  ApiConfigurationError,
-  ApiContractGapError
+  ApiConfigurationError
 } from './apiErrors.js';
 import { API_TRANSPORTS, resolveApiTransportConfig } from './transportConfig.js';
-
-const WORKER_GAP_REASONS = Object.freeze({
-  getBalanceHistory: 'Formal balance history exists, but its opening-policy boundary and response contract need a reviewed frontend adapter.',
-  toggleLike: 'Formal like mutation exists, but its idempotency-free toggle semantics and response contract need a reviewed frontend adapter.',
-  assignRole: 'No current React caller or approved frontend adapter exists for formal role assignment.'
-});
 
 const readToken = (authClient, operation) => {
   const token = authClient?.getAccessToken?.();
@@ -112,14 +105,6 @@ const createWorkerRequest = ({ baseUrl, authClient, fetchImpl }) => async (
     );
   }
   return response;
-};
-
-const contractGap = (operation, code = 'WORKER_CONTRACT_MISSING') => {
-  throw new ApiContractGapError(
-    code,
-    operation,
-    WORKER_GAP_REASONS[operation] || `No approved Worker adapter exists for ${operation}.`
-  );
 };
 
 const createGasOperations = ({ gasApi, authClient }) => ({
@@ -276,7 +261,11 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'GET',
     '/api/admin/members/balances'
   ),
-  toggleLike: async () => contractGap('toggleLike', 'ADAPTER_REQUIRED'),
+  toggleLike: ({ date } = {}) => workerRequest(
+    'toggleLike',
+    'POST',
+    `/api/calendar/${encodeURIComponent(String(date || '').trim())}/like`
+  ),
   setCalendarVendor: ({ dateStr, vendor, mode } = {}) => workerRequest(
     'setCalendarVendor',
     'PUT',
