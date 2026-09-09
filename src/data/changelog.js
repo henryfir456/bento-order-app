@@ -4,6 +4,28 @@ export const APP_VERSION = packageJson.version;
 
 export const CHANGELOG = [
   {
+    version: '0.9.0',
+    date: '2026-09-09',
+    changes: [
+      '改善頁首資訊與功能操作區的分層配置',
+      '送出訂單前新增訂單內容確認流程',
+      'ProxyAdmin 新增開團設定權限',
+      '月曆管理更名為開團'
+    ],
+    commits: []
+  },
+  {
+    version: '0.8.0',
+    date: '2026-09-09',
+    changes: [
+      '後端由 Google Apps Script 遷移至 Cloudflare Workers，正式資料遷移至 Cloudflare D1，GAS 保留作回滾傳輸',
+      '啟用 Worker bootstrap、訂單、開團、餘額與管理 API，完成 Admin View As 讀取傳遞，Worker 模式不再靜默回退至 GAS',
+      '新增正式環境替換匯入與驗證流程，完成生產 workbook 匯入與 reconciliation，保留 opening-balance policy 與 quarantine 語意，未捏造歷史 ledger',
+      'Bearer 身份由伺服器驗證、View As 授權由伺服器控管，正式 CORS 限制為 production Netlify origin'
+    ],
+    commits: ['3305217', '195a619', '4821970', '7317dc5', 'd145f16', '691cc59', 'de5f152', '2641c6d', '7fc7bee', '03f54c4']
+  },
+  {
     version: '0.7.1',
     date: '2026-09-04',
     changes: [

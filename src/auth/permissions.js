@@ -17,6 +17,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     viewAdminOrderSummary: true,
     viewAllOrders: true,
     viewOrderStatistics: true,
+    manageCalendar: true,
     viewMemberBalances: false,
     topupMember: false
   }),

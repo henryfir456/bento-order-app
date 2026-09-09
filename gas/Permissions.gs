@@ -17,6 +17,7 @@ const ROLE_PERMISSIONS = {
     viewAdminOrderSummary: true,
     viewAllOrders: true,
     viewOrderStatistics: true,
+    manageCalendar: true,
     viewMemberBalances: false,
     topupMember: false
   },

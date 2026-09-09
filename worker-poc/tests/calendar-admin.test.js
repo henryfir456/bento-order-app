@@ -48,9 +48,20 @@ test('admin calendar upsert requires explicit mode, preserves blank vendor, and 
   const proxy = await call(database, '/api/admin/calendar/2026-09-12', {
     method: 'PUT',
     token: 'proxy-token',
-    body: { vendor: 'Vendor A', mode: 'A' }
+    body: { vendor: 'Vendor A', mode: 'A', adminUserId: 'admin-1', role: 'Admin' }
   }, { token: 'proxy-token', lineUserId: 'proxy-1' });
-  assert.equal(proxy.response.status, 403);
+  assert.equal(proxy.response.status, 200);
+  assert.equal(proxy.body.setting.vendor, 'Vendor A');
+  assert.equal(database.get("SELECT actor_line_user_id FROM admin_audit_log WHERE action = 'CALENDAR_SETTING_UPDATED' ORDER BY rowid DESC LIMIT 1").actor_line_user_id, 'proxy-1');
+
+  const user = await call(database, '/api/admin/calendar/2026-09-13', {
+    method: 'PUT',
+    token: 'user-token',
+    body: { vendor: 'Vendor A', mode: 'A', adminUserId: 'admin-1', role: 'Admin' }
+  }, { token: 'user-token', lineUserId: 'user-1' });
+  assert.equal(user.response.status, 403);
+  assert.equal(database.get("SELECT COUNT(*) AS count FROM calendar_settings WHERE order_date = '2026-09-13'").count, 0);
+  assert.equal(database.get("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'CALENDAR_SETTING_UPDATED' AND actor_line_user_id = 'user-1'").count, 0);
 });
 
 test('calendar setting rejects unauthenticated requests before any mutation', async () => {

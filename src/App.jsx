@@ -22,6 +22,8 @@ import AnnouncementModal from './components/AnnouncementModal';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import OrderPage from './features/orders/OrderPage';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
+import OrderConfirmationModal from './features/orders/OrderConfirmationModal';
+import { buildOrderSubmission } from './features/orders/orderSubmission';
 import AdminOrderSummary from './features/admin/AdminOrderSummary';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
@@ -144,6 +146,15 @@ const showPopup = (options) => Swal.fire({
   ...options
 });
 
+const showToast = (options) => Swal.fire({
+  toast: true,
+  position: 'top-end',
+  showConfirmButton: false,
+  timer: 1800,
+  timerProgressBar: true,
+  ...options
+});
+
 const parseMenuItemName = (itemName = '') => {
   const fullName = String(itemName).trim();
   const match = fullName.match(/^(.*?)\s*(?:\(([^()]*)\)|（([^（）]*)）)\s*$/);
@@ -203,6 +214,7 @@ export default function App() {
   const [hasExistingOrder, setHasExistingOrder] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
   const orderSubmitRequestRef = useRef(null);
   const orderCancelRequestRef = useRef(null);
   const orderMutationInFlightRef = useRef(false);
@@ -294,6 +306,7 @@ export default function App() {
     setOrderItems({});
     setHasExistingOrder(false);
     setMessage('');
+    setShowOrderConfirmation(false);
     clearClientRequestKey(orderSubmitRequestRef);
     clearClientRequestKey(orderCancelRequestRef);
     orderMutationInFlightRef.current = false;
@@ -1098,41 +1111,41 @@ export default function App() {
 
   const handleSubmit = async () => {
     if (loading || orderMutationInFlightRef.current || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    if (!(await guardWrite('訂單送出'))) return;
+    if (isExpired) {
+      await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
+      return;
+    }
+    if (orderSubmission.items.length === 0) {
+      await showPopup({ icon: 'warning', title: '尚未選擇餐點', text: '請至少選擇一份便購' });
+      return;
+    }
+    setShowOrderConfirmation(true);
+  };
+
+  const handleConfirmSubmit = async () => {
+    if (!showOrderConfirmation || loading || orderMutationInFlightRef.current || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
     orderMutationInFlightRef.current = true;
     try {
       if (!(await guardWrite('訂單送出'))) return;
       if (isExpired) {
+        setShowOrderConfirmation(false);
         await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
         return;
       }
-
-      const workerOrderMutation = apiClient.transport === 'worker';
-      const items = Object.entries(orderItems)
-        .map(([item_id, quantity]) => {
-          const menuItem = menu.find(m => m.item_id === item_id);
-          return {
-            item_id,
-            ...(workerOrderMutation && menuItem?.menu_item_id
-              ? { menu_item_id: menuItem.menu_item_id }
-              : {}),
-            item_name: menuItem?.item_name || '',
-            quantity,
-            unit_price: menuItem?.price || 0
-          };
-        })
-        .filter(i => i.quantity > 0);
-
-      if (items.length === 0) {
+      if (orderSubmission.items.length === 0) {
+        setShowOrderConfirmation(false);
         await showPopup({ icon: 'warning', title: '尚未選擇餐點', text: '請至少選擇一份便購' });
         return;
       }
 
+      const workerOrderMutation = apiClient.transport === 'worker';
       const requestKey = workerOrderMutation
         ? getStableClientRequestKey(orderSubmitRequestRef, 'order', {
-          targetDate: selectedDate,
-          pickupFloor: floor,
-          items: items.map(({ item_id, quantity }) => ({ item_id, quantity })),
-          note: orderNote.trim()
+          targetDate: orderSubmission.targetDate,
+          pickupFloor: orderSubmission.pickupFloor,
+          items: orderSubmission.items.map(({ item_id, quantity }) => ({ item_id, quantity })),
+          note: orderSubmission.note.trim()
         })
         : null;
 
@@ -1140,15 +1153,16 @@ export default function App() {
       try {
         const res = await apiClient.submitOrder({
           userId: authUserId,
-          pickup_floor: floor,
-          target_date: selectedDate,
-          items,
-          note: orderNote,
+          pickup_floor: orderSubmission.pickupFloor,
+          target_date: orderSubmission.targetDate,
+          items: orderSubmission.items,
+          note: orderSubmission.note,
           ...(workerOrderMutation ? { idempotencyKey: requestKey } : {})
         });
         const data = await res.json();
         if (data.success) {
-          setMessage("✅ 訂單送出/扣款成功！");
+          setShowOrderConfirmation(false);
+          setMessage('✅ 下單成功');
           setHasExistingOrder(true);
           if (data.newBalance !== undefined) {
             setUserBalance(data.newBalance);
@@ -1156,17 +1170,21 @@ export default function App() {
           setActiveOrderId(data.orderId || '');
           clearClientRequestKey(orderSubmitRequestRef);
           clearClientRequestKey(orderCancelRequestRef);
-          fetchCalendarEvents();
-          fetchUserAllOrders(authUserId);
+          await Promise.all([
+            fetchCalendarEvents(authUserId),
+            fetchUserAllOrders(authUserId)
+          ]);
+          handleExitToCalendar();
+          void showToast({ icon: 'success', title: '下單成功' });
         } else {
-          setMessage("❌ " + data.message);
+          setMessage(`❌ ${data.message || '下單失敗'}`);
         }
       } catch (err) {
         setMessage(err?.code === 'IDEMPOTENCY_CONFLICT'
           ? '❌ 訂單內容已變更，請重新確認後再送出。'
           : err?.code === 'IDEMPOTENCY_IN_PROGRESS'
             ? '❌ 訂單仍在處理中，請稍候再試。'
-            : "❌ 網路連線失敗");
+            : '❌ 網路連線失敗');
       } finally {
         setLoading(false);
       }
@@ -1626,11 +1644,16 @@ export default function App() {
       });
   };
 
-  const totalCount = Object.values(orderItems).reduce((a, b) => a + b, 0);
-  const totalPrice = Object.entries(orderItems).reduce((sum, [id, qty]) => {
-    const item = menu.find(m => m.item_id === id);
-    return sum + (item ? item.price * qty : 0);
-  }, 0);
+  const workerOrderMutation = apiClient.transport === 'worker';
+  const orderSubmission = buildOrderSubmission({
+    menu,
+    orderItems,
+    selectedDate,
+    floor,
+    note: orderNote,
+    workerOrderMutation
+  });
+  const { totalCount, totalAmount } = orderSubmission;
 
   const groupedMenu = useMemo(() => {
     const groups = new Map();
@@ -1709,48 +1732,49 @@ export default function App() {
   const weekendEvents = renderWeekendEvents();
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#F7F5F0] pb-24 text-gray-800">
+    <div className="flex min-h-screen min-w-0 flex-col bg-[#F7F5F0] pb-24 text-gray-800">
       <header className="bg-[#2C4A3E] text-white p-4 shadow-md">
-        <div className="max-w-xl mx-auto flex justify-between items-center">
-          <div>
+        <div className="max-w-xl mx-auto min-w-0">
+          <div className="flex min-w-0 items-center">
             <h1 className="text-xl font-bold">蔬食便當預訂系統</h1>
-            <div className="mt-1 text-xs text-emerald-100 flex flex-wrap items-center gap-1.5">
-              <span>👤 {displayName}</span>
-              {effectiveUser && isRegistered && <span className="bg-emerald-800/80 px-1.5 py-0.5 rounded">{effectiveRole}</span>}
-              <DevAuthBadge mode={authClient.mode} mockUser={authClient.mockUser} />
-              {displayFloor && (isViewAsMode ? (
-                <span className="rounded px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
-                  {displayFloor}
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={handleOpenFloorModal}
-                  aria-label={`修改預設領取樓層，目前為 ${displayFloor}`}
-                  className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100 transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                >
-                  {displayFloor}
-                </button>
-              ))}
-            </div>
+          </div>
+          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-emerald-100">
+            <span>👤 {displayName}</span>
+            {effectiveUser && isRegistered && <span className="rounded bg-emerald-800/80 px-1.5 py-0.5">{effectiveRole}</span>}
+            <DevAuthBadge mode={authClient.mode} mockUser={authClient.mockUser} />
+            {displayFloor && (isViewAsMode ? (
+              <span className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
+                {displayFloor}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleOpenFloorModal}
+                aria-label={`修改預設領取樓層，目前為 ${displayFloor}`}
+                className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100 transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+              >
+                {displayFloor}
+              </button>
+            ))}
             {isRegistered && !isViewAsMode && can('viewOwnBalance') && (
               <button
+                type="button"
                 onClick={fetchBalanceHistory}
-                className="text-xs text-emerald-200 hover:underline flex items-center gap-1 mt-0.5 focus:outline-none"
+                className="inline-flex items-center gap-1 rounded text-xs text-emerald-200 hover:underline focus:outline-none"
               >
                 💰 餘額
-                <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${displayBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
+                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${displayBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
                   {formatBalanceAmount(displayBalance)}
                 </span>
               </button>
             )}
-            <ViewAsBanner
-              viewAsUser={isViewAsMode ? viewAsUser : null}
-              displayBalance={displayBalance}
-              onExit={handleExitViewAs}
-            />
           </div>
-          <div className="flex gap-2">
+          <ViewAsBanner
+            viewAsUser={isViewAsMode ? viewAsUser : null}
+            displayBalance={displayBalance}
+            onExit={handleExitViewAs}
+          />
+          <div aria-label="功能操作" className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
             {isRegistered && canAuth('viewAsUser') && !isViewAsMode && (
               <button
                 type="button"
@@ -1778,14 +1802,14 @@ export default function App() {
                 💰 餘額管理
               </button>
             )}
-            {isRegistered && can('manageCalendar') && viewMode === 'calendar' && (
+            {isRegistered && can('manageCalendar') && (
               <button
                 type="button"
                 onClick={adminManageMode ? handleToggleAdminManage : openAdminCalendar}
                 disabled={isViewAsMode}
                 className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${adminManageMode ? 'bg-rose-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
               >
-                {adminManageMode ? '🔒 離開管理' : '📅 月曆管理'}
+                {adminManageMode ? '🔒 離開開團' : '📅 開團'}
               </button>
             )}
             {isRegistered && viewMode !== 'calendar' && (
@@ -1984,7 +2008,7 @@ export default function App() {
               <div className="text-xs text-gray-500">
                 已選 <span className="font-bold bg-gray-100 px-1.5 py-0.5 rounded text-gray-800 border">{totalCount}</span> 份便購
               </div>
-              <div className="text-xl font-bold text-[#2C4A3E]">${totalPrice}</div>
+              <div className="text-xl font-bold text-[#2C4A3E]">${totalAmount}</div>
             </div>
             {!isExpired ? (
               <div className="flex gap-2">
@@ -2002,7 +2026,7 @@ export default function App() {
                   disabled={loading || totalCount === 0 || isViewAsMode}
                   className="bg-[#2C4A3E] text-white text-xs font-bold px-5 py-2.5 rounded-xl hover:bg-emerald-800 disabled:bg-gray-300 transition active:scale-95 shadow-sm"
                 >
-                  確認扣款送出
+                  送出訂單
                 </button>
               </div>
             ) : (
@@ -2301,6 +2325,14 @@ export default function App() {
         announcements={announcements}
         loading={!announcementsLoaded}
         onClose={() => setShowAnnouncementModal(false)}
+      />
+
+      <OrderConfirmationModal
+        open={showOrderConfirmation}
+        submission={orderSubmission}
+        loading={loading}
+        onCancel={() => setShowOrderConfirmation(false)}
+        onConfirm={handleConfirmSubmit}
       />
 
       <ImagePreviewModal

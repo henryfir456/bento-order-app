@@ -18,11 +18,14 @@ const identity = (role, lineUserId = 'user-1') => ({
 
 test('permission matrix preserves User, ProxyAdmin, and Admin boundaries', () => {
   assert.equal(can('User', ACTIONS.READ_SELF), true);
+  assert.equal(can('User', ACTIONS.ADMIN_CALENDAR), false);
   assert.equal(can('User', ACTIONS.READ_ADMIN_SUMMARY), false);
   assert.equal(can('ProxyAdmin', ACTIONS.READ_ADMIN_SUMMARY), true);
+  assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_CALENDAR), true);
   assert.equal(can('ProxyAdmin', ACTIONS.READ_MEMBER_BALANCES), false);
   assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_BALANCE), false);
   assert.equal(can('Admin', ACTIONS.READ_MEMBER_BALANCES), true);
+  assert.equal(can('Admin', ACTIONS.ADMIN_CALENDAR), true);
   assert.equal(can('Admin', ACTIONS.ADMIN_ROLE), true);
   assert.equal(can('Unknown', ACTIONS.READ_SELF), false);
 });

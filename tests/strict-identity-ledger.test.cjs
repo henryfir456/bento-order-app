@@ -1630,17 +1630,20 @@ test('central permission model keeps ProxyAdmin operational read access without 
   const gas = loadGas(new MockSpreadsheet({ Users: usersWithProxySheet() }));
 
   assert.equal(gas.hasPermission('User', 'orderOwn'), true);
+  assert.equal(gas.hasPermission('User', 'manageCalendar'), false);
   assert.equal(gas.hasPermission('User', 'viewMemberBalances'), false);
   assert.equal(gas.hasPermission('User', 'topupMember'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'viewAdminOrderSummary'), true);
   assert.equal(gas.hasPermission('ProxyAdmin', 'viewAllOrders'), true);
   assert.equal(gas.hasPermission('ProxyAdmin', 'viewOrderStatistics'), true);
+  assert.equal(gas.hasPermission('ProxyAdmin', 'manageCalendar'), true);
   assert.equal(gas.hasPermission('ProxyAdmin', 'viewMemberBalances'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'topupMember'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'manageUsers'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'manageRoles'), false);
   assert.equal(gas.hasPermission('ProxyAdmin', 'viewAsUser'), false);
   assert.equal(gas.hasPermission('Admin', 'viewAsUser'), true);
+  assert.equal(gas.hasPermission('Admin', 'manageCalendar'), true);
 });
 
 test('ProxyAdmin retains operations access but cannot read balances or top up', () => {
@@ -1843,16 +1846,27 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const changelogSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'data', 'changelog.js'), 'utf8');
   const modalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'Modal.jsx'), 'utf8');
   const orderSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderPage.jsx'), 'utf8');
+  const confirmationSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderConfirmationModal.jsx'), 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.7.1');
-  assert.equal(packageLock.version, '0.7.1');
-  assert.equal(packageLock.packages[''].version, '0.7.1');
+  assert.equal(packageJson.version, '0.9.0');
+  assert.equal(packageLock.version, '0.9.0');
+  assert.equal(packageLock.packages[''].version, '0.9.0');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /version: '0\.1\.0'/);
+  assert.match(changelogSource, /version: '0\.8\.0'/);
+  assert.match(changelogSource, /version: '0\.9\.0'/);
   assert.match(changelogSource, /version: '0\.7\.0'/);
-  assert.match(changelogSource, /version: '0\.7\.1'/);
+  assert.match(changelogSource, /3305217/);
+  assert.match(changelogSource, /de5f152/);
+  assert.match(changelogSource, /後端由 Google Apps Script 遷移至 Cloudflare Workers/);
+  assert.match(changelogSource, /送出訂單前新增訂單內容確認流程/);
+  assert.match(changelogSource, /ProxyAdmin 新增開團設定權限/);
+  assert.match(changelogSource, /月曆管理更名為開團/);
+  assert.match(changelogSource, /2641c6d/);
+  assert.match(changelogSource, /7fc7bee/);
+  assert.match(changelogSource, /03f54c4/);
   assert.match(changelogSource, /修正月份起始於週末時的月曆空白列/);
   assert.match(changelogSource, /優化頁尾資訊與作者標示/);
   assert.match(changelogSource, /公告詳情新增公告日期/);
@@ -1870,11 +1884,73 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   assert.match(appSource, /showFloorModal/);
   assert.match(appSource, /showChangelogModal/);
   assert.match(appSource, /imagePreview/);
+  assert.match(appSource, /OrderConfirmationModal/);
+  assert.match(appSource, /buildOrderSubmission/);
+  assert.match(appSource, /aria-label="功能操作"/);
+  assert.match(appSource, /💰 餘額/);
+  assert.match(appSource, /📅 開團/);
+  assert.match(appSource, /送出訂單/);
+  assert.doesNotMatch(appSource, /月曆管理/);
   assert.match(orderSource, /onImagePreview/);
   assert.match(orderSource, /w-20 h-20 sm:w-24 sm:h-24/);
   assert.match(orderSource, /aria-label/);
   assert.match(permissionsSource, /ProxyAdmin:[\s\S]*?viewMemberBalances: false[\s\S]*?topupMember: false/);
   assert.match(permissionsSource, /Admin:[\s\S]*?viewMemberBalances: true[\s\S]*?topupMember: true/);
+  assert.match(permissionsSource, /ProxyAdmin:[\s\S]*?manageCalendar: true/);
+
+  const submitHandler = appSource.match(/const handleSubmit = async \(\) => \{[\s\S]*?\n  \};/);
+  const confirmHandler = appSource.match(/const handleConfirmSubmit = async \(\) => \{[\s\S]*?\n  \};/);
+  assert.ok(submitHandler);
+  assert.ok(confirmHandler);
+  assert.match(submitHandler[0], /setShowOrderConfirmation\(true\)/);
+  assert.doesNotMatch(submitHandler[0], /submitOrder/);
+  assert.match(confirmHandler[0], /apiClient\.submitOrder/);
+  assert.match(confirmHandler[0], /idempotencyKey: requestKey/);
+  assert.match(confirmHandler[0], /setShowOrderConfirmation\(false\)/);
+  assert.match(appSource, /onConfirm=\{handleConfirmSubmit\}/);
+
+  assert.match(confirmationSource, /訂餐日期/);
+  assert.match(confirmationSource, /領取樓層/);
+  assert.match(confirmationSource, /submission\.items\.map/);
+  assert.match(confirmationSource, /item\.quantity/);
+  assert.match(confirmationSource, /item\.unit_price \* item\.quantity/);
+  assert.match(confirmationSource, /submission\.totalCount/);
+  assert.match(confirmationSource, /submission\.totalAmount/);
+  assert.match(confirmationSource, /無備註/);
+  assert.match(confirmationSource, /確認下單/);
+  assert.match(confirmationSource, /disabled=\{loading\}/);
+});
+
+test('order submission builder produces the shared confirmation and mutation payload', async () => {
+  const { buildOrderSubmission } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'features', 'orders', 'orderSubmission.js')).href);
+  const input = {
+    menu: [
+      { item_id: 'A01', menu_item_id: 'menu-A01', item_name: '小而美', price: 80 },
+      { item_id: 'A02', menu_item_id: 'menu-A02', item_name: '田園便當', price: 100 }
+    ],
+    orderItems: { A01: 2, A02: 1, EMPTY: 0 },
+    selectedDate: '2026-09-10',
+    floor: '9樓',
+    note: '少辣  '
+  };
+
+  const workerSubmission = buildOrderSubmission({ ...input, workerOrderMutation: true });
+  assert.deepEqual(workerSubmission, {
+    targetDate: '2026-09-10',
+    pickupFloor: '9樓',
+    items: [
+      { item_id: 'A01', menu_item_id: 'menu-A01', item_name: '小而美', quantity: 2, unit_price: 80 },
+      { item_id: 'A02', menu_item_id: 'menu-A02', item_name: '田園便當', quantity: 1, unit_price: 100 }
+    ],
+    note: '少辣  ',
+    totalCount: 3,
+    totalAmount: 260
+  });
+
+  const gasSubmission = buildOrderSubmission({ ...input, workerOrderMutation: false });
+  assert.equal(Object.hasOwn(gasSubmission.items[0], 'menu_item_id'), false);
+  assert.equal(gasSubmission.totalCount, workerSubmission.totalCount);
+  assert.equal(gasSubmission.totalAmount, workerSubmission.totalAmount);
 });
 
 test('month navigation crosses calendar year boundaries', async () => {
@@ -2690,7 +2766,6 @@ test('frontend order idempotency keys are stable per action and block duplicate 
   assert.match(appSource, /getStableClientRequestKey/);
   assert.match(appSource, /clearClientRequestKey/);
   assert.match(appSource, /item_id: item\.menu_item_id \|\| item\.item_id/);
-  assert.match(appSource, /menu_item_id: menuItem\.menu_item_id/);
   assert.match(appSource, /idempotencyKey: requestKey/);
   assert.match(appSource, /idempotencyKey: cancelRequestKey/);
 });
