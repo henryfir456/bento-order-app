@@ -9,7 +9,7 @@ import { HttpError, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
 
 export const handleFormalRequest = async (request, env, options = {}) => {
-  const corsResponse = (response) => applyCorsPolicy(response, request);
+  const corsResponse = (response) => applyCorsPolicy(response, request, env);
   if (request.method === 'OPTIONS') return corsResponse(emptyResponse());
   try {
     const meResponse = await handleMeRoute(request, env, options);
