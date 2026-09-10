@@ -2,7 +2,7 @@
 name: ap-verification-core
 description: Execute and report repository verification declared by agent.yaml, including evidence-based baseline attribution and a separate defect-first review handoff.
 metadata:
-  version: "0.3.0"
+  version: "0.4.0"
 ---
 
 # ap-verification-core
@@ -44,6 +44,36 @@ authorize mutation, deployment, commit, or push.
    verification output green.
 9. Do not deploy production, modify external services, commit, or push as
    part of verification.
+
+## Windows Android/Gradle process environment
+
+Before executing a declared verification command that invokes a Gradle
+Wrapper or other Gradle launcher on Windows, initialize the current
+PowerShell process/session as follows:
+
+```powershell
+if ([string]::IsNullOrWhiteSpace($env:GRADLE_USER_HOME)) {
+    if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        throw 'USERPROFILE must be set when GRADLE_USER_HOME is empty'
+    }
+    $env:GRADLE_USER_HOME = Join-Path $env:USERPROFILE '.gradle'
+}
+
+$gradleUserHome = $env:GRADLE_USER_HOME
+```
+
+If `GRADLE_USER_HOME` already contains a non-whitespace value, preserve it
+unchanged. Run the Gradle command in this same process/session so the
+process-level setting is inherited by the Wrapper. This does not modify
+the Windows User or Machine environment variables; do not call
+`[Environment]::SetEnvironmentVariable` for this setup.
+
+Do not use `C:.gradle`/`C:\.gradle` as a fallback, do not introduce or use a
+repo-local `.gradle-user` directory, and do not replace this policy with a
+`-g` argument pointing at another fallback path. Existing Gradle caches are
+not deleted or relocated by this setup. Record the final
+`GRADLE_USER_HOME` value and whether it was preserved or derived from
+`USERPROFILE` as verification evidence.
 
 ## Baseline attribution
 
