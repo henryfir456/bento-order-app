@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
+import { handleFormalRequest } from '../src/formalWorker.js';
 import {
   callOrderRoute,
   ORDER_DATE,
@@ -8,6 +9,7 @@ import {
   seedOrderDatabase,
   userProfile
 } from './helpers/order-fixtures.js';
+import { profileFetch } from './helpers/formal-fixtures.js';
 
 const create = (database, key) => callOrderRoute(
   database,
@@ -34,6 +36,70 @@ const cancel = (database, orderId, key, profile = userProfile(), now = ORDER_NOW
   },
   profile
 );
+
+const cancelWithEmptyBodyStream = async (
+  database,
+  orderId,
+  key,
+  profile = userProfile(),
+  now = ORDER_NOW
+) => {
+  const request = new Request(
+    `https://formal.test/api/orders/${encodeURIComponent(orderId)}/cancel`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${profile.token}`,
+        'Idempotency-Key': key
+      },
+      // Cloudflare can expose a zero-byte POST as a non-null body stream.
+      body: new Uint8Array()
+    }
+  );
+  const response = await handleFormalRequest(
+    request,
+    { DB: database },
+    { fetchImpl: profileFetch(profile), now }
+  );
+  return { response, body: await response.json() };
+};
+
+test('authenticated cancellation with no request bytes does not require JSON', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  const created = await create(database, 'cancel-no-body-create');
+  const cancelled = await cancelWithEmptyBodyStream(
+    database,
+    created.body.orderId,
+    'cancel-no-body'
+  );
+
+  assert.equal(cancelled.response.status, 200);
+  assert.equal(cancelled.body.success, true);
+  assert.equal(cancelled.body.orderId, created.body.orderId);
+});
+
+test('cancellation rejects a malformed encoded order id', async () => {
+  const result = await callOrderRoute(
+    seedOrderDatabase(),
+    '/api/orders/%E0%A4%A/cancel',
+    { method: 'POST', headers: { 'Idempotency-Key': 'cancel-invalid-id' } },
+    userProfile()
+  );
+
+  assert.equal(result.response.status, 400);
+  assert.equal(result.body.error, 'ORDER_ID_INVALID');
+});
+
+test('cancellation rejects an absent bearer token before mutation', async () => {
+  const response = await handleFormalRequest(
+    new Request('https://formal.test/api/orders/ORD-1/cancel', { method: 'POST' }),
+    { DB: seedOrderDatabase() },
+    { fetchImpl: profileFetch(), now: ORDER_NOW }
+  );
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'AUTH_REQUIRED' });
+});
 
 test('cancellation refunds the stored total and appends one status and ledger transition', async () => {
   const database = seedOrderDatabase({ balance: 100 });

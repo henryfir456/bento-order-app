@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed body-less Worker cancel POST parsing so `POST /api/orders/:orderId/cancel` no longer attempts to parse an absent JSON body.
+- Improved API error classification so business, authentication, and server errors are not reported as network failures.
+
+### Added
+
+- Added a cancel-order detail confirmation modal before submitting a cancellation.
+- Added a success confirmation before returning to the calendar after cancellation.
+
+### Changed
+
+- Prevented duplicate cancel submissions while a cancellation request is pending.
+- Refresh order, calendar, and balance state after a successful cancellation.
+
 ## [0.10.0] - 2026-09-10
 
 ### Added

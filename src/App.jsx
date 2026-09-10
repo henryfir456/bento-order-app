@@ -3,6 +3,7 @@ import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { formatDateInput, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
 import { apiClient } from './api/apiClient';
+import { getApiErrorPresentation } from './api/apiErrors';
 import {
   clearClientRequestKey,
   createClientRequestKey,
@@ -12,7 +13,7 @@ import { normalizeWorkerLikeResponse, restoreCalendarEvent } from './api/likeSta
 import { authClient } from './auth/liffClient';
 import { hasPermission } from './auth/permissions';
 import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
-import { APP_VERSION, CHANGELOG } from './data/changelog';
+import { APP_VERSION, UI_CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
 import PickupFloorModal from './components/PickupFloorModal';
 import ViewAsBanner from './components/ViewAsBanner';
@@ -23,7 +24,10 @@ import CalendarManagement from './features/calendar/CalendarManagement';
 import OrderPage from './features/orders/OrderPage';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
 import OrderConfirmationModal from './features/orders/OrderConfirmationModal';
-import { buildOrderSubmission } from './features/orders/orderSubmission';
+import {
+  buildExistingOrderSubmission,
+  buildOrderSubmission
+} from './features/orders/orderSubmission';
 import AdminOrderSummary from './features/admin/AdminOrderSummary';
 import AnnouncementManagement from './features/admin/AnnouncementManagement';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
@@ -212,10 +216,13 @@ export default function App() {
   const [floor, setFloor] = useState('1樓');
   const [orderNote, setOrderNote] = useState('');
   const [orderItems, setOrderItems] = useState({});
+  const [activeOrderSnapshot, setActiveOrderSnapshot] = useState(null);
   const [hasExistingOrder, setHasExistingOrder] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
+  const [showCancelConfirmation, setShowCancelConfirmation] = useState(false);
+  const [cancelError, setCancelError] = useState('');
   const orderSubmitRequestRef = useRef(null);
   const orderCancelRequestRef = useRef(null);
   const orderMutationInFlightRef = useRef(false);
@@ -311,9 +318,12 @@ export default function App() {
     setMenu([]);
     setImageLoadErrors({});
     setOrderItems({});
+    setActiveOrderSnapshot(null);
     setHasExistingOrder(false);
     setMessage('');
     setShowOrderConfirmation(false);
+    setShowCancelConfirmation(false);
+    setCancelError('');
     clearClientRequestKey(orderSubmitRequestRef);
     clearClientRequestKey(orderCancelRequestRef);
     orderMutationInFlightRef.current = false;
@@ -885,7 +895,7 @@ export default function App() {
 
   const fetchCalendarEvents = async (uId, viewAsUserId = null) => {
     const targetId = uId || authUserId;
-    if (!targetId) return;
+    if (!targetId) return false;
     const requestStartTime = getPerformanceNow();
     try {
       const res = await apiClient.getCalendar({
@@ -902,16 +912,19 @@ export default function App() {
           : (data.announcement ? [data.announcement] : []);
         setAnnouncements(nextAnnouncements);
         setAnnouncementsLoaded(true);
+        return true;
       }
+      return false;
     } catch (err) {
       console.error("無法讀取月曆資料", err);
+      return false;
     } finally {
       logPerformanceTiming('CALENDAR', requestStartTime);
     }
   };
 
   const fetchUserAllOrders = async (uId, viewAsUserId = null) => {
-    if (!uId) return;
+    if (!uId) return false;
     const requestStartTime = getPerformanceNow();
     try {
       const res = await apiClient.getOrdersMap({
@@ -921,9 +934,12 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         setUserOrdersMap(data.ordersMap || {});
+        return true;
       }
+      return false;
     } catch (err) {
       console.error("讀取個人訂單圖譜失敗", err);
+      return false;
     } finally {
       logPerformanceTiming('ORDERS_MAP', requestStartTime);
     }
@@ -1099,8 +1115,11 @@ export default function App() {
     clearClientRequestKey(orderCancelRequestRef);
     setLoading(true);
     setMessage('');
+    setShowCancelConfirmation(false);
+    setCancelError('');
     setOrderNote('');
     setOrderItems({});
+    setActiveOrderSnapshot(null);
     setActiveOrderId('');
     setHasExistingOrder(false);
 
@@ -1126,6 +1145,12 @@ export default function App() {
         setMenu(workerOrderMode ? normalizeWorkerOrderMenu(data.menu) : data.menu);
         setImageLoadErrors({});
         setOrderItems(orderMap);
+        setActiveOrderSnapshot(buildExistingOrderSubmission({
+          order: data.myOrder,
+          selectedDate: dateStr,
+          vendor: data.setting?.vendor || '',
+          fallbackFloor: defaultFloor || authUser?.defaultFloor || authUser?.floor || floor
+        }));
         setActiveOrderId(data.myOrder.orderId || '');
         setHasExistingOrder(data.myOrder.items.length > 0);
         setOrderNote(data.myOrder.note || '');
@@ -1255,11 +1280,7 @@ export default function App() {
           setMessage(`❌ ${data.message || '下單失敗'}`);
         }
       } catch (err) {
-        setMessage(err?.code === 'IDEMPOTENCY_CONFLICT'
-          ? '❌ 訂單內容已變更，請重新確認後再送出。'
-          : err?.code === 'IDEMPOTENCY_IN_PROGRESS'
-            ? '❌ 訂單仍在處理中，請稍候再試。'
-            : '❌ 網路連線失敗');
+        setMessage(`❌ ${getApiErrorPresentation(err, '送出訂單').message}`);
       } finally {
         setLoading(false);
       }
@@ -1269,27 +1290,42 @@ export default function App() {
   };
 
   const handleCancelOrder = async () => {
-    if (loading || orderMutationInFlightRef.current || authState !== AUTH_STATES.REGISTERED || !activeOrderId || !authUserId) return;
+    if (
+      loading
+      || showCancelConfirmation
+      || orderMutationInFlightRef.current
+      || authState !== AUTH_STATES.REGISTERED
+      || !activeOrderId
+      || !authUserId
+    ) return;
+    if (!(await guardWrite('取消訂單'))) return;
+    if (isExpired) {
+      await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
+      return;
+    }
+    setCancelError('');
+    setShowCancelConfirmation(true);
+  };
+
+  const handleConfirmCancel = async () => {
+    if (
+      !showCancelConfirmation
+      || loading
+      || orderMutationInFlightRef.current
+      || authState !== AUTH_STATES.REGISTERED
+      || !activeOrderId
+      || !authUserId
+    ) return;
     orderMutationInFlightRef.current = true;
     try {
       if (!(await guardWrite('取消訂單'))) return;
       if (isExpired) {
+        setShowCancelConfirmation(false);
         await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
         return;
       }
-      const orderId = activeOrderId;
-      const result = await showPopup({
-        icon: 'question',
-        title: '確認取消訂單？',
-        text: `取消 ${selectedDate} 後將自動辦理退款。`,
-        showCancelButton: true,
-        confirmButtonText: '確定取消',
-        cancelButtonText: '返回',
-        cancelButtonColor: '#9CA3AF',
-        reverseButtons: true
-      });
-      if (!result.isConfirmed) return;
 
+      const orderId = activeOrderId;
       const workerOrderMutation = apiClient.transport === 'worker';
       const cancelRequestKey = workerOrderMutation
         ? getStableClientRequestKey(orderCancelRequestRef, 'cancel', {
@@ -1298,6 +1334,7 @@ export default function App() {
         })
         : null;
 
+      setCancelError('');
       setLoading(true);
       try {
         const res = await apiClient.cancelOrder({
@@ -1307,27 +1344,37 @@ export default function App() {
           ...(workerOrderMutation ? { idempotencyKey: cancelRequestKey } : {})
         });
         const data = await res.json();
-        if (data.success) {
-          setMessage("✅ 訂單已取消並完成退款");
-          setOrderItems({});
-          setActiveOrderId('');
-          setHasExistingOrder(false);
-          if (data.newBalance !== undefined && data.newBalance !== null) {
-            setUserBalance(data.newBalance);
-          }
-          clearClientRequestKey(orderCancelRequestRef);
-          clearClientRequestKey(orderSubmitRequestRef);
-          fetchCalendarEvents();
-          fetchUserAllOrders(authUserId);
-        } else {
-          setMessage("❌ " + (data.message || "取消失敗"));
+        if (!data.success) {
+          setCancelError(getApiErrorPresentation({
+            kind: 'business',
+            code: data.error || data.code || data.message,
+            status: res.status
+          }, '取消訂單').message);
+          return;
         }
+
+        if (data.newBalance !== undefined && data.newBalance !== null) {
+          setUserBalance(data.newBalance);
+          setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
+        }
+        const [calendarRefreshed, ordersRefreshed] = await Promise.all([
+          fetchCalendarEvents(authUserId),
+          fetchUserAllOrders(authUserId)
+        ]);
+        if (!calendarRefreshed || !ordersRefreshed) {
+          setCancelError('取消訂單已完成，但最新資料更新失敗，請稍後重試。');
+          return;
+        }
+
+        setShowCancelConfirmation(false);
+        await showPopup({
+          icon: 'success',
+          title: '取消訂單完成',
+          text: '訂單已取消並完成退款。'
+        });
+        handleExitToCalendar();
       } catch (err) {
-        setMessage(err?.code === 'IDEMPOTENCY_CONFLICT'
-          ? '❌ 取消請求內容已變更，請重新確認後再試。'
-          : err?.code === 'IDEMPOTENCY_IN_PROGRESS'
-            ? '❌ 取消仍在處理中，請稍候再試。'
-            : "❌ 網路連線失敗");
+        setCancelError(getApiErrorPresentation(err, '取消訂單').message);
       } finally {
         setLoading(false);
       }
@@ -1340,9 +1387,12 @@ export default function App() {
     setSelectedDate(null);
     setActiveOrderId('');
     setOrderItems({});
+    setActiveOrderSnapshot(null);
     setOrderNote('');
     setMessage('');
     setHasExistingOrder(false);
+    setShowCancelConfirmation(false);
+    setCancelError('');
     clearClientRequestKey(orderSubmitRequestRef);
     clearClientRequestKey(orderCancelRequestRef);
     setViewMode('calendar');
@@ -1732,6 +1782,7 @@ export default function App() {
     menu,
     orderItems,
     selectedDate,
+    vendor: setting?.vendor || '',
     floor,
     note: orderNote,
     workerOrderMutation
@@ -2122,7 +2173,7 @@ export default function App() {
                 {hasExistingOrder && (
                   <button
                     onClick={handleCancelOrder}
-                    disabled={loading || !activeOrderId || isViewAsMode}
+                    disabled={loading || showCancelConfirmation || !activeOrderId || isViewAsMode}
                     className="bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl disabled:bg-gray-300 transition active:scale-95 shadow-sm"
                   >
                     取消訂餐
@@ -2423,7 +2474,7 @@ export default function App() {
       <ChangelogModal
         open={showChangelogModal}
         version={APP_VERSION}
-        changelog={CHANGELOG}
+        changelog={UI_CHANGELOG}
         onClose={() => setShowChangelogModal(false)}
       />
 
@@ -2440,6 +2491,24 @@ export default function App() {
         loading={loading}
         onCancel={() => setShowOrderConfirmation(false)}
         onConfirm={handleConfirmSubmit}
+      />
+
+      <OrderConfirmationModal
+        open={showCancelConfirmation}
+        submission={activeOrderSnapshot || orderSubmission}
+        loading={loading}
+        title="確認取消訂單"
+        cancelLabel="返回"
+        confirmLabel="確認取消"
+        loadingLabel="取消中..."
+        error={cancelError}
+        onCancel={() => {
+          if (!loading) {
+            setShowCancelConfirmation(false);
+            setCancelError('');
+          }
+        }}
+        onConfirm={handleConfirmCancel}
       />
 
       <ImagePreviewModal

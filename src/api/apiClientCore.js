@@ -2,7 +2,8 @@ import {
   ApiAuthenticationError,
   ApiAuthorizationError,
   ApiBackendError,
-  ApiConfigurationError
+  ApiConfigurationError,
+  ApiNetworkError
 } from './apiErrors.js';
 import { API_TRANSPORTS, resolveApiTransportConfig } from './transportConfig.js';
 
@@ -74,7 +75,7 @@ const createWorkerRequest = ({ baseUrl, authClient, fetchImpl }) => async (
   try {
     response = await fetchImpl(buildWorkerUrl(baseUrl, path, query), options);
   } catch {
-    throw new ApiBackendError(
+    throw new ApiNetworkError(
       'API_REQUEST_FAILED',
       'Worker API request failed.',
       { operation }

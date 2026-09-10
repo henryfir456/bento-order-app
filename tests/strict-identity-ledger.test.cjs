@@ -1917,8 +1917,9 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   assert.match(modalSource, /role="dialog"/);
   assert.match(modalSource, /Escape/);
   const changelogModalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ChangelogModal.jsx'), 'utf8');
-  assert.match(changelogModalSource, /release\.version \? `v\$\{release\.version\}` : 'Unreleased'/);
+  assert.match(changelogModalSource, /release\.version \? `v\$\{release\.version\}` : '尚未發布'/);
   assert.match(changelogModalSource, /release\.categories/);
+  assert.match(appSource, /UI_CHANGELOG/);
   assert.match(appSource, /APP_VERSION/);
   assert.match(appSource, /CHANGELOG/);
   assert.match(appSource, /apiClient\.updatePickupFloor/);

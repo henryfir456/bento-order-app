@@ -166,8 +166,15 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const unreleased = parsed.filter((release) => release.version === null);
   assert.equal(unreleased.length, 1);
   assert.equal(parsed[0].version, null);
-  assert.deepEqual(unreleased[0].categories, []);
-  assert.deepEqual(unreleased[0].changes, []);
+  assert.deepEqual(unreleased[0].categories.map(({ name }) => name), ['Fixed', 'Added', 'Changed']);
+  assert.deepEqual(unreleased[0].changes, [
+    'Fixed body-less Worker cancel POST parsing so `POST /api/orders/:orderId/cancel` no longer attempts to parse an absent JSON body.',
+    'Improved API error classification so business, authentication, and server errors are not reported as network failures.',
+    'Added a cancel-order detail confirmation modal before submitting a cancellation.',
+    'Added a success confirmation before returning to the calendar after cancellation.',
+    'Prevented duplicate cancel submissions while a cancellation request is pending.',
+    'Refresh order, calendar, and balance state after a successful cancellation.'
+  ]);
   assert.deepEqual(unreleased[0].commits, []);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);
@@ -179,4 +186,6 @@ test('changelog source is derived from the Markdown raw import', () => {
   assert.match(source, /CHANGELOG\.md\?raw/);
   assert.match(source, /parseChangelog\(/);
   assert.doesNotMatch(source, /export const CHANGELOG = \[\s*\{/);
+  assert.match(source, /UI_CHANGELOG_TRANSLATIONS/);
+  assert.match(source, /修正取消訂單失敗問題/);
 });

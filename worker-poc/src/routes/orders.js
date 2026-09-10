@@ -44,7 +44,7 @@ export const handleOrderRoute = async (request, env, {
   if (!isCreate && !cancelId) return null;
 
   const identity = await requireIdentity(request, env, { fetchImpl, allowViewAs: false });
-  const body = await readJson(request);
+  const body = isCreate ? await readJson(request) : {};
   const key = idempotencyKey(request, body);
 
   if (isCreate) {

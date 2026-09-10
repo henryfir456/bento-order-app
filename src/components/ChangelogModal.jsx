@@ -10,7 +10,7 @@ export default function ChangelogModal({ open, onClose, version, changelog }) {
     >
       <div className="space-y-5">
         {changelog.map((release) => {
-          const releaseLabel = release.version ? `v${release.version}` : 'Unreleased';
+          const releaseLabel = release.version ? `v${release.version}` : '尚未發布';
           const categories = release.categories?.length
             ? release.categories
             : [{ name: 'Changes', changes: release.changes || [] }];
