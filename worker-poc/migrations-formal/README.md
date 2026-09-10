@@ -32,6 +32,21 @@ detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database still
 applies all three files in order.
 
+## Recovery procedure
+
+The reviewed recovery sequence for a future controlled cutover is:
+
+```text
+backup -> apply migration -> verify schema/counts/foreign keys -> restore backup if verification fails
+```
+
+The backup is an independently retained export of the exact target before any
+remote write. Local verification uses a disposable SQLite database and does
+not exercise the remote path. Migration 0002 is a one-time rebuild, so this
+backup/restore procedure is the recovery boundary rather than an assumption
+that a partially completed remote D1 migration can be rolled back by rerunning
+SQL.
+
 Apply the chain to an empty local SQLite/D1-compatible database for
 verification. Applying a remote migration still requires the later authorized
 clean-D1 checkpoint.

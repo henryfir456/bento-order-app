@@ -1906,6 +1906,7 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   assert.doesNotMatch(changelogSource, /export const CHANGELOG = \[\s*\{/);
   assert.match(changelogMarkdown, /# Changelog/);
   assert.match(changelogMarkdown, /## \[Unreleased\]/);
+  assert.match(changelogMarkdown, /## \[0\.10\.1\] - 2026-09-10/);
   assert.match(changelogMarkdown, /## \[0\.10\.0\] - 2026-09-10/);
   assert.match(changelogMarkdown, /### Added/);
   assert.match(changelogMarkdown, /### Changed/);
@@ -1917,7 +1918,8 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   assert.match(modalSource, /role="dialog"/);
   assert.match(modalSource, /Escape/);
   const changelogModalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ChangelogModal.jsx'), 'utf8');
-  assert.match(changelogModalSource, /release\.version \? `v\$\{release\.version\}` : '尚未發布'/);
+  assert.match(changelogModalSource, /formalReleases/);
+  assert.doesNotMatch(changelogModalSource, /尚未發布/);
   assert.match(changelogModalSource, /release\.categories/);
   assert.match(appSource, /UI_CHANGELOG/);
   assert.match(appSource, /APP_VERSION/);

@@ -24,10 +24,10 @@ ownership is unproven and `legacyImportReadiness` must remain `BLOCKED`.
 
 The identity foundation gate is deliberately evaluated separately. It covers
 the formal canonical schema, LINE and employee guest authentication, LINE
-binding, permission enforcement, and the existing React/LIFF login boundary.
-React's production default remains GAS, so the Worker guest UI and transport
-cutover are documented as future work rather than hidden inside the import
-gate.
+binding, permission enforcement, the Worker guest UI, opaque transport, and
+the React/LIFF login boundary. React's production default remains GAS; the
+controlled Worker transport cutover and real LIFF evidence are documented
+manual steps rather than hidden inside the import gate.
 
 ## Local readiness command
 

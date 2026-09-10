@@ -9,6 +9,7 @@ export const createAuthClient = ({ env = {}, liffClient, logger = console } = {}
   }
 
   const config = resolveAuthConfig(env);
+  let liffInitPromise = null;
   logger.info?.(`[AUTH] mode=${config.mode}${config.mode === 'mock' ? ` user=${config.mockUser}` : ''}`);
 
   return {
@@ -22,7 +23,14 @@ export const createAuthClient = ({ env = {}, liffClient, logger = console } = {}
     async init() {
       if (config.mode === 'mock') return;
       if (!config.liffId) throw new Error('Missing VITE_LIFF_ID');
-      await liffClient.init({ liffId: config.liffId });
+      if (!liffInitPromise) {
+        liffInitPromise = Promise.resolve(liffClient.init({ liffId: config.liffId }))
+          .catch((error) => {
+            liffInitPromise = null;
+            throw error;
+          });
+      }
+      await liffInitPromise;
     },
 
     isLoggedIn() {

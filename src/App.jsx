@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { formatDateInput, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
-import { apiClient } from './api/apiClient';
+import { apiClient, guestSessionStore } from './api/apiClient';
 import { getApiErrorPresentation } from './api/apiErrors';
 import {
   clearClientRequestKey,
@@ -12,9 +12,11 @@ import {
 import { normalizeWorkerLikeResponse, restoreCalendarEvent } from './api/likeState';
 import { authClient } from './auth/liffClient';
 import { hasPermission } from './auth/permissions';
+import { AUTH_BOOT_STAGES } from './auth/bootFlow';
 import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
 import { APP_VERSION, UI_CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
+import EmployeeGuestLogin from './components/EmployeeGuestLogin';
 import PickupFloorModal from './components/PickupFloorModal';
 import ViewAsBanner from './components/ViewAsBanner';
 import DevAuthBadge from './components/DevAuthBadge';
@@ -141,6 +143,24 @@ const fetchDeferredBootstrapData = async (accessToken, bootId) => {
   }
 };
 
+const fetchBootstrapData = async (accessToken, bootId) => {
+  try {
+    if (!accessToken) {
+      return { success: false, message: 'LIFF accessToken 不存在' };
+    }
+
+    const res = await apiClient.getBootstrap({ bootId });
+    if (!res.ok) {
+      return { success: false, message: `backend HTTP ${res.status}` };
+    }
+    return await res.json();
+  } catch (err) {
+    const safeMessage = redactAuthSecrets(err instanceof Error ? err.message : err);
+    logAuthDiagnostic(`BOOTSTRAP_REQUEST_SUCCESS=false error=${safeMessage}`);
+    return { success: false, message: safeMessage, code: err?.code || null };
+  }
+};
+
 const showPopup = (options) => Swal.fire({
   confirmButtonText: '確定',
   confirmButtonColor: '#2C4A3E',
@@ -191,6 +211,7 @@ export default function App() {
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const [lineUserId, setLineUserId] = useState('');
+  const [authMode, setAuthMode] = useState(null);
   const [authUser, setAuthUser] = useState(null);
   const [viewAsUser, setViewAsUser] = useState(null);
   const [userBalance, setUserBalance] = useState(0);
@@ -201,7 +222,14 @@ export default function App() {
   const [registrationDisplayName, setRegistrationDisplayName] = useState('');
   const [registrationFloor, setRegistrationFloor] = useState('1樓');
   const [registrationLoading, setRegistrationLoading] = useState(false);
+  const [employeeGuestId, setEmployeeGuestId] = useState('');
+  const [employeeGuestLoading, setEmployeeGuestLoading] = useState(false);
+  const [employeeGuestError, setEmployeeGuestError] = useState('');
+  const [lineBindLoading, setLineBindLoading] = useState(false);
   const authInitInFlightRef = useRef(false);
+  const authBootPromiseRef = useRef(null);
+  const authBootCompletedRef = useRef(false);
+  const employeeGuestRequestRef = useRef(false);
   const bootRenderPendingRef = useRef(null);
   const deferredUiGenerationRef = useRef(0);
   const deferredUiBootRef = useRef('');
@@ -295,6 +323,13 @@ export default function App() {
 
   const isExpired = Boolean(deadline?.isExpired || deadline?.expired);
 
+  const readCurrentCredential = useCallback(() => {
+    if (apiClient.transport === 'worker' && authMode === 'employee_guest') {
+      return guestSessionStore.getGuestSession()?.token || '';
+    }
+    return authClient.getAccessToken();
+  }, [authMode]);
+
   const clearIdentityData = () => {
     adminSummaryRequestRef.current += 1;
     adminAnnouncementsRequestRef.current += 1;
@@ -303,11 +338,13 @@ export default function App() {
     deferredUiGenerationRef.current += 1;
     deferredUiBootRef.current = '';
     setLineUserId('');
+    setAuthMode(null);
     setAuthUser(null);
     setViewAsUser(null);
     setUserBalance(0);
     setDefaultFloor('');
     setRegistrationDisplayName('');
+    setEmployeeGuestError('');
     setName('');
     setCalendarEvents({});
     setUserOrdersMap({});
@@ -384,6 +421,10 @@ export default function App() {
 
   const applyUserInfoData = (data) => {
     if (data.success && data.registered && data.user) {
+      const nextAuthMode = data.authMode
+        || (apiClient.transport === 'worker' && guestSessionStore.getGuestSession()
+          ? 'employee_guest'
+          : 'line');
       const nextUser = {
         ...data.user,
         userId: data.user.userId,
@@ -391,8 +432,11 @@ export default function App() {
         floor: data.user.defaultFloor || data.user.floor || '',
         defaultFloor: data.user.defaultFloor || data.user.floor || '',
         balance: Number(data.user.balance || 0),
-        role: data.user.role || 'User'
+        role: data.user.role || 'User',
+        authMode: nextAuthMode,
+        capabilities: Array.isArray(data.capabilities) ? data.capabilities : []
       };
+      setAuthMode(nextAuthMode);
       setAuthUser(nextUser);
       setViewAsUser(null);
       setLineUserId(nextUser.userId);
@@ -404,6 +448,7 @@ export default function App() {
     }
 
     if (data.success && data.registered === false) {
+      setAuthMode(data.authMode || 'line');
       setLineUserId(data.lineUserId || '');
       setRegistrationDisplayName(data.displayName || '');
       setRegistrationFloor('1樓');
@@ -418,13 +463,27 @@ export default function App() {
     return { success: false, message: data.message || 'backend 未回傳有效身份狀態' };
   };
 
-  const initLiffAndFetchData = async () => {
-    if (authInitInFlightRef.current) {
-      logAuthDiagnostic('LIFF_INIT_SKIPPED_IN_FLIGHT');
-      return;
+  const initLiffAndFetchData = (options = {}) => {
+    const force = Boolean(options?.force);
+    if (authBootPromiseRef.current && !force) {
+      return authBootPromiseRef.current;
+    }
+    if (authBootPromiseRef.current && authInitInFlightRef.current) {
+      logAuthDiagnostic('AUTH_BOOT_SKIPPED_IN_FLIGHT');
+      return authBootPromiseRef.current;
+    }
+    if (authBootCompletedRef.current && !force) {
+      logAuthDiagnostic('AUTH_BOOT_SKIPPED_COMPLETED');
+      return Promise.resolve();
     }
 
-    authInitInFlightRef.current = true;
+    const run = (async () => {
+      if (authInitInFlightRef.current) {
+      logAuthDiagnostic('LIFF_INIT_SKIPPED_IN_FLIGHT');
+      return;
+      }
+
+      authInitInFlightRef.current = true;
     const bootId = createBootId();
     const bootTiming = createBootTimingLogger(bootId);
     const bootStartTime = getPerformanceNow();
@@ -432,7 +491,7 @@ export default function App() {
     let bootStatus = 'error';
     let isFallback = false;
     let awaitingRender = false;
-    let currentStage = 'LIFF_INIT_START';
+    let currentStage = AUTH_BOOT_STAGES.UNKNOWN;
     bootRenderPendingRef.current = null;
     bootTiming.milestone('BOOT_START');
     setLoading(true);
@@ -444,11 +503,43 @@ export default function App() {
     try {
       let identity;
       let usingLegacyStartup = false;
+      let restoredGuest = false;
+      let guestSession = apiClient.transport === 'worker'
+        ? guestSessionStore.getGuestSession()
+        : null;
+      const hasBindIntent = apiClient.transport === 'worker' && guestSessionStore.hasBindIntent();
       if (authClient.isMock) {
         currentStage = 'MOCK_IDENTITY_READY';
         setAuthStage(currentStage);
         identity = authClient.getMockIdentity();
       } else {
+      if (apiClient.transport === 'worker' && guestSession && !hasBindIntent) {
+        currentStage = AUTH_BOOT_STAGES.RESTORE_GUEST;
+        setAuthStage(currentStage);
+        logAuthDiagnostic('RESTORE_GUEST_SESSION');
+        const restoredIdentity = await fetchBootstrapData(guestSession.token, bootId);
+        if (restoredIdentity?.success && restoredIdentity.registered && restoredIdentity.user) {
+          identity = restoredIdentity;
+          restoredGuest = true;
+          currentStage = AUTH_BOOT_STAGES.LIFF_CHECK;
+          setAuthStage(currentStage);
+          currentStage = AUTH_BOOT_STAGES.AUTH_GUEST;
+          setAuthStage(currentStage);
+        } else if (restoredIdentity?.code === 'GUEST_SESSION_INVALID') {
+          guestSessionStore.clearGuestSession({ reason: 'restore-rejected', notify: false });
+          guestSession = null;
+        } else if (restoredIdentity?.code) {
+          throw new Error(restoredIdentity.message || restoredIdentity.code);
+        }
+      }
+
+      if (!restoredGuest) {
+      if (apiClient.transport === 'worker' && guestSession && hasBindIntent) {
+        currentStage = AUTH_BOOT_STAGES.RESTORE_GUEST;
+        setAuthStage(currentStage);
+      }
+      currentStage = AUTH_BOOT_STAGES.LIFF_CHECK;
+      setAuthStage(currentStage);
       logAuthDiagnostic('LIFF_INIT_START');
       bootTiming.milestone('LIFF_INIT_START');
       const liffInitStartTime = getPerformanceNow();
@@ -469,7 +560,7 @@ export default function App() {
         setAuthState(AUTH_STATES.AUTH_REQUIRED);
         setAuthStage(AUTH_STATES.AUTH_REQUIRED);
         logAuthDiagnostic('AUTH_REQUIRED');
-        authClient.login();
+        if (apiClient.transport !== 'worker' || hasBindIntent) authClient.login();
         return;
       }
 
@@ -480,6 +571,20 @@ export default function App() {
       if (!accessToken) {
         failAuthentication('LIFF_ACCESS_TOKEN_MISSING', 'LIFF accessToken 不存在');
         return;
+      }
+
+      if (apiClient.transport === 'worker' && hasBindIntent && guestSession?.token) {
+        currentStage = AUTH_BOOT_STAGES.BIND_LINE;
+        setAuthStage(currentStage);
+        const bindResponse = await apiClient.bindLine({ guestToken: guestSession.token });
+        if (!bindResponse.ok) throw new Error(`LINE bind HTTP ${bindResponse.status}`);
+        const bindData = await bindResponse.json();
+        if (!bindData.success || !bindData.user) {
+          throw new Error(bindData.error || bindData.message || 'LINE bind failed');
+        }
+        guestSessionStore.clearBindIntent();
+        guestSessionStore.clearGuestSession({ reason: 'line-bound', notify: false });
+        guestSession = null;
       }
 
       currentStage = 'BACKEND_IDENTITY_VERIFY_START';
@@ -496,6 +601,7 @@ export default function App() {
       } finally {
         bootstrapNetworkMs = getPerformanceNow() - bootstrapRequestStartTime;
         bootTiming.milestone('BOOTSTRAP_REQUEST_END');
+      }
       }
       }
       if (identity?.success && identity.registered && identity.user) {
@@ -565,8 +671,21 @@ export default function App() {
         }
         bootTiming.metric('BOOT_TOTAL_MS', getPerformanceNow() - bootStartTime, bootStatus, isFallback);
       }
-      authInitInFlightRef.current = false;
-    }
+        authInitInFlightRef.current = false;
+        authBootCompletedRef.current = true;
+      }
+    })();
+
+    authBootPromiseRef.current = run;
+    run.then(
+      () => {
+        if (authBootPromiseRef.current === run) authBootPromiseRef.current = null;
+      },
+      () => {
+        if (authBootPromiseRef.current === run) authBootPromiseRef.current = null;
+      }
+    );
+    return run;
   };
 
   useEffect(() => {
@@ -601,7 +720,7 @@ export default function App() {
     if (pendingBoot.deferredUi && deferredUiBootRef.current !== pendingBoot.bootId) {
       deferredUiBootRef.current = pendingBoot.bootId;
       const deferredGeneration = pendingBoot.deferredUiGeneration;
-      const accessToken = authClient.getAccessToken();
+      const accessToken = readCurrentCredential();
       void fetchDeferredBootstrapData(accessToken, pendingBoot.bootId)
         .then((data) => {
           if (deferredGeneration !== deferredUiGenerationRef.current) return;
@@ -638,10 +757,22 @@ export default function App() {
           logAuthDiagnostic('DEFERRED_UI_REQUEST_FAILED');
         });
     }
-  }, [authState, authUser, calendarEvents, userOrdersMap, announcements, loading]);
+  }, [authState, authUser, authMode, calendarEvents, userOrdersMap, announcements, loading, readCurrentCredential]);
 
   useEffect(() => {
-    initLiffAndFetchData();
+    const unsubscribe = guestSessionStore.subscribe((event) => {
+      if (event?.type !== 'guest-session-invalid') return;
+      authBootCompletedRef.current = false;
+      setAuthState(AUTH_STATES.AUTH_REQUIRED);
+      setAuthStage(AUTH_BOOT_STAGES.RESTORE_GUEST);
+      setAuthError('員工登入已失效，請重新輸入員工編號。');
+      clearIdentityData();
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    void initLiffAndFetchData();
   }, []);
 
   const canManageAdminAnnouncements = () => (
@@ -649,7 +780,7 @@ export default function App() {
     && authState === AUTH_STATES.REGISTERED
     && Boolean(authUser?.userId)
     && !viewAsUser
-    && hasPermission(authUser?.role, 'manageAnnouncements')
+    && hasPermission(authUser?.role, 'manageAnnouncements', authMode)
   );
 
   const loadAdminAnnouncements = async (force = false) => {
@@ -661,7 +792,7 @@ export default function App() {
     setAdminAnnouncementsError('');
 
     try {
-      const accessToken = authClient.getAccessToken();
+      const accessToken = readCurrentCredential();
       if (!accessToken) {
         setAdminAnnouncementsError('目前無法驗證身份，請重新登入後再試。');
         return;
@@ -726,7 +857,7 @@ export default function App() {
     }));
 
     try {
-      const accessToken = authClient.getAccessToken();
+      const accessToken = readCurrentCredential();
       if (!accessToken) {
         setAdminSummaryError('目前無法驗證身份，請重新登入後再試。');
         return;
@@ -767,7 +898,7 @@ export default function App() {
 
   const loadMemberBalances = async (force = false) => {
     const visibleRole = viewAsUser?.role || authUser?.role;
-    if (!authUser?.userId || !hasPermission(visibleRole, 'viewMemberBalances')) return;
+    if (!authUser?.userId || !hasPermission(visibleRole, 'viewMemberBalances', authMode)) return;
     if (!force && memberBalancesLoaded) return;
 
     const requestId = ++memberBalancesRequestRef.current;
@@ -775,7 +906,7 @@ export default function App() {
     setMemberBalancesError('');
 
     try {
-      const accessToken = authClient.getAccessToken();
+      const accessToken = readCurrentCredential();
       if (!accessToken) {
         setMemberBalancesError('目前無法驗證身份，請重新登入後再試。');
         return;
@@ -818,24 +949,6 @@ export default function App() {
       return { success: false, message: safeMessage };
     } finally {
       logPerformanceTiming('GET_USER_INFO', requestStartTime);
-    }
-  };
-
-  const fetchBootstrapData = async (accessToken, bootId) => {
-    try {
-      if (!accessToken) {
-        return { success: false, message: 'LIFF accessToken 不存在' };
-      }
-
-      const res = await apiClient.getBootstrap({ bootId });
-      if (!res.ok) {
-        return { success: false, message: `backend HTTP ${res.status}` };
-      }
-      return await res.json();
-    } catch (err) {
-      const safeMessage = redactAuthSecrets(err instanceof Error ? err.message : err);
-      logAuthDiagnostic(`BOOTSTRAP_REQUEST_SUCCESS=false error=${safeMessage}`);
-      return { success: false, message: safeMessage };
     }
   };
 
@@ -890,6 +1003,97 @@ export default function App() {
     } finally {
       setRegistrationLoading(false);
       setLoading(false);
+    }
+  };
+
+  const handleEmployeeGuestLogin = async (event) => {
+    event?.preventDefault?.();
+    if (
+      apiClient.transport !== 'worker'
+      || employeeGuestLoading
+      || employeeGuestRequestRef.current
+    ) return;
+
+    const employeeId = String(employeeGuestId || '').trim();
+    if (!employeeId) {
+      setEmployeeGuestError('請輸入員工編號。');
+      return;
+    }
+
+    employeeGuestRequestRef.current = true;
+    setEmployeeGuestLoading(true);
+    setEmployeeGuestError('');
+    setAuthError('');
+    try {
+      const response = await apiClient.employeeGuestLogin({ employeeId });
+      const data = await response.json();
+      if (!data.success || data.authMode !== 'employee_guest' || !data.token || !data.expiresAt) {
+        throw new Error(data.error || data.message || 'EMPLOYEE_GUEST_LOGIN_INVALID_RESPONSE');
+      }
+      guestSessionStore.setGuestSession({ token: data.token, expiresAt: data.expiresAt });
+      authBootCompletedRef.current = false;
+      setEmployeeGuestId('');
+      await initLiffAndFetchData({ force: true });
+    } catch (error) {
+      setEmployeeGuestError(getApiErrorPresentation(error, '員工登入').message);
+    } finally {
+      employeeGuestRequestRef.current = false;
+      setEmployeeGuestLoading(false);
+    }
+  };
+
+  const handleLineLogin = async () => {
+    if (lineBindLoading || employeeGuestLoading) return;
+    try {
+      await authClient.init();
+      if (!authClient.isLoggedIn()) {
+        authClient.login();
+        return;
+      }
+      authBootCompletedRef.current = false;
+      await initLiffAndFetchData({ force: true });
+    } catch (error) {
+      failAuthentication('LIFF_LOGIN_REQUEST_FAILED', error);
+    }
+  };
+
+  const handleBindLine = async () => {
+    if (apiClient.transport !== 'worker' || lineBindLoading) return;
+    const guestSession = guestSessionStore.getGuestSession();
+    if (!guestSession) {
+      setEmployeeGuestError('員工登入已失效，請重新輸入員工編號。');
+      setAuthState(AUTH_STATES.AUTH_REQUIRED);
+      return;
+    }
+
+    guestSessionStore.setBindIntent();
+    authBootCompletedRef.current = false;
+    setLineBindLoading(true);
+    setEmployeeGuestError('');
+    setAuthError('');
+    try {
+      await authClient.init();
+      if (!authClient.isLoggedIn()) {
+        setAuthState(AUTH_STATES.AUTH_REQUIRED);
+        setAuthStage(AUTH_BOOT_STAGES.LIFF_CHECK);
+        authClient.login();
+        return;
+      }
+
+      const response = await apiClient.bindLine({ guestToken: guestSession.token });
+      const data = await response.json();
+      if (!data.success || !data.user) {
+        throw new Error(data.error || data.message || 'LINE_BIND_FAILED');
+      }
+      guestSessionStore.clearBindIntent();
+      guestSessionStore.clearGuestSession({ reason: 'line-bound', notify: false });
+      authBootCompletedRef.current = false;
+      await initLiffAndFetchData({ force: true });
+    } catch (error) {
+      guestSessionStore.clearBindIntent();
+      setEmployeeGuestError(getApiErrorPresentation(error, '綁定 LINE').message);
+    } finally {
+      setLineBindLoading(false);
     }
   };
 
@@ -955,7 +1159,7 @@ export default function App() {
     setHistorySummary({ openingBalance: 0, totalCredit: 0, totalDebit: 0, closingBalance: 0 });
 
     try {
-      const accessToken = authClient.getAccessToken();
+      const accessToken = readCurrentCredential();
       if (!accessToken) {
         setHistoryError('目前無法驗證身份，請重新登入後再試。');
         return;
@@ -1455,7 +1659,7 @@ export default function App() {
       void fetchCalendarEvents(user.userId, user.userId);
       void fetchUserAllOrders(user.userId, user.userId);
     }
-    if (hasPermission(user.role, 'viewAdminOrderSummary')) {
+    if (hasPermission(user.role, 'viewAdminOrderSummary', authMode)) {
       setAdminSection('orders');
       setViewMode('admin');
       loadAdminSummary(selectedOrderDate, user.userId, true);
@@ -1477,7 +1681,7 @@ export default function App() {
       void fetchUserAllOrders(authUserId, null);
     }
     setAdminSection('orders');
-    if (hasPermission(authUser?.role, 'viewAdminOrderSummary')) {
+    if (hasPermission(authUser?.role, 'viewAdminOrderSummary', authMode)) {
       setViewMode('admin');
       loadAdminSummary(selectedOrderDate, null, true);
     } else {
@@ -1501,7 +1705,7 @@ export default function App() {
       return;
     }
 
-    const accessToken = authClient.getAccessToken();
+    const accessToken = readCurrentCredential();
     if (!accessToken) {
       setFloorError('目前無法驗證身份，請重新登入後再試。');
       return;
@@ -1851,8 +2055,8 @@ export default function App() {
   const effectiveUser = viewAsUser || authUser;
   const effectiveRole = effectiveUser?.role || 'User';
   const isViewAsMode = Boolean(viewAsUser);
-  const can = (permission) => isRegistered && hasPermission(effectiveRole, permission);
-  const canAuth = (permission) => isRegistered && hasPermission(authRole, permission);
+  const can = (permission) => isRegistered && hasPermission(effectiveRole, permission, authMode);
+  const canAuth = (permission) => isRegistered && hasPermission(authRole, permission, authMode);
   const authStateLabel = {
     [AUTH_STATES.AUTH_LOADING]: '身份驗證中',
     [AUTH_STATES.AUTH_REQUIRED]: '請登入 LINE',
@@ -1874,7 +2078,11 @@ export default function App() {
           </div>
           <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-emerald-100">
             <span>👤 {displayName}</span>
-            {effectiveUser && isRegistered && <span className="rounded bg-emerald-800/80 px-1.5 py-0.5">{effectiveRole}</span>}
+            {effectiveUser && isRegistered && (
+              <span className="rounded bg-emerald-800/80 px-1.5 py-0.5">
+                {authMode === 'employee_guest' ? '員編登入' : effectiveRole}
+              </span>
+            )}
             <DevAuthBadge mode={authClient.mode} mockUser={authClient.mockUser} />
             {displayFloor && (isViewAsMode ? (
               <span className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
@@ -1901,6 +2109,20 @@ export default function App() {
                 </span>
               </button>
             )}
+            {isRegistered
+              && apiClient.transport === 'worker'
+              && authMode === 'employee_guest'
+              && !isViewAsMode
+              && (
+                <button
+                  type="button"
+                  onClick={handleBindLine}
+                  disabled={lineBindLoading}
+                  className="rounded bg-emerald-800/80 px-2 py-1 text-xs font-bold text-emerald-100 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {lineBindLoading ? '綁定中...' : '綁定 LINE'}
+                </button>
+              )}
           </div>
           <ViewAsBanner
             viewAsUser={isViewAsMode ? viewAsUser : null}
@@ -1983,14 +2205,32 @@ export default function App() {
           </div>
         )}
 
-        {authState === AUTH_STATES.AUTH_REQUIRED && !loading && (
+        {apiClient.transport === 'worker'
+          && [AUTH_STATES.AUTH_REQUIRED, AUTH_STATES.AUTH_FAILED, AUTH_STATES.UNREGISTERED].includes(authState)
+          && !loading
+          && (
+            <EmployeeGuestLogin
+              employeeId={employeeGuestId}
+              onEmployeeIdChange={(value) => {
+                setEmployeeGuestId(value);
+                if (employeeGuestError) setEmployeeGuestError('');
+              }}
+              onEmployeeSubmit={handleEmployeeGuestLogin}
+              onLineLogin={handleLineLogin}
+              loading={employeeGuestLoading || lineBindLoading}
+              error={employeeGuestError || (authState === AUTH_STATES.AUTH_FAILED ? authError : '')}
+              lineBindingRequired={isUnregistered}
+            />
+          )}
+
+        {authState === AUTH_STATES.AUTH_REQUIRED && apiClient.transport !== 'worker' && !loading && (
           <div className="mb-4 text-center bg-white rounded-3xl p-6 shadow-sm border border-emerald-900/10 space-y-4">
             <div className="text-4xl">🔐</div>
             <h2 className="text-xl font-bold text-[#2C4A3E]">需要登入 LINE</h2>
             <p className="text-sm text-gray-500">請完成 LINE 登入後再使用便當預訂功能。</p>
             <button
               type="button"
-              onClick={initLiffAndFetchData}
+              onClick={() => initLiffAndFetchData({ force: true })}
               className="w-full rounded-2xl bg-[#2C4A3E] py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-800"
             >
               登入 LINE
@@ -1998,13 +2238,13 @@ export default function App() {
           </div>
         )}
 
-        {authState === AUTH_STATES.AUTH_FAILED && !loading && (
+        {authState === AUTH_STATES.AUTH_FAILED && apiClient.transport !== 'worker' && !loading && (
           <div className="mb-4 text-center text-sm font-bold p-3 rounded-xl bg-amber-50 text-amber-800 border border-amber-200">
             <div className="mb-2">身份驗證失敗</div>
             <div className="font-normal">{authError || `${authStage}: 無法取得有效 LINE 身份`}</div>
             <button
               type="button"
-              onClick={initLiffAndFetchData}
+              onClick={() => initLiffAndFetchData({ force: true })}
               className="mt-3 rounded-xl bg-[#2C4A3E] px-4 py-2 text-white"
             >
               重新驗證
@@ -2018,7 +2258,7 @@ export default function App() {
           </div>
         )}
 
-        {isUnregistered && !loading && (
+        {isUnregistered && apiClient.transport !== 'worker' && !loading && (
           <div className="bg-white rounded-3xl p-6 shadow-sm border border-emerald-900/10 space-y-6">
             <div className="text-center space-y-2">
               <div className="text-4xl">🍱</div>

@@ -1,15 +1,17 @@
 import packageJson from '../../package.json';
 import changelogMarkdown from '../../CHANGELOG.md?raw';
-import { parseChangelog } from './changelogParser';
-
-export const APP_VERSION = packageJson.version;
+import { isFormalRelease, parseChangelog } from './changelogParser';
 
 export const CHANGELOG = parseChangelog(changelogMarkdown);
+
+// The footer is a user-visible release label. Keep package.json at the
+// dependency/package version until a package release is explicitly cut.
+export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJson.version;
 
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
-  unreleased: [
+  '0.10.1': [
     {
       name: '修正',
       changes: [
@@ -94,4 +96,4 @@ const localizeRelease = (release) => {
   };
 };
 
-export const UI_CHANGELOG = CHANGELOG.map(localizeRelease);
+export const UI_CHANGELOG = CHANGELOG.filter(isFormalRelease).map(localizeRelease);

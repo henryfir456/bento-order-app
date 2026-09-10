@@ -59,7 +59,15 @@ const businessMessages = Object.freeze({
   IDEMPOTENCY_IN_PROGRESS: '請求仍在處理中，請稍候再試。',
   ORDER_ALREADY_CANCELLED: '訂單已取消，請重新整理訂單狀態。',
   ORDER_FORBIDDEN: '無法取消這筆訂單。',
-  ORDER_NOT_FOUND: '找不到這筆訂單，請重新整理訂單狀態。'
+  ORDER_NOT_FOUND: '找不到這筆訂單，請重新整理訂單狀態。',
+  EMPLOYEE_NOT_FOUND: '找不到此員工編號，請確認後再試。',
+  EMPLOYEE_INACTIVE: '此員工編號目前未啟用，請洽管理員。',
+  EMPLOYEE_ALREADY_LINE_BOUND: '此員工編號已綁定 LINE，請直接使用 LINE 登入。',
+  LINE_ALREADY_BOUND: '此 LINE 帳號已綁定其他員工，請確認後再試。',
+  LINE_BIND_CONFLICT: 'LINE 綁定狀態已變更，請重新登入後再試。',
+  INVALID_EMPLOYEE_ID: '員工編號格式不正確，請重新輸入。',
+  GUEST_SESSION_INVALID: '員工登入已失效，請重新輸入員工編號。',
+  EMPLOYEE_BIND_REQUIRED: '此 LINE 帳號尚未綁定員工資料，請先以員工編號登入。'
 });
 
 export const getApiErrorPresentation = (error, operationLabel = '操作') => {
@@ -75,6 +83,13 @@ export const getApiErrorPresentation = (error, operationLabel = '操作') => {
   }
 
   if (error?.kind === 'authentication' || error?.kind === 'authorization') {
+    if (businessMessages[code]) {
+      return {
+        category: error.kind === 'authorization' ? 'authorization' : 'authentication',
+        code,
+        message: businessMessages[code]
+      };
+    }
     return {
       category: 'auth',
       code,

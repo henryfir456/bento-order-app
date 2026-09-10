@@ -1,0 +1,88 @@
+[
+  {
+    "employee_id": "001234",
+    "display_name": "Employee 001234",
+    "pickup_floor": "1樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "000007",
+    "display_name": "Employee 000007",
+    "pickup_floor": "9樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "E0003",
+    "display_name": "Employee E0003",
+    "pickup_floor": "1樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "E0004",
+    "display_name": "Employee E0004",
+    "pickup_floor": "9樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "E0005",
+    "display_name": "Employee E0005",
+    "pickup_floor": "1樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "E0006",
+    "display_name": "Employee E0006",
+    "pickup_floor": "9樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "E0007",
+    "display_name": "Employee E0007",
+    "pickup_floor": "1樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "009999",
+    "display_name": "Existing Bound Employee",
+    "pickup_floor": "1樓",
+    "role": "User",
+    "active": true,
+    "line_user_id": "line-existing-009999",
+    "mapping_evidence": "reviewed"
+  },
+  {
+    "employee_id": "009999",
+    "display_name": "Duplicate Employee",
+    "pickup_floor": "1樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "010000",
+    "display_name": "Invalid Floor",
+    "pickup_floor": "3樓",
+    "role": "User",
+    "active": true
+  },
+  {
+    "employee_id": "010001",
+    "display_name": "Invalid Role",
+    "pickup_floor": "1樓",
+    "role": "Manager",
+    "active": true
+  },
+  {
+    "employee_id": "",
+    "display_name": "Blank Employee ID",
+    "pickup_floor": "1樓",
+    "role": "User",
+    "active": true
+  }
+]

@@ -94,11 +94,11 @@ IDENTITY FOUNDATION READINESS: READY
 
 The evidence covers the canonical `user_id` schema, LINE authentication,
 employee guest login, conflict-safe LINE binding, server-side permission
-enforcement, and the existing React/LIFF login boundary. The React app still
-defaults to GAS transport, and the Worker guest-login UI plus production
-transport cutover remain a separately authorized follow-up. Those frontend
-cutover items do not make the formal Worker identity foundation or the legacy
-import gate appear ready or blocked.
+enforcement, the Worker employee guest UI, opaque session transport, and the
+deterministic React/LIFF boot boundary. The React app still defaults to GAS
+transport; controlled Worker cutover and real LIFF evidence remain separately
+authorized manual steps. Those production steps do not make the formal Worker
+identity foundation or the legacy import gate appear ready or blocked.
 
 Legacy import readiness is a separate gate:
 

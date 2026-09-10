@@ -2,6 +2,7 @@ const RELEASE_HEADING = /^##\s+\[([^\]]+)\](?:\s+-\s+(\d{4}-\d{2}-\d{2}))?\s*$/;
 const CATEGORY_HEADING = /^###\s+(.+?)\s*$/;
 const CHANGE_ITEM = /^-\s+(.+)$/;
 const COMMITS_LINE = /^\*\*Commits:\*\*\s*(.*)$/i;
+const FORMAL_VERSION = /^\d+\.\d+\.\d+$/;
 
 const createRelease = (label, date) => ({
   version: label.toLowerCase() === 'unreleased' ? null : label,
@@ -66,3 +67,6 @@ export function parseChangelog(markdown) {
   return releases;
 }
 
+export const isFormalRelease = (release) => (
+  typeof release?.version === 'string' && FORMAL_VERSION.test(release.version)
+);

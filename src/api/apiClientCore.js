@@ -19,6 +19,22 @@ const readToken = (authClient, operation) => {
   return token;
 };
 
+const readWorkerCredential = (authClient, sessionStore, operation, mode = 'auto') => {
+  if (mode === 'none') return null;
+  if (mode === 'guest' || mode === 'auto') {
+    const guestSession = sessionStore?.getGuestSession?.();
+    if (guestSession?.token) return { token: guestSession.token, authMode: 'employee_guest' };
+    if (mode === 'guest') {
+      throw new ApiAuthenticationError(
+        'GUEST_SESSION_INVALID',
+        'An active employee guest session is required.',
+        { operation }
+      );
+    }
+  }
+  return { token: readToken(authClient, operation), authMode: 'line' };
+};
+
 const queryEntries = (query = {}) => Object.entries(query)
   .filter(([, value]) => value !== undefined && value !== null && value !== '')
   .map(([key, value]) => [key, String(value)]);
@@ -53,18 +69,18 @@ const balanceHistoryMonth = (year, month) => {
   return `${yearValue}-${monthValue.padStart(2, '0')}`;
 };
 
-const createWorkerRequest = ({ baseUrl, authClient, fetchImpl }) => async (
+const createWorkerRequest = ({ baseUrl, authClient, sessionStore, fetchImpl }) => async (
   operation,
   method,
   path,
-  { query, body, extraHeaders = {} } = {}
+  { query, body, extraHeaders = {}, credentialMode = 'auto' } = {}
 ) => {
-  const token = readToken(authClient, operation);
+  const credential = readWorkerCredential(authClient, sessionStore, operation, credentialMode);
   const headers = {
     Accept: 'application/json',
-    Authorization: `Bearer ${token}`,
     ...extraHeaders
   };
+  if (credential?.token) headers.Authorization = `Bearer ${credential.token}`;
   const options = { method, headers };
   if (body !== undefined) {
     headers['Content-Type'] = 'application/json';
@@ -83,8 +99,12 @@ const createWorkerRequest = ({ baseUrl, authClient, fetchImpl }) => async (
   }
 
   if (response.status === 401) {
+    const errorCode = await readWorkerErrorCode(response, 'API_AUTH_REJECTED');
+    if (errorCode === 'GUEST_SESSION_INVALID') {
+      sessionStore?.clearGuestSession?.({ reason: 'rejected' });
+    }
     throw new ApiAuthenticationError(
-      'API_AUTH_REJECTED',
+      errorCode === 'GUEST_SESSION_INVALID' ? errorCode : 'API_AUTH_REJECTED',
       'Worker API authentication failed.',
       { operation, status: response.status }
     );
@@ -199,6 +219,21 @@ const createGasOperations = ({ gasApi, authClient }) => ({
 });
 
 const createWorkerOperations = ({ workerRequest }) => ({
+  employeeGuestLogin: ({ employeeId } = {}) => workerRequest(
+    'employeeGuestLogin',
+    'POST',
+    '/api/auth/employee-guest',
+    { credentialMode: 'none', body: { employeeId } }
+  ),
+  bindLine: ({ guestToken } = {}) => workerRequest(
+    'bindLine',
+    'POST',
+    '/api/auth/line-bind',
+    {
+      credentialMode: 'line',
+      extraHeaders: { 'X-Employee-Guest-Session': String(guestToken || '').trim() }
+    }
+  ),
   getIdentity: () => workerRequest('getIdentity', 'GET', '/api/me'),
   getBootstrap: async ({ bootId, targetDate } = {}) => {
     // The formal bootstrap route is registered-only. Read canonical identity
@@ -347,7 +382,8 @@ export const createApiClient = ({
   env = {},
   authClient,
   gasApi = null,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  sessionStore = null
 } = {}) => {
   if (!authClient || typeof authClient.getAccessToken !== 'function') {
     throw new ApiConfigurationError('AUTH_CLIENT_MISSING', 'An auth client is required.');
@@ -371,6 +407,7 @@ export const createApiClient = ({
   const workerRequest = createWorkerRequest({
     baseUrl: config.workerApiUrl,
     authClient,
+    sessionStore,
     fetchImpl
   });
   return Object.freeze({

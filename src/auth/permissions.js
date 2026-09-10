@@ -47,4 +47,25 @@ export const ROLE_PERMISSIONS = Object.freeze({
   })
 });
 
-export const hasPermission = (role, permission) => Boolean(ROLE_PERMISSIONS[role]?.[permission]);
+export const GUEST_PERMISSIONS = Object.freeze({
+  orderOwn: true,
+  editOwnOrder: true,
+  cancelOwnOrder: true,
+  viewOwnBalance: true,
+  viewOwnTransactions: true,
+  viewAdminOrderSummary: false,
+  viewAllOrders: false,
+  viewOrderStatistics: false,
+  viewMemberBalances: false,
+  topupMember: false,
+  manageAnnouncements: false,
+  manageCalendar: false,
+  manageMenu: false,
+  manageUsers: false,
+  manageRoles: false,
+  viewAsUser: false
+});
+
+export const hasPermission = (role, permission, authMode = 'line') => (
+  Boolean((authMode === 'employee_guest' ? GUEST_PERMISSIONS : ROLE_PERMISSIONS[role])?.[permission])
+);

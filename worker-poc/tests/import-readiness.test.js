@@ -39,11 +39,16 @@ test('missing Users.employee_id makes final replacement readiness BLOCKED', () =
   assert.deepEqual(validation.identityFoundationReadiness.blockers, []);
   assert.equal(
     validation.identityFoundationReadiness.evidence.frontendLoginFlow.status,
-    'EXISTING_LIFF_BOUNDARY'
+    'READY_FOR_CONTROLLED_DEPLOYMENT'
   );
   assert.deepEqual(
     validation.identityFoundationReadiness.evidence.frontendLoginFlow.deferred,
-    ['Worker guest-login UI', 'Production React transport cutover']
+    [
+      'Real LIFF authentication',
+      'View As and identity flow',
+      'GAS deployment and production contract',
+      'Production React transport cutover'
+    ]
   );
   assert.equal(validation.legacyImportReadiness.status, 'BLOCKED');
   assert.equal(validation.readiness.status, 'BLOCKED');

@@ -1,6 +1,10 @@
 import Modal from './Modal';
 
 export default function ChangelogModal({ open, onClose, version, changelog }) {
+  const formalReleases = (changelog || []).filter((release) => (
+    typeof release?.version === 'string' && /^\d+\.\d+\.\d+$/.test(release.version)
+  ));
+
   return (
     <Modal
       open={open}
@@ -9,14 +13,14 @@ export default function ChangelogModal({ open, onClose, version, changelog }) {
       className="max-w-lg"
     >
       <div className="space-y-5">
-        {changelog.map((release) => {
-          const releaseLabel = release.version ? `v${release.version}` : '尚未發布';
+        {formalReleases.map((release) => {
+          const releaseLabel = `v${release.version}`;
           const categories = release.categories?.length
             ? release.categories
             : [{ name: 'Changes', changes: release.changes || [] }];
 
           return (
-            <section key={release.version || 'unreleased'} className="space-y-2">
+            <section key={release.version} className="space-y-2">
               <div className="flex items-baseline justify-between gap-3">
                 <h3 className="font-bold text-[#2C4A3E]">{releaseLabel}</h3>
                 {release.date && <time className="text-xs text-gray-400" dateTime={release.date}>{release.date}</time>}

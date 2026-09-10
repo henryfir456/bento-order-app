@@ -1,0 +1,12 @@
+[
+  {
+    "user_id": "user-existing-009999",
+    "employee_id": null,
+    "line_user_id": "line-existing-009999",
+    "display_name": "Existing Bound Employee",
+    "pickup_floor": "1樓",
+    "balance": 250,
+    "role": "User",
+    "active": 1
+  }
+]

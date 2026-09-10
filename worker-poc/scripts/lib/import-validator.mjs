@@ -45,20 +45,65 @@ const IDENTITY_FOUNDATION_EVIDENCE = Object.freeze({
       'worker-poc/tests/guest-access.test.js'
     ]
   }),
+  frontendGuestLogin: Object.freeze({
+    status: 'READY',
+    verifiedBy: [
+      'src/components/EmployeeGuestLogin.jsx',
+      'src/auth/sessionStore.js',
+      'src/App.jsx',
+      'tests/identity-foundation-ui.test.cjs'
+    ]
+  }),
+  frontendLineBinding: Object.freeze({
+    status: 'READY',
+    verifiedBy: [
+      'src/App.jsx',
+      'src/api/apiClientCore.js',
+      'worker-poc/src/routes/auth.js',
+      'worker-poc/tests/guest-access.test.js'
+    ]
+  }),
+  workerTransport: Object.freeze({
+    status: 'READY',
+    verifiedBy: [
+      'src/api/apiClientCore.js',
+      'src/api/transportConfig.js',
+      'tests/identity-foundation-ui.test.cjs'
+    ]
+  }),
+  authBoot: Object.freeze({
+    status: 'READY',
+    verifiedBy: [
+      'src/auth/bootFlow.js',
+      'src/auth/authClient.js',
+      'src/App.jsx',
+      'tests/identity-foundation-ui.test.cjs'
+    ]
+  }),
   frontendLoginFlow: Object.freeze({
-    status: 'EXISTING_LIFF_BOUNDARY',
-    flow: 'LIFF',
+    status: 'READY_FOR_CONTROLLED_DEPLOYMENT',
+    flow: 'LIFF_OR_EMPLOYEE_GUEST',
     transportDefault: 'gas',
     verifiedBy: [
       'src/auth/authClient.js',
       'src/auth/liffClient.js',
       'src/api/transportConfig.js',
+      'src/api/apiClientCore.js',
+      'src/auth/sessionStore.js',
+      'src/auth/bootFlow.js',
+      'src/components/EmployeeGuestLogin.jsx',
       'src/App.jsx'
     ],
     deferred: [
-      'Worker guest-login UI',
+      'Real LIFF authentication',
+      'View As and identity flow',
+      'GAS deployment and production contract',
       'Production React transport cutover'
     ]
+  }),
+  productionVerification: Object.freeze({
+    status: 'NOT_VERIFIED',
+    reason: 'Real LIFF, View As, and deployment evidence require manual/external verification.'
   })
 });
 

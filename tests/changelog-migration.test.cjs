@@ -135,11 +135,11 @@ const expectedHistory = [
 ];
 
 test('CHANGELOG.md preserves the complete pre-migration release history', async () => {
-  const { parseChangelog } = await import('../src/data/changelogParser.js');
+  const { isFormalRelease, parseChangelog } = await import('../src/data/changelogParser.js');
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    release.version !== null && release.version !== '0.10.0'
+    isFormalRelease(release) && !['0.10.0', '0.10.1'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -163,11 +163,11 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Made this Markdown file the canonical source for the complete release history.'
   ]);
   assert.deepEqual(finalized.commits, []);
-  const unreleased = parsed.filter((release) => release.version === null);
-  assert.equal(unreleased.length, 1);
-  assert.equal(parsed[0].version, null);
-  assert.deepEqual(unreleased[0].categories.map(({ name }) => name), ['Fixed', 'Added', 'Changed']);
-  assert.deepEqual(unreleased[0].changes, [
+  const currentRelease = parsed.find((release) => release.version === '0.10.1');
+  assert.ok(currentRelease);
+  assert.equal(currentRelease.date, '2026-09-10');
+  assert.deepEqual(currentRelease.categories.map(({ name }) => name), ['Fixed', 'Added', 'Changed']);
+  assert.deepEqual(currentRelease.changes, [
     'Fixed body-less Worker cancel POST parsing so `POST /api/orders/:orderId/cancel` no longer attempts to parse an absent JSON body.',
     'Improved API error classification so business, authentication, and server errors are not reported as network failures.',
     'Added a cancel-order detail confirmation modal before submitting a cancellation.',
@@ -175,7 +175,16 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Prevented duplicate cancel submissions while a cancellation request is pending.',
     'Refresh order, calendar, and balance state after a successful cancellation.'
   ]);
+  assert.deepEqual(currentRelease.commits, []);
+  const unreleased = parsed.filter((release) => release.version === null);
+  assert.equal(unreleased.length, 1);
+  assert.equal(parsed[0].version, null);
+  assert.deepEqual(unreleased[0].categories, []);
+  assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
+  const uiReleases = parsed.filter(isFormalRelease);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 2), ['0.10.1', '0.10.0']);
+  assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);
 });
@@ -187,5 +196,7 @@ test('changelog source is derived from the Markdown raw import', () => {
   assert.match(source, /parseChangelog\(/);
   assert.doesNotMatch(source, /export const CHANGELOG = \[\s*\{/);
   assert.match(source, /UI_CHANGELOG_TRANSLATIONS/);
+  assert.match(source, /APP_VERSION = CHANGELOG\.find\(isFormalRelease\)/);
+  assert.match(source, /CHANGELOG\.filter\(isFormalRelease\)/);
   assert.match(source, /修正取消訂單失敗問題/);
 });
