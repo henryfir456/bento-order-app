@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bento-formal-maintenance-loopback",
+  "main": "maintenance/remote-cleanup-entry.mjs",
+  "compatibility_date": "2026-09-07",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "CLEANUP_TARGET_NAME": "bento-formal",
+    "CLEANUP_DATABASE_ID": "e75bc185-afb5-4a5d-abc9-81bd79525cff"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bento-formal",
+      "database_id": "e75bc185-afb5-4a5d-abc9-81bd79525cff",
+      "migrations_dir": "migrations-formal"
+    }
+  ]
+}

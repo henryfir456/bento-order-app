@@ -10,9 +10,9 @@ const migrationSql = readdirSync(resolve(here, '../../migrations-formal'))
   .map((name) => readFileSync(resolve(here, '../../migrations-formal', name), 'utf8'));
 
 export class LocalFormalD1 {
-  constructor(databasePath) {
-    this.database = new DatabaseSync(databasePath);
-    migrationSql.forEach((sql) => this.database.exec(sql));
+  constructor(databasePath, { initialize = true, readOnly = false } = {}) {
+    this.database = new DatabaseSync(databasePath, { readOnly });
+    if (initialize) migrationSql.forEach((sql) => this.database.exec(sql));
     this.batchQueue = Promise.resolve();
   }
 
@@ -50,3 +50,8 @@ export class LocalFormalD1 {
 }
 
 export const openLocalFormalDatabase = (databasePath) => new LocalFormalD1(databasePath);
+
+export const openLocalCleanupDatabase = (
+  databasePath,
+  { readOnly = false } = {}
+) => new LocalFormalD1(databasePath, { initialize: false, readOnly });
