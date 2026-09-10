@@ -1646,6 +1646,52 @@ test('central permission model keeps ProxyAdmin operational read access without 
   assert.equal(gas.hasPermission('Admin', 'manageCalendar'), true);
 });
 
+test('frontend User receives exactly order-summary capabilities without administrative escalation', async () => {
+  const permissionsPath = path.join(__dirname, '..', 'src', 'auth', 'permissions.js');
+  const permissionsSource = fs.readFileSync(permissionsPath, 'utf8');
+  const { ROLE_PERMISSIONS } = await import(pathToFileURL(permissionsPath).href);
+  const userCapabilities = Object.entries(ROLE_PERMISSIONS.User)
+    .filter(([, enabled]) => enabled)
+    .map(([permission]) => permission)
+    .sort();
+
+  assert.deepEqual(userCapabilities, [
+    'cancelOwnOrder',
+    'editOwnOrder',
+    'orderOwn',
+    'viewAdminOrderSummary',
+    'viewAllOrders',
+    'viewOrderStatistics',
+    'viewOwnBalance',
+    'viewOwnTransactions'
+  ]);
+  for (const permission of [
+    'manageCalendar',
+    'manageAnnouncements',
+    'viewMemberBalances',
+    'topupMember',
+    'manageRoles',
+    'viewAsUser'
+  ]) {
+    assert.notEqual(ROLE_PERMISSIONS.User[permission], true, `User must not receive ${permission}`);
+  }
+  assert.match(permissionsSource, /User:[\s\S]*?viewAdminOrderSummary:\s*true/);
+  assert.match(permissionsSource, /User:[\s\S]*?viewAllOrders:\s*true/);
+  assert.match(permissionsSource, /User:[\s\S]*?viewOrderStatistics:\s*true/);
+
+  assert.equal(ROLE_PERMISSIONS.ProxyAdmin.manageCalendar, true);
+  assert.notEqual(ROLE_PERMISSIONS.ProxyAdmin.manageAnnouncements, true);
+  assert.notEqual(ROLE_PERMISSIONS.ProxyAdmin.viewMemberBalances, true);
+  assert.notEqual(ROLE_PERMISSIONS.ProxyAdmin.topupMember, true);
+  assert.notEqual(ROLE_PERMISSIONS.ProxyAdmin.manageRoles, true);
+  assert.notEqual(ROLE_PERMISSIONS.ProxyAdmin.viewAsUser, true);
+  assert.equal(ROLE_PERMISSIONS.Admin.manageAnnouncements, true);
+  assert.equal(ROLE_PERMISSIONS.Admin.viewMemberBalances, true);
+  assert.equal(ROLE_PERMISSIONS.Admin.topupMember, true);
+  assert.equal(ROLE_PERMISSIONS.Admin.manageRoles, true);
+  assert.equal(ROLE_PERMISSIONS.Admin.viewAsUser, true);
+});
+
 test('ProxyAdmin retains operations access but cannot read balances or top up', () => {
   const spreadsheet = orderSpreadsheet();
   spreadsheet.sheets.Users = usersWithProxySheet();
@@ -1844,40 +1890,35 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
   const changelogSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'data', 'changelog.js'), 'utf8');
+  const changelogMarkdown = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
   const modalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'Modal.jsx'), 'utf8');
   const orderSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderPage.jsx'), 'utf8');
   const confirmationSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderConfirmationModal.jsx'), 'utf8');
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.9.0');
-  assert.equal(packageLock.version, '0.9.0');
-  assert.equal(packageLock.packages[''].version, '0.9.0');
+  assert.equal(packageJson.version, '0.10.0');
+  assert.equal(packageLock.version, '0.10.0');
+  assert.equal(packageLock.packages[''].version, '0.10.0');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
-  assert.match(changelogSource, /version: '0\.1\.0'/);
-  assert.match(changelogSource, /version: '0\.8\.0'/);
-  assert.match(changelogSource, /version: '0\.9\.0'/);
-  assert.match(changelogSource, /version: '0\.7\.0'/);
-  assert.match(changelogSource, /3305217/);
-  assert.match(changelogSource, /de5f152/);
-  assert.match(changelogSource, /後端由 Google Apps Script 遷移至 Cloudflare Workers/);
-  assert.match(changelogSource, /送出訂單前新增訂單內容確認流程/);
-  assert.match(changelogSource, /ProxyAdmin 新增開團設定權限/);
-  assert.match(changelogSource, /月曆管理更名為開團/);
-  assert.match(changelogSource, /2641c6d/);
-  assert.match(changelogSource, /7fc7bee/);
-  assert.match(changelogSource, /03f54c4/);
-  assert.match(changelogSource, /修正月份起始於週末時的月曆空白列/);
-  assert.match(changelogSource, /優化頁尾資訊與作者標示/);
-  assert.match(changelogSource, /公告詳情新增公告日期/);
-  assert.match(changelogSource, /version: '0\.6\.0'/);
-  assert.match(changelogSource, /新增首頁公告與公告詳情/);
-  assert.match(changelogSource, /支援同時查看多則有效公告/);
-  assert.match(changelogSource, /修正切換月份時月曆寬度不一致/);
-  assert.match(changelogSource, /統一已截止日期視覺狀態/);
-  assert.match(changelogSource, /commits:/);
+  assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
+  assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);
+  assert.doesNotMatch(changelogSource, /export const CHANGELOG = \[\s*\{/);
+  assert.match(changelogMarkdown, /# Changelog/);
+  assert.match(changelogMarkdown, /## \[Unreleased\]/);
+  assert.match(changelogMarkdown, /## \[0\.10\.0\] - 2026-09-10/);
+  assert.match(changelogMarkdown, /### Added/);
+  assert.match(changelogMarkdown, /### Changed/);
+  for (const version of ['0.9.0', '0.8.0', '0.7.1', '0.7.0', '0.6.0', '0.5.0', '0.4.1', '0.4.0', '0.3.0', '0.2.1', '0.1.0']) {
+    assert.match(changelogMarkdown, new RegExp(`## \\[${version.replace('.', '\\.')}\\]`));
+  }
+  assert.match(changelogMarkdown, /\*\*Commits:\*\* none/);
+  assert.match(changelogMarkdown, /\*\*Commits:\*\* 3305217, 195a619/);
   assert.match(modalSource, /role="dialog"/);
   assert.match(modalSource, /Escape/);
+  const changelogModalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ChangelogModal.jsx'), 'utf8');
+  assert.match(changelogModalSource, /release\.version \? `v\$\{release\.version\}` : 'Unreleased'/);
+  assert.match(changelogModalSource, /release\.categories/);
   assert.match(appSource, /APP_VERSION/);
   assert.match(appSource, /CHANGELOG/);
   assert.match(appSource, /apiClient\.updatePickupFloor/);
@@ -1887,7 +1928,11 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   assert.match(appSource, /OrderConfirmationModal/);
   assert.match(appSource, /buildOrderSubmission/);
   assert.match(appSource, /aria-label="功能操作"/);
-  assert.match(appSource, /💰 餘額/);
+  const balanceHeader = appSource.match(/can\('viewOwnBalance'\)[\s\S]*?formatBalanceAmount\(displayBalance\)[\s\S]*?\n            \)\}/);
+  assert.ok(balanceHeader, 'header must keep the existing balance value and formatter');
+  assert.doesNotMatch(balanceHeader[0], /💰\s*餘額/);
+  assert.match(appSource, /💰 餘額管理/);
+  assert.match(appSource, /目前餘額：<span className="font-bold">\{formatBalanceAmount\(selectedTopupUser\.balance\)\}<\/span>/);
   assert.match(appSource, /📅 開團/);
   assert.match(appSource, /送出訂單/);
   assert.doesNotMatch(appSource, /月曆管理/);
@@ -1919,6 +1964,45 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   assert.match(confirmationSource, /無備註/);
   assert.match(confirmationSource, /確認下單/);
   assert.match(confirmationSource, /disabled=\{loading\}/);
+});
+
+test('frontend announcement administration stays Worker-only, Admin-only, and View As-safe', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const apiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js'), 'utf8');
+  const componentSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'admin', 'AnnouncementManagement.jsx'), 'utf8');
+  const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
+
+  for (const operation of [
+    'getAdminAnnouncements',
+    'createAdminAnnouncement',
+    'updateAdminAnnouncement',
+    'deleteAdminAnnouncement'
+  ]) {
+    assert.match(apiSource, new RegExp(`${operation}:`));
+  }
+  assert.match(apiSource, /getAdminAnnouncements:[\s\S]*?workerRequest\(\s*'getAdminAnnouncements',\s*'GET',\s*'\/api\/admin\/announcements'\s*\)/);
+  assert.match(apiSource, /createAdminAnnouncement:[\s\S]*?workerRequest\(\s*'createAdminAnnouncement',\s*'POST',\s*'\/api\/admin\/announcements',[\s\S]*?body:\s*payload[\s\S]*?\)/);
+  assert.match(apiSource, /updateAdminAnnouncement:[\s\S]*?workerRequest\(\s*'updateAdminAnnouncement',\s*'PATCH',[\s\S]*?body:\s*payload/);
+  assert.match(apiSource, /deleteAdminAnnouncement:[\s\S]*?workerRequest\(\s*'deleteAdminAnnouncement',\s*'DELETE'/);
+  const gasOperations = apiSource.slice(apiSource.indexOf('const createGasOperations'), apiSource.indexOf('const createWorkerOperations'));
+  assert.doesNotMatch(gasOperations, /AdminAnnouncement/);
+
+  assert.match(permissionsSource, /User:[\s\S]*?manageAnnouncements:\s*false/);
+  assert.match(permissionsSource, /ProxyAdmin:[\s\S]*?manageAnnouncements:\s*false/);
+  assert.match(permissionsSource, /Admin:[\s\S]*?manageAnnouncements:\s*true/);
+  assert.match(appSource, /apiClient\.transport === ['"]worker['"][\s\S]*?canAuth\('manageAnnouncements'\)[\s\S]*?!isViewAsMode/);
+  assert.match(appSource, /handleAdminSectionChange\('announcements'\)/);
+  assert.match(appSource, /AnnouncementManagement/);
+  assert.match(appSource, /adminSection === ['"]announcements['"][\s\S]*?canAuth\('manageAnnouncements'\)[\s\S]*?!isViewAsMode/);
+  assert.match(appSource, /AnnouncementBar/);
+  assert.match(appSource, /AnnouncementModal/);
+
+  const deleteHandler = componentSource.match(/const handleDelete = async[\s\S]*?\n  \};/);
+  assert.ok(deleteHandler);
+  assert.match(deleteHandler[0], /window\.confirm\(/);
+  assert.match(deleteHandler[0], /window\.confirm\([\s\S]*?onDelete\(/);
+  assert.match(componentSource, /isViewAsMode/);
+  assert.match(componentSource, /onRefresh/);
 });
 
 test('order submission builder produces the shared confirmation and mutation payload', async () => {

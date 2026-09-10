@@ -19,7 +19,7 @@ const identity = (role, lineUserId = 'user-1') => ({
 test('permission matrix preserves User, ProxyAdmin, and Admin boundaries', () => {
   assert.equal(can('User', ACTIONS.READ_SELF), true);
   assert.equal(can('User', ACTIONS.ADMIN_CALENDAR), false);
-  assert.equal(can('User', ACTIONS.READ_ADMIN_SUMMARY), false);
+  assert.equal(can('User', ACTIONS.READ_ADMIN_SUMMARY), true);
   assert.equal(can('ProxyAdmin', ACTIONS.READ_ADMIN_SUMMARY), true);
   assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_CALENDAR), true);
   assert.equal(can('ProxyAdmin', ACTIONS.READ_MEMBER_BALANCES), false);
@@ -28,6 +28,24 @@ test('permission matrix preserves User, ProxyAdmin, and Admin boundaries', () =>
   assert.equal(can('Admin', ACTIONS.ADMIN_CALENDAR), true);
   assert.equal(can('Admin', ACTIONS.ADMIN_ROLE), true);
   assert.equal(can('Unknown', ACTIONS.READ_SELF), false);
+});
+
+test('User gains only order-summary read access and no other administrative action', () => {
+  for (const action of [
+    ACTIONS.READ_MEMBER_BALANCES,
+    ACTIONS.ADMIN_CALENDAR,
+    ACTIONS.ADMIN_TOP_UP,
+    ACTIONS.ADMIN_ROLE,
+    ACTIONS.ADMIN_ANNOUNCEMENTS,
+    ACTIONS.VIEW_AS
+  ]) {
+    assert.equal(can('User', action), false, `User must not receive ${action}`);
+  }
+  assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_ANNOUNCEMENTS), false);
+  assert.equal(can('ProxyAdmin', ACTIONS.VIEW_AS), false);
+  for (const action of Object.values(ACTIONS)) {
+    assert.equal(can('Admin', action), true, `Admin must retain ${action}`);
+  }
 });
 
 test('assertCan requires a registered actor and assertSelfTarget rejects impersonation', () => {

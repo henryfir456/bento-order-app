@@ -27,3 +27,19 @@ test('View As changes only the read subject and records actor/target attribution
   assert.equal(audit.target_line_user_id, 'user-1');
   assert.equal(audit.action, 'VIEW_AS_ADMIN_SUMMARY');
 });
+
+test('User order-summary access does not grant View As', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', role: 'User' });
+  seedUser(database, { lineUserId: 'user-2', role: 'User' });
+  const response = await handleFormalRequest(
+    request('/api/admin/summary?date=2026-09-08&viewAs=user-2', { token: 'user-token' }),
+    { DB: database },
+    {
+      fetchImpl: profileFetch({ token: 'user-token', lineUserId: 'user-1' }),
+      now: new Date('2026-09-08T00:00:00.000Z')
+    }
+  );
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { error: 'VIEW_AS_FORBIDDEN' });
+});

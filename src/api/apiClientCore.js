@@ -266,6 +266,28 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/admin/summary',
     { query: { date: targetDate, includeMemberBalances, viewAs: viewAsUserId } }
   ),
+  getAdminAnnouncements: () => workerRequest(
+    'getAdminAnnouncements',
+    'GET',
+    '/api/admin/announcements'
+  ),
+  createAdminAnnouncement: (payload = {}) => workerRequest(
+    'createAdminAnnouncement',
+    'POST',
+    '/api/admin/announcements',
+    { body: payload }
+  ),
+  updateAdminAnnouncement: (id, payload = {}) => workerRequest(
+    'updateAdminAnnouncement',
+    'PATCH',
+    `/api/admin/announcements/${encodeURIComponent(String(id || '').trim())}`,
+    { body: payload }
+  ),
+  deleteAdminAnnouncement: (id) => workerRequest(
+    'deleteAdminAnnouncement',
+    'DELETE',
+    `/api/admin/announcements/${encodeURIComponent(String(id || '').trim())}`
+  ),
   getMemberBalances: () => workerRequest(
     'getMemberBalances',
     'GET',

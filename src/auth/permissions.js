@@ -5,8 +5,12 @@ export const ROLE_PERMISSIONS = Object.freeze({
     cancelOwnOrder: true,
     viewOwnBalance: true,
     viewOwnTransactions: true,
+    viewAdminOrderSummary: true,
+    viewAllOrders: true,
+    viewOrderStatistics: true,
     viewMemberBalances: false,
-    topupMember: false
+    topupMember: false,
+    manageAnnouncements: false
   }),
   ProxyAdmin: Object.freeze({
     orderOwn: true,
@@ -19,7 +23,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     viewOrderStatistics: true,
     manageCalendar: true,
     viewMemberBalances: false,
-    topupMember: false
+    topupMember: false,
+    manageAnnouncements: false
   }),
   Admin: Object.freeze({
     orderOwn: true,
@@ -37,7 +42,8 @@ export const ROLE_PERMISSIONS = Object.freeze({
     manageMenu: true,
     manageUsers: true,
     manageRoles: true,
-    viewAsUser: true
+    viewAsUser: true,
+    manageAnnouncements: true
   })
 });
 

@@ -62,7 +62,42 @@ test('admin and proxy summary views aggregate active orders without leaking memb
     '/api/admin/summary?date=2026-09-08',
     { token: 'user-token', lineUserId: 'user-1' }
   );
-  assert.equal(user.response.status, 403);
+  assert.equal(user.response.status, 200);
+  assert.equal(user.body.requesterRole, 'User');
+  assert.equal(user.body.totalItems, 2);
+  assert.equal(user.body.totalAmount, 80);
+  assert.deepEqual(user.body.usersSummary, []);
+
+  const userWithMemberBalances = await call(
+    database,
+    '/api/admin/summary?date=2026-09-08&includeMemberBalances=true',
+    { token: 'user-token', lineUserId: 'user-1' }
+  );
+  assert.equal(userWithMemberBalances.response.status, 200);
+  assert.deepEqual(userWithMemberBalances.body.usersSummary, []);
+});
+
+test('User, ProxyAdmin, and Admin all read order summaries while only Admin reads member balances', async () => {
+  const database = seedSummary();
+  const results = await Promise.all([
+    call(database, '/api/admin/summary?date=2026-09-08&includeMemberBalances=true', {
+      token: 'user-token',
+      lineUserId: 'user-1'
+    }),
+    call(database, '/api/admin/summary?date=2026-09-08&includeMemberBalances=true', {
+      token: 'proxy-token',
+      lineUserId: 'proxy-1'
+    }),
+    call(database, '/api/admin/summary?date=2026-09-08&includeMemberBalances=true', {
+      token: 'admin-token',
+      lineUserId: 'admin-1'
+    })
+  ]);
+
+  assert.deepEqual(results.map(({ response }) => response.status), [200, 200, 200]);
+  assert.deepEqual(results.map(({ body }) => body.requesterRole), ['User', 'ProxyAdmin', 'Admin']);
+  assert.deepEqual(results.slice(0, 2).map(({ body }) => body.usersSummary), [[], []]);
+  assert.equal(results[2].body.usersSummary.length, 4);
 });
 
 test('member balances are Admin-only, token-derived, and mapped to public member rows', async () => {

@@ -25,6 +25,7 @@ import ImagePreviewModal from './features/orders/ImagePreviewModal';
 import OrderConfirmationModal from './features/orders/OrderConfirmationModal';
 import { buildOrderSubmission } from './features/orders/orderSubmission';
 import AdminOrderSummary from './features/admin/AdminOrderSummary';
+import AnnouncementManagement from './features/admin/AnnouncementManagement';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
 
@@ -234,6 +235,11 @@ export default function App() {
   const [adminSummaryError, setAdminSummaryError] = useState('');
   const adminSummaryRequestRef = useRef(0);
   const [adminSection, setAdminSection] = useState('orders');
+  const [adminAnnouncements, setAdminAnnouncements] = useState([]);
+  const [adminAnnouncementsLoading, setAdminAnnouncementsLoading] = useState(false);
+  const [adminAnnouncementsError, setAdminAnnouncementsError] = useState('');
+  const [adminAnnouncementsLoaded, setAdminAnnouncementsLoaded] = useState(false);
+  const adminAnnouncementsRequestRef = useRef(0);
   const [memberBalances, setMemberBalances] = useState([]);
   const [memberBalancesLoading, setMemberBalancesLoading] = useState(false);
   const [memberBalancesError, setMemberBalancesError] = useState('');
@@ -284,6 +290,7 @@ export default function App() {
 
   const clearIdentityData = () => {
     adminSummaryRequestRef.current += 1;
+    adminAnnouncementsRequestRef.current += 1;
     historyRequestRef.current += 1;
     memberBalancesRequestRef.current += 1;
     deferredUiGenerationRef.current += 1;
@@ -324,6 +331,10 @@ export default function App() {
     setAdminSummaryLoading(false);
     setAdminSummaryError('');
     setAdminSection('orders');
+    setAdminAnnouncements([]);
+    setAdminAnnouncementsLoading(false);
+    setAdminAnnouncementsError('');
+    setAdminAnnouncementsLoaded(false);
     setMemberBalances([]);
     setMemberBalancesLoading(false);
     setMemberBalancesError('');
@@ -622,6 +633,70 @@ export default function App() {
   useEffect(() => {
     initLiffAndFetchData();
   }, []);
+
+  const canManageAdminAnnouncements = () => (
+    apiClient.transport === 'worker'
+    && authState === AUTH_STATES.REGISTERED
+    && Boolean(authUser?.userId)
+    && !viewAsUser
+    && hasPermission(authUser?.role, 'manageAnnouncements')
+  );
+
+  const loadAdminAnnouncements = async (force = false) => {
+    if (!canManageAdminAnnouncements()) return;
+    if (!force && adminAnnouncementsLoaded) return;
+
+    const requestId = ++adminAnnouncementsRequestRef.current;
+    setAdminAnnouncementsLoading(true);
+    setAdminAnnouncementsError('');
+
+    try {
+      const accessToken = authClient.getAccessToken();
+      if (!accessToken) {
+        setAdminAnnouncementsError('目前無法驗證身份，請重新登入後再試。');
+        return;
+      }
+      const res = await apiClient.getAdminAnnouncements();
+      const data = await res.json();
+      if (requestId !== adminAnnouncementsRequestRef.current) return;
+
+      if (!Array.isArray(data.announcements)) {
+        setAdminAnnouncementsError('目前無法取得公告清單，請稍後再試。');
+        return;
+      }
+      setAdminAnnouncements(data.announcements);
+      setAdminAnnouncementsLoaded(true);
+    } catch (error) {
+      if (requestId === adminAnnouncementsRequestRef.current) {
+        setAdminAnnouncementsError(error?.code
+          ? `目前無法取得公告清單（${error.code}），請稍後再試。`
+          : '目前無法取得公告清單，請稍後再試。');
+      }
+    } finally {
+      if (requestId === adminAnnouncementsRequestRef.current) setAdminAnnouncementsLoading(false);
+    }
+  };
+
+  const assertAdminAnnouncementMutationAllowed = () => {
+    if (!canManageAdminAnnouncements()) {
+      throw new Error('公告管理僅限已驗證的 Admin 使用。');
+    }
+  };
+
+  const createAdminAnnouncement = async (payload) => {
+    assertAdminAnnouncementMutationAllowed();
+    await apiClient.createAdminAnnouncement(payload);
+  };
+
+  const updateAdminAnnouncement = async (id, payload) => {
+    assertAdminAnnouncementMutationAllowed();
+    await apiClient.updateAdminAnnouncement(id, payload);
+  };
+
+  const deleteAdminAnnouncement = async (id) => {
+    assertAdminAnnouncementMutationAllowed();
+    await apiClient.deleteAdminAnnouncement(id);
+  };
 
   const loadAdminSummary = async (targetDate, viewAsUserId = null, shouldShowView) => {
     if (!authUserId || !targetDate) return;
@@ -1292,6 +1367,14 @@ export default function App() {
       setAdminSection('balances');
       setViewMode('admin');
       loadMemberBalances();
+      return;
+    }
+
+    if (section === 'announcements') {
+      if (!canManageAdminAnnouncements() || isViewAsMode) return;
+      setAdminSection('announcements');
+      setViewMode('admin');
+      void loadAdminAnnouncements(true);
     }
   };
 
@@ -1762,7 +1845,6 @@ export default function App() {
                 onClick={fetchBalanceHistory}
                 className="inline-flex items-center gap-1 rounded text-xs text-emerald-200 hover:underline focus:outline-none"
               >
-                💰 餘額
                 <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${displayBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
                   {formatBalanceAmount(displayBalance)}
                 </span>
@@ -1800,6 +1882,15 @@ export default function App() {
                 className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'balances' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
               >
                 💰 餘額管理
+              </button>
+            )}
+            {isRegistered && apiClient.transport === 'worker' && canAuth('manageAnnouncements') && !isViewAsMode && (
+              <button
+                type="button"
+                onClick={() => handleAdminSectionChange('announcements')}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'announcements' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
+              >
+                📢 公告管理
               </button>
             )}
             {isRegistered && can('manageCalendar') && (
@@ -1981,6 +2072,22 @@ export default function App() {
                 canTopup={can('topupMember')}
                 isViewAsMode={isViewAsMode}
                 onOpenTopupModal={handleOpenTopupModal}
+              />
+            )}
+
+            {adminSection === 'announcements'
+              && apiClient.transport === 'worker'
+              && canAuth('manageAnnouncements')
+              && !isViewAsMode && (
+              <AnnouncementManagement
+                announcements={adminAnnouncements}
+                loading={adminAnnouncementsLoading}
+                error={adminAnnouncementsError}
+                isViewAsMode={isViewAsMode}
+                onRefresh={() => loadAdminAnnouncements(true)}
+                onCreate={createAdminAnnouncement}
+                onUpdate={updateAdminAnnouncement}
+                onDelete={deleteAdminAnnouncement}
               />
             )}
           </div>

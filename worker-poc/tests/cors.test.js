@@ -217,6 +217,21 @@ test('OPTIONS preserves the CORS preflight contract in remote-test mode', async 
   assertCorsAllowed(response, origin);
 });
 
+test('OPTIONS advertises DELETE for formal announcement preflight', async () => {
+  const response = await handleFormalRequest(request('/api/admin/announcements/announcement-1', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: PRODUCTION_FRONTEND_ORIGIN,
+      'Access-Control-Request-Method': 'DELETE',
+      'Access-Control-Request-Headers': 'Authorization, Content-Type'
+    }
+  }), {});
+
+  assert.equal(response.status, 204);
+  assertCorsAllowed(response, PRODUCTION_FRONTEND_ORIGIN);
+  assert.match(response.headers.get('Access-Control-Allow-Methods'), /(^|, )DELETE(,|$)/);
+});
+
 test('error responses use the same CORS policy', async () => {
   const allowed = await handleFormalRequest(request('/api/me', {
     headers: { Origin: 'http://localhost:5173' }
