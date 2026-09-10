@@ -29,6 +29,20 @@ export const assertLocalReportPath = (outputPath) => {
 export const writeImportReport = async (report, outputPath) => {
   const path = assertLocalReportPath(outputPath);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(report, null, 2) + '\n', 'utf8');
+  try {
+    await writeFile(path, JSON.stringify(report, null, 2) + '\n', {
+      encoding: 'utf8',
+      flag: 'wx'
+    });
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      throw new ImportContractError(
+        'OUTPUT_PATH_EXISTS',
+        'The requested local report already exists; refusing to overwrite a user-owned import artifact.',
+        { path }
+      );
+    }
+    throw error;
+  }
   return path;
 };

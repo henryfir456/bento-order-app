@@ -43,7 +43,11 @@ export const handleOrderRoute = async (request, env, {
   const cancelId = request.method === 'POST' ? orderIdFromCancelPath(url.pathname) : null;
   if (!isCreate && !cancelId) return null;
 
-  const identity = await requireIdentity(request, env, { fetchImpl, allowViewAs: false });
+  const identity = await requireIdentity(request, env, {
+    fetchImpl,
+    allowViewAs: false,
+    now
+  });
   const body = isCreate ? await readJson(request) : {};
   const key = idempotencyKey(request, body);
 

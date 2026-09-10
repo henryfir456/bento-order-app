@@ -59,7 +59,8 @@ export const handleAdminRoute = async (request, env, {
     && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: !isAnnouncementRoute
+    allowViewAs: !isAnnouncementRoute,
+    now
   });
   if (isAnnouncementMissingId) throw badRequest('ANNOUNCEMENT_ID_REQUIRED');
   if (isAnnouncementList) {

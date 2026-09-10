@@ -30,21 +30,21 @@ const dateFromPath = (pathname, pattern) => {
 
 export const toggleLike = async (database, identity, orderDate, clock = new Date()) => {
   assertCan(identity, ACTIONS.WRITE_SELF);
-  assertSelfTarget(identity, identity.actor.lineUserId);
+  assertSelfTarget(identity, identity.actor.userId);
   if (!isDateOnly(orderDate)) throw badRequest('INVALID_DATE');
   const occurredAt = resolveClock(clock).toISOString();
   const toggle = prepareStatement(database, `
     DELETE FROM likes
-    WHERE order_date = ? AND line_user_id = ?
-  `, [orderDate, identity.actor.lineUserId]);
+    WHERE order_date = ? AND user_id = ?
+  `, [orderDate, identity.actor.userId]);
   const add = prepareStatement(database, `
-    INSERT INTO likes (order_date, line_user_id, created_at)
+    INSERT INTO likes (order_date, user_id, created_at)
     SELECT ?, ?, ?
     WHERE changes() = 0
-  `, [orderDate, identity.actor.lineUserId, occurredAt]);
+  `, [orderDate, identity.actor.userId, occurredAt]);
   const autoOpen = prepareStatement(database, `
     INSERT INTO calendar_settings (
-      order_date, vendor, mode, vendor_source, updated_by_line_user_id,
+      order_date, vendor, mode, vendor_source, updated_by_user_id,
       created_at, updated_at
     )
     SELECT ?, '蔡老師', 'A', 'LIKE_DEFAULT', NULL, ?, ?
@@ -57,13 +57,13 @@ export const toggleLike = async (database, identity, orderDate, clock = new Date
       vendor = '蔡老師',
       mode = 'A',
       vendor_source = 'LIKE_DEFAULT',
-      updated_by_line_user_id = NULL,
+      updated_by_user_id = NULL,
       updated_at = excluded.updated_at
   `, [orderDate, occurredAt, occurredAt, orderDate, orderDate]);
   const autoClose = prepareStatement(database, `
     UPDATE calendar_settings
     SET vendor = '', mode = 'A', vendor_source = 'LIKE_DEFAULT',
-        updated_by_line_user_id = NULL, updated_at = ?
+        updated_by_user_id = NULL, updated_at = ?
     WHERE order_date = ? AND vendor = '蔡老師'
       AND NOT EXISTS (SELECT 1 FROM likes WHERE order_date = ?)
       AND NOT EXISTS (
@@ -73,11 +73,11 @@ export const toggleLike = async (database, identity, orderDate, clock = new Date
   `, [occurredAt, orderDate, orderDate, orderDate]);
   await runMutationBatch(database, [toggle, add, autoOpen, autoClose]);
   const state = await database.prepare(`
-    SELECT EXISTS(
-      SELECT 1 FROM likes WHERE order_date = ? AND line_user_id = ?
+      SELECT EXISTS(
+      SELECT 1 FROM likes WHERE order_date = ? AND user_id = ?
     ) AS is_liked,
     (SELECT COUNT(*) FROM likes WHERE order_date = ?) AS total_likes
-  `).bind(orderDate, identity.actor.lineUserId, orderDate).first();
+  `).bind(orderDate, identity.actor.userId, orderDate).first();
   return {
     success: true,
     isLiked: Boolean(state?.is_liked),
@@ -97,19 +97,22 @@ export const setCalendarSetting = async (database, identity, orderDate, input, c
   const auditId = randomId('audit');
   const upsert = prepareStatement(database, `
     INSERT INTO calendar_settings (
-      order_date, vendor, mode, vendor_source, updated_by_line_user_id,
+      order_date, vendor, mode, vendor_source, updated_by_user_id,
       created_at, updated_at
     ) VALUES (?, ?, ?, 'CONFIGURED', ?, ?, ?)
     ON CONFLICT(order_date) DO UPDATE SET
       vendor = excluded.vendor,
       mode = excluded.mode,
       vendor_source = 'CONFIGURED',
-      updated_by_line_user_id = excluded.updated_by_line_user_id,
+      updated_by_user_id = excluded.updated_by_user_id,
       updated_at = excluded.updated_at
-  `, [orderDate, vendor, mode, identity.actor.lineUserId, occurredAt, occurredAt]);
+  `, [orderDate, vendor, mode, identity.actor.userId, occurredAt, occurredAt]);
   const audit = auditStatement(database, {
     auditId,
-    actorLineUserId: identity.actor.lineUserId,
+    actorUserId: identity.actor.userId,
+    actorAuthMode: identity.actor.authMode,
+    actorEmployeeIdSnapshot: identity.actor.employeeId,
+    actorLineUserIdSnapshot: identity.actor.lineUserId,
     action: 'CALENDAR_SETTING_UPDATED',
     metadata: { orderDate, vendor, mode },
     occurredAt
@@ -132,7 +135,8 @@ export const handleCalendarRoute = async (request, env, {
   if (!likeDate && !adminDate) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: false
+    allowViewAs: false,
+    now
   });
   if (likeDate) return jsonResponse(await toggleLike(env.DB, identity, likeDate, now));
   return jsonResponse(await setCalendarSetting(

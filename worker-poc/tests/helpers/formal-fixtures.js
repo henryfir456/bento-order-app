@@ -1,16 +1,20 @@
 export const seedUser = (database, {
-  lineUserId,
+  lineUserId = null,
+  userId = lineUserId,
+  employeeId = lineUserId ? `employee-${lineUserId}` : null,
   displayName = lineUserId,
   pickupFloor = '1樓',
   balance = 0,
-  role = 'User'
+  role = 'User',
+  active = 1
 }) => {
   database.run(`
     INSERT INTO users (
-      line_user_id, display_name, pickup_floor, balance, role
+      user_id, employee_id, line_user_id, display_name, pickup_floor,
+      balance, role, active
     )
-    VALUES (?, ?, ?, ?, ?)
-  `, lineUserId, displayName, pickupFloor, balance, role);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, userId, employeeId, lineUserId, displayName, pickupFloor, balance, role, active);
 };
 
 export const seedMenuVersion = (database, {

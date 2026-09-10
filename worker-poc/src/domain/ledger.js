@@ -4,7 +4,7 @@ import {
   getLatestLedgerRow,
   getLedgerRows
 } from '../db/ledgerQueries.js';
-import { getUserByLineId } from '../db/users.js';
+import { getUserById } from '../db/users.js';
 
 const MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
@@ -16,12 +16,12 @@ const monthBounds = (month) => {
   return { month: `${match[1]}-${match[2]}`, start: start.toISOString(), end: end.toISOString() };
 };
 
-const openingBalanceSnapshot = (database, lineUserId) => database.prepare(`
+const openingBalanceSnapshot = (database, userId) => database.prepare(`
   SELECT snapshot_balance, policy_status
   FROM opening_balance_snapshots
-  WHERE line_user_id = ?
+  WHERE user_id = ?
   LIMIT 1
-`).bind(lineUserId).first();
+`).bind(userId).first();
 
 const descriptionFor = (row) => row.note || row.type || 'BALANCE_CHANGE';
 
@@ -44,24 +44,24 @@ export const assertOpeningBalancePolicy = (policy) => {
   return policy;
 };
 
-export const getBalanceHistory = async (database, lineUserId, monthInput) => {
+export const getBalanceHistory = async (database, userId, monthInput) => {
   const month = monthBounds(monthInput);
-  const user = await getUserByLineId(database, lineUserId);
-  const snapshot = await openingBalanceSnapshot(database, lineUserId);
+  const user = await getUserById(database, userId);
+  const snapshot = await openingBalanceSnapshot(database, userId);
   if (!user) throw conflict('USER_NOT_FOUND');
   if (snapshot?.policy_status === 'REQUIRED') {
     throw conflict('OPENING_BALANCE_POLICY_REQUIRED');
   }
 
-  const allRows = await getLedgerRows(database, lineUserId);
+  const allRows = await getLedgerRows(database, userId);
   if (allRows.length === 0 && user.balance !== 0) {
     throw conflict('OPENING_BALANCE_POLICY_REQUIRED');
   }
   const monthRows = allRows.filter((row) => (
     row.occurred_at >= month.start && row.occurred_at < month.end
   ));
-  const prior = await getLatestLedgerRow(database, lineUserId, month.start);
-  const closing = await getLatestLedgerRow(database, lineUserId, month.end);
+  const prior = await getLatestLedgerRow(database, userId, month.start);
+  const closing = await getLatestLedgerRow(database, userId, month.end);
   const first = monthRows[0];
   const openingBalance = prior
     ? Number(prior.balance_after)

@@ -9,7 +9,8 @@ commands. The POC config is local-only: it uses the distinct
 `bento-api-poc-legacy` Worker name, `bento-poc-legacy-local` local D1 name, and
 no remote D1 ID. Its remote seed script is fail-closed.
 
-The formal Worker implements LINE token authentication, canonical identity,
+The formal Worker implements LINE token authentication, canonical relational
+identity, restricted employee guest sessions, conflict-safe LINE binding,
 View As read isolation, transactional order and balance mutations, and the
 formal D1 schema. React remains GAS-bound until the separate transport and
 cutover slice is authorized.
@@ -35,19 +36,30 @@ retained POC only:
 endpoints. They are not used for primary bootstrap parity or benchmark
 comparison.
 
-The formal startup flow is:
+The formal authenticated startup flow is:
 
 1. Send `GET /api/me` with `Authorization: Bearer <LINE access token>`.
-2. If `registered` is `false`, render registration using the token-derived
-   `lineUserId` and `displayName`; `/api/me` does not create a D1 row.
-3. Send `POST /api/register` with the validated `pickupFloor`.
-4. After registration, send `GET /api/bootstrap` with the same Bearer token.
-5. Send `GET /api/bootstrap/deferred?bootId=<same caller boot id>` for likes
+2. If `registered` is `false`, show the employee-ID binding path. The server
+   does not create a user from a LINE profile or a display name; the legacy
+   `POST /api/register` route only reads back an already registered user and
+   returns `EMPLOYEE_BIND_REQUIRED` for an unknown LINE identity.
+3. An unbound active employee may instead send
+   `POST /api/auth/employee-guest` with a string `{ "employeeId": "001234" }`.
+   The response is an opaque, expiring `employee_guest` session with only
+   self-service permissions.
+4. To bind LINE, send `POST /api/auth/line-bind` with the LINE Bearer token
+   and `X-Employee-Guest-Session`. The server updates the same canonical
+   `user_id` and revokes all of that employee's guest sessions atomically.
+5. After LINE binding, send `GET /api/bootstrap` with the LINE Bearer token.
+6. Send `GET /api/bootstrap/deferred?bootId=<same caller boot id>` for likes
    and announcements. The formal response echoes that boot ID exactly.
 
-The formal Worker ignores client-supplied user IDs for identity and keeps
-authenticated actor, optional read-only View As subject, and mutation actor
-separate.
+The formal Worker ignores client-supplied user IDs, employee IDs, roles,
+balances, and display names for identity and keeps authenticated actor,
+optional read-only View As subject, and mutation actor separate. `user_id` is
+the relational owner in orders, ledger, audit, likes, status history, and
+idempotency rows; `employee_id` is the textual business key and retains
+leading zeroes.
 
 Primary bootstrap intentionally does not include likes, active announcements,
 menu, deadline, or setting. This matches the current React startup waterfall.
@@ -63,6 +75,9 @@ worker-poc/
   src/index.js                         # retained legacy POC runtime
   migrations-formal/0000_formal_initial_schema.sql
   migrations-formal/0001_balance_integrity_primitives.sql
+  migrations-formal/0002_canonical_identity_rekey.sql
+  docs/canonical-identity-guest-access.md
+  docs/remote-import-readiness.md
   migrations/                            # retained legacy POC chain
   scripts/benchmark-bootstrap.mjs
   scripts/benchmark-report.mjs
@@ -103,10 +118,12 @@ environment or CI secret store. Never put it in this repository or an
 ## Local migrations and tests
 
 The default local migration command applies the formal chain
-`migrations-formal/0000_formal_initial_schema.sql` and
-`migrations-formal/0001_balance_integrity_primitives.sql`. It does not import
-workbook data. For legacy POC inspection, use the explicit POC migration
-command instead.
+`migrations-formal/0000_formal_initial_schema.sql`,
+`migrations-formal/0001_balance_integrity_primitives.sql`, and the one-time
+`migrations-formal/0002_canonical_identity_rekey.sql`. It does not import
+workbook data. Raw migration 0002 is intentionally a one-time rebuild; D1's
+migration history prevents it from being applied twice. For legacy POC
+inspection, use the explicit POC migration command instead.
 
 Run local migration verification twice, then run Worker tests:
 
@@ -191,32 +208,39 @@ The current approved replacement explicitly excludes only
 source rows and authorization reason are recorded in the review artifact;
 there is no timestamp, prefix, or generic duplicate-order exclusion rule.
 
-Create a review artifact and SQL file without changing any database:
+Create a local readiness artifact without changing any database. The current
+workbook is expected to be `BLOCKED`: its Users sheet has no `employee_id`,
+so this dry-run must not emit a replacement SQL file. Use a new output path
+that does not overwrite an existing local artifact:
 
 ```powershell
 npm.cmd run import:production:dry-run -- `
   --input "..\gas\便當系統設定.xlsx" `
-  --output ".local-imports/bento-formal-replacement-review.json" `
-  --sql-output ".local-imports/bento-formal-replacement.sql" `
+  --output ".local-imports/bento-formal-canonical-identity-readiness.json" `
+  --sql-output ".local-imports/bento-formal-canonical-identity.sql" `
   --target bento-formal `
   --database-id e75bc185-afb5-4a5d-abc9-81bd79525cff `
   --config wrangler.jsonc
 ```
 
 The artifact records the target UUID, source SHA-256 fingerprint, importer
-version, accepted/quarantined/warning counts, preserved and cleared tables,
-expected post-import counts, and the exact later destructive command. Review
-the artifact before any replacement authorization.
+version, exact identity status/counts, financial evidence and unexplained
+offsets, accepted/quarantined/warning counts, preserved and cleared tables,
+expected post-import counts, readiness blockers, and the exact later
+destructive command. Review the artifact before any replacement
+authorization. Dry-run, local stage, and future replacement share the same
+identity mapping, validation, reconciliation, and persistence-planner path.
 
 The future authorized remote command is:
 
 ```powershell
 npm.cmd run import:production:replace -- `
   --input "..\gas\便當系統設定.xlsx" `
+  --identity-map ".local-imports/employee-identity-map.json" `
   --target bento-formal `
   --database-id e75bc185-afb5-4a5d-abc9-81bd79525cff `
-  --reviewed-artifact ".local-imports/bento-formal-replacement-review.json" `
-  --sql-output ".local-imports/bento-formal-replacement.sql" `
+  --reviewed-artifact ".local-imports/bento-formal-canonical-identity-readiness.json" `
+  --sql-output ".local-imports/bento-formal-canonical-identity-replacement.sql" `
   --confirm-production-replace `
   --remote `
   --config wrangler.jsonc
@@ -227,11 +251,13 @@ verification. It performs a read-only duplicate-source preflight before
 submitting the reviewed multi-statement replacement SQL. The in-process local
 replacement uses D1 `batch()` atomicity; Wrangler's SQL execution path does
 not support SQL `BEGIN`/`COMMIT`, so remote execution must be followed by the
-read-only reconciliation checks below. It refuses the wrong
+read-only reconciliation checks in `docs/remote-import-readiness.md`. It
+refuses the wrong
 target, wrong or missing UUID, missing confirmation, missing or mismatched
 review artifact, already-applied source fingerprint, accepted historical
 ledger rows, or an active config whose D1 binding does not match the expected
-formal UUID.
+formal UUID. It also refuses a missing or conflicting exact employee mapping;
+it never derives `employee_id` from a name or LINE ID.
 
 For local destructive simulation, use the same reviewed SQL with Wrangler's
 local D1 target only:

@@ -24,15 +24,16 @@ const markImportedSnapshot = (database, {
   `, batchId, 'snapshot-source-' + batchId, 'test-version');
   database.run(`
     INSERT INTO opening_balance_snapshots (
-      line_user_id, snapshot_balance, source_batch_id, policy_status, created_at
+      user_id, snapshot_balance, source_batch_id, policy_status, created_at
     ) VALUES (?, ?, ?, 'REQUIRED', ?)
   `, lineUserId, balance, batchId, '2026-09-08T00:00:00.000Z');
 };
 
 const seedOrder = (database, orderId, totalAmount) => database.run(`
   INSERT INTO orders (
-    order_id, line_user_id, order_date, vendor, pickup_floor, total_amount, status
-  ) VALUES (?, 'user-1', '2026-09-08', 'Vendor A', '1樓', ?, 'ACTIVE')
+    order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+    total_amount, status, created_by_user_id
+  ) VALUES (?, 'user-1', 'User One', '2026-09-08', 'Vendor A', '1樓', ?, 'ACTIVE', 'user-1')
 `, orderId, totalAmount);
 
 test('opening balance promotion fails closed without reviewed policy metadata', () => {
@@ -64,7 +65,7 @@ test('negative imported snapshot remains policy-bound after a top-up to zero', a
     batchId: 'snapshot-negative'
   });
   seedUser(database, { lineUserId: 'admin-1', role: 'Admin' });
-  const actor = { lineUserId: 'admin-1', role: 'Admin', registered: true };
+  const actor = { userId: 'admin-1', lineUserId: 'admin-1', role: 'Admin', registered: true };
   await topUpBalance(
     database,
     { actor, authorizationActor: actor, effectiveSubject: actor },
@@ -80,7 +81,7 @@ test('negative imported snapshot remains policy-bound after a top-up to zero', a
   const user = reconciliation.users.find((row) => row.lineUserId === 'user-1');
   assert.equal(user.status, 'OPENING_BALANCE_POLICY_REQUIRED');
   assert.equal(user.openingBalancePolicyStatus, 'REQUIRED');
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 0);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 0);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'ADJUSTMENT'").count, 0);
 });
 
@@ -94,7 +95,7 @@ test('positive imported snapshot remains policy-bound after a later deduction', 
   seedOrder(database, 'snapshot-deduction-order', 30);
   await appendLedgerEntry(database, {
     transactionId: 'snapshot-deduction-tx',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: -30,
     balanceAfter: 70,
     type: 'ORDER',
@@ -108,7 +109,7 @@ test('positive imported snapshot remains policy-bound after a later deduction', 
   );
   const user = (await reconcileBalances(database)).users.find((row) => row.lineUserId === 'user-1');
   assert.equal(user.status, 'OPENING_BALANCE_POLICY_REQUIRED');
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 70);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 70);
 });
 
 test('imported snapshot remains policy-bound through deduction and refund', async () => {
@@ -121,7 +122,7 @@ test('imported snapshot remains policy-bound through deduction and refund', asyn
   seedOrder(database, 'snapshot-refund-order', 30);
   await appendLedgerEntry(database, {
     transactionId: 'snapshot-refund-order-tx',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: -30,
     balanceAfter: 0,
     type: 'ORDER',
@@ -130,7 +131,7 @@ test('imported snapshot remains policy-bound through deduction and refund', asyn
   });
   await appendLedgerEntry(database, {
     transactionId: 'snapshot-refund-refund-tx',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: 30,
     balanceAfter: 30,
     type: 'REFUND',
@@ -144,5 +145,5 @@ test('imported snapshot remains policy-bound through deduction and refund', asyn
   );
   const user = (await reconcileBalances(database)).users.find((row) => row.lineUserId === 'user-1');
   assert.equal(user.status, 'OPENING_BALANCE_POLICY_REQUIRED');
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 30);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 30);
 });

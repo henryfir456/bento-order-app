@@ -37,7 +37,7 @@ export const handleReadOnlyRequest = async (request, env, {
   const url = new URL(request.url);
   if (request.method !== 'GET') return null;
   const allowViewAs = url.pathname !== '/api/me';
-  const identity = await resolveCanonicalIdentity(request, env, fetchImpl, { allowViewAs });
+  const identity = await resolveCanonicalIdentity(request, env, fetchImpl, { allowViewAs, now });
 
   if (url.pathname === '/api/me') {
     return jsonResponse(getMe(identity));
@@ -55,7 +55,7 @@ export const handleReadOnlyRequest = async (request, env, {
         toDate: url.searchParams.get('to') || null,
         now,
         includeLikes: true,
-        lineUserId: subject.lineUserId,
+        userId: subject.userId,
         includeSource: true
       }),
       announcements,
@@ -74,7 +74,7 @@ export const handleReadOnlyRequest = async (request, env, {
         announcements,
         announcement: null
       },
-      ordersMap: await getActiveOrdersMap(env.DB, subject.lineUserId),
+      ordersMap: await getActiveOrdersMap(env.DB, subject.userId),
       targetDate: url.searchParams.get('targetDate') || null,
       bootId: bootId()
     });
@@ -86,7 +86,7 @@ export const handleReadOnlyRequest = async (request, env, {
     return jsonResponse({
       success: true,
       registered: true,
-      likes: await getLikes(env.DB, { lineUserId: subject.lineUserId, now }),
+      likes: await getLikes(env.DB, { userId: subject.userId, now }),
       announcements,
       announcement: announcements[0] || null,
       bootId: requestedBootId
@@ -96,7 +96,7 @@ export const handleReadOnlyRequest = async (request, env, {
   if (url.pathname === '/api/orders/map') {
     return jsonResponse({
       success: true,
-      ordersMap: await getActiveOrdersMap(env.DB, subject.lineUserId)
+      ordersMap: await getActiveOrdersMap(env.DB, subject.userId)
     });
   }
 
@@ -109,7 +109,7 @@ export const handleReadOnlyRequest = async (request, env, {
     }
     const [menu, myOrder] = await Promise.all([
       getCustomerMenu(env.DB, { vendor: setting.vendor, targetDate }),
-      getActiveOrder(env.DB, subject.lineUserId, targetDate)
+      getActiveOrder(env.DB, subject.userId, targetDate)
     ]);
     return jsonResponse({
       success: true,

@@ -72,10 +72,11 @@ const seedReadOnlyDatabase = () => {
   `, 'announcement-disabled', 'Disabled', 'Hidden', '2026-09-01', '2026-09-30', 0, 2);
   database.run(`
     INSERT INTO orders (
-      order_id, line_user_id, order_date, vendor, pickup_floor, total_amount, status
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, 'order-user-1', 'user-1', '2026-09-08', 'Vendor A', '1樓', 80, 'ACTIVE');
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'order-user-1', 'user-1', 'User One', '2026-09-08', 'Vendor A', '1樓', 80, 'ACTIVE', 'user-1');
   database.run(`
     INSERT INTO order_items (
       order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
@@ -85,12 +86,13 @@ const seedReadOnlyDatabase = () => {
   `, 'order-user-1', 1, 'menu-1', 'legacy-duplicate', 'Enabled A', 1, 80, 80);
   database.run(`
     INSERT INTO orders (
-      order_id, line_user_id, order_date, vendor, pickup_floor, total_amount, status
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, 'order-user-2', 'user-2', '2026-09-08', 'Vendor A', '9樓', 90, 'ACTIVE');
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'order-user-2', 'user-2', 'User Two', '2026-09-08', 'Vendor A', '9樓', 90, 'ACTIVE', 'user-2');
   database.run(`
-    INSERT INTO likes (order_date, line_user_id)
+    INSERT INTO likes (order_date, user_id)
     VALUES (?, ?)
   `, '2026-09-08', 'user-1');
   return database;
@@ -137,6 +139,7 @@ test('GET /api/me returns token-derived identity for an unregistered actor witho
   assert.deepEqual(body, {
     success: true,
     registered: false,
+    authMode: 'line',
     user: null,
     lineUserId: 'new-user',
     displayName: 'New User'
@@ -249,10 +252,8 @@ test('formal route registration and floor update retain canonical identity', asy
     },
     { token: 'token-new', lineUserId: 'new-user', displayName: 'New User' }
   );
-  assert.equal(registration.response.status, 201);
-  assert.equal(registration.body.user.userId, 'new-user');
-  assert.equal(registration.body.user.role, 'User');
-  assert.equal(registration.body.user.balance, 0);
+  assert.equal(registration.response.status, 409);
+  assert.equal(registration.body.error, 'EMPLOYEE_BIND_REQUIRED');
 
   const floor = await call(
     database,
@@ -267,13 +268,5 @@ test('formal route registration and floor update retain canonical identity', asy
   assert.equal(floor.response.status, 200);
   assert.equal(floor.body.user.floor, '9樓');
 
-  const readback = await call(
-    database,
-    '/api/me',
-    { token: 'token-new' },
-    { token: 'token-new', lineUserId: 'new-user', displayName: 'New User' }
-  );
-  assert.equal(readback.response.status, 200);
-  assert.equal(readback.body.registered, true);
-  assert.equal(readback.body.user.userId, 'new-user');
+  assert.equal(database.get("SELECT COUNT(*) AS count FROM users WHERE user_id = 'new-user'").count, 0);
 });

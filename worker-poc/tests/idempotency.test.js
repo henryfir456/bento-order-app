@@ -19,7 +19,7 @@ const runAuditMutation = (database, {
   requestHash,
   claimToken = 'claim-' + key
 }) => runIdempotentMutation(database, {
-  actorLineUserId: 'user-1',
+  actorUserId: 'user-1',
   operation: 'TEST_AUDIT_MUTATION',
   idempotencyKey: key,
   requestHash,
@@ -32,7 +32,7 @@ const runAuditMutation = (database, {
   }),
   buildStatements: ({ guard }) => [prepareStatement(database, `
     INSERT INTO admin_audit_log (
-      audit_id, actor_line_user_id, action, metadata_json, occurred_at
+      audit_id, actor_user_id, action, metadata_json, occurred_at
     )
     SELECT ?, ?, 'TEST_AUDIT', '{}', ?
     WHERE ${guard.sql}
@@ -71,32 +71,32 @@ test('interleaved idempotency completions keep actor-operation-key responses iso
   seedUser(database, { lineUserId: 'user-b', balance: 200 });
   const cases = [
     {
-      actorLineUserId: 'user-a', operation: 'TOPUP', idempotencyKey: 'a-topup',
+      actorUserId: 'user-a', operation: 'TOPUP', idempotencyKey: 'a-topup',
       requestHash: 'hash-a-topup', claimToken: 'claim-a-topup',
-      message: 'A_TOPUP', targetLineUserId: 'user-a', transactionId: 'txn-a-topup'
+      message: 'A_TOPUP', targetUserId: 'user-a', transactionId: 'txn-a-topup'
     },
     {
-      actorLineUserId: 'user-b', operation: 'ORDER', idempotencyKey: 'b-order',
+      actorUserId: 'user-b', operation: 'ORDER', idempotencyKey: 'b-order',
       requestHash: 'hash-b-order', claimToken: 'claim-b-order',
-      message: 'B_ORDER', targetLineUserId: 'user-b', transactionId: 'txn-b-order'
+      message: 'B_ORDER', targetUserId: 'user-b', transactionId: 'txn-b-order'
     },
     {
-      actorLineUserId: 'user-a', operation: 'CANCEL', idempotencyKey: 'a-cancel',
+      actorUserId: 'user-a', operation: 'CANCEL', idempotencyKey: 'a-cancel',
       requestHash: 'hash-a-cancel', claimToken: 'claim-a-cancel',
-      message: 'A_CANCEL', targetLineUserId: 'user-b', transactionId: 'txn-a-cancel'
+      message: 'A_CANCEL', targetUserId: 'user-b', transactionId: 'txn-a-cancel'
     },
     {
-      actorLineUserId: 'user-b', operation: 'ROLE', idempotencyKey: 'b-role',
+      actorUserId: 'user-b', operation: 'ROLE', idempotencyKey: 'b-role',
       requestHash: 'hash-b-role', claimToken: 'claim-b-role',
-      message: 'B_ROLE', targetLineUserId: 'user-a', transactionId: 'txn-b-role'
+      message: 'B_ROLE', targetUserId: 'user-a', transactionId: 'txn-b-role'
     }
   ].map((entry) => ({
     ...entry,
     occurredAt: '2026-09-07T01:00:00.000Z',
     responseSpec: balanceMutationResponseSpec({
       message: entry.message,
-      targetLineUserId: entry.targetLineUserId,
-      balanceUserId: entry.targetLineUserId,
+      targetUserId: entry.targetUserId,
+      balanceUserId: entry.targetUserId,
       transactionId: entry.transactionId
     })
   }));
@@ -106,10 +106,10 @@ test('interleaved idempotency completions keep actor-operation-key responses iso
   }
 
   const beforeCompletion = database.database.prepare(`
-    SELECT actor_line_user_id, operation, idempotency_key, request_hash,
+    SELECT actor_user_id, operation, idempotency_key, request_hash,
            claim_token, status, response_json
     FROM idempotency_keys
-    ORDER BY actor_line_user_id, operation, idempotency_key
+    ORDER BY actor_user_id, operation, idempotency_key
   `).all();
   assert.equal(beforeCompletion.every((row) => row.status === 'IN_PROGRESS'), true);
 
@@ -122,12 +122,12 @@ test('interleaved idempotency completions keep actor-operation-key responses iso
     const expected = {
       success: true,
       message: entry.message,
-      targetUserId: entry.targetLineUserId,
+      targetUserId: entry.targetUserId,
       transactionId: entry.transactionId,
-      newBalance: entry.targetLineUserId === 'user-a' ? 100 : 200
+      newBalance: entry.targetUserId === 'user-a' ? 100 : 200
     };
     const replay = await readExistingIdempotencyResult(database, {
-      actorLineUserId: entry.actorLineUserId,
+      actorUserId: entry.actorUserId,
       operation: entry.operation,
       idempotencyKey: entry.idempotencyKey,
       requestHash: entry.requestHash
@@ -138,20 +138,20 @@ test('interleaved idempotency completions keep actor-operation-key responses iso
   }
 
   const afterCompletion = database.database.prepare(`
-    SELECT actor_line_user_id, operation, idempotency_key, request_hash,
+    SELECT actor_user_id, operation, idempotency_key, request_hash,
            claim_token, status, response_json
     FROM idempotency_keys
-    ORDER BY actor_line_user_id, operation, idempotency_key
+    ORDER BY actor_user_id, operation, idempotency_key
   `).all();
   assert.deepEqual(afterCompletion.map((row) => ({
-    actor: row.actor_line_user_id,
+    actor: row.actor_user_id,
     operation: row.operation,
     key: row.idempotency_key,
     hash: row.request_hash,
     claim: row.claim_token,
     status: row.status
   })), beforeCompletion.map((row) => ({
-    actor: row.actor_line_user_id,
+    actor: row.actor_user_id,
     operation: row.operation,
     key: row.idempotency_key,
     hash: row.request_hash,

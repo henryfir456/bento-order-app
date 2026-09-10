@@ -13,20 +13,19 @@ const unregisteredIdentity = (lineUserId = 'new-user') => ({
   }
 });
 
-test('registration uses token-derived profile and creates a User with integer zero balance', async () => {
+test('unregistered LINE registration is blocked until an employee binding exists', async () => {
   const database = new SqliteD1();
-  const result = await registerUser(
-    database,
-    unregisteredIdentity(),
-    { pickupFloor: '1樓' },
-    new Date('2026-09-08T00:00:00.000Z')
+  await assert.rejects(
+    () => registerUser(
+      database,
+      unregisteredIdentity(),
+      { pickupFloor: '1樓' },
+      new Date('2026-09-08T00:00:00.000Z')
+    ),
+    (error) => error.code === 'EMPLOYEE_BIND_REQUIRED' && error.status === 409
   );
-  assert.equal(result.registered, true);
-  assert.equal(result.user.userId, 'new-user');
-  assert.equal(result.user.name, 'Profile Name');
-  assert.equal(result.user.balance, 0);
-  assert.equal(result.user.role, 'User');
-  assert.equal(database.get('SELECT COUNT(*) AS count FROM admin_audit_log').count, 1);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM admin_audit_log').count, 0);
 });
 
 test('registration rejects invalid floors and never accepts a client role or balance', async () => {
@@ -47,6 +46,7 @@ test('pickup floor update is actor-bound and audited', async () => {
   seedUser(database, { lineUserId: 'user-1', pickupFloor: '1樓' });
   const identity = {
     actor: {
+      userId: 'user-1',
       lineUserId: 'user-1',
       registered: true,
       role: 'User'

@@ -11,6 +11,12 @@ export const buildReconciliation = (validation, { balanceReconciliation = null, 
     warningCount: warnings.length,
     quarantineByReason: validation?.summary?.quarantineByReason || {},
     warningByCode: validation?.summary?.warningByCode || {},
+    readiness: validation?.readiness || {
+      status: 'BLOCKED',
+      blockers: [{ code: 'READINESS_NOT_COMPUTED' }]
+    },
+    identitySummary: validation?.summary?.identitySummary || {},
+    financialSummary: validation?.summary?.financialSummary || {},
     duplicateMenuWarnings: warnings.filter((item) => (
       item.code === 'DUPLICATE_MENU_WARNING'
     )),
@@ -20,6 +26,7 @@ export const buildReconciliation = (validation, { balanceReconciliation = null, 
     incompleteLedgerCount: quarantine.filter((item) => (
       item.reasonCode === 'INCOMPLETE_LEDGER_POLICY'
     )).length,
+    remoteImport: 'NOT EXECUTED',
     ...(balanceReconciliation ? { balanceReconciliation } : {}),
     ...(stagedCounts ? { stagedCounts } : {})
   };

@@ -92,8 +92,8 @@ test('View As is admin-only and keeps authorization actor separate', async () =>
   assert.equal(identity.authorizationActor.role, 'Admin');
   assert.equal(identity.effectiveSubject.lineUserId, 'subject-1');
   assert.deepEqual(identity.viewAs, {
-    targetLineUserId: 'subject-1',
-    actorLineUserId: 'admin-1'
+    targetUserId: 'subject-1',
+    actorUserId: 'admin-1'
   });
 
   await assert.rejects(

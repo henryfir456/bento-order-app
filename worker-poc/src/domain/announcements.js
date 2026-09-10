@@ -156,7 +156,10 @@ export const createAnnouncement = async (
     occurredAt
   ]);
   const audit = auditStatement(database, {
-    actorLineUserId: identity.actor.lineUserId,
+    actorUserId: identity.actor.userId,
+    actorAuthMode: identity.actor.authMode,
+    actorEmployeeIdSnapshot: identity.actor.employeeId,
+    actorLineUserIdSnapshot: identity.actor.lineUserId,
     action: 'ANNOUNCEMENT_CREATED',
     metadata: { announcementId },
     occurredAt
@@ -192,7 +195,10 @@ export const updateAnnouncement = async (
     WHERE announcement_id = ?
   `, bindings);
   const audit = auditStatement(database, {
-    actorLineUserId: identity.actor.lineUserId,
+    actorUserId: identity.actor.userId,
+    actorAuthMode: identity.actor.authMode,
+    actorEmployeeIdSnapshot: identity.actor.employeeId,
+    actorLineUserIdSnapshot: identity.actor.lineUserId,
     action: 'ANNOUNCEMENT_UPDATED',
     metadata: { announcementId, fields: Object.keys(patch) },
     occurredAt
@@ -215,7 +221,10 @@ export const deleteAnnouncement = async (
     DELETE FROM announcements WHERE announcement_id = ?
   `, [announcementId]);
   const audit = auditStatement(database, {
-    actorLineUserId: identity.actor.lineUserId,
+    actorUserId: identity.actor.userId,
+    actorAuthMode: identity.actor.authMode,
+    actorEmployeeIdSnapshot: identity.actor.employeeId,
+    actorLineUserIdSnapshot: identity.actor.lineUserId,
     action: 'ANNOUNCEMENT_DELETED',
     metadata: { announcementId },
     occurredAt

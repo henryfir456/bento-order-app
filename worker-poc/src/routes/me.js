@@ -26,7 +26,7 @@ export const handleMeRoute = async (request, env, {
     || (request.method === 'PATCH' && url.pathname === '/api/me/pickup-floor')
   );
   if (!isMeRoute) return null;
-  const identity = await requireIdentity(request, env, { fetchImpl });
+  const identity = await requireIdentity(request, env, { fetchImpl, now });
 
   if (request.method === 'GET' && url.pathname === '/api/me') {
     return jsonResponse(getMe(identity));

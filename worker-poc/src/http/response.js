@@ -1,7 +1,7 @@
 export const PRODUCTION_FRONTEND_ORIGIN = 'https://stirring-pony-3571ac.netlify.app';
 
 export const CORS_HEADERS = Object.freeze({
-  'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key',
+  'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, X-Employee-Guest-Session',
   'Access-Control-Allow-Methods': 'GET, OPTIONS, PATCH, POST, PUT, DELETE',
   'Access-Control-Allow-Origin': PRODUCTION_FRONTEND_ORIGIN
 });

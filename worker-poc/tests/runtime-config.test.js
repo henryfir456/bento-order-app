@@ -36,7 +36,11 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
     fs.readdirSync(new URL('../migrations-formal/', import.meta.url))
       .filter((name) => name.endsWith('.sql'))
       .sort(),
-    ['0000_formal_initial_schema.sql', '0001_balance_integrity_primitives.sql']
+    [
+      '0000_formal_initial_schema.sql',
+      '0001_balance_integrity_primitives.sql',
+      '0002_canonical_identity_rekey.sql'
+    ]
   );
 });
 

@@ -5,6 +5,7 @@ import {
   batchIdFor,
   parseBoolean,
   parseDateOnly,
+  parseEmployeeId,
   parseInteger,
   parseTimestamp,
   sourceRef,
@@ -35,8 +36,25 @@ const rawFor = (row) => (
 
 const withIssues = (record, fieldIssues) => ({
   ...record,
+  sourceKey: `${record.source.sheet}:${record.source.row}`,
   fieldIssues
 });
+
+const employeeIdentity = (row) => {
+  const parsed = parseEmployeeId(valueOf(
+    row,
+    'employee_id',
+    'EmployeeID',
+    'employeeId',
+    '員工編號',
+    '工號',
+    '員工代號'
+  ));
+  return {
+    employeeId: parsed.value,
+    employeeIdIssue: parsed.code
+  };
+};
 
 const normalizeSettings = (workbook) => rowsFor(workbook, 'Settings').map((row, index) => (
   withIssues({
@@ -52,6 +70,7 @@ const normalizeLikes = (workbook) => rowsFor(workbook, 'Likes').map((row, index)
   withIssues({
     source: sourceFor('Likes', row, index),
     raw: rawFor(row),
+    ...employeeIdentity(row),
     orderDate: parseDateOnly(valueOf(row, 'order_date', 'date')),
     lineUserId: asNullableText(valueOf(row, 'line_user_id', 'LINE_UserID')),
     createdAt: parseTimestamp(valueOf(row, 'created_at', 'Created_At'))
@@ -62,6 +81,7 @@ const normalizeUsers = (workbook) => rowsFor(workbook, 'Users').map((row, index)
   withIssues({
     source: sourceFor('Users', row, index),
     raw: rawFor(row),
+    ...employeeIdentity(row),
     lineUserId: asNullableText(valueOf(row, 'line_user_id', 'UserID')),
     displayName: asText(valueOf(row, 'display_name', 'DisplayName')).trim(),
     pickupFloor: asNullableText(valueOf(row, 'pickup_floor', 'floor', '樓層')),
@@ -107,6 +127,7 @@ const normalizeOrders = (workbook) => rowsFor(workbook, 'Orders').map((row, inde
   withIssues({
     source: sourceFor('Orders', row, index),
     raw: rawFor(row),
+    ...employeeIdentity(row),
     orderId: asNullableText(valueOf(row, 'order_id')),
     orderDate: parseDateOnly(valueOf(row, 'order_date')),
     vendor: asText(valueOf(row, 'vendor')).trim(),
@@ -130,6 +151,7 @@ const normalizeTopupHistory = (workbook) => rowsFor(workbook, 'TopupHistory').ma
   withIssues({
     source: sourceFor('TopupHistory', row, index),
     raw: rawFor(row),
+    ...employeeIdentity(row),
     timestamp: parseTimestamp(valueOf(row, 'timestamp', 'Timestamp')),
     lineUserId: asNullableText(valueOf(row, 'line_user_id', 'LINE_UserID')),
     displayName: asText(valueOf(row, 'display_name', '姓名')).trim(),
@@ -141,6 +163,20 @@ const normalizeTopupHistory = (workbook) => rowsFor(workbook, 'TopupHistory').ma
     type: asNullableText(valueOf(row, 'type', 'Type'))?.toUpperCase(),
     referenceId: asNullableText(valueOf(row, 'reference_id', 'ReferenceID')),
     operatorLineUserId: asNullableText(valueOf(row, 'operator_line_user_id', 'OperatorUserID')),
+    operatorEmployeeId: parseEmployeeId(valueOf(
+      row,
+      'operator_employee_id',
+      'OperatorEmployeeID',
+      'operatorEmployeeId',
+      '操作人工號'
+    )).value,
+    operatorEmployeeIdIssue: parseEmployeeId(valueOf(
+      row,
+      'operator_employee_id',
+      'OperatorEmployeeID',
+      'operatorEmployeeId',
+      '操作人工號'
+    )).code,
     operatorName: asText(valueOf(row, 'operator_name', 'OperatorName')).trim()
   }, [])
 ));

@@ -5,16 +5,25 @@ import {
   SHEET_DEFINITIONS,
   SHEET_NAMES,
   asText,
+  canonicalColumnForHeader,
   sourceHashForBytes,
   sourceRef
 } from './import-contract.mjs';
 
-const toCanonicalRow = (sheetName, values, sourceRow) => {
+const toCanonicalRow = (sheetName, values, sourceRow, headers = []) => {
   const columns = SHEET_DEFINITIONS[sheetName].columns;
   const source = sourceRef(sheetName, sourceRow);
   if (Array.isArray(values)) {
+    const indexes = new Map();
+    headers.forEach((header, index) => {
+      const column = canonicalColumnForHeader(header, columns);
+      if (column && !indexes.has(column)) indexes.set(column, index);
+    });
     return {
-      ...Object.fromEntries(columns.map((column, index) => [column, values[index] ?? null])),
+      ...Object.fromEntries(columns.map((column, index) => [
+        column,
+        values[indexes.has(column) ? indexes.get(column) : (headers.length ? -1 : index)] ?? null
+      ])),
       source,
       raw: values.slice()
     };
@@ -22,7 +31,13 @@ const toCanonicalRow = (sheetName, values, sourceRow) => {
 
   const row = values && typeof values === 'object' ? values : {};
   return {
-    ...Object.fromEntries(columns.map((column) => [column, row[column] ?? null])),
+      ...Object.fromEntries(columns.map((column) => {
+        if (row[column] !== undefined) return [column, row[column]];
+        const sourceKey = Object.keys(row).find((key) => (
+          canonicalColumnForHeader(key, columns) === column
+        ));
+        return [column, sourceKey ? row[sourceKey] : null];
+      })),
     source: row.source || source,
     raw: row.raw || { ...row }
   };
@@ -43,18 +58,30 @@ const canonicalizeSheet = (sheetName, rawSheet, shapeIssues) => {
     const headers = Array.isArray(rawSheet.headers)
       ? rawSheet.headers.slice()
       : columns.slice();
-    if (headers.length < columns.length) {
+    const missingColumns = (SHEET_DEFINITIONS[sheetName].requiredColumns || [])
+      .filter((column) => !headers.some((header) => canonicalColumnForHeader(header, columns) === column));
+    if (missingColumns.length) {
       shapeIssues.push({
         code: 'MISSING_COLUMNS',
         sheet: sheetName,
-        expectedColumns: columns.slice(),
+        expectedColumns: missingColumns,
+        actualColumns: headers.slice()
+      });
+    }
+    if (sheetName === 'Users' && !headers.some((header) => (
+      canonicalColumnForHeader(header, columns) === 'employee_id'
+    ))) {
+      shapeIssues.push({
+        code: 'EMPLOYEE_ID_FIELD_MISSING',
+        sheet: sheetName,
+        expectedColumns: ['employee_id'],
         actualColumns: headers.slice()
       });
     }
     return {
       headers,
       rows: rawSheet.rows.map((row, index) => (
-        toCanonicalRow(sheetName, row, row?.source?.row || index + 2)
+        toCanonicalRow(sheetName, row, row?.source?.row || index + 2, headers)
       )),
       missing: false
     };
@@ -71,18 +98,32 @@ const canonicalizeSheet = (sheetName, rawSheet, shapeIssues) => {
   }
 
   const rawHeaders = Array.isArray(rawSheet[0]) ? rawSheet[0] : [];
-  if (rawHeaders.length < columns.length) {
+  const missingColumns = (SHEET_DEFINITIONS[sheetName].requiredColumns || [])
+    .filter((column) => !rawHeaders.some((header) => canonicalColumnForHeader(header, columns) === column));
+  if (missingColumns.length) {
     shapeIssues.push({
       code: 'MISSING_COLUMNS',
       sheet: sheetName,
-      expectedColumns: columns.slice(),
+      expectedColumns: missingColumns,
+      actualColumns: rawHeaders.slice()
+    });
+  }
+  if (sheetName === 'Users' && !rawHeaders.some((header) => (
+    canonicalColumnForHeader(header, columns) === 'employee_id'
+  ))) {
+    shapeIssues.push({
+      code: 'EMPLOYEE_ID_FIELD_MISSING',
+      sheet: sheetName,
+      expectedColumns: ['employee_id'],
       actualColumns: rawHeaders.slice()
     });
   }
 
   return {
     headers: rawHeaders.slice(),
-    rows: rawSheet.slice(1).map((row, index) => toCanonicalRow(sheetName, row, index + 2)),
+    rows: rawSheet.slice(1).map((row, index) => (
+      toCanonicalRow(sheetName, row, index + 2, rawHeaders)
+    )),
     missing: false
   };
 };

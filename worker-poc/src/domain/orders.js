@@ -7,11 +7,7 @@ import {
   requireIdempotencyKey,
   runIdempotentMutation
 } from '../db/idempotency.js';
-import {
-  prepareStatement,
-  randomId,
-  resolveClock
-} from '../db/transactions.js';
+import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
 import { deadlineAt, deadlineInfo, isDateOnly } from './deadlines.js';
 
 const VALID_FLOORS = new Set(['1樓', '9樓']);
@@ -46,10 +42,10 @@ const parseQuantity = (value) => {
 const actorForMutation = (identity) => {
   const actor = identity?.actor;
   assertCan(identity, ACTIONS.WRITE_SELF);
-  if (!actor?.lineUserId) throw forbidden('AUTH_REQUIRED');
+  if (!actor?.userId) throw forbidden('AUTH_REQUIRED');
   if (
-    identity?.effectiveSubject?.lineUserId
-    && identity.effectiveSubject.lineUserId !== actor.lineUserId
+    identity?.effectiveSubject?.userId
+    && identity.effectiveSubject.userId !== actor.userId
   ) {
     throw forbidden('VIEW_AS_MUTATION_FORBIDDEN');
   }
@@ -159,9 +155,9 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
   const activeOrder = await database.prepare(`
     SELECT order_id, total_amount
     FROM orders
-    WHERE line_user_id = ? AND order_date = ? AND status = 'ACTIVE'
+    WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
     LIMIT 1
-  `).bind(actor.lineUserId, targetDate).first();
+  `).bind(actor.userId, targetDate).first();
   return {
     targetDate,
     pickupFloor,
@@ -220,18 +216,31 @@ const mapTransactionFailure = (error) => {
   throw conflict('MUTATION_CONFLICT');
 };
 
+const eventUserValues = (actor) => [
+  actor.userId,
+  actor.employeeId,
+  actor.lineUserId,
+  actor.displayName,
+  actor.authMode,
+  actor.authMode
+];
+
 const buildOrderStatements = (database, context, actor, details) => {
+  const { targetDate, pickupFloor, note, items, replaceExisting, now } = context;
   const {
-    targetDate, pickupFloor, note, items, replaceExisting, now
-  } = context;
-  const { orderId, refundTransactionId, replacementTransitionId, createdTransitionId, guard } = details;
+    orderId,
+    refundTransactionId,
+    replacementTransitionId,
+    createdTransitionId,
+    guard
+  } = details;
   const occurredAt = now.toISOString();
   const guardSql = guard.sql;
   const guardParams = guard.params;
   const metadata = JSON.stringify({ replacementOrderId: orderId });
   const validityPredicate = `
     EXISTS (
-      SELECT 1 FROM users WHERE line_user_id = ?
+      SELECT 1 FROM users WHERE user_id = ? AND active = 1
     )
     AND EXISTS (
       SELECT 1
@@ -246,13 +255,13 @@ const buildOrderStatements = (database, context, actor, details) => {
     AND (SELECT COUNT(*) FROM priced) = ?
     AND (? = 1 OR NOT EXISTS (
       SELECT 1 FROM orders
-      WHERE line_user_id = ? AND order_date = ? AND status = 'ACTIVE'
+      WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
     ))
   `;
   const deadlineA = deadlineAt(targetDate, 'A').toISOString();
   const deadlineB = deadlineAt(targetDate, 'B').toISOString();
   const validityParams = [
-    actor.lineUserId,
+    actor.userId,
     targetDate,
     occurredAt,
     deadlineA,
@@ -260,13 +269,13 @@ const buildOrderStatements = (database, context, actor, details) => {
     deadlineB,
     items.length,
     replaceExisting ? 1 : 0,
-    actor.lineUserId,
+    actor.userId,
     targetDate
   ];
 
   const assertRequest = prepareStatement(database, `${menuCte(items)}
     UPDATE idempotency_keys
-    SET status = CASE WHEN (${validityPredicate}) THEN status ELSE 'INVALID' END
+    SET status = CASE WHEN (${validityPredicate}) THEN status ELSE 'FAILED' END
     WHERE ${guardSql}
   `, [...menuParams(items, targetDate), ...validityParams, ...guardParams]);
 
@@ -275,86 +284,100 @@ const buildOrderStatements = (database, context, actor, details) => {
     SET balance = balance + COALESCE((
       SELECT o.total_amount
       FROM orders o
-      WHERE o.line_user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
+      WHERE o.user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
       LIMIT 1
     ), 0),
         updated_at = ?
-    WHERE line_user_id = ? AND ${guardSql}
-  `, [actor.lineUserId, targetDate, occurredAt, actor.lineUserId, ...guardParams]);
+    WHERE user_id = ? AND ${guardSql}
+  `, [actor.userId, targetDate, occurredAt, actor.userId, ...guardParams]);
 
   const refundLedger = prepareStatement(database, `
     INSERT INTO balance_ledger (
-      transaction_id, line_user_id, amount, balance_after, type,
-      reference_id, operator_line_user_id, note, occurred_at
+      transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, amount, balance_after, type, reference_id,
+      operator_user_id, operator_employee_id_snapshot,
+      operator_line_user_id_snapshot, operator_display_name_snapshot,
+      operator_auth_mode, auth_mode, note, occurred_at
     )
-    SELECT ?, o.line_user_id, o.total_amount, u.balance, 'REFUND',
-           o.order_id, ?, ?, ?
+    SELECT ?, o.user_id, u.employee_id, u.line_user_id, u.display_name,
+           o.total_amount, u.balance, 'REFUND', o.order_id,
+           ?, ?, ?, ?, ?, ?, 'ORDER_REPLACED', ?
     FROM orders o
-    JOIN users u ON u.line_user_id = o.line_user_id
-    WHERE o.line_user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
+    JOIN users u ON u.user_id = o.user_id
+    WHERE o.user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
       AND ${guardSql}
   `, [
     refundTransactionId,
-    actor.lineUserId,
-    'ORDER_REPLACED',
+    ...eventUserValues(actor),
     occurredAt,
-    actor.lineUserId,
+    actor.userId,
     targetDate,
     ...guardParams
   ]);
 
   const replacementHistory = prepareStatement(database, `
     INSERT INTO order_status_history (
-      transition_id, order_id, from_status, to_status, actor_line_user_id,
-      reason, metadata_json, occurred_at
+      transition_id, order_id, from_status, to_status, actor_user_id,
+      actor_auth_mode, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, reason, metadata_json, occurred_at
     )
-    SELECT ?, o.order_id, 'ACTIVE', 'CANCELLED', ?, 'ORDER_REPLACED', ?, ?
+    SELECT ?, o.order_id, 'ACTIVE', 'CANCELLED', ?, ?, u.employee_id,
+           u.line_user_id, u.display_name, 'ORDER_REPLACED', ?, ?
     FROM orders o
-    WHERE o.line_user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
+    JOIN users u ON u.user_id = o.user_id
+    WHERE o.user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
       AND ${guardSql}
   `, [
     replacementTransitionId,
-    actor.lineUserId,
+    actor.userId,
+    actor.authMode,
     metadata,
     occurredAt,
-    actor.lineUserId,
+    actor.userId,
     targetDate,
     ...guardParams
   ]);
 
   const cancelPrevious = prepareStatement(database, `
     UPDATE orders
-    SET status = 'CANCELLED', updated_at = ?
-    WHERE line_user_id = ? AND order_date = ? AND status = 'ACTIVE'
+    SET status = 'CANCELLED',
+        cancelled_by_user_id = ?,
+        cancelled_auth_mode = ?,
+        updated_at = ?
+    WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
       AND ${guardSql}
-  `, [occurredAt, actor.lineUserId, targetDate, ...guardParams]);
+  `, [actor.userId, actor.authMode, occurredAt, actor.userId, targetDate, ...guardParams]);
 
   const debitBalance = prepareStatement(database, `${menuCte(items)}
     UPDATE users
     SET balance = balance - (SELECT SUM(quantity * price) FROM priced),
         updated_at = ?
-    WHERE line_user_id = ?
+    WHERE user_id = ?
       AND (SELECT COUNT(*) FROM priced) = ?
       AND ${guardSql}
   `, [
     ...menuParams(items, targetDate),
     occurredAt,
-    actor.lineUserId,
+    actor.userId,
     items.length,
     ...guardParams
   ]);
 
   const insertOrder = prepareStatement(database, `${menuCte(items)}
     INSERT INTO orders (
-      order_id, line_user_id, order_date, vendor, pickup_floor, note,
-      total_amount, status, created_at, updated_at
+      order_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, order_date, vendor, pickup_floor, note,
+      total_amount, status, created_by_user_id, created_auth_mode,
+      created_at, updated_at
     )
-    SELECT ?, ?, ?, cs.vendor, ?, ?,
+    SELECT ?, ?, u.employee_id, u.line_user_id, u.display_name, ?, cs.vendor,
+           ?, ?,
            CASE WHEN (SELECT COUNT(*) FROM priced) = ?
                 THEN (SELECT SUM(quantity * price) FROM priced)
                 ELSE NULL END,
-           'ACTIVE', ?, ?
+           'ACTIVE', ?, ?, ?, ?
     FROM calendar_settings cs
+    JOIN users u ON u.user_id = ?
     WHERE cs.order_date = ?
       AND length(trim(cs.vendor)) > 0
       AND (
@@ -365,13 +388,16 @@ const buildOrderStatements = (database, context, actor, details) => {
   `, [
     ...menuParams(items, targetDate),
     orderId,
-    actor.lineUserId,
+    actor.userId,
     targetDate,
     pickupFloor,
     note,
     items.length,
+    actor.userId,
+    actor.authMode,
     occurredAt,
     occurredAt,
+    actor.userId,
     targetDate,
     occurredAt,
     deadlineA,
@@ -384,10 +410,10 @@ const buildOrderStatements = (database, context, actor, details) => {
     UPDATE idempotency_keys
     SET status = CASE WHEN EXISTS (
       SELECT 1 FROM orders
-      WHERE order_id = ? AND line_user_id = ? AND status = 'ACTIVE'
-    ) THEN status ELSE 'INVALID' END
+      WHERE order_id = ? AND user_id = ? AND status = 'ACTIVE'
+    ) THEN status ELSE 'FAILED' END
     WHERE ${guardSql}
-  `, [orderId, actor.lineUserId, ...guardParams]);
+  `, [orderId, actor.userId, ...guardParams]);
 
   const insertItems = prepareStatement(database, `${menuCte(items)}
     INSERT INTO order_items (
@@ -404,46 +430,54 @@ const buildOrderStatements = (database, context, actor, details) => {
     UPDATE idempotency_keys
     SET status = CASE WHEN (
       SELECT COUNT(*) FROM order_items WHERE order_id = ?
-    ) = ? THEN status ELSE 'INVALID' END
+    ) = ? THEN status ELSE 'FAILED' END
     WHERE ${guardSql}
   `, [orderId, items.length, ...guardParams]);
 
   const orderLedger = prepareStatement(database, `
     INSERT INTO balance_ledger (
-      transaction_id, line_user_id, amount, balance_after, type,
-      reference_id, operator_line_user_id, note, occurred_at
+      transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, amount, balance_after, type, reference_id,
+      operator_user_id, operator_employee_id_snapshot,
+      operator_line_user_id_snapshot, operator_display_name_snapshot,
+      operator_auth_mode, auth_mode, note, occurred_at
     )
-    SELECT ?, o.line_user_id, -o.total_amount, u.balance, 'ORDER',
-           o.order_id, ?, 'ORDER_CREATED', ?
+    SELECT ?, o.user_id, u.employee_id, u.line_user_id, u.display_name,
+           -o.total_amount, u.balance, 'ORDER', o.order_id,
+           ?, ?, ?, ?, ?, ?, 'ORDER_CREATED', ?
     FROM orders o
-    JOIN users u ON u.line_user_id = o.line_user_id
-    WHERE o.order_id = ? AND o.line_user_id = ? AND o.status = 'ACTIVE'
+    JOIN users u ON u.user_id = o.user_id
+    WHERE o.order_id = ? AND o.user_id = ? AND o.status = 'ACTIVE'
       AND ${guardSql}
   `, [
     details.orderTransactionId,
-    actor.lineUserId,
+    ...eventUserValues(actor),
     occurredAt,
     orderId,
-    actor.lineUserId,
+    actor.userId,
     ...guardParams
   ]);
 
   const createdHistory = prepareStatement(database, `
     INSERT INTO order_status_history (
-      transition_id, order_id, from_status, to_status, actor_line_user_id,
-      reason, metadata_json, occurred_at
+      transition_id, order_id, from_status, to_status, actor_user_id,
+      actor_auth_mode, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, reason, metadata_json, occurred_at
     )
-    SELECT ?, o.order_id, NULL, 'ACTIVE', ?, 'ORDER_CREATED', ?, ?
+    SELECT ?, o.order_id, NULL, 'ACTIVE', ?, ?, u.employee_id,
+           u.line_user_id, u.display_name, 'ORDER_CREATED', ?, ?
     FROM orders o
-    WHERE o.order_id = ? AND o.line_user_id = ? AND o.status = 'ACTIVE'
+    JOIN users u ON u.user_id = o.user_id
+    WHERE o.order_id = ? AND o.user_id = ? AND o.status = 'ACTIVE'
       AND ${guardSql}
   `, [
     createdTransitionId,
-    actor.lineUserId,
+    actor.userId,
+    actor.authMode,
     JSON.stringify({ replaced: Boolean(context.activeOrder) }),
     occurredAt,
     orderId,
-    actor.lineUserId,
+    actor.userId,
     ...guardParams
   ]);
 
@@ -476,7 +510,7 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
   };
   const requestHash = await hashRequest(requestPayload);
   const existingResult = await readExistingIdempotencyResult(database, {
-    actorLineUserId: actor.lineUserId,
+    actorUserId: actor.userId,
     operation: ORDER_OPERATION,
     idempotencyKey,
     requestHash
@@ -486,7 +520,7 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
   if (!context.replaceExisting && context.activeOrder) throw conflict('ORDER_ALREADY_ACTIVE');
   const orderId = 'ORD-' + randomId('');
   const details = {
-    actorLineUserId: actor.lineUserId,
+    actorUserId: actor.userId,
     operation: ORDER_OPERATION,
     idempotencyKey,
     requestHash,
@@ -503,7 +537,7 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
       responseSpec: mutationResponseSpec({
         message: 'ORDER_SAVED',
         orderId,
-        balanceUserId: actor.lineUserId
+        balanceUserId: actor.userId
       }),
       buildStatements: (claim) => buildOrderStatements(
         database,
@@ -518,7 +552,7 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
 };
 
 const activeOrderForCancellation = async (database, orderId) => database.prepare(`
-  SELECT o.order_id, o.line_user_id, o.order_date, o.total_amount, o.status,
+  SELECT o.order_id, o.user_id, o.order_date, o.total_amount, o.status,
          cs.mode
   FROM orders o
   LEFT JOIN calendar_settings cs ON cs.order_date = o.order_date
@@ -539,7 +573,7 @@ export const cancelOrder = async (
   const idempotencyKey = requireIdempotencyKey(idempotencyKeyInput);
   const requestHash = await hashRequest({ orderId });
   const existingResult = await readExistingIdempotencyResult(database, {
-    actorLineUserId: actor.lineUserId,
+    actorUserId: actor.userId,
     operation: CANCEL_OPERATION,
     idempotencyKey,
     requestHash
@@ -547,7 +581,7 @@ export const cancelOrder = async (
   if (existingResult) return existingResult;
   const order = await activeOrderForCancellation(database, orderId);
   if (!order) throw notFound('ORDER_NOT_FOUND');
-  if (order.line_user_id !== actor.lineUserId) throw forbidden('ORDER_FORBIDDEN');
+  if (order.user_id !== actor.userId) throw forbidden('ORDER_FORBIDDEN');
   if (order.status !== 'ACTIVE') throw conflict('ORDER_ALREADY_CANCELLED');
   if (!order.mode) throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
   const now = resolveClock(clock);
@@ -558,7 +592,7 @@ export const cancelOrder = async (
   const refundTransactionId = randomId('txn');
   const transitionId = randomId('transition');
   const details = {
-    actorLineUserId: actor.lineUserId,
+    actorUserId: actor.userId,
     operation: CANCEL_OPERATION,
     idempotencyKey,
     requestHash,
@@ -573,7 +607,7 @@ export const cancelOrder = async (
       responseSpec: mutationResponseSpec({
         message: 'ORDER_CANCELLED',
         orderId,
-        balanceUserId: actor.lineUserId
+        balanceUserId: actor.userId
       }),
       buildStatements: ({ guard }) => {
         const guardSql = guard.sql;
@@ -586,7 +620,7 @@ export const cancelOrder = async (
             FROM orders o
             JOIN calendar_settings cs ON cs.order_date = o.order_date
             WHERE o.order_id = ?
-              AND o.line_user_id = ?
+              AND o.user_id = ?
               AND o.status = 'ACTIVE'
               AND NOT EXISTS (
                 SELECT 1 FROM balance_ledger bl
@@ -600,11 +634,11 @@ export const cancelOrder = async (
         `;
         const assertRequest = prepareStatement(database, `
           UPDATE idempotency_keys
-          SET status = CASE WHEN (${validOrder}) THEN status ELSE 'INVALID' END
+          SET status = CASE WHEN (${validOrder}) THEN status ELSE 'FAILED' END
           WHERE ${guardSql}
         `, [
           orderId,
-          actor.lineUserId,
+          actor.userId,
           occurredAt,
           deadlineA,
           occurredAt,
@@ -615,61 +649,71 @@ export const cancelOrder = async (
           UPDATE users
           SET balance = balance + (
             SELECT total_amount FROM orders
-            WHERE order_id = ? AND line_user_id = ? AND status = 'ACTIVE'
+            WHERE order_id = ? AND user_id = ? AND status = 'ACTIVE'
           ), updated_at = ?
-          WHERE line_user_id = ? AND ${guardSql}
-        `, [orderId, actor.lineUserId, occurredAt, actor.lineUserId, ...guardParams]);
+          WHERE user_id = ? AND ${guardSql}
+        `, [orderId, actor.userId, occurredAt, actor.userId, ...guardParams]);
         const refundLedger = prepareStatement(database, `
           INSERT INTO balance_ledger (
-            transaction_id, line_user_id, amount, balance_after, type,
-            reference_id, operator_line_user_id, note, occurred_at
+            transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+            display_name_snapshot, amount, balance_after, type, reference_id,
+            operator_user_id, operator_employee_id_snapshot,
+            operator_line_user_id_snapshot, operator_display_name_snapshot,
+            operator_auth_mode, auth_mode, note, occurred_at
           )
-          SELECT ?, o.line_user_id, o.total_amount, u.balance, 'REFUND',
-                 o.order_id, ?, 'ORDER_CANCELLED', ?
+          SELECT ?, o.user_id, u.employee_id, u.line_user_id, u.display_name,
+                 o.total_amount, u.balance, 'REFUND', o.order_id,
+                 ?, ?, ?, ?, ?, ?, 'ORDER_CANCELLED', ?
           FROM orders o
-          JOIN users u ON u.line_user_id = o.line_user_id
-          WHERE o.order_id = ? AND o.line_user_id = ? AND o.status = 'ACTIVE'
+          JOIN users u ON u.user_id = o.user_id
+          WHERE o.order_id = ? AND o.user_id = ? AND o.status = 'ACTIVE'
             AND ${guardSql}
         `, [
           refundTransactionId,
-          actor.lineUserId,
+          ...eventUserValues(actor),
           occurredAt,
           orderId,
-          actor.lineUserId,
+          actor.userId,
           ...guardParams
         ]);
         const statusHistory = prepareStatement(database, `
           INSERT INTO order_status_history (
-            transition_id, order_id, from_status, to_status,
-            actor_line_user_id, reason, metadata_json, occurred_at
+            transition_id, order_id, from_status, to_status, actor_user_id,
+            actor_auth_mode, employee_id_snapshot, line_user_id_snapshot,
+            display_name_snapshot, reason, metadata_json, occurred_at
           )
-          SELECT ?, o.order_id, 'ACTIVE', 'CANCELLED', ?,
-                 'ORDER_CANCELLED', '{}', ?
+          SELECT ?, o.order_id, 'ACTIVE', 'CANCELLED', ?, ?, u.employee_id,
+                 u.line_user_id, u.display_name, 'ORDER_CANCELLED', '{}', ?
           FROM orders o
-          WHERE o.order_id = ? AND o.line_user_id = ? AND o.status = 'ACTIVE'
+          JOIN users u ON u.user_id = o.user_id
+          WHERE o.order_id = ? AND o.user_id = ? AND o.status = 'ACTIVE'
             AND ${guardSql}
         `, [
           transitionId,
-          actor.lineUserId,
+          actor.userId,
+          actor.authMode,
           occurredAt,
           orderId,
-          actor.lineUserId,
+          actor.userId,
           ...guardParams
         ]);
         const cancel = prepareStatement(database, `
           UPDATE orders
-          SET status = 'CANCELLED', updated_at = ?
-          WHERE order_id = ? AND line_user_id = ? AND status = 'ACTIVE'
+          SET status = 'CANCELLED',
+              cancelled_by_user_id = ?,
+              cancelled_auth_mode = ?,
+              updated_at = ?
+          WHERE order_id = ? AND user_id = ? AND status = 'ACTIVE'
             AND ${guardSql}
-        `, [occurredAt, orderId, actor.lineUserId, ...guardParams]);
+        `, [actor.userId, actor.authMode, occurredAt, orderId, actor.userId, ...guardParams]);
         const assertCancelled = prepareStatement(database, `
           UPDATE idempotency_keys
           SET status = CASE WHEN EXISTS (
             SELECT 1 FROM orders
-            WHERE order_id = ? AND line_user_id = ? AND status = 'CANCELLED'
-          ) THEN status ELSE 'INVALID' END
+            WHERE order_id = ? AND user_id = ? AND status = 'CANCELLED'
+          ) THEN status ELSE 'FAILED' END
           WHERE ${guardSql}
-        `, [orderId, actor.lineUserId, ...guardParams]);
+        `, [orderId, actor.userId, ...guardParams]);
         return [
           assertRequest,
           refundBalance,

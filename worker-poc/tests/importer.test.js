@@ -87,6 +87,10 @@ test('ledger policy approval is the only switch that can accept ledger-like rows
   assert.equal(validation.accepted.TopupHistory.length, 1);
   assert.equal(validation.quarantine.length, 1);
   assert.equal(validation.quarantine[0].reasonCode, REASON_CODES.ORPHAN_ORDER_USER);
+  assert.equal(validation.readiness.status, 'BLOCKED');
+  assert.ok(validation.readiness.blockers.some((item) => (
+    item.code === REASON_CODES.HISTORICAL_LEDGER_POLICY_REQUIRED
+  )));
 });
 
 test('missing workbook sheets become explicit shape quarantine records', () => {

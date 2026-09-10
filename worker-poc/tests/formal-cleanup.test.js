@@ -46,6 +46,9 @@ const seedCleanupFixture = () => {
     INSERT INTO d1_migrations (name, applied_at) VALUES (?, ?), (?, ?)
   `, '0000_formal_initial_schema.sql', '2026-09-01T00:00:00.000Z',
     '0001_balance_integrity_primitives.sql', '2026-09-01T00:01:00.000Z');
+  insert(database, `
+    INSERT INTO d1_migrations (name, applied_at) VALUES (?, ?)
+  `, '0002_canonical_identity_rekey.sql', '2026-09-01T00:02:00.000Z');
 
   insert(database, `
     INSERT INTO import_batches (batch_id, source_hash, importer_version, status)
@@ -53,14 +56,15 @@ const seedCleanupFixture = () => {
   `, 'batch-formal-test', 'hash-formal-test', 'formal-wave1', 'QUARANTINED');
 
   const users = [
-    ['user-1', 'Test One', '1樓', -300, 'Admin'],
-    ['user-2', 'Test Two', '9樓', -180, 'User'],
-    ['user-3', 'Test Three', '1樓', 0, 'User']
+    ['user-1', '000001', 'line-user-1', 'Test One', '1樓', -300, 'Admin'],
+    ['user-2', '000002', 'line-user-2', 'Test Two', '9樓', -180, 'User'],
+    ['user-3', '000003', 'line-user-3', 'Test Three', '1樓', 0, 'User']
   ];
   for (const user of users) {
     insert(database, `
-      INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO users (
+        user_id, employee_id, line_user_id, display_name, pickup_floor, balance, role
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `, ...user);
   }
 
@@ -107,7 +111,7 @@ const seedCleanupFixture = () => {
     const day = String(index + 1).padStart(2, '0');
     insert(database, `
       INSERT INTO calendar_settings (
-        order_date, vendor, mode, vendor_source, updated_by_line_user_id
+        order_date, vendor, mode, vendor_source, updated_by_user_id
       ) VALUES (?, ?, ?, ?, ?)
     `, `2026-09-${day}`, index % 2 === 0 ? '禾拾' : '蔡老師', index % 2 === 0 ? 'A' : 'B',
     'CONFIGURED', 'user-1');
@@ -124,7 +128,7 @@ const seedCleanupFixture = () => {
   ];
   for (const [orderDate, userId] of likes) {
     insert(database, `
-      INSERT INTO likes (order_date, line_user_id, created_at)
+      INSERT INTO likes (order_date, user_id, created_at)
       VALUES (?, ?, ?)
     `, orderDate, userId, '2026-09-01T00:00:00.000Z');
   }
@@ -135,18 +139,23 @@ const seedCleanupFixture = () => {
     const userId = users[index % users.length][0];
     insert(database, `
       INSERT INTO orders (
-        order_id, line_user_id, order_date, vendor, pickup_floor, note,
-        total_amount, status, source_batch_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        order_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+        display_name_snapshot, order_date, vendor, pickup_floor, note,
+        total_amount, status, created_by_user_id, source_batch_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     orderId,
     userId,
+    users[index % users.length][1],
+    users[index % users.length][4],
+    users[index % users.length][3],
     `2026-10-${String(index + 1).padStart(2, '0')}`,
     index % 2 === 0 ? '禾拾' : '蔡老師',
-    users[index % users.length][2],
+    users[index % users.length][4],
     `note-${index + 1}`,
     100 + index,
     status,
+    userId,
     index < 15 ? 'batch-formal-test' : null);
 
     const itemCount = index < 4 ? 2 : 1;
@@ -170,7 +179,7 @@ const seedCleanupFixture = () => {
 
     insert(database, `
       INSERT INTO order_status_history (
-        transition_id, order_id, from_status, to_status, actor_line_user_id,
+        transition_id, order_id, from_status, to_status, actor_user_id,
         reason, metadata_json, occurred_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
@@ -185,8 +194,8 @@ const seedCleanupFixture = () => {
   }
 
   insert(database, `
-    INSERT INTO balance_ledger (
-      transaction_id, line_user_id, amount, balance_after, type,
+      INSERT INTO balance_ledger (
+      transaction_id, user_id, amount, balance_after, type,
       reference_id, note, occurred_at, source_batch_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `,
@@ -203,7 +212,7 @@ const seedCleanupFixture = () => {
   for (const [userId, balance, policyStatus] of snapshots) {
     insert(database, `
       INSERT INTO opening_balance_snapshots (
-        line_user_id, snapshot_balance, source_batch_id, policy_status
+        user_id, snapshot_balance, source_batch_id, policy_status
       ) VALUES (?, ?, ?, ?)
     `, userId, balance, 'batch-formal-test', policyStatus);
   }
@@ -211,7 +220,7 @@ const seedCleanupFixture = () => {
   for (let index = 0; index < 2; index += 1) {
     insert(database, `
       INSERT INTO idempotency_keys (
-        actor_line_user_id, operation, idempotency_key, request_hash,
+        actor_user_id, operation, idempotency_key, request_hash,
         claim_token, status, response_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
     `,
@@ -227,7 +236,7 @@ const seedCleanupFixture = () => {
   for (let index = 0; index < 11; index += 1) {
     insert(database, `
       INSERT INTO admin_audit_log (
-        audit_id, actor_line_user_id, target_line_user_id, action, metadata_json, occurred_at
+        audit_id, actor_user_id, target_user_id, action, metadata_json, occurred_at
       ) VALUES (?, ?, ?, ?, ?, ?)
     `,
     `audit-${index + 1}`,
@@ -268,7 +277,7 @@ const formalOptions = (overrides = {}) => ({
 
 test('cleanup statements are prepared, fixed, and never target users for deletion', () => {
   const database = seedCleanupFixture();
-  assert.equal(CLEANUP_SQL.length, 11);
+  assert.equal(CLEANUP_SQL.length, 12);
   assert.equal(buildCleanupStatements(database).length, CLEANUP_SQL.length);
   assert.equal(CLEANUP_SQL.some((sql) => /\bDROP\s+(TABLE|DATABASE)\b/i.test(sql)), false);
   assert.equal(CLEANUP_SQL.some((sql) => /\bDELETE\s+FROM\s+users\b/i.test(sql)), false);
@@ -358,7 +367,7 @@ test('execute fails closed when confirmation is missing or the preflight baselin
 
   insert(database, `
     INSERT INTO calendar_settings (
-      order_date, vendor, mode, vendor_source, updated_by_line_user_id
+      order_date, vendor, mode, vendor_source, updated_by_user_id
     ) VALUES (?, ?, ?, ?, ?)
   `, '2026-09-30', '禾拾', 'A', 'CONFIGURED', 'user-1');
 
@@ -374,7 +383,7 @@ test('preserved identity or menu digests also fail closed even when row counts s
   const database = seedCleanupFixture();
   const baseline = await readCleanupSnapshot(database, formalOptions());
   insert(database, `
-    UPDATE users SET display_name = ? WHERE line_user_id = ?
+    UPDATE users SET display_name = ? WHERE user_id = ?
   `, 'Tampered identity', 'user-3');
 
   await assert.rejects(
@@ -382,7 +391,7 @@ test('preserved identity or menu digests also fail closed even when row counts s
     (error) => error.code === 'CLEANUP_BASELINE_MISMATCH'
   );
   assert.deepEqual((await readCleanupSnapshot(database, formalOptions())).counts, PRE_CLEANUP_COUNTS);
-  assert.equal(database.get('SELECT balance FROM users WHERE line_user_id = ?', 'user-1').balance, -300);
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', 'user-1').balance, -300);
 });
 
 test('execute uses one atomic batch and reconciles all post-clean invariants', async () => {
@@ -507,7 +516,7 @@ test('CLI dry-run reads an existing formal database and does not mutate its base
     const after = new DatabaseSync(databasePath);
     assert.equal(after.prepare('SELECT COUNT(*) AS count FROM orders').get().count, 17);
     assert.equal(after.prepare('SELECT COALESCE(SUM(balance), 0) AS total FROM users').get().total, -480);
-    assert.equal(after.prepare('SELECT COUNT(*) AS count FROM d1_migrations').get().count, 2);
+    assert.equal(after.prepare('SELECT COUNT(*) AS count FROM d1_migrations').get().count, 3);
     after.close();
   } finally {
     rmSync(directory, { recursive: true, force: true });

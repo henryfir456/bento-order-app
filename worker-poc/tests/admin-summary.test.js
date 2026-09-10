@@ -22,10 +22,11 @@ const seedSummary = () => {
   seedUser(database, { lineUserId: 'user-2', displayName: 'User Two', pickupFloor: '9樓' });
   database.run(`
     INSERT INTO orders (
-      order_id, line_user_id, order_date, vendor, pickup_floor, total_amount, status, note
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, note, created_by_user_id
     ) VALUES
-      ('summary-active', 'user-1', '2026-09-08', 'Vendor A', '1樓', 80, 'ACTIVE', 'note'),
-      ('summary-cancelled', 'user-2', '2026-09-08', 'Vendor A', '9樓', 90, 'CANCELLED', '')
+      ('summary-active', 'user-1', 'User One', '2026-09-08', 'Vendor A', '1樓', 80, 'ACTIVE', 'note', 'user-1'),
+      ('summary-cancelled', 'user-2', 'User Two', '2026-09-08', 'Vendor A', '9樓', 90, 'CANCELLED', '', 'user-2')
   `);
   database.run(`
     INSERT INTO order_items (

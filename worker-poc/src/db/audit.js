@@ -2,21 +2,32 @@ import { prepareStatement, randomId, runMutationBatch } from './transactions.js'
 
 export const auditStatement = (database, {
   auditId = randomId('audit'),
-  actorLineUserId,
-  targetLineUserId = null,
+  actorUserId,
+  actorAuthMode = 'line',
+  actorEmployeeIdSnapshot = null,
+  actorLineUserIdSnapshot = null,
+  targetUserId = null,
+  targetEmployeeIdSnapshot = null,
+  targetLineUserIdSnapshot = null,
   action,
   metadata = {},
   occurredAt
 }) => prepareStatement(database, `
   INSERT INTO admin_audit_log (
-    audit_id, actor_line_user_id, target_line_user_id, action,
-    metadata_json, occurred_at
+    audit_id, actor_user_id, actor_auth_mode, actor_employee_id_snapshot,
+    actor_line_user_id_snapshot, target_user_id, target_employee_id_snapshot,
+    target_line_user_id_snapshot, action, metadata_json, occurred_at
   )
-  VALUES (?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `, [
   auditId,
-  actorLineUserId,
-  targetLineUserId,
+  actorUserId,
+  actorAuthMode,
+  actorEmployeeIdSnapshot,
+  actorLineUserIdSnapshot,
+  targetUserId,
+  targetEmployeeIdSnapshot,
+  targetLineUserIdSnapshot,
   action,
   JSON.stringify(metadata),
   occurredAt

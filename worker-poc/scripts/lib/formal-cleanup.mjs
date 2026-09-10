@@ -29,7 +29,8 @@ export const PRE_CLEANUP_COUNTS = Object.freeze({
   announcements: 2,
   import_batches: 1,
   import_quarantine: 5,
-  d1_migrations: 2,
+  employee_guest_sessions: 0,
+  d1_migrations: 3,
   sqlite_sequence: 2
 });
 
@@ -50,7 +51,8 @@ export const POST_CLEANUP_COUNTS = Object.freeze({
   announcements: 2,
   import_batches: 1,
   import_quarantine: 5,
-  d1_migrations: 2,
+  employee_guest_sessions: 0,
+  d1_migrations: 3,
   sqlite_sequence: 2
 });
 
@@ -62,6 +64,7 @@ export const PRE_CLEANUP_LEDGER_BY_TYPE = Object.freeze({
 });
 
 export const CLEANUP_SQL = Object.freeze([
+  'DELETE FROM employee_guest_sessions',
   'DELETE FROM order_items',
   'DELETE FROM order_status_history',
   'DELETE FROM balance_ledger_sequence',
@@ -99,9 +102,9 @@ const LEDGER_TYPES = Object.freeze(['TOPUP', 'ORDER', 'REFUND', 'ADJUSTMENT']);
 
 const DIGEST_QUERIES = Object.freeze({
   usersIdentity: `
-    SELECT line_user_id, display_name, pickup_floor, role
+    SELECT user_id, employee_id, line_user_id, display_name, pickup_floor, role, active
     FROM users
-    ORDER BY line_user_id
+    ORDER BY user_id
   `,
   menuVersions: `
     SELECT menu_version_id, vendor, effective_date, source_batch_id, created_at
@@ -128,7 +131,7 @@ const DIGEST_QUERIES = Object.freeze({
   importQuarantine: `
     SELECT quarantine_id, batch_id, entity_type, source_sheet, source_row,
       reason_code, raw_payload_json, normalized_payload_json, review_state,
-      reviewed_by_line_user_id, resolution_json, created_at, reviewed_at
+      reviewed_by_user_id, resolution_json, created_at, reviewed_at
     FROM import_quarantine
     ORDER BY quarantine_id
   `,

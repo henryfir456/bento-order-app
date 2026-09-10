@@ -26,16 +26,24 @@ const validationFor = () => validateImport(
   })
 );
 
-const validationWithOrderExclusion = () => validateImport(
-  normalizeLegacyWorkbook(makeFormalWorkbook(), {
-    sourceHash: 'synthetic-source',
+const readyWorkbook = () => {
+  const workbook = makeFormalWorkbook();
+  workbook.sheets.Orders.rows = workbook.sheets.Orders.rows.slice(0, 1);
+  workbook.sheets.TopupHistory.rows = [];
+  workbook.sheets.Users.rows = workbook.sheets.Users.rows.map((row) => ({
+    ...row,
+    balance: 0,
+    raw: { ...row.raw, balance: 0 }
+  }));
+  return workbook;
+};
+
+const readyValidationFor = (orderExclusions = new Map()) => validateImport(
+  normalizeLegacyWorkbook(readyWorkbook(), {
+    sourceHash: 'synthetic-ready-source',
     importerVersion: 'test-version'
   }),
-  {
-    orderExclusions: new Map([
-      ['order-1', { reason: 'Approved disposable synthetic test data.' }]
-    ])
-  }
+  { orderExclusions }
 );
 
 const seedDisposableState = (database) => {
@@ -47,18 +55,19 @@ const seedDisposableState = (database) => {
     );
     INSERT INTO d1_migrations (id, name, applied_at)
       VALUES (1, '0000_formal_initial_schema.sql', 'before-replacement');
-    INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
-      VALUES ('legacy-test-user', 'Legacy Test User', '1樓', 999, 'User');
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor, balance, role
+    ) VALUES ('legacy-test-user', 'legacy-employee', 'legacy-line', 'Legacy Test User', '1樓', 999, 'User');
     INSERT INTO orders (
-      order_id, line_user_id, order_date, vendor, pickup_floor,
-      total_amount, status
-    ) VALUES ('legacy-test-order', 'legacy-test-user', '2026-09-08', 'Legacy', '1樓', 999, 'ACTIVE');
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id
+    ) VALUES ('legacy-test-order', 'legacy-test-user', 'Legacy Test User', '2026-09-08', 'Legacy', '1樓', 999, 'ACTIVE', 'legacy-test-user');
     INSERT INTO idempotency_keys (
-      actor_line_user_id, operation, idempotency_key, request_hash,
+      actor_user_id, operation, idempotency_key, request_hash,
       claim_token, status
     ) VALUES ('legacy-test-user', 'test', 'legacy-key', 'legacy-hash', 'legacy-claim', 'COMPLETED');
     INSERT INTO admin_audit_log (
-      audit_id, actor_line_user_id, action
+      audit_id, actor_user_id, action
     ) VALUES ('legacy-audit', 'legacy-test-user', 'LEGACY_TEST');
     INSERT INTO import_batches (
       batch_id, source_hash, importer_version, status
@@ -68,7 +77,8 @@ const seedDisposableState = (database) => {
 
 test('production replacement clears disposable state, preserves migration metadata, and reconciles', async () => {
   const database = new SqliteD1();
-  const validation = validationFor();
+  const validation = readyValidationFor();
+  const adminUserId = validation.accepted.Users.find((row) => row.employeeId === '000002').userId;
   seedDisposableState(database);
 
   const result = await replaceImport(database, validation, {
@@ -79,7 +89,7 @@ test('production replacement clears disposable state, preserves migration metada
   });
 
   assert.equal(database.get("SELECT COUNT(*) AS count FROM d1_migrations WHERE name = '0000_formal_initial_schema.sql'").count, 1);
-  assert.equal(database.get("SELECT COUNT(*) AS count FROM users WHERE line_user_id = 'legacy-test-user'").count, 0);
+  assert.equal(database.get("SELECT COUNT(*) AS count FROM users WHERE user_id = 'legacy-test-user'").count, 0);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM orders WHERE order_id = 'legacy-test-order'").count, 0);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM idempotency_keys').count, 0);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM admin_audit_log').count, 0);
@@ -90,16 +100,16 @@ test('production replacement clears disposable state, preserves migration metada
   assert.equal(result.targetCounts.announcements, 1);
   assert.equal(result.targetCounts.calendar_settings, 1);
   assert.equal(result.targetCounts.likes, 1);
-  assert.equal(result.targetCounts.import_quarantine, 2);
+  assert.equal(result.targetCounts.import_quarantine, 0);
   assert.equal(result.targetCounts.opening_balance_snapshots, 2);
   assert.equal(result.targetCounts.balance_ledger, 0);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'admin-1'").balance, -20);
-  assert.equal(result.importBatch.source_hash, 'synthetic-source');
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', adminUserId).balance, 0);
+  assert.equal(result.importBatch.source_hash, 'synthetic-ready-source');
   assert.equal(result.importBatch.batch_id, validation.batchId);
   assert.equal(result.noUnexpectedRows, true);
   assert.equal(result.noUnexpectedDuplicates, true);
   assert.equal(result.allConsistent, true);
-  assert.equal(result.balanceReconciliation.openingBalancePolicyRequiredCount, 2);
+  assert.equal(result.balanceReconciliation.openingBalancePolicyRequiredCount, 0);
 
   await assert.rejects(
     replaceImport(database, validation, {
@@ -113,7 +123,8 @@ test('production replacement clears disposable state, preserves migration metada
 
 test('generated replacement SQL reproduces the local replacement and preserves migration metadata', () => {
   const database = new SqliteD1();
-  const validation = validationFor();
+  const validation = readyValidationFor();
+  const adminUserId = validation.accepted.Users.find((row) => row.employeeId === '000002').userId;
   seedDisposableState(database);
   database.exec(buildReplacementSql(validation, {
     clock: new Date('2026-09-09T00:00:00.000Z')
@@ -125,7 +136,7 @@ test('generated replacement SQL reproduces the local replacement and preserves m
   assert.equal(database.get('SELECT COUNT(*) AS count FROM order_items').count, 1);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_items').count, 3);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'admin-1'").balance, -20);
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', adminUserId).balance, 0);
 });
 
 test('production target and reviewed source guards fail closed', () => {
@@ -138,13 +149,17 @@ test('production target and reviewed source guards fail closed', () => {
     (error) => error.code === 'PRODUCTION_DATABASE_ID_INVALID'
   );
 
-  const validation = validationFor();
+  const validation = readyValidationFor();
   const artifact = buildDryRunArtifact({
     validation,
     inputPath: '便當系統設定.xlsx',
     destructiveCommand: 'future-command'
   });
   assert.equal(assertReviewedInput(validation, artifact), true);
+  assert.deepEqual(artifact.identityMap, {
+    bySource: {},
+    byLegacyLineUserId: {}
+  });
   assert.throws(
     () => assertReviewedInput(validation, { ...artifact, readyForReplacement: false }),
     (error) => error.code === 'REVIEWED_ARTIFACT_NOT_READY'
@@ -153,10 +168,27 @@ test('production target and reviewed source guards fail closed', () => {
     () => assertReviewedInput({ ...validation, sourceHash: 'different-source' }, artifact),
     (error) => error.code === 'REVIEWED_SOURCE_MISMATCH'
   );
+  assert.throws(
+    () => assertReviewedInput(validation, {
+      ...artifact,
+      identityMap: { bySource: { 'Users:2': '000999' }, byLegacyLineUserId: {} }
+    }),
+    (error) => error.code === 'REVIEWED_IDENTITY_MAPPING_MISMATCH'
+  );
+
+  const blockedArtifact = buildDryRunArtifact({
+    validation: validationFor(),
+    inputPath: '便當系統設定.xlsx',
+    destructiveCommand: 'future-command'
+  });
+  assert.equal(blockedArtifact.readyForReplacement, false);
+  assert.equal(blockedArtifact.readiness.status, 'BLOCKED');
 });
 
 test('explicit order exclusions are auditable and removed from accepted production rows', () => {
-  const validation = validationWithOrderExclusion();
+  const validation = readyValidationFor(new Map([
+    ['order-1', { reason: 'Approved disposable synthetic test data.' }]
+  ]));
   assert.equal(validation.accepted.Orders.length, 0);
   assert.equal(validation.summary.acceptedCounts.Orders, 0);
   assert.deepEqual(validation.exclusions, [{
@@ -184,7 +216,7 @@ test('approved exclusion policy contains only the two authorized literal OrderID
 });
 
 test('preserved active-order uniqueness conflicts block replacement before SQL generation', () => {
-  const validation = validationFor();
+  const validation = readyValidationFor();
   validation.accepted.Orders.push({
     ...validation.accepted.Orders[0],
     orderId: 'order-2'
@@ -193,7 +225,7 @@ test('preserved active-order uniqueness conflicts block replacement before SQL g
   assert.equal(blockers[0].code, 'ACTIVE_ORDER_UNIQUENESS_CONFLICT');
   assert.throws(
     () => buildReplacementSql(validation),
-    (error) => error.code === 'REPLACEMENT_SCHEMA_CONFLICT'
+    (error) => error.code === 'REPLACEMENT_NOT_READY'
   );
   const artifact = buildDryRunArtifact({
     validation,

@@ -2,27 +2,27 @@ const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
 );
 
-export const getActiveOrdersMap = async (database, lineUserId) => {
+export const getActiveOrdersMap = async (database, userId) => {
   const result = await database.prepare(`
     SELECT order_date
     FROM orders
-    WHERE line_user_id = ? AND status = 'ACTIVE'
+    WHERE user_id = ? AND status = 'ACTIVE'
     ORDER BY order_date ASC
-  `).bind(lineUserId).all();
+  `).bind(userId).all();
   return rowsFrom(result).reduce((map, row) => {
     map[row.order_date] = true;
     return map;
   }, {});
 };
 
-export const getActiveOrder = async (database, lineUserId, orderDate) => {
+export const getActiveOrder = async (database, userId, orderDate) => {
   const order = await database.prepare(`
     SELECT order_id, order_date, vendor, pickup_floor, note, total_amount
     FROM orders
-    WHERE line_user_id = ? AND order_date = ? AND status = 'ACTIVE'
+    WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
     ORDER BY created_at DESC, order_id DESC
     LIMIT 1
-  `).bind(lineUserId, orderDate).first();
+  `).bind(userId, orderDate).first();
   if (!order) return { orderId: '', items: [], note: '' };
 
   const result = await database.prepare(`

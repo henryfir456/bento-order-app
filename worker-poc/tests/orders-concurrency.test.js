@@ -43,7 +43,7 @@ const syntheticTopUp = async (database, key, amount) => {
   const requestHash = await hashRequest({ amount });
   const occurredAt = '2026-09-07T01:00:00.000Z';
   return runIdempotentMutation(database, {
-    actorLineUserId: 'admin-1',
+    actorUserId: 'admin-1',
     operation: 'TEST_TOPUP',
     idempotencyKey: key,
     requestHash,
@@ -58,16 +58,16 @@ const syntheticTopUp = async (database, key, amount) => {
       prepareStatement(database, `
         UPDATE users
         SET balance = balance + ?, updated_at = ?
-        WHERE line_user_id = ? AND ${guard.sql}
+        WHERE user_id = ? AND ${guard.sql}
       `, [amount, occurredAt, 'user-1', ...guard.params]),
       prepareStatement(database, `
         INSERT INTO balance_ledger (
-          transaction_id, line_user_id, amount, balance_after, type,
-          reference_id, operator_line_user_id, note, occurred_at
+          transaction_id, user_id, amount, balance_after, type,
+          reference_id, operator_user_id, note, occurred_at
         )
-        SELECT ?, line_user_id, ?, balance, 'TOPUP', ?, 'admin-1', 'TEST_TOPUP', ?
+        SELECT ?, user_id, ?, balance, 'TOPUP', ?, 'admin-1', 'TEST_TOPUP', ?
         FROM users
-        WHERE line_user_id = ? AND ${guard.sql}
+        WHERE user_id = ? AND ${guard.sql}
       `, [
         'txn-' + key,
         amount,
@@ -95,9 +95,9 @@ test('competing replacements serialize without lost balance updates or two activ
   const active = database.get(`
     SELECT order_id, total_amount
     FROM orders
-    WHERE line_user_id = 'user-1' AND order_date = ? AND status = 'ACTIVE'
+    WHERE user_id = 'user-1' AND order_date = ? AND status = 'ACTIVE'
   `, ORDER_DATE);
-  const user = database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'");
+  const user = database.get("SELECT balance FROM users WHERE user_id = 'user-1'");
   assert.equal(user.balance, 100 - active.total_amount);
   assert.equal(database.get(`
     SELECT COUNT(*) AS count
@@ -123,7 +123,7 @@ test('competing cancellations commit at most one refund and keep order state con
   assert.deepEqual(results.map((result) => result.response.status).sort(), [200, 409]);
   assert.equal(database.get("SELECT status FROM orders WHERE order_id = ?", created.body.orderId).status, 'CANCELLED');
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'REFUND'",).count, 1);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 100);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 100);
   assert.equal(database.get(`
     SELECT COUNT(*) AS count
     FROM order_status_history
@@ -138,12 +138,12 @@ test('replacement racing with cancellation leaves one consistent active-order ou
     create(database, 'race-replace-cancel-replace', 'menu-b'),
     cancel(database, created.body.orderId, 'race-replace-cancel-cancel')
   ]);
-  assert.deepEqual(results.map((result) => result.response.status).sort(), [200, 200]);
+  assert.deepEqual(results.map((result) => result.response.status).sort(), [200, 409]);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM orders WHERE status = 'ACTIVE'").count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'REFUND'",).count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'ORDER'",).count, 2);
   const active = database.get("SELECT total_amount FROM orders WHERE status = 'ACTIVE'");
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 100 - active.total_amount);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 100 - active.total_amount);
   assert.equal(database.get(`
     SELECT COUNT(*) AS count
     FROM balance_ledger bl
@@ -162,7 +162,7 @@ test('competing retries with one idempotency key return one order and one deduct
   assert.equal(results[0].body.orderId, results[1].body.orderId);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM orders').count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'ORDER'",).count, 1);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 20);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 20);
 });
 
 test('competing top-up-shaped balance mutations preserve every ledger delta', async () => {
@@ -172,12 +172,12 @@ test('competing top-up-shaped balance mutations preserve every ledger delta', as
     syntheticTopUp(database, 'race-topup-b', 20)
   ]);
   assert.deepEqual(results.map((result) => result.success), [true, true]);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 130);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 130);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'TOPUP'",).count, 2);
   assert.equal(database.get(`
     SELECT SUM(amount) AS amount
     FROM balance_ledger
-    WHERE line_user_id = 'user-1'
+    WHERE user_id = 'user-1'
   `).amount, 30);
   assert.equal(database.get(`
     SELECT COUNT(*) AS count

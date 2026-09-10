@@ -10,17 +10,20 @@ const rowsFrom = (result) => (
 
 const memberRows = async (database) => {
   const result = await database.prepare(`
-    SELECT line_user_id, display_name, pickup_floor, balance, role,
-           created_at, updated_at
+    SELECT user_id, employee_id, line_user_id, display_name, pickup_floor,
+           balance, role, active, created_at, updated_at
     FROM users
-    ORDER BY display_name ASC, line_user_id ASC
+    ORDER BY display_name ASC, user_id ASC
   `).all();
   return rowsFrom(result).map((row) => publicUser({
+    userId: row.user_id,
+    employeeId: row.employee_id,
     lineUserId: row.line_user_id,
     displayName: row.display_name,
     pickupFloor: row.pickup_floor,
     balance: Number(row.balance),
     role: row.role,
+    active: Boolean(row.active),
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }));
@@ -40,7 +43,7 @@ export const getAdminSummary = async (
            oi.legacy_item_id, oi.item_name_snapshot, oi.quantity,
            oi.unit_price, oi.subtotal
     FROM orders o
-    JOIN users u ON u.line_user_id = o.line_user_id
+    JOIN users u ON u.user_id = o.user_id
     JOIN order_items oi ON oi.order_id = o.order_id
     WHERE o.order_date = ? AND o.status = 'ACTIVE'
     ORDER BY o.pickup_floor ASC, o.order_id ASC, oi.line_no ASC
@@ -84,8 +87,13 @@ export const getAdminSummary = async (
     && (includeMemberBalances || Boolean(identity.viewAs));
   if (canReadMembers || identity.viewAs) {
     await appendAuditEvent(database, {
-      actorLineUserId: identity.authorizationActor.lineUserId,
-      targetLineUserId: identity.effectiveSubject.lineUserId,
+      actorUserId: identity.authorizationActor.userId,
+      actorAuthMode: identity.authorizationActor.authMode,
+      actorEmployeeIdSnapshot: identity.authorizationActor.employeeId,
+      actorLineUserIdSnapshot: identity.authorizationActor.lineUserId,
+      targetUserId: identity.effectiveSubject.userId,
+      targetEmployeeIdSnapshot: identity.effectiveSubject.employeeId,
+      targetLineUserIdSnapshot: identity.effectiveSubject.lineUserId,
       action: identity.viewAs ? 'VIEW_AS_ADMIN_SUMMARY' : 'ADMIN_SUMMARY_READ',
       metadata: { targetDate, includeMemberBalances: canReadMembers },
       occurredAt: now.toISOString()
@@ -107,8 +115,13 @@ export const getAdminSummary = async (
 export const getMemberBalances = async (database, identity, now = new Date()) => {
   assertCan(identity, ACTIONS.READ_MEMBER_BALANCES);
   await appendAuditEvent(database, {
-    actorLineUserId: identity.authorizationActor.lineUserId,
-    targetLineUserId: identity.viewAs?.targetLineUserId || null,
+    actorUserId: identity.authorizationActor.userId,
+    actorAuthMode: identity.authorizationActor.authMode,
+    actorEmployeeIdSnapshot: identity.authorizationActor.employeeId,
+    actorLineUserIdSnapshot: identity.authorizationActor.lineUserId,
+    targetUserId: identity.viewAs?.targetUserId || null,
+    targetEmployeeIdSnapshot: identity.viewAs ? identity.effectiveSubject.employeeId : null,
+    targetLineUserIdSnapshot: identity.viewAs ? identity.effectiveSubject.lineUserId : null,
     action: identity.viewAs ? 'VIEW_AS_MEMBER_BALANCES_READ' : 'MEMBER_BALANCES_READ',
     metadata: {},
     occurredAt: now.toISOString()

@@ -26,7 +26,7 @@ export const getCalendarEvents = async (
     toDate = null,
     now = new Date(),
     includeLikes = false,
-    lineUserId = null,
+    userId = null,
     includeSource = false
   } = {}
 ) => {
@@ -38,16 +38,16 @@ export const getCalendarEvents = async (
   const events = {};
   const likesResult = includeLikes
     ? await database.prepare(`
-      SELECT order_date, line_user_id
+      SELECT order_date, user_id
       FROM likes
-      ORDER BY order_date ASC, line_user_id ASC
+      ORDER BY order_date ASC, user_id ASC
     `).all()
     : { results: [] };
   const likeRows = rowsFrom(likesResult);
   const likesByDate = likeRows.reduce((result, row) => {
     const current = result[row.order_date] || { count: 0, users: new Set() };
     current.count += 1;
-    current.users.add(row.line_user_id);
+    current.users.add(row.user_id);
     result[row.order_date] = current;
     return result;
   }, {});
@@ -66,7 +66,7 @@ export const getCalendarEvents = async (
       lunarLabel: null,
       ...(includeLikes ? {
         likeCount: likeState.count,
-        isUserLiked: likeState.users.has(lineUserId),
+        isUserLiked: likeState.users.has(userId),
         ...(includeSource ? { vendorSource: row.vendor_source || 'CONFIGURED' } : {})
       } : {})
     };
@@ -83,7 +83,7 @@ export const getCalendarEvents = async (
         isExpired: Boolean(fallback?.isExpired),
         lunarLabel: null,
         likeCount: likeState.count,
-        isUserLiked: likeState.users.has(lineUserId),
+        isUserLiked: likeState.users.has(userId),
         ...(includeSource ? { vendorSource: 'LIKE_DEFAULT' } : {})
       };
     }
@@ -91,11 +91,11 @@ export const getCalendarEvents = async (
   return events;
 };
 
-export const getLikes = async (database, { lineUserId, now = new Date() } = {}) => {
+export const getLikes = async (database, { userId, now = new Date() } = {}) => {
   const result = await database.prepare(`
-    SELECT order_date, line_user_id
+    SELECT order_date, user_id
     FROM likes
-    ORDER BY order_date ASC, line_user_id ASC
+    ORDER BY order_date ASC, user_id ASC
   `).all();
   return rowsFrom(result).reduce((state, row) => {
     const current = state[row.order_date] || {
@@ -104,7 +104,7 @@ export const getLikes = async (database, { lineUserId, now = new Date() } = {}) 
       calendarEvent: null
     };
     current.likeCount += 1;
-    if (row.line_user_id === lineUserId) current.isUserLiked = true;
+    if (row.user_id === userId) current.isUserLiked = true;
     current.calendarEvent = {
       order_date: row.order_date,
       vendor: '',

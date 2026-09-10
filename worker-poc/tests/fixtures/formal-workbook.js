@@ -18,10 +18,11 @@ export const makeFormalWorkbook = () => ({
       ]
     },
     Likes: {
-      headers: ['Date', 'LINE_UserID', 'Created_At'],
+      headers: ['Date', 'employee_id', 'LINE_UserID', 'Created_At'],
       rows: [
         source('Likes', 2, {
           order_date: '2026-09-08',
+          employee_id: '000001',
           line_user_id: 'user-1',
           created_at: '2026-09-07T10:00:00.000Z'
         })
@@ -30,6 +31,7 @@ export const makeFormalWorkbook = () => ({
     TopupHistory: {
       headers: [
         'Timestamp',
+        'employee_id',
         'LINE_UserID',
         '姓名',
         '樓層',
@@ -40,11 +42,13 @@ export const makeFormalWorkbook = () => ({
         'Type',
         'ReferenceID',
         'OperatorUserID',
+        'operator_employee_id',
         'OperatorName'
       ],
       rows: [
         source('TopupHistory', 2, {
           timestamp: '2026-09-07T09:00:00.000Z',
+          employee_id: '000001',
           line_user_id: 'user-1',
           display_name: 'Synthetic User',
           pickup_floor: '1樓',
@@ -55,14 +59,16 @@ export const makeFormalWorkbook = () => ({
           type: 'TOPUP',
           reference_id: 'ref-1',
           operator_line_user_id: 'admin-1',
+          operator_employee_id: '000002',
           operator_name: 'Synthetic Admin'
         })
       ]
     },
     Users: {
-      headers: ['UserID', 'DisplayName', '樓層', 'Balance', 'Role'],
+      headers: ['employee_id', 'UserID', 'DisplayName', '樓層', 'Balance', 'Role'],
       rows: [
         source('Users', 2, {
+          employee_id: '000001',
           line_user_id: 'user-1',
           display_name: 'Synthetic User',
           pickup_floor: '1樓',
@@ -70,6 +76,7 @@ export const makeFormalWorkbook = () => ({
           role: 'User'
         }),
         source('Users', 3, {
+          employee_id: '000002',
           line_user_id: 'admin-1',
           display_name: 'Synthetic Admin',
           pickup_floor: '9樓',
@@ -140,6 +147,7 @@ export const makeFormalWorkbook = () => ({
         'subtotal',
         'created_at',
         'updated_at',
+        'employee_id',
         '',
         'LINE_UserID',
         'BalanceAfter',
@@ -160,6 +168,7 @@ export const makeFormalWorkbook = () => ({
           created_at: '2026-09-07T08:00:00.000Z',
           updated_at: '2026-09-07T08:00:00.000Z',
           status: 'ACTIVE',
+          employee_id: '000001',
           line_user_id: 'user-1',
           balance_after: 20,
           note: ''

@@ -12,7 +12,16 @@ const migrationSql = readdirSync(resolve(here, '../../migrations-formal'))
 export class LocalFormalD1 {
   constructor(databasePath, { initialize = true, readOnly = false } = {}) {
     this.database = new DatabaseSync(databasePath, { readOnly });
-    if (initialize) migrationSql.forEach((sql) => this.database.exec(sql));
+    if (initialize) {
+      const usersTable = this.database
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'")
+        .get();
+      const hasCanonicalUsers = usersTable && this.database
+        .prepare('PRAGMA table_info(users)')
+        .all()
+        .some((column) => column.name === 'user_id');
+      if (!hasCanonicalUsers) migrationSql.forEach((sql) => this.database.exec(sql));
+    }
     this.batchQueue = Promise.resolve();
   }
 

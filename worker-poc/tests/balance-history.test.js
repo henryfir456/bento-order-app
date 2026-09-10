@@ -10,8 +10,9 @@ import { SqliteD1 } from './helpers/formal-db.js';
 
 const seedOrder = (database) => database.run(`
   INSERT INTO orders (
-    order_id, line_user_id, order_date, vendor, pickup_floor, total_amount, status
-  ) VALUES ('history-order', 'user-1', '2026-09-08', 'Vendor A', '1樓', 30, 'ACTIVE')
+    order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+    total_amount, status, created_by_user_id
+  ) VALUES ('history-order', 'user-1', 'User One', '2026-09-08', 'Vendor A', '1樓', 30, 'ACTIVE', 'user-1')
 `);
 
 test('balance history filters by UTC month and preserves business-date context', async () => {
@@ -20,7 +21,7 @@ test('balance history filters by UTC month and preserves business-date context',
   seedOrder(database);
   await appendLedgerEntry(database, {
     transactionId: 'history-order-tx',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: -30,
     balanceAfter: 70,
     type: 'ORDER',
@@ -29,38 +30,38 @@ test('balance history filters by UTC month and preserves business-date context',
   });
   await appendAuditEvent(database, {
     auditId: 'history-audit',
-    actorLineUserId: 'user-1',
-    targetLineUserId: 'user-1',
+    actorUserId: 'user-1',
+    targetUserId: 'user-1',
     action: 'BALANCE_TOP_UP',
     metadata: { amount: 10 },
     occurredAt: '2026-09-10T00:00:00.000Z'
   });
   await appendLedgerEntry(database, {
     transactionId: 'history-topup-tx',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: 10,
     balanceAfter: 80,
     type: 'TOPUP',
     referenceId: 'history-audit',
-    operatorLineUserId: 'user-1',
+    operatorUserId: 'user-1',
     occurredAt: '2026-09-10T00:00:00.000Z'
   });
   await appendAuditEvent(database, {
     auditId: 'history-audit-october',
-    actorLineUserId: 'user-1',
-    targetLineUserId: 'user-1',
+    actorUserId: 'user-1',
+    targetUserId: 'user-1',
     action: 'BALANCE_TOP_UP',
     metadata: { amount: 5 },
     occurredAt: '2026-10-01T00:00:00.000Z'
   });
   await appendLedgerEntry(database, {
     transactionId: 'history-october-tx',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: 5,
     balanceAfter: 85,
     type: 'TOPUP',
     referenceId: 'history-audit-october',
-    operatorLineUserId: 'user-1',
+    operatorUserId: 'user-1',
     occurredAt: '2026-10-01T00:00:00.000Z'
   });
 
@@ -90,19 +91,21 @@ test('history follows committed ledger sequence across reversed timestamps and m
   seedUser(database, { lineUserId: 'user-1', balance: 100 });
   seedUser(database, { lineUserId: 'admin-1', role: 'Admin' });
   database.run(`
-    INSERT INTO orders (
-      order_id, line_user_id, order_date, vendor, pickup_floor, total_amount, status
-    ) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
-  `, 'before-month-order', 'user-1', '2026-08-31', 'Vendor A', '1樓', 5);
+  INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+  `, 'before-month-order', 'user-1', 'User One', '2026-08-31', 'Vendor A', '1樓', 5, 'user-1');
   database.run(`
-    INSERT INTO orders (
-      order_id, line_user_id, order_date, vendor, pickup_floor, total_amount, status
-    ) VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
-  `, 'reversed-month-order', 'user-1', '2026-09-01', 'Vendor A', '1樓', 10);
+  INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
+  `, 'reversed-month-order', 'user-1', 'User One', '2026-09-01', 'Vendor A', '1樓', 10, 'user-1');
 
   await appendLedgerEntry(database, {
     transactionId: 'txn-before-month',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: -5,
     balanceAfter: 95,
     type: 'ORDER',
@@ -111,25 +114,25 @@ test('history follows committed ledger sequence across reversed timestamps and m
   });
   await appendAuditEvent(database, {
     auditId: 'audit-reversed-late',
-    actorLineUserId: 'admin-1',
-    targetLineUserId: 'user-1',
+    actorUserId: 'admin-1',
+    targetUserId: 'user-1',
     action: 'BALANCE_TOP_UP',
     metadata: { amount: 20 },
     occurredAt: '2026-09-30T00:00:00.000Z'
   });
   await appendLedgerEntry(database, {
     transactionId: 'txn-reversed-late',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: 20,
     balanceAfter: 115,
     type: 'TOPUP',
     referenceId: 'audit-reversed-late',
-    operatorLineUserId: 'admin-1',
+    operatorUserId: 'admin-1',
     occurredAt: '2026-09-30T00:00:00.000Z'
   });
   await appendLedgerEntry(database, {
     transactionId: 'txn-reversed-early',
-    lineUserId: 'user-1',
+    userId: 'user-1',
     amount: -10,
     balanceAfter: 105,
     type: 'ORDER',

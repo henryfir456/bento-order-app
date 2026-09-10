@@ -10,6 +10,7 @@ import {
 
 const identity = (role, lineUserId = 'user-1') => ({
   actor: {
+    userId: lineUserId,
     lineUserId,
     role,
     registered: true
@@ -27,6 +28,14 @@ test('permission matrix preserves User, ProxyAdmin, and Admin boundaries', () =>
   assert.equal(can('Admin', ACTIONS.READ_MEMBER_BALANCES), true);
   assert.equal(can('Admin', ACTIONS.ADMIN_CALENDAR), true);
   assert.equal(can('Admin', ACTIONS.ADMIN_ROLE), true);
+  for (const role of ['Admin', 'ProxyAdmin']) {
+    assert.equal(can(role, ACTIONS.READ_SELF, 'employee_guest'), true);
+    assert.equal(can(role, ACTIONS.WRITE_SELF, 'employee_guest'), true);
+    assert.equal(can(role, ACTIONS.READ_ADMIN_SUMMARY, 'employee_guest'), false);
+    assert.equal(can(role, ACTIONS.ADMIN_TOP_UP, 'employee_guest'), false);
+    assert.equal(can(role, ACTIONS.ADMIN_ROLE, 'employee_guest'), false);
+    assert.equal(can(role, ACTIONS.VIEW_AS, 'employee_guest'), false);
+  }
   assert.equal(can('Unknown', ACTIONS.READ_SELF), false);
 });
 

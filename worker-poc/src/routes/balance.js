@@ -13,7 +13,11 @@ import { getBalanceHistory } from '../domain/ledger.js';
 import { badRequest, conflict, notFound } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
-import { getUserByLineId } from '../db/users.js';
+import {
+  getUserByEmployeeId,
+  getUserById,
+  getUserByLineId
+} from '../db/users.js';
 
 const TOP_UP_OPERATION = 'ADMIN_BALANCE_TOP_UP';
 
@@ -52,29 +56,39 @@ const actorForTopUp = (identity) => {
 
 export const topUpBalance = async (database, identity, input, clock = new Date()) => {
   const actor = actorForTopUp(identity);
-  const targetLineUserId = text(input?.targetLineUserId || input?.targetUserId || input?.userId);
+  const targetUserInput = text(
+    input?.targetUserId
+    || input?.userId
+    || input?.targetEmployeeId
+    || input?.targetLineUserId
+  );
   const amount = positiveInteger(input?.amount);
   const note = text(input?.note) || 'Admin manual top-up';
-  if (!targetLineUserId) throw badRequest('TOP_UP_TARGET_REQUIRED');
+  if (!targetUserInput) throw badRequest('TOP_UP_TARGET_REQUIRED');
   if (amount === null) throw badRequest('TOP_UP_AMOUNT_INVALID');
   if (note.length > 2000) throw badRequest('TOP_UP_NOTE_TOO_LONG');
   const idempotency = requireIdempotencyKey(input?.idempotencyKey);
-  const requestHash = await hashRequest({ targetLineUserId, amount, note });
+  const target = input?.targetEmployeeId
+    ? await getUserByEmployeeId(database, targetUserInput)
+    : input?.targetLineUserId
+      ? await getUserByLineId(database, targetUserInput)
+      : await getUserById(database, targetUserInput);
+  if (!target) throw notFound('TOP_UP_TARGET_NOT_FOUND');
+  const targetUserId = target.userId;
+  const requestHash = await hashRequest({ targetUserId, amount, note });
   const existing = await readExistingIdempotencyResult(database, {
-    actorLineUserId: actor.lineUserId,
+    actorUserId: actor.userId,
     operation: TOP_UP_OPERATION,
     idempotencyKey: idempotency,
     requestHash
   });
   if (existing) return existing;
 
-  const target = await getUserByLineId(database, targetLineUserId);
-  if (!target) throw notFound('TOP_UP_TARGET_NOT_FOUND');
   const now = resolveClock(clock).toISOString();
   const transactionId = randomId('txn');
   const auditId = randomId('audit');
   const details = {
-    actorLineUserId: actor.lineUserId,
+    actorUserId: actor.userId,
     operation: TOP_UP_OPERATION,
     idempotencyKey: idempotency,
     requestHash,
@@ -87,27 +101,40 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
       ...details,
       responseSpec: balanceMutationResponseSpec({
         message: 'BALANCE_TOPPED_UP',
-        targetLineUserId,
-        balanceUserId: targetLineUserId,
+        targetUserId,
+        balanceUserId: targetUserId,
         transactionId
       }),
       buildStatements: ({ guard }) => {
         const audit = auditStatement(database, {
           auditId,
-          actorLineUserId: actor.lineUserId,
-          targetLineUserId,
+          actorUserId: actor.userId,
+          actorAuthMode: actor.authMode,
+          actorEmployeeIdSnapshot: actor.employeeId,
+          actorLineUserIdSnapshot: actor.lineUserId,
+          targetUserId,
+          targetEmployeeIdSnapshot: target.employeeId,
+          targetLineUserIdSnapshot: target.lineUserId,
           action: 'BALANCE_TOP_UP',
           metadata: { amount, note, transactionId },
           occurredAt: now
         });
         const ledger = ledgerMutationStatements(database, {
           transactionId,
-          lineUserId: targetLineUserId,
+          userId: targetUserId,
+          employeeIdSnapshot: target.employeeId,
+          lineUserIdSnapshot: target.lineUserId,
+          displayNameSnapshot: target.displayName,
           amount,
           balanceAfter: target.balance + amount,
           type: 'TOPUP',
           referenceId: auditId,
-          operatorLineUserId: actor.lineUserId,
+          operatorUserId: actor.userId,
+          operatorEmployeeIdSnapshot: actor.employeeId,
+          operatorLineUserIdSnapshot: actor.lineUserId,
+          operatorDisplayNameSnapshot: actor.displayName,
+          operatorAuthMode: actor.authMode,
+          authMode: actor.authMode,
           note,
           occurredAt: now
         }, { guard, dynamicBalanceAfter: true });
@@ -131,13 +158,14 @@ export const handleBalanceRoute = async (request, env, {
 
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: isHistory
+    allowViewAs: isHistory,
+    now
   });
   if (isHistory) {
     const month = url.searchParams.get('month') || '';
     return jsonResponse(await getBalanceHistory(
       env.DB,
-      identity.effectiveSubject.lineUserId,
+      identity.effectiveSubject.userId,
       month
     ));
   }

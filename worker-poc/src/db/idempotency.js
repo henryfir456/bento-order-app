@@ -48,8 +48,8 @@ export const hashRequest = async (value) => {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 };
 
-const claimParams = ({ actorLineUserId, operation, idempotencyKey, requestHash, claimToken }) => [
-  actorLineUserId,
+const claimParams = ({ actorUserId, operation, idempotencyKey, requestHash, claimToken }) => [
+  actorUserId,
   operation,
   idempotencyKey,
   requestHash,
@@ -60,7 +60,7 @@ export const idempotencyGuard = (details) => ({
   sql: `EXISTS (
     SELECT 1
     FROM idempotency_keys
-    WHERE actor_line_user_id = ?
+    WHERE actor_user_id = ?
       AND operation = ?
       AND idempotency_key = ?
       AND request_hash = ?
@@ -71,7 +71,7 @@ export const idempotencyGuard = (details) => ({
 });
 
 export const beginIdempotentOperation = (database, {
-  actorLineUserId,
+  actorUserId,
   operation,
   idempotencyKey,
   requestHash,
@@ -79,14 +79,14 @@ export const beginIdempotentOperation = (database, {
   occurredAt
 }) => prepareStatement(database, `
   INSERT OR IGNORE INTO idempotency_keys (
-    actor_line_user_id, operation, idempotency_key, request_hash,
+    actor_user_id, operation, idempotency_key, request_hash,
     claim_token, status, created_at
   )
   VALUES (?, ?, ?, ?, ?, 'IN_PROGRESS', ?)
-`, [actorLineUserId, operation, idempotencyKey, requestHash, claimToken, occurredAt]);
+`, [actorUserId, operation, idempotencyKey, requestHash, claimToken, occurredAt]);
 
 export const completeIdempotentOperation = (database, {
-  actorLineUserId,
+  actorUserId,
   operation,
   idempotencyKey,
   requestHash,
@@ -102,7 +102,7 @@ export const completeIdempotentOperation = (database, {
     SET status = 'COMPLETED',
         response_json = ${responseSpec.expression},
         completed_at = ?
-    WHERE actor_line_user_id = ?
+    WHERE actor_user_id = ?
       AND operation = ?
       AND idempotency_key = ?
       AND request_hash = ?
@@ -111,7 +111,7 @@ export const completeIdempotentOperation = (database, {
   `, [
     ...responseSpec.params,
     occurredAt,
-    actorLineUserId,
+    actorUserId,
     operation,
     idempotencyKey,
     requestHash,
@@ -121,14 +121,14 @@ export const completeIdempotentOperation = (database, {
 
 export const readIdempotencyRecord = async (
   database,
-  { actorLineUserId, operation, idempotencyKey }
+  { actorUserId, operation, idempotencyKey }
 ) => prepareStatement(database, `
-  SELECT actor_line_user_id, operation, idempotency_key, request_hash,
+  SELECT actor_user_id, operation, idempotency_key, request_hash,
          claim_token, status, response_json, created_at, completed_at
   FROM idempotency_keys
-  WHERE actor_line_user_id = ? AND operation = ? AND idempotency_key = ?
+  WHERE actor_user_id = ? AND operation = ? AND idempotency_key = ?
   LIMIT 1
-`, [actorLineUserId, operation, idempotencyKey]).first();
+`, [actorUserId, operation, idempotencyKey]).first();
 
 export const mutationResponseSpec = ({
   message,
@@ -140,14 +140,14 @@ export const mutationResponseSpec = ({
     'success', json('true'),
     'message', ?,
     'orderId', ?,
-    'newBalance', (SELECT balance FROM users WHERE line_user_id = ?)
+    'newBalance', (SELECT balance FROM users WHERE user_id = ?)
   )`,
   params: [message, orderId, balanceUserId]
 });
 
 export const balanceMutationResponseSpec = ({
   message,
-  targetLineUserId,
+  targetUserId,
   balanceUserId,
   transactionId
 }) => ({
@@ -157,9 +157,9 @@ export const balanceMutationResponseSpec = ({
     'message', ?,
     'targetUserId', ?,
     'transactionId', ?,
-    'newBalance', (SELECT balance FROM users WHERE line_user_id = ?)
+    'newBalance', (SELECT balance FROM users WHERE user_id = ?)
   )`,
-  params: [message, targetLineUserId, transactionId, balanceUserId]
+  params: [message, targetUserId, transactionId, balanceUserId]
 });
 
 export const parseStoredResponse = (record) => {
@@ -174,10 +174,10 @@ export const parseStoredResponse = (record) => {
 
 export const readExistingIdempotencyResult = async (
   database,
-  { actorLineUserId, operation, idempotencyKey, requestHash }
+  { actorUserId, operation, idempotencyKey, requestHash }
 ) => {
   const record = await readIdempotencyRecord(database, {
-    actorLineUserId, operation, idempotencyKey
+    actorUserId, operation, idempotencyKey
   });
   if (!record) return null;
   if (record.request_hash !== requestHash) throw conflict('IDEMPOTENCY_CONFLICT');
@@ -187,7 +187,7 @@ export const readExistingIdempotencyResult = async (
 };
 
 export const runIdempotentMutation = async (database, {
-  actorLineUserId,
+  actorUserId,
   operation,
   idempotencyKey,
   requestHash,
@@ -197,7 +197,7 @@ export const runIdempotentMutation = async (database, {
   claimToken = randomId('claim')
 }) => {
   const details = {
-    actorLineUserId,
+    actorUserId,
     operation,
     idempotencyKey,
     requestHash,
@@ -220,7 +220,7 @@ export const runIdempotentMutation = async (database, {
 
   await runMutationBatch(database, statements);
   const record = await readIdempotencyRecord(database, {
-    actorLineUserId, operation, idempotencyKey
+    actorUserId, operation, idempotencyKey
   });
   if (!record) throw new Error('Idempotency claim disappeared after commit.');
   if (record.request_hash !== requestHash) throw conflict('IDEMPOTENCY_CONFLICT');

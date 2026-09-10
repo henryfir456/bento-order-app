@@ -1,4 +1,4 @@
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,6 +14,7 @@ import { validateImport } from './lib/import-validator.mjs';
 import { readLegacyWorkbook } from './lib/workbook-reader.mjs';
 import { stageImport } from './lib/import-writer.js';
 import { openLocalFormalDatabase } from './lib/local-db.mjs';
+import { loadIdentityMap, resolveLegacyIdentities } from './lib/identity-mapping.mjs';
 import {
   assertProductionTarget,
   assertReviewedInput,
@@ -25,19 +26,45 @@ import {
   APPROVED_TEST_ORDER_EXCLUSIONS
 } from './lib/replacement-import.mjs';
 
-const prepareValidation = async ({
+export const prepareImportModel = async ({
   inputPath,
   adapter,
   importerVersion,
   ledgerPolicyApproved,
-  orderExclusions = new Map()
+  orderExclusions = new Map(),
+  identityMapPath,
+  identityMap
 }) => {
   const workbook = await readLegacyWorkbook(inputPath, { adapter });
   const normalized = normalizeLegacyWorkbook(workbook, {
     sourceHash: workbook.sourceHash,
     importerVersion
   });
-  return validateImport(normalized, { ledgerPolicyApproved, orderExclusions });
+  const resolvedMap = identityMap || await loadIdentityMap(identityMapPath);
+  const mapped = resolveLegacyIdentities(normalized, { identityMap: resolvedMap });
+  return validateImport(mapped, {
+    ledgerPolicyApproved,
+    orderExclusions,
+    identityMap: resolvedMap
+  });
+};
+
+const prepareValidation = prepareImportModel;
+
+const writeFreshFile = async (path, contents) => {
+  try {
+    await writeFile(path, contents, { encoding: 'utf8', flag: 'wx' });
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      throw new ImportContractError(
+        'OUTPUT_PATH_EXISTS',
+        'The requested local artifact already exists; refusing to overwrite a user-owned import artifact.',
+        { path }
+      );
+    }
+    throw error;
+  }
+  return path;
 };
 
 const configuredDatabaseIdentity = async (configPath) => {
@@ -69,7 +96,9 @@ export const runImport = async ({
   importerVersion = IMPORTER_VERSION,
   ledgerPolicyApproved = false,
   database,
-  clock = new Date()
+  clock = new Date(),
+  identityMapPath,
+  identityMap
 } = {}) => {
   if (!['validate', 'stage'].includes(mode)) {
     throw new ImportContractError(
@@ -88,7 +117,9 @@ export const runImport = async ({
     inputPath,
     adapter,
     importerVersion,
-    ledgerPolicyApproved
+    ledgerPolicyApproved,
+    identityMapPath,
+    identityMap
   });
   const staged = mode === 'stage'
     ? await stageImport(database, validation, { clock })
@@ -151,7 +182,9 @@ export const runProductionReplace = async ({
   remote = false,
   database,
   clock = new Date(),
-  configPath = 'wrangler.jsonc'
+  configPath = 'wrangler.jsonc',
+  identityMapPath,
+  identityMap
 } = {}) => {
   const configured = await configuredDatabaseIdentity(configPath);
   assertProductionTarget({
@@ -169,13 +202,16 @@ export const runProductionReplace = async ({
     ledgerPolicyApproved: false,
     orderExclusions: new Map(
       APPROVED_TEST_ORDER_EXCLUSIONS.map((item) => [item.orderId, item])
-    )
+    ),
+    identityMapPath,
+    identityMap
   });
   const destructiveCommand = [
     'npm.cmd run import:production:replace --',
     `--input "${inputPath}"`,
     `--target ${PRODUCTION_TARGET.name}`,
     `--database-id ${PRODUCTION_TARGET.databaseId}`,
+    ...(identityMapPath ? [`--identity-map "${identityMapPath}"`] : []),
     `--reviewed-artifact "${outputPath}"`,
     '--confirm-production-replace',
     '--remote',
@@ -190,14 +226,10 @@ export const runProductionReplace = async ({
       destructiveCommand
     });
     await mkdir(dirname(resolve(outputPath)), { recursive: true });
-    await writeFile(resolve(outputPath), JSON.stringify(artifact, null, 2) + '\n', 'utf8');
+    await writeFreshFile(resolve(outputPath), JSON.stringify(artifact, null, 2) + '\n');
     if (sqlOutputPath && artifact.readyForReplacement) {
       await mkdir(dirname(resolve(sqlOutputPath)), { recursive: true });
-      await writeFile(resolve(sqlOutputPath), buildReplacementSql(validation, { clock }), 'utf8');
-    } else if (sqlOutputPath) {
-      await unlink(resolve(sqlOutputPath)).catch((error) => {
-        if (error?.code !== 'ENOENT') throw error;
-      });
+      await writeFreshFile(resolve(sqlOutputPath), buildReplacementSql(validation, { clock }));
     }
     return { mode: 'dry-run', artifact, writtenPath: resolve(outputPath) };
   }
@@ -238,7 +270,7 @@ export const runProductionReplace = async ({
     clock
   });
   await mkdir(dirname(resolve(outputPath)), { recursive: true });
-  await writeFile(resolve(outputPath), JSON.stringify(reconciliation, null, 2) + '\n', 'utf8');
+  await writeFreshFile(resolve(outputPath), JSON.stringify(reconciliation, null, 2) + '\n');
   return { mode: 'local', reconciliation, writtenPath: resolve(outputPath) };
 };
 
@@ -293,7 +325,8 @@ const main = async () => {
         dryRun: args['dry-run'] === true,
         remote: args.remote === true,
         database,
-        configPath: args.config || 'wrangler.jsonc'
+        configPath: args.config || 'wrangler.jsonc',
+        identityMapPath: args['identity-map']
       });
       console.log(JSON.stringify(result, null, 2));
     } finally {
@@ -310,6 +343,7 @@ const main = async () => {
       mode,
       outputPath: resolve(args.output),
       importerVersion: args['importer-version'] || IMPORTER_VERSION,
+      identityMapPath: args['identity-map'],
       database
     });
     console.log(JSON.stringify({

@@ -37,9 +37,9 @@ test('order creation uses server menu prices and preserves negative balances', a
   assert.equal(result.body.success, true);
   assert.equal(result.body.newBalance, -90);
   const order = database.get(`
-    SELECT order_id, line_user_id, total_amount, status
+    SELECT order_id, user_id, total_amount, status
     FROM orders
-    WHERE line_user_id = ?
+    WHERE user_id = ?
   `, 'user-1');
   assert.equal(order.total_amount, 190);
   assert.equal(order.status, 'ACTIVE');
@@ -143,11 +143,11 @@ test('replacement refunds the old order and charges the new order atomically', a
   assert.equal(database.get("SELECT COUNT(*) AS count FROM orders WHERE status = 'CANCELLED'").count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'ORDER'").count, 2);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'REFUND'").count, 1);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 70);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 70);
   assert.equal(database.get(`
     SELECT SUM(amount) AS amount
     FROM balance_ledger
-    WHERE line_user_id = 'user-1'
+    WHERE user_id = 'user-1'
   `).amount, -30);
   const sequence = database.database.prepare(`
     SELECT bl.type, bl.reference_id, bls.sequence_number
@@ -183,7 +183,7 @@ test('same order request returns the stored response without another deduction',
   assert.deepEqual(retry.body, first.body);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM orders').count, 1);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 1);
-  assert.equal(database.get('SELECT balance FROM users WHERE line_user_id = \'user-1\'').balance, 20);
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = \'user-1\'').balance, 20);
 
   const conflict = await create(database, {
     ...body,
@@ -200,9 +200,9 @@ test('order, balance, status, and idempotency rows roll back together on a late 
   database.batch = (statements) => originalBatch([
     ...statements,
     prepareStatement(database, `
-      INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
-      VALUES (?, ?, ?, ?, ?)
-    `, ['user-1', 'duplicate', '1樓', 999, 'User'])
+      INSERT INTO users (user_id, employee_id, line_user_id, display_name, pickup_floor, balance, role)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, ['user-1', 'employee-duplicate', 'line-duplicate', 'duplicate', '1樓', 999, 'User'])
   ]);
   const result = await create(database, {
     targetDate: ORDER_DATE,
@@ -211,7 +211,7 @@ test('order, balance, status, and idempotency rows roll back together on a late 
   }, 'order-rollback');
   assert.equal(result.response.status, 409);
   assert.equal(result.body.error, 'MUTATION_CONFLICT');
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 100);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 100);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM orders').count, 0);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM order_items').count, 0);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM order_status_history').count, 0);
@@ -237,6 +237,6 @@ test('mutation rejects View As instead of changing the mutation actor', async ()
   );
   assert.equal(result.response.status, 403);
   assert.equal(result.body.error, 'VIEW_AS_FORBIDDEN');
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'admin-1'").balance, 0);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 100);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'admin-1'").balance, 0);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 100);
 });

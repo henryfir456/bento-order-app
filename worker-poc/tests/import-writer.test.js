@@ -22,6 +22,7 @@ const validationFor = (ledgerPolicyApproved = false) => validateImport(
 test('stage mode writes only validated operational rows and quarantines orphans', async () => {
   const database = new SqliteD1();
   const validation = validationFor();
+  const userId = validation.accepted.Users.find((row) => row.employeeId === '000001').userId;
   const first = await stageImport(database, validation, {
     clock: new Date('2026-09-08T00:00:00.000Z')
   });
@@ -38,8 +39,8 @@ test('stage mode writes only validated operational rows and quarantines orphans'
   assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM opening_balance_snapshots').count, 2);
   assert.equal(database.get(`
-    SELECT policy_status FROM opening_balance_snapshots WHERE line_user_id = 'user-1'
-  `).policy_status, 'REQUIRED');
+    SELECT policy_status FROM opening_balance_snapshots WHERE user_id = ?
+  `, userId).policy_status, 'REQUIRED');
   assert.equal(database.get('SELECT COUNT(*) AS count FROM import_quarantine').count, 2);
   assert.equal(database.get("SELECT status FROM import_batches WHERE source_hash = 'synthetic-source'").status, 'QUARANTINED');
   assert.equal(first.balanceReconciliation.openingBalancePolicyRequiredCount, 2);

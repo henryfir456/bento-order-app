@@ -43,7 +43,7 @@ test('admin top-up atomically updates balance, ledger, audit, and idempotency', 
   assert.equal(first.body.success, true);
   assert.equal(first.body.newBalance, 125);
   assert.deepEqual(retry.body, first.body);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 125);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 125);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'TOPUP'").count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'BALANCE_TOP_UP'").count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM idempotency_keys WHERE status = 'COMPLETED'").count, 1);
@@ -76,7 +76,7 @@ test('top-up rejects changed idempotency payloads, non-admins, invalid amounts, 
   }, { token: 'admin-token', lineUserId: 'admin-1' });
   assert.equal(viewAs.response.status, 403);
   assert.equal(viewAs.body.error, 'VIEW_AS_FORBIDDEN');
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 125);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 125);
 });
 
 test('top-up rejects unauthenticated requests before any mutation', async () => {
@@ -92,7 +92,7 @@ test('top-up rejects unauthenticated requests before any mutation', async () => 
   );
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: 'AUTH_REQUIRED' });
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 100);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 100);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
 });
 
@@ -104,6 +104,6 @@ test('serialized top-ups preserve every positive delta', async () => {
     admin(database, 'top-up-c', { amount: 20 })
   ]);
   assert.deepEqual(results.map((result) => result.response.status).sort(), [200, 200, 200]);
-  assert.equal(database.get("SELECT balance FROM users WHERE line_user_id = 'user-1'").balance, 145);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 145);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'TOPUP'").count, 3);
 });

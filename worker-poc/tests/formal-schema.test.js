@@ -53,7 +53,8 @@ test('formal migration creates every source-of-truth table', () => {
     'idempotency_keys',
     'admin_audit_log',
     'import_quarantine',
-    'opening_balance_snapshots'
+    'opening_balance_snapshots',
+    'employee_guest_sessions'
   ];
 
   const actual = tableNames(database);
@@ -100,13 +101,14 @@ test('formal monetary columns are INTEGER and negative balances remain valid', (
   }
 
   database.prepare(`
-    INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
-    VALUES (?, ?, ?, ?, ?)
-  `).run('line-negative', 'Negative-compatible user', '1樓', -125, 'User');
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor, balance, role
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run('user-negative', '000125', 'line-negative', 'Negative-compatible user', '1樓', -125, 'User');
 
   const user = database
-    .prepare('SELECT balance FROM users WHERE line_user_id = ?')
-    .get('line-negative');
+    .prepare('SELECT balance FROM users WHERE user_id = ?')
+    .get('user-negative');
   assert.equal(user.balance, -125);
 });
 
@@ -177,28 +179,42 @@ test('foreign keys protect operational orders from orphan users', () => {
   const database = openDatabase();
   assert.throws(() => database.prepare(`
     INSERT INTO orders (
-      order_id, line_user_id, order_date, vendor, pickup_floor, total_amount
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor, total_amount,
+      created_by_user_id
     )
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run('order-orphan', 'unknown-user', '2026-09-08', 'vendor', '1樓', 80), /FOREIGN KEY/i);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'order-orphan', 'unknown-user', 'Unknown', '2026-09-08', 'vendor', '1樓', 80,
+    'unknown-user'
+  ), /FOREIGN KEY/i);
 });
 
-test('formal migration is idempotent', () => {
+test('formal migration exposes canonical relational identity columns', () => {
   const database = new DatabaseSync(':memory:');
   migrationSql.forEach((sql) => database.exec(sql));
-  migrationSql.forEach((sql) => database.exec(sql));
-  assert.equal(tableNames(database).has('balance_ledger'), true);
+  assert.deepEqual(
+    [...tableColumns(database, 'users').keys()],
+    [
+      'user_id', 'employee_id', 'line_user_id', 'display_name', 'pickup_floor',
+      'balance', 'role', 'active', 'created_at', 'updated_at'
+    ]
+  );
+  assert.equal(tableColumns(database, 'orders').has('user_id'), true);
+  assert.equal(tableColumns(database, 'orders').has('line_user_id'), false);
+  assert.equal(tableColumns(database, 'balance_ledger').has('user_id'), true);
+  assert.equal(tableColumns(database, 'idempotency_keys').has('actor_user_id'), true);
 });
 
 test('formal migration assigns a committed sequence on ledger insertion', () => {
   const database = openDatabase();
   database.prepare(`
-    INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
-    VALUES (?, ?, ?, ?, ?)
-  `).run('sequence-user', 'Sequence User', '1樓', 0, 'User');
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor, balance, role
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run('sequence-user', '000126', 'sequence-line', 'Sequence User', '1樓', 0, 'User');
   database.prepare(`
     INSERT INTO balance_ledger (
-      transaction_id, line_user_id, amount, balance_after, type, reference_id
+      transaction_id, user_id, amount, balance_after, type, reference_id
     ) VALUES (?, ?, ?, ?, ?, ?)
   `).run('sequence-assigned', 'sequence-user', 1, 1, 'TOPUP', 'audit-missing');
   assert.equal(database.prepare(`

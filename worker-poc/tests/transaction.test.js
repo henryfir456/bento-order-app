@@ -18,13 +18,13 @@ test('prepared statement helpers bind interpolated values instead of changing SQ
 test('mutation batch rolls back every prior statement when a later statement fails', async () => {
   const database = new SqliteD1();
   const first = prepareStatement(database, `
-    INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
-    VALUES (?, ?, ?, ?, ?)
-  `, ['rollback-user', 'Rollback', '1樓', 10, 'User']);
+    INSERT INTO users (user_id, employee_id, line_user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, ['rollback-user', 'employee-rollback', 'line-rollback', 'Rollback', '1樓', 10, 'User']);
   const failing = prepareStatement(database, `
-    INSERT INTO users (line_user_id, display_name, pickup_floor, balance, role)
-    VALUES (?, ?, ?, ?, ?)
-  `, ['rollback-user', 'Duplicate', '1樓', 20, 'User']);
+    INSERT INTO users (user_id, employee_id, line_user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, ['rollback-user', 'employee-duplicate', 'line-duplicate', 'Duplicate', '1樓', 20, 'User']);
 
   await assert.rejects(
     () => runMutationBatch(database, [first, failing]),

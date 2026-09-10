@@ -1,3 +1,4 @@
+import { handleAuthRoute } from './routes/auth.js';
 import { handleMeRoute } from './routes/me.js';
 import { handleOrderRoute } from './routes/orders.js';
 import { handleBalanceRoute } from './routes/balance.js';
@@ -12,6 +13,8 @@ export const handleFormalRequest = async (request, env, options = {}) => {
   const corsResponse = (response) => applyCorsPolicy(response, request, env);
   if (request.method === 'OPTIONS') return corsResponse(emptyResponse());
   try {
+    const authResponse = await handleAuthRoute(request, env, options);
+    if (authResponse) return corsResponse(authResponse);
     const meResponse = await handleMeRoute(request, env, options);
     if (meResponse) return corsResponse(meResponse);
     const orderResponse = await handleOrderRoute(request, env, options);

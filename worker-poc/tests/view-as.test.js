@@ -19,12 +19,12 @@ test('View As changes only the read subject and records actor/target attribution
   );
   assert.equal(response.status, 200);
   const audit = database.get(`
-    SELECT actor_line_user_id, target_line_user_id, action
+    SELECT actor_user_id, target_user_id, action
     FROM admin_audit_log
     WHERE action = 'VIEW_AS_ADMIN_SUMMARY'
   `);
-  assert.equal(audit.actor_line_user_id, 'admin-1');
-  assert.equal(audit.target_line_user_id, 'user-1');
+  assert.equal(audit.actor_user_id, 'admin-1');
+  assert.equal(audit.target_user_id, 'user-1');
   assert.equal(audit.action, 'VIEW_AS_ADMIN_SUMMARY');
 });
 
