@@ -477,13 +477,20 @@ The readiness artifact prepares, but does not execute, this sequence:
 
 The exact target remains `bento-formal` with database ID
 `e75bc185-afb5-4a5d-abc9-81bd79525cff`. No command in this sequence runs as
-part of the current task. For the current workbook, the missing employee ID
-mapping makes the final status:
+part of the current task. The current workbook has independent readiness
+statuses:
 
 ```text
-REMOTE IMPORT READINESS: BLOCKED
+IDENTITY FOUNDATION READINESS: READY
+LEGACY IMPORT READINESS: BLOCKED
 REMOTE IMPORT: NOT EXECUTED
 ```
+
+The missing employee ID mapping blocks only the legacy import gate. The
+identity foundation gate covers the canonical schema, LINE and employee guest
+authentication, LINE binding, permission enforcement, and the existing
+React/LIFF login boundary. React remains GAS-bound by default until a
+separately authorized Worker transport and guest-UI cutover.
 
 ## Frontend UX boundary
 

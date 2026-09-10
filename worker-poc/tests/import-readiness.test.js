@@ -35,7 +35,19 @@ test('missing Users.employee_id makes final replacement readiness BLOCKED', () =
     })
   );
 
+  assert.equal(validation.identityFoundationReadiness.status, 'READY');
+  assert.deepEqual(validation.identityFoundationReadiness.blockers, []);
+  assert.equal(
+    validation.identityFoundationReadiness.evidence.frontendLoginFlow.status,
+    'EXISTING_LIFF_BOUNDARY'
+  );
+  assert.deepEqual(
+    validation.identityFoundationReadiness.evidence.frontendLoginFlow.deferred,
+    ['Worker guest-login UI', 'Production React transport cutover']
+  );
+  assert.equal(validation.legacyImportReadiness.status, 'BLOCKED');
   assert.equal(validation.readiness.status, 'BLOCKED');
+  assert.strictEqual(validation.readiness, validation.legacyImportReadiness);
   assert.ok(validation.readiness.blockers.some((item) => (
     item.code === 'EMPLOYEE_ID_FIELD_MISSING'
   )));
@@ -60,6 +72,14 @@ test('readiness reports financial evidence gaps instead of manufacturing a balan
     })
   );
 
+  assert.equal(validation.identityFoundationReadiness.status, 'READY');
+  assert.equal(validation.legacyImportReadiness.status, 'BLOCKED');
+  assert.equal(
+    validation.identityFoundationReadiness.blockers.some((item) => (
+      item.code === 'OPENING_BALANCE_POLICY_REQUIRED'
+    )),
+    false
+  );
   assert.equal(validation.readiness.status, 'BLOCKED');
   assert.ok(validation.readiness.blockers.some((item) => (
     item.code === 'OPENING_BALANCE_POLICY_REQUIRED'

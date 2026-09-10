@@ -110,6 +110,19 @@ const expectedAnnouncementIds = (validation) => new Set(
   (validation.accepted?.Announcements || []).map((row) => row.announcementId)
 );
 
+const legacyImportReadinessFor = (validation) => validation?.legacyImportReadiness
+  || validation?.readiness
+  || {
+    status: 'BLOCKED',
+    blockers: [{ code: 'LEGACY_IMPORT_READINESS_NOT_COMPUTED' }]
+  };
+
+const identityFoundationReadinessFor = (validation) => validation?.identityFoundationReadiness
+  || {
+    status: 'BLOCKED',
+    blockers: [{ code: 'IDENTITY_FOUNDATION_NOT_COMPUTED' }]
+  };
+
 const unexpectedValues = (rows, field, expected) => rows
   .map((row) => row[field])
   .filter((value) => !expected.has(value));
@@ -185,12 +198,13 @@ export const findReplacementBlockers = (validation) => {
 };
 
 const assertReplacementReady = (validation) => {
-  const readinessBlockers = validation?.readiness?.blockers || [];
+  const legacyImportReadiness = legacyImportReadinessFor(validation);
+  const readinessBlockers = legacyImportReadiness.blockers || [];
   const blockers = [
     ...readinessBlockers,
     ...findReplacementBlockers(validation)
   ];
-  if (validation?.readiness?.status !== 'PASS' || blockers.length) {
+  if (legacyImportReadiness.status !== 'PASS' || blockers.length) {
     throw new ImportContractError(
       'REPLACEMENT_NOT_READY',
       'The accepted workbook is not ready for replacement; all identity, financial, and relational blockers must be resolved.',
@@ -461,8 +475,10 @@ export const buildDryRunArtifact = ({
   destructiveCommand
 } = {}) => {
   assertProductionTarget({ target, databaseId });
+  const identityFoundationReadiness = identityFoundationReadinessFor(validation);
+  const legacyImportReadiness = legacyImportReadinessFor(validation);
   const blockers = [
-    ...(validation?.readiness?.blockers || []),
+    ...(legacyImportReadiness.blockers || []),
     ...findReplacementBlockers(validation)
   ];
   return {
@@ -489,13 +505,15 @@ export const buildDryRunArtifact = ({
     warningCount: validation.warnings.length,
     warningByCode: validation.summary.warningByCode,
     identityMap: reviewIdentityMap(validation.identityMap),
-    identitySummary: validation.readiness?.identitySummary || validation.summary.identitySummary,
-    financialSummary: validation.readiness?.financialSummary || validation.summary.financialSummary,
+    identityFoundationReadiness,
+    legacyImportReadiness,
+    identitySummary: legacyImportReadiness.identitySummary || validation.summary.identitySummary,
+    financialSummary: legacyImportReadiness.financialSummary || validation.summary.financialSummary,
     exclusions: validation.exclusions || [],
     exclusionCount: (validation.exclusions || []).length,
-    readiness: validation.readiness || { status: 'BLOCKED', blockers },
+    readiness: legacyImportReadiness,
     blockers,
-    readyForReplacement: validation?.readiness?.status === 'PASS' && blockers.length === 0,
+    readyForReplacement: legacyImportReadiness.status === 'PASS' && blockers.length === 0,
     expectedCounts: expectedCounts(validation),
     remoteImport: 'NOT EXECUTED',
     destructiveCommand

@@ -9,6 +9,14 @@ export const createImportReport = (validation, options = {}) => ({
   importerVersion: validation?.importerVersion || 'unknown-version',
   sourceHash: validation?.sourceHash || 'unknown-source',
   batchId: validation?.batchId || 'unknown-batch',
+  identityFoundationReadiness: cloneJson(validation?.identityFoundationReadiness || {
+    status: 'BLOCKED',
+    blockers: [{ code: 'IDENTITY_FOUNDATION_NOT_COMPUTED' }]
+  }),
+  legacyImportReadiness: cloneJson(validation?.legacyImportReadiness || validation?.readiness || {
+    status: 'BLOCKED',
+    blockers: [{ code: 'LEGACY_IMPORT_READINESS_NOT_COMPUTED' }]
+  }),
   reconciliation: buildReconciliation(validation, options),
   warnings: cloneJson(validation?.warnings || []),
   quarantine: cloneJson(validation?.quarantine || [])

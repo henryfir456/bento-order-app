@@ -84,6 +84,33 @@ and admin routes. Only the bind endpoint may accept that revoked token for an
 idempotent replay to the same verified LINE identity. Different LINE claims,
 expired sessions, inactive users, and other revocation reasons are rejected.
 
+## Readiness gates
+
+Identity foundation readiness is independent of the legacy workbook:
+
+```text
+IDENTITY FOUNDATION READINESS: READY
+```
+
+The evidence covers the canonical `user_id` schema, LINE authentication,
+employee guest login, conflict-safe LINE binding, server-side permission
+enforcement, and the existing React/LIFF login boundary. The React app still
+defaults to GAS transport, and the Worker guest-login UI plus production
+transport cutover remain a separately authorized follow-up. Those frontend
+cutover items do not make the formal Worker identity foundation or the legacy
+import gate appear ready or blocked.
+
+Legacy import readiness is a separate gate:
+
+```text
+LEGACY IMPORT READINESS: BLOCKED
+```
+
+The current workbook's mapping, ownership, and financial evidence remain the
+only inputs to this gate. The compatibility field `readiness` in validation
+and reports aliases `legacyImportReadiness`; replacement SQL is allowed only
+when the legacy gate is `PASS` and has no relational blockers.
+
 ## Import relationship
 
 The dry-run, local stage, and future remote replacement all use the same
@@ -92,7 +119,8 @@ persistence-plan path. Mapping precedence is explicit employee ID, then an
 exact reviewed LINE/source mapping. There is no fuzzy name matching and no
 derivation from a raw LINE ID.
 
-The current workbook lacks `employee_id` in `Users`, so readiness is truthfully
-`BLOCKED`; no replacement SQL is emitted. Financial reconciliation reports
-unexplained differences and policy blockers directly. It never inserts an
-unexplained balancing offset or synthetic ledger event to force a pass.
+The current workbook lacks `employee_id` in `Users`, so legacy import
+readiness is truthfully `BLOCKED`; no replacement SQL is emitted. Financial
+reconciliation reports unexplained differences and policy blockers directly.
+It never inserts an unexplained balancing offset or synthetic ledger event to
+force a pass.

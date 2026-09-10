@@ -155,6 +155,8 @@ test('production target and reviewed source guards fail closed', () => {
     inputPath: '便當系統設定.xlsx',
     destructiveCommand: 'future-command'
   });
+  assert.equal(artifact.identityFoundationReadiness.status, 'READY');
+  assert.equal(artifact.legacyImportReadiness.status, 'PASS');
   assert.equal(assertReviewedInput(validation, artifact), true);
   assert.deepEqual(artifact.identityMap, {
     bySource: {},
@@ -182,7 +184,27 @@ test('production target and reviewed source guards fail closed', () => {
     destructiveCommand: 'future-command'
   });
   assert.equal(blockedArtifact.readyForReplacement, false);
+  assert.equal(blockedArtifact.identityFoundationReadiness.status, 'READY');
+  assert.equal(blockedArtifact.legacyImportReadiness.status, 'BLOCKED');
   assert.equal(blockedArtifact.readiness.status, 'BLOCKED');
+});
+
+test('replacement readiness remains owned by the legacy import gate', () => {
+  const validation = readyValidationFor();
+  validation.identityFoundationReadiness = {
+    status: 'BLOCKED',
+    blockers: [{ code: 'FOUNDATION_CUTOVER_DEFERRED' }]
+  };
+
+  const artifact = buildDryRunArtifact({
+    validation,
+    inputPath: 'synthetic.xlsx',
+    destructiveCommand: 'future-command'
+  });
+
+  assert.equal(artifact.identityFoundationReadiness.status, 'BLOCKED');
+  assert.equal(artifact.legacyImportReadiness.status, 'PASS');
+  assert.equal(artifact.readyForReplacement, true);
 });
 
 test('explicit order exclusions are auditable and removed from accepted production rows', () => {
@@ -240,6 +262,7 @@ test('production-replace dry-run writes a review artifact without touching a dat
   const directory = await mkdtemp(join(tmpdir(), 'bento-production-replace-'));
   const inputPath = join(directory, 'synthetic.xlsx');
   const outputPath = join(directory, 'dry-run.json');
+  const sqlOutputPath = join(directory, 'replacement.sql');
   await writeFile(inputPath, 'synthetic workbook bytes', 'utf8');
   try {
     const result = await runProductionReplace({
@@ -248,6 +271,7 @@ test('production-replace dry-run writes a review artifact without touching a dat
       target: 'bento-formal',
       databaseId: 'e75bc185-afb5-4a5d-abc9-81bd79525cff',
       dryRun: true,
+      sqlOutputPath,
       adapter: { read: async () => makeFormalWorkbook() },
       importerVersion: 'test-version'
     });
@@ -259,6 +283,13 @@ test('production-replace dry-run writes a review artifact without touching a dat
     assert.equal(artifact.acceptedCounts.Orders, 1);
     assert.equal(artifact.quarantineCount, 2);
     assert.equal(artifact.warningCount, 2);
+    assert.equal(artifact.identityFoundationReadiness.status, 'READY');
+    assert.equal(artifact.legacyImportReadiness.status, 'BLOCKED');
+    assert.equal(artifact.readyForReplacement, false);
+    await assert.rejects(
+      readFile(sqlOutputPath),
+      (error) => error.code === 'ENOENT'
+    );
     assert.match(artifact.destructiveCommand, /--confirm-production-replace/);
     assert.match(artifact.destructiveCommand, /--remote/);
   } finally {

@@ -148,6 +148,10 @@ test('runImport writes a local report without staging operational rows', async (
     assert.equal(report.reconciliation.orphanOrderCount, 1);
     assert.equal(report.reconciliation.incompleteLedgerCount, 1);
     assert.equal(report.reconciliation.acceptedCounts.Orders, 1);
+    assert.equal(report.identityFoundationReadiness.status, 'READY');
+    assert.equal(report.legacyImportReadiness.status, 'BLOCKED');
+    assert.equal(report.reconciliation.identityFoundationReadiness.status, 'READY');
+    assert.equal(report.reconciliation.legacyImportReadiness.status, 'BLOCKED');
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

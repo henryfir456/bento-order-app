@@ -1,6 +1,8 @@
 # Remote import readiness checkpoint
 
-Status for the current local workbook: `BLOCKED`.
+Identity foundation readiness: `READY`.
+
+Legacy import readiness for the current local workbook: `BLOCKED`.
 
 Remote import status: `NOT EXECUTED`. This file documents the exact commands
 for a later, separately authorized checkpoint; none of the remote commands
@@ -18,7 +20,14 @@ has no `employee_id` field. The recorded source SHA-256 is:
 
 No employee ID is inferred from a name, LINE ID, row position, or numeric
 coercion. Until a reviewed exact mapping is supplied, active employee
-ownership is unproven and replacement readiness must remain `BLOCKED`.
+ownership is unproven and `legacyImportReadiness` must remain `BLOCKED`.
+
+The identity foundation gate is deliberately evaluated separately. It covers
+the formal canonical schema, LINE and employee guest authentication, LINE
+binding, permission enforcement, and the existing React/LIFF login boundary.
+React's production default remains GAS, so the Worker guest UI and transport
+cutover are documented as future work rather than hidden inside the import
+gate.
 
 ## Local readiness command
 
@@ -37,8 +46,16 @@ npm.cmd run import:production:dry-run -- `
 ```
 
 The output path is create-only: an existing artifact is never overwritten.
-The expected result is `readiness.status = BLOCKED`, including
-`EMPLOYEE_ID_FIELD_MISSING`, and no `.sql` file at the requested SQL path.
+The expected result is:
+
+```text
+identityFoundationReadiness.status = READY
+legacyImportReadiness.status = BLOCKED
+```
+
+The legacy gate includes `EMPLOYEE_ID_FIELD_MISSING`, and no `.sql` file is
+written at the requested SQL path. The compatibility `readiness` field still
+aliases `legacyImportReadiness`.
 
 ## Future remote checkpoint commands
 

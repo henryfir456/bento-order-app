@@ -208,10 +208,11 @@ The current approved replacement explicitly excludes only
 source rows and authorization reason are recorded in the review artifact;
 there is no timestamp, prefix, or generic duplicate-order exclusion rule.
 
-Create a local readiness artifact without changing any database. The current
-workbook is expected to be `BLOCKED`: its Users sheet has no `employee_id`,
-so this dry-run must not emit a replacement SQL file. Use a new output path
-that does not overwrite an existing local artifact:
+Create a local readiness artifact without changing any database. The identity
+foundation gate is expected to be `READY`; the legacy import gate is expected
+to be `BLOCKED` because the Users sheet has no `employee_id`. This dry-run
+must not emit a replacement SQL file. Use a new output path that does not
+overwrite an existing local artifact:
 
 ```powershell
 npm.cmd run import:production:dry-run -- `
@@ -223,13 +224,14 @@ npm.cmd run import:production:dry-run -- `
   --config wrangler.jsonc
 ```
 
-The artifact records the target UUID, source SHA-256 fingerprint, importer
-version, exact identity status/counts, financial evidence and unexplained
-offsets, accepted/quarantined/warning counts, preserved and cleared tables,
-expected post-import counts, readiness blockers, and the exact later
-destructive command. Review the artifact before any replacement
-authorization. Dry-run, local stage, and future replacement share the same
-identity mapping, validation, reconciliation, and persistence-planner path.
+The artifact records both readiness gates, the target UUID, source SHA-256
+fingerprint, importer version, exact identity status/counts, financial
+evidence and unexplained offsets, accepted/quarantined/warning counts,
+preserved and cleared tables, expected post-import counts, legacy import
+blockers, and the exact later destructive command. Review the artifact before
+any replacement authorization. Dry-run, local stage, and future replacement
+share the same identity mapping, validation, reconciliation, and
+persistence-planner path.
 
 The future authorized remote command is:
 

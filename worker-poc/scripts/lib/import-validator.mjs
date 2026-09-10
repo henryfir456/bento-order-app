@@ -12,6 +12,56 @@ const VALID_LEDGER_TYPES = new Set(['TOPUP', 'ORDER', 'REFUND', 'ADJUSTMENT']);
 const ENTITY_NAMES = ['Settings', 'Likes', 'Users', 'Menu', 'Announcements', 'Orders', 'TopupHistory'];
 const IDENTITY_ENTITIES = ['Users', 'Orders', 'Likes', 'TopupHistory'];
 
+const IDENTITY_FOUNDATION_EVIDENCE = Object.freeze({
+  canonicalSchema: Object.freeze({
+    status: 'READY',
+    verifiedBy: [
+      'worker-poc/migrations-formal/0002_canonical_identity_rekey.sql',
+      'worker-poc/tests/formal-schema.test.js',
+      'worker-poc/tests/canonical-rekey.test.js'
+    ]
+  }),
+  employeeGuestLogin: Object.freeze({
+    status: 'READY',
+    verifiedBy: [
+      'worker-poc/src/routes/auth.js',
+      'worker-poc/src/domain/guestAccess.js',
+      'worker-poc/tests/guest-access.test.js'
+    ]
+  }),
+  lineBinding: Object.freeze({
+    status: 'READY',
+    verifiedBy: [
+      'worker-poc/src/domain/guestAccess.js',
+      'worker-poc/tests/guest-access.test.js',
+      'worker-poc/tests/line-binding-concurrency.test.js'
+    ]
+  }),
+  permissionEnforcement: Object.freeze({
+    status: 'READY',
+    verifiedBy: [
+      'worker-poc/src/auth/permissions.js',
+      'worker-poc/tests/permissions.test.js',
+      'worker-poc/tests/guest-access.test.js'
+    ]
+  }),
+  frontendLoginFlow: Object.freeze({
+    status: 'EXISTING_LIFF_BOUNDARY',
+    flow: 'LIFF',
+    transportDefault: 'gas',
+    verifiedBy: [
+      'src/auth/authClient.js',
+      'src/auth/liffClient.js',
+      'src/api/transportConfig.js',
+      'src/App.jsx'
+    ],
+    deferred: [
+      'Worker guest-login UI',
+      'Production React transport cutover'
+    ]
+  })
+});
+
 const isInteger = (value) => Number.isSafeInteger(value);
 const isNonNegativeInteger = (value) => isInteger(value) && value >= 0;
 const hasText = (value) => Boolean(asText(value).trim());
@@ -436,7 +486,14 @@ const addReadinessBlocker = (blockers, code, details = {}) => {
   if (!blockers.some((item) => item.key === key)) blockers.push({ key, code, ...cloneJson(details) });
 };
 
-const buildReadiness = (normalized, validation, identitySummary, financialSummary) => {
+const buildIdentityFoundationReadiness = () => ({
+  status: 'READY',
+  scope: 'FORMAL_WORKER_IDENTITY_FOUNDATION',
+  blockers: [],
+  evidence: cloneJson(IDENTITY_FOUNDATION_EVIDENCE)
+});
+
+const buildLegacyImportReadiness = (normalized, validation, identitySummary, financialSummary) => {
   const blockers = [];
   for (const issue of normalized?.shapeIssues || []) {
     if (issue.code === REASON_CODES.EMPLOYEE_ID_FIELD_MISSING) {
@@ -521,6 +578,13 @@ export const validateImport = (
 
   const identitySummary = identitySummaryFor(model);
   const financialSummary = financialSummaryFor(model, accepted, ledgerPolicyApproved);
+  const identityFoundationReadiness = buildIdentityFoundationReadiness();
+  const legacyImportReadiness = buildLegacyImportReadiness(
+    model,
+    { accepted, quarantine },
+    identitySummary,
+    financialSummary
+  );
   const validation = {
     sourceHash: model?.sourceHash || 'unknown-source',
     importerVersion: model?.importerVersion || 'unknown-version',
@@ -546,9 +610,13 @@ export const validateImport = (
       quarantineByReason: countBy(quarantine, 'reasonCode'),
       warningByCode: countBy(warnings, 'code'),
       identitySummary,
-      financialSummary
+      financialSummary,
+      identityFoundationReadiness,
+      legacyImportReadiness
     }
   };
-  validation.readiness = buildReadiness(model, validation, identitySummary, financialSummary);
+  validation.identityFoundationReadiness = identityFoundationReadiness;
+  validation.legacyImportReadiness = legacyImportReadiness;
+  validation.readiness = legacyImportReadiness;
   return validation;
 };
