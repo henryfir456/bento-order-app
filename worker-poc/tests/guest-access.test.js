@@ -126,6 +126,16 @@ test('unbound active employee can use a restricted guest session for self-servic
   assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', USER_ID).balance, 100);
 });
 
+test('missing employee guest ID returns a business 404 instead of a generic 500', async () => {
+  const result = await call(new SqliteD1(), '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '139653' }
+  });
+
+  assert.equal(result.response.status, 404);
+  assert.deepEqual(result.body, { error: 'EMPLOYEE_NOT_FOUND' });
+});
+
 test('LINE binding is canonical, idempotent, conflict-safe, and revokes every old guest session', async () => {
   const database = seedGuestDatabase();
   const firstLogin = await guestLogin(database);

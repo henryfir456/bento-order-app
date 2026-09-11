@@ -1,4 +1,5 @@
 export const PRODUCTION_FRONTEND_ORIGIN = 'https://stirring-pony-3571ac.netlify.app';
+export const LOCAL_DEVELOPMENT_ORIGIN = 'http://localhost:5173';
 
 export const CORS_HEADERS = Object.freeze({
   'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, X-Employee-Guest-Session',
@@ -12,6 +13,10 @@ const isLocalCorsMode = (env) => (
 
 const isRemoteTestCorsMode = (env) => (
   String(env?.CORS_MODE || '').trim().toLowerCase() === 'remote-test'
+);
+
+const isExplicitDevOrTestCorsMode = (env) => (
+  isLocalCorsMode(env) || isRemoteTestCorsMode(env)
 );
 
 const normalizeExactOrigin = (value) => {
@@ -31,30 +36,11 @@ const normalizeExactOrigin = (value) => {
   return candidate;
 };
 
-const isSingleLabelPinggyOrigin = (value) => {
-  const candidate = String(value || '').trim();
-  if (!candidate || candidate.includes('*') || candidate.includes('?')) return false;
-
-  let parsed;
-  try {
-    parsed = new URL(candidate);
-  } catch {
-    return false;
-  }
-
-  if (parsed.protocol !== 'https:' || parsed.port || parsed.origin !== candidate) return false;
-
-  const labels = parsed.hostname.split('.');
-  return labels.length === 4
-    && labels[1] === 'run'
-    && labels[2] === 'pinggy-free'
-    && labels[3] === 'link'
-    && /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/.test(labels[0]);
-};
-
 const resolveAllowedOrigins = (env = {}) => {
   const allowedOrigins = new Set([PRODUCTION_FRONTEND_ORIGIN]);
-  if (!isLocalCorsMode(env)) return allowedOrigins;
+  if (!isExplicitDevOrTestCorsMode(env)) return allowedOrigins;
+
+  allowedOrigins.add(LOCAL_DEVELOPMENT_ORIGIN);
 
   String(env.DEV_ALLOWED_ORIGINS || '')
     .split(',')
@@ -65,10 +51,7 @@ const resolveAllowedOrigins = (env = {}) => {
   return allowedOrigins;
 };
 
-const isOriginAllowed = (origin, env) => (
-  resolveAllowedOrigins(env).has(origin)
-  || (isRemoteTestCorsMode(env) && isSingleLabelPinggyOrigin(origin))
-);
+const isOriginAllowed = (origin, env) => resolveAllowedOrigins(env).has(origin);
 
 export const applyCorsPolicy = (response, request, env = {}) => {
   const headers = new Headers(response.headers);

@@ -146,52 +146,49 @@ They verify the four contract surfaces, required keys/types, nullable and
 empty behavior, ordering, stable errors, migration guards, and credential
 scans. They do not prove remote D1 contents or production traffic.
 
-## Local formal Worker CORS
+## Remote formal Worker CORS for local frontend
 
 The formal Worker keeps the production Netlify origin as its default CORS
-boundary. For local `wrangler dev --local`, use the ignored `worker-poc/.dev.vars`
-file with an explicit exact-origin list:
+boundary. With no `CORS_MODE`, it allows only
+`https://stirring-pony-3571ac.netlify.app`; `http://localhost:5173` and every
+other unknown origin are denied.
+
+For the local development topology, run only the React/Vite frontend at
+`http://localhost:5173` and keep the ignored `.env.development` pointed at the
+remote formal Worker. Do not change `VITE_WORKER_API_URL` to
+`http://127.0.0.1:8787`; no local Wrangler Worker or local D1 is required.
+
+The non-production remote Worker must explicitly set the non-secret runtime
+variable `CORS_MODE=remote-test`. This mode adds the exact local origin
+`http://localhost:5173` while retaining the production Netlify origin. Extra
+local or tunnel origins must use the existing exact-origin list:
 
 ```dotenv
-CORS_MODE=local
-DEV_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,https://<exact-id>.run.pinggy-free.link
+CORS_MODE=remote-test
+DEV_ALLOWED_ORIGINS=https://<exact-id>.run.pinggy-free.link
 ```
 
-The Pinggy entry must be the exact current frontend URL. Do not use a
-wildcard or a domain suffix. Leave the Pinggy entry out for direct localhost
-testing. The committed `wrangler.jsonc` has no CORS vars and remains the
-formal production configuration.
-
-## Remote test Worker CORS
-
-The deployed non-production test Worker can opt into Pinggy testing with the
-runtime variable `CORS_MODE=remote-test`. This mode is intentionally separate
-from `CORS_MODE=local`; it allows only HTTPS origins with exactly one label
-before `run.pinggy-free.link`, such as `https://abc-123.run.pinggy-free.link`.
-HTTP, ports, paths, the base domains, `foo.pinggy-free.link`, nested
-subdomains, wildcard strings, and arbitrary origins remain denied. The response
-echoes the validated request origin; it never uses `Access-Control-Allow-Origin: *`.
+`DEV_ALLOWED_ORIGINS` is read only in explicit `local` or `remote-test` modes.
+Each entry must be a complete exact HTTP(S) origin; wildcard strings, domain
+suffixes, paths, malformed values, and arbitrary origins are rejected. The
+response echoes the validated request origin and never uses
+`Access-Control-Allow-Origin: *`. The committed `wrangler.jsonc` must omit
+`CORS_MODE` so production remains on the Netlify-only default.
 
 The repository has no separate committed test/staging Wrangler environment.
-Set the variable only when deploying the non-production test Worker, preserving
-existing remote variables:
+From `worker-poc`, enable remote-test on the non-production Worker while
+preserving existing remote variables:
 
 ```powershell
-npm.cmd exec -- wrangler deploy --name bento-api-poc --var CORS_MODE:remote-test --keep-vars
+npm.cmd exec -- wrangler deploy --var CORS_MODE:remote-test --keep-vars
 ```
 
-Do not run that command for the production Worker. Production deployments must
-omit `CORS_MODE` so the default remains the Netlify-only policy.
+Do not run that command for the production Worker. The command deploys the
+current Worker source and runtime variable; the remote Worker must be deployed
+before the new CORS behavior is available to the local frontend.
 
-For the React app's ignored `.env.development`, use the local formal Worker:
-
-```dotenv
-VITE_AUTH_MODE=liff
-VITE_API_TRANSPORT=worker
-VITE_WORKER_API_URL=http://127.0.0.1:8787
-```
-
-Keep the existing `VITE_LIFF_ID` and `VITE_GAS_API_URL` values unchanged.
+Keep the existing `VITE_LIFF_ID`, `VITE_GAS_API_URL`, and remote
+`VITE_WORKER_API_URL` values unchanged.
 
 ## Formal production replacement import
 
