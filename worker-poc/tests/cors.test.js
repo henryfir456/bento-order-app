@@ -117,6 +117,18 @@ test('Pinggy is rejected without remote-test CORS mode', async () => {
   assertCorsDenied(response);
 });
 
+test('remote-test CORS allows a dynamic Pinggy subdomain without exact configuration', async () => {
+  for (const origin of [
+    'https://current-session.pinggy-free.link',
+    'https://current-session.run.pinggy-free.link'
+  ]) {
+    const response = await callMe(origin, remoteTestEnv());
+
+    assert.equal(response.status, 200);
+    assertCorsAllowed(response, origin);
+  }
+});
+
 test('remote-test CORS allows an exact configured Pinggy origin', async () => {
   const origin = remoteTestPinggyOrigin;
   const response = await callMe(origin, remoteTestEnv(origin));
@@ -129,7 +141,7 @@ test('remote-test CORS rejects nonconforming Pinggy origins', async () => {
   const invalidOrigins = [
     'https://pinggy-free.link',
     'https://run.pinggy-free.link',
-    'https://foo.pinggy-free.link',
+    'https://foo_bar.pinggy-free.link',
     'https://foo.bar.run.pinggy-free.link',
     'http://foo.run.pinggy-free.link',
     'https://foo.run.pinggy-free.link:443',
@@ -145,16 +157,6 @@ test('remote-test CORS rejects nonconforming Pinggy origins', async () => {
   }
 });
 
-test('remote-test CORS rejects an unconfigured Pinggy origin', async () => {
-  const response = await callMe(
-    'https://unknown-123.run.pinggy-free.link',
-    remoteTestEnv(remoteTestPinggyOrigin)
-  );
-
-  assert.equal(response.status, 200);
-  assertCorsDenied(response);
-});
-
 test('remote-test CORS rejects arbitrary origins', async () => {
   const response = await callMe('https://arbitrary.example', remoteTestEnv());
 
@@ -164,7 +166,7 @@ test('remote-test CORS rejects arbitrary origins', async () => {
 
 test('remote-test wildcard configuration does not grant access', async () => {
   const response = await callMe(
-    remoteTestPinggyOrigin,
+    'https://arbitrary.example',
     remoteTestEnv('https://*.run.pinggy-free.link')
   );
 

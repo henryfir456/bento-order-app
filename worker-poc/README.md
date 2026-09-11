@@ -182,8 +182,10 @@ remote formal Worker. Do not change `VITE_WORKER_API_URL` to
 
 The non-production remote Worker must explicitly set the non-secret runtime
 variable `CORS_MODE=remote-test`. This mode adds the exact local origin
-`http://localhost:5173` while retaining the production Netlify origin. Extra
-local or tunnel origins must use the existing exact-origin list:
+`http://localhost:5173` while retaining the production Netlify origin. It also
+allows HTTPS origins with a single dynamic subdomain under
+`pinggy-free.link` (including the `*.run.pinggy-free.link` form used by
+Pinggy). Extra local or tunnel origins must use the existing exact-origin list:
 
 ```dotenv
 CORS_MODE=remote-test

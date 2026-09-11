@@ -19,6 +19,8 @@ const isExplicitDevOrTestCorsMode = (env) => (
   isLocalCorsMode(env) || isRemoteTestCorsMode(env)
 );
 
+const PINGGY_REMOTE_TEST_HOST_PATTERN = /^(?!run\.)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.run)?\.pinggy-free\.link$/i;
+
 const normalizeExactOrigin = (value) => {
   const candidate = String(value || '').trim();
   if (!candidate || candidate.includes('*') || candidate.includes('?')) return null;
@@ -51,7 +53,25 @@ const resolveAllowedOrigins = (env = {}) => {
   return allowedOrigins;
 };
 
-const isOriginAllowed = (origin, env) => resolveAllowedOrigins(env).has(origin);
+const isDynamicPinggyOrigin = (origin) => {
+  if (!origin) return false;
+
+  let parsed;
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
+
+  return parsed.protocol === 'https:'
+    && parsed.origin === origin
+    && PINGGY_REMOTE_TEST_HOST_PATTERN.test(parsed.hostname);
+};
+
+const isOriginAllowed = (origin, env) => (
+  resolveAllowedOrigins(env).has(origin)
+  || (isRemoteTestCorsMode(env) && isDynamicPinggyOrigin(origin))
+);
 
 export const applyCorsPolicy = (response, request, env = {}) => {
   const headers = new Headers(response.headers);
