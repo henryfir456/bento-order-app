@@ -1,6 +1,7 @@
 import { resolveLineIdentity } from '../auth/identity.js';
 import {
   employeeGuestLogin,
+  completeEmployeeGuestOnboarding,
   lineEmployeeBind,
   lineEmployeeLookup,
   bindLineIdentity
@@ -32,13 +33,15 @@ export const handleAuthRoute = async (request, env, {
   const url = new URL(request.url);
   const isGuestLogin = request.method === 'POST'
     && url.pathname === '/api/auth/employee-guest';
+  const isGuestOnboarding = request.method === 'POST'
+    && url.pathname === '/api/auth/employee-guest/onboarding';
   const isLineBind = request.method === 'POST'
     && url.pathname === '/api/auth/line-bind';
   const isLineEmployeeLookup = request.method === 'POST'
     && url.pathname === '/api/auth/line-employee-lookup';
   const isLineEmployeeBind = request.method === 'POST'
     && url.pathname === '/api/auth/line-employee-bind';
-  if (!isGuestLogin && !isLineBind && !isLineEmployeeLookup && !isLineEmployeeBind) return null;
+  if (!isGuestLogin && !isGuestOnboarding && !isLineBind && !isLineEmployeeLookup && !isLineEmployeeBind) return null;
 
   if (isGuestLogin) {
     const body = await readJson(request);
@@ -47,6 +50,17 @@ export const handleAuthRoute = async (request, env, {
       result,
       result.status === 'UNVERIFIED_EMPLOYEE' ? 200 : 201
     );
+  }
+
+  if (isGuestOnboarding) {
+    const guestToken = request.headers.get('X-Employee-Guest-Session')?.trim() || '';
+    if (!guestToken) throw unauthorized('GUEST_SESSION_INVALID');
+    const result = await completeEmployeeGuestOnboarding(env.DB, {
+      guestToken,
+      ...await readJson(request),
+      clock: now
+    });
+    return jsonResponse(result);
   }
 
   if (isLineEmployeeLookup || isLineEmployeeBind) {

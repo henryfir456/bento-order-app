@@ -139,7 +139,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0'].includes(release.version)
+    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -176,6 +176,16 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Refresh order, calendar, and balance state after a successful cancellation.'
   ]);
   assert.deepEqual(currentRelease.commits, []);
+  const fixRelease = parsed.find((release) => release.version === '0.11.1');
+  assert.ok(fixRelease);
+  assert.equal(fixRelease.date, '2026-09-11');
+  assert.deepEqual(fixRelease.categories.map(({ name }) => name), ['Added', 'Changed', 'Fixed']);
+  assert.deepEqual(fixRelease.changes, [
+    'Added `POST /api/auth/employee-guest/onboarding` for completing provisional Employee Guest onboarding without a LINE authentication context.',
+    'Employee Guest provisional onboarding now creates an `UNVERIFIED` canonical user without requiring LINE authentication or creating a LINE binding; LINE binding remains limited to the LINE-authenticated onboarding flow.',
+    'Fixed the provisional onboarding UI so a guest fallback no longer presents or invokes LINE binding as a required completion step.'
+  ]);
+  assert.deepEqual(fixRelease.commits, []);
   const featureRelease = parsed.find((release) => release.version === '0.11.0');
   assert.ok(featureRelease);
   assert.equal(featureRelease.date, '2026-09-11');
@@ -205,7 +215,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 3), ['0.11.0', '0.10.1', '0.10.0']);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 4), ['0.11.1', '0.11.0', '0.10.1', '0.10.0']);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);

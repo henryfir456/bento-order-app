@@ -225,6 +225,16 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/auth/employee-guest',
     { credentialMode: 'none', body: { employeeId } }
   ),
+  completeEmployeeGuestOnboarding: ({ guestToken, displayName, pickupFloor } = {}) => workerRequest(
+    'completeEmployeeGuestOnboarding',
+    'POST',
+    '/api/auth/employee-guest/onboarding',
+    {
+      credentialMode: 'none',
+      body: { displayName, pickupFloor },
+      extraHeaders: { 'X-Employee-Guest-Session': String(guestToken || '').trim() }
+    }
+  ),
   lineEmployeeLookup: ({ employeeId } = {}) => workerRequest(
     'lineEmployeeLookup',
     'POST',

@@ -73,12 +73,15 @@ test('assertCan requires a registered actor and assertSelfTarget rejects imperso
 });
 
 test('UNVERIFIED User principals receive only central onboarding capabilities', () => {
-  const capabilities = capabilitiesFor('User', 'line', 'UNVERIFIED', true);
-  assert.deepEqual(capabilities, [
+  const expectedCapabilities = [
     ACTIONS.CAN_BIND_LINE,
     ACTIONS.CAN_COMPLETE_PROFILE,
     ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
-  ]);
+  ];
+  for (const authMode of ['line', 'employee_guest']) {
+    const capabilities = capabilitiesFor('User', authMode, 'UNVERIFIED', true);
+    assert.deepEqual(capabilities, expectedCapabilities);
+  }
   for (const action of [
     ACTIONS.READ_SELF,
     ACTIONS.WRITE_SELF,

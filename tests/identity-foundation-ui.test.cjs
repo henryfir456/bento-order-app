@@ -168,6 +168,45 @@ test('Worker transport sends guest login without auth and protected calls with o
   assert.equal(calls[4].options.headers['X-Employee-Guest-Session'], 'eg_opaque');
 });
 
+test('Worker guest onboarding completion uses the guest session without requesting LINE auth', async () => {
+  const { createApiClient } = await import('../src/api/apiClientCore.js');
+  const calls = [];
+  const client = createApiClient({
+    env: { VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.test' },
+    authClient: {
+      getAccessToken: () => {
+        throw new Error('LINE auth must not be requested for employee guest onboarding.');
+      },
+      isMock: false
+    },
+    sessionStore: new MemoryStorage(),
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return new Response(JSON.stringify({
+        success: true,
+        status: 'UNVERIFIED_EMPLOYEE',
+        authMode: 'employee_guest',
+        verificationStatus: 'UNVERIFIED'
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+  });
+
+  await client.completeEmployeeGuestOnboarding({
+    guestToken: 'eg_opaque',
+    displayName: 'Guest Provisional',
+    pickupFloor: '9樓'
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(new URL(calls[0].url).pathname, '/api/auth/employee-guest/onboarding');
+  assert.equal(calls[0].options.headers.Authorization, undefined);
+  assert.equal(calls[0].options.headers['X-Employee-Guest-Session'], 'eg_opaque');
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    displayName: 'Guest Provisional',
+    pickupFloor: '9樓'
+  });
+});
+
 test('Worker guest 401 keeps stable code and clears only the guest credential', async () => {
   const [{ createApiClient }, { createAuthSessionStore }] = await Promise.all([
     import('../src/api/apiClientCore.js'),
@@ -256,4 +295,21 @@ test('Worker App keeps provisional onboarding separate from registered applicati
   assert.match(clientSource, /body: \{ displayName, pickupFloor \}/);
   assert.doesNotMatch(clientSource, /body: \{[^}]*lineUserId/);
   assert.match(errorSource, /LINE_LOGIN_REQUIRED/);
+});
+
+test('employee guest provisional onboarding does not require or initiate LINE binding', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
+  const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
+
+  assert.match(appSource, /apiClient\.completeEmployeeGuestOnboarding/);
+  assert.match(submitBlock, /authMode === 'employee_guest'/);
+  assert.match(submitBlock, /handleEmployeeGuestOnboarding/);
+  assert.doesNotMatch(
+    submitBlock.match(/if \(authMode === 'employee_guest'[\s\S]*?return;/)?.[0] || '',
+    /handleLineEmployeeBind|handleBindLine/
+  );
+  assert.match(submitBlock, /authMode === 'line'/);
+  assert.match(onboardingSource, /lineAuthenticated \? '完成 onboarding 並綁定 LINE' : '完成 onboarding'/);
+  assert.match(onboardingSource, /lineAuthenticated \? '建立 onboarding 並綁定中\.\.\.' : '建立 onboarding 中\.\.\.'/);
 });

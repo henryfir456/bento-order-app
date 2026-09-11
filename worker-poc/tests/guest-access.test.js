@@ -174,6 +174,63 @@ test('valid unknown employee IDs enter explicit provisional onboarding', async (
   assert.equal(forbiddenOrder.response.status, 403);
 });
 
+test('employee guest provisional onboarding completes without LINE and keeps a null binding', async () => {
+  const database = new SqliteD1();
+  const login = await call(database, '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '139653' }
+  });
+  const guestToken = login.body.token;
+  const noLineFetch = async () => {
+    throw new Error('LINE auth must not be requested for employee guest onboarding.');
+  };
+
+  const completion = await call(database, '/api/auth/employee-guest/onboarding', {
+    method: 'POST',
+    token: '',
+    headers: { 'X-Employee-Guest-Session': guestToken },
+    body: {
+      displayName: 'Guest Provisional',
+      pickupFloor: '9樓',
+      lineUserId: 'forged-line-id'
+    }
+  }, { fetchImpl: noLineFetch });
+
+  assert.equal(completion.response.status, 200);
+  assert.equal(completion.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(completion.body.authMode, 'employee_guest');
+  assert.equal(completion.body.verificationStatus, 'UNVERIFIED');
+  assert.equal(completion.body.user.employeeId, '139653');
+  assert.equal(completion.body.user.displayName, 'Guest Provisional');
+  assert.equal(completion.body.user.lineUserId, null);
+  assert.equal(completion.body.user.role, 'User');
+  assert.equal(completion.body.user.active, true);
+  assert.equal(completion.body.user.balance, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+  assert.deepEqual({
+    ...database.get(`
+      SELECT user_id, employee_id, status, revoked_at
+      FROM employee_guest_sessions
+      WHERE token_hash = ?
+    `, await import('../src/auth/guestSession.js').then(({ hashGuestToken }) => hashGuestToken(guestToken)))
+  }, {
+    user_id: completion.body.user.userId,
+    employee_id: '139653',
+    status: 'UNVERIFIED_EMPLOYEE',
+    revoked_at: null
+  });
+
+  const replay = await call(database, '/api/auth/employee-guest/onboarding', {
+    method: 'POST',
+    token: '',
+    headers: { 'X-Employee-Guest-Session': guestToken },
+    body: { displayName: 'Different Name', pickupFloor: '1樓' }
+  }, { fetchImpl: noLineFetch });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.body.user.userId, completion.body.user.userId);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+});
+
 test('invalid employee IDs are rejected after trim and uppercase normalization', async () => {
   for (const employeeId of ['', '12345', '1234567', 'ABC-12', 'ＡＢＣ１２３', 139653]) {
     const result = await call(new SqliteD1(), '/api/auth/employee-guest', {

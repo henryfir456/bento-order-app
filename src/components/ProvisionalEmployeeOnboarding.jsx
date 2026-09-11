@@ -27,7 +27,7 @@ export default function ProvisionalEmployeeOnboarding({
             ? '目前只能使用 onboarding 功能。'
             : lineAuthenticated
               ? '請先確認基本資料並完成 LINE onboarding。'
-              : '請先確認基本資料並使用 LINE 完成綁定。'}
+              : '請先確認基本資料並完成 onboarding。'}
         </p>
         {lineDisplayName && (
           <p className="text-xs text-gray-400">已驗證的 LINE 顯示名稱：{lineDisplayName}</p>
@@ -68,8 +68,12 @@ export default function ProvisionalEmployeeOnboarding({
           className="w-full rounded-2xl bg-[#2C4A3E] py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
         >
           {loading
-            ? (bound ? '儲存中...' : '建立 onboarding 中...')
-            : (bound ? '更新基本資料' : '完成 onboarding 並綁定 LINE')}
+            ? (bound
+              ? '儲存中...'
+              : (lineAuthenticated ? '建立 onboarding 並綁定中...' : '建立 onboarding 中...'))
+            : (bound
+              ? '更新基本資料'
+              : (lineAuthenticated ? '完成 onboarding 並綁定 LINE' : '完成 onboarding'))}
         </button>
         {error && (
           <p role="alert" className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">

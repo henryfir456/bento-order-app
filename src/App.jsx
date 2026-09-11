@@ -1123,6 +1123,50 @@ export default function App() {
     }
   };
 
+  const handleEmployeeGuestOnboarding = async ({ displayName, pickupFloor } = {}) => {
+    if (
+      apiClient.transport !== 'worker'
+      || lineBindLoading
+      || authMode !== 'employee_guest'
+    ) return;
+    const guestSession = guestSessionStore.getGuestSession();
+    if (!guestSession) {
+      setEmployeeGuestError('員工登入已失效，請重新輸入員工編號。');
+      setAuthState(AUTH_STATES.AUTH_REQUIRED);
+      setAuthStage(AUTH_STATES.AUTH_REQUIRED);
+      return;
+    }
+
+    setLineBindLoading(true);
+    setEmployeeGuestError('');
+    setAuthError('');
+    try {
+      const response = await apiClient.completeEmployeeGuestOnboarding({
+        guestToken: guestSession.token,
+        displayName,
+        pickupFloor
+      });
+      const data = await response.json();
+      if (
+        !response.ok
+        || !data.success
+        || data.authMode !== 'employee_guest'
+        || data.status !== 'UNVERIFIED_EMPLOYEE'
+        || !data.user
+        || data.user.lineUserId !== null
+      ) {
+        throw new Error(data.error || data.message || 'EMPLOYEE_GUEST_ONBOARDING_INVALID_RESPONSE');
+      }
+      applyUserInfoData(data);
+      setAuthState(AUTH_STATES.UNVERIFIED);
+      setAuthStage(AUTH_STATES.UNVERIFIED);
+    } catch (error) {
+      setEmployeeGuestError(getApiErrorPresentation(error, '完成 onboarding').message);
+    } finally {
+      setLineBindLoading(false);
+    }
+  };
+
   const handleLineEmployeeLookup = async (event) => {
     event?.preventDefault?.();
     if (apiClient.transport !== 'worker' || lineBindLoading) return;
@@ -1293,16 +1337,23 @@ export default function App() {
       return;
     }
 
-    if (guestSessionStore.getGuestSession()) {
-      await handleBindLine(profile);
+    if (authMode === 'employee_guest') {
+      await handleEmployeeGuestOnboarding(profile);
       return;
     }
 
-    if (!authUser?.userId) {
+    if (authMode === 'line' && !authUser?.userId) {
       await handleLineEmployeeBind({
         employeeId: provisionalProfile.employeeId,
         ...profile
       });
+      return;
+    }
+
+    if (!authUser?.userId) {
+      setEmployeeGuestError('員工身份狀態已失效，請重新開始 onboarding。');
+      setAuthState(AUTH_STATES.AUTH_REQUIRED);
+      setAuthStage(AUTH_STATES.AUTH_REQUIRED);
       return;
     }
 

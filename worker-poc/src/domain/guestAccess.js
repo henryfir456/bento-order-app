@@ -100,6 +100,102 @@ export const employeeGuestLogin = async (
   };
 };
 
+const provisionalGuestResult = (user, session) => ({
+  success: true,
+  status: 'UNVERIFIED_EMPLOYEE',
+  verificationStatus: user.verificationStatus,
+  authMode: 'employee_guest',
+  expiresAt: session?.expiresAt || null,
+  capabilities: capabilitiesFor(
+    user.role,
+    'employee_guest',
+    user.verificationStatus,
+    user.active
+  ),
+  employeeId: user.employeeId,
+  user: publicUser(user)
+});
+
+export const completeEmployeeGuestOnboarding = async (
+  database,
+  {
+    guestToken,
+    displayName,
+    pickupFloor,
+    clock = new Date()
+  } = {}
+) => {
+  if (typeof guestToken !== 'string' || !guestToken.trim()) {
+    throw unauthorized('GUEST_SESSION_INVALID');
+  }
+  const now = resolveClock(clock).toISOString();
+  const inspected = await inspectGuestSession(database, guestToken, { now });
+  if (!inspected || !inspected.normal || !inspected.provisional || !inspected.employeeId) {
+    throw unauthorized('GUEST_SESSION_INVALID');
+  }
+  if (inspected.user) {
+    if (
+      inspected.user.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED
+      || inspected.user.lineUserId !== null
+    ) {
+      throw conflict('EMPLOYEE_ONBOARDING_CONFLICT');
+    }
+    return provisionalGuestResult(inspected.user, inspected.session);
+  }
+
+  const employeeId = employeeIdText(inspected.employeeId);
+  const onboardingName = profileText(displayName);
+  const onboardingFloor = pickupFloorText(pickupFloor);
+  const existing = await getUserByEmployeeId(database, employeeId);
+  if (existing) throw conflict('EMPLOYEE_ONBOARDING_CONFLICT');
+
+  const userId = randomId('user');
+  const insertUser = prepareStatement(database, `
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor,
+      balance, role, active, verification_status, created_at, updated_at
+    ) VALUES (?, ?, NULL, ?, ?, 0, 'User', 1, 'UNVERIFIED', ?, ?)
+  `, [
+    userId,
+    employeeId,
+    onboardingName,
+    onboardingFloor,
+    now,
+    now
+  ]);
+  const attachSession = prepareStatement(database, `
+    UPDATE employee_guest_sessions
+    SET user_id = ?, status = 'UNVERIFIED_EMPLOYEE'
+    WHERE session_id = ?
+      AND employee_id = ?
+      AND status = 'UNVERIFIED_EMPLOYEE'
+      AND user_id IS NULL
+      AND revoked_at IS NULL
+  `, [userId, inspected.session.sessionId, employeeId]);
+
+  try {
+    const [insertResult, attachResult] = await database.batch([insertUser, attachSession]);
+    if (statementChanges(insertResult) !== 1 || statementChanges(attachResult) !== 1) {
+      throw new Error('Employee guest onboarding attach failed.');
+    }
+  } catch (error) {
+    if (/unique|constraint/i.test(error?.message || error?.cause?.message || '')) {
+      const replay = await inspectGuestSession(database, guestToken, { now });
+      if (replay?.normal && replay.provisional && replay.user) {
+        return provisionalGuestResult(replay.user, replay.session);
+      }
+      throw conflict('EMPLOYEE_ONBOARDING_CONFLICT');
+    }
+    throw error;
+  }
+
+  const user = await getUserById(database, userId);
+  if (!user || user.lineUserId !== null || user.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED) {
+    throw new Error('Employee guest onboarding readback failed.');
+  }
+  return provisionalGuestResult(user, inspected.session);
+};
+
 const employeePreview = (user) => ({
   employeeId: user.employeeId,
   name: user.displayName,
@@ -162,7 +258,7 @@ const createProvisionalCanonicalUser = async (
   }
 ) => {
   const timestamp = resolveClock(clock).toISOString();
-  const onboardingName = profileText(displayName, profileText(lineDisplayName));
+  const onboardingName = profileText(displayName || lineDisplayName);
   const onboardingFloor = pickupFloorText(pickupFloor);
   const userId = randomId('user');
   const result = await prepareStatement(database, `
@@ -343,7 +439,7 @@ export const bindLineIdentity = async (
 
   if (inspected.provisional && !inspected.user) {
     const timestamp = now;
-    const onboardingName = profileText(displayName, profileText(lineDisplayName));
+    const onboardingName = profileText(displayName || lineDisplayName);
     const onboardingFloor = pickupFloorText(pickupFloor);
     const userId = randomId('user');
     const insertUser = prepareStatement(database, `

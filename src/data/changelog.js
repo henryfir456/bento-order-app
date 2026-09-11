@@ -11,6 +11,26 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.11.1': [
+    {
+      name: '新增',
+      changes: [
+        '新增 Employee Guest provisional onboarding 完成 API，無 LINE 驗證脈絡時也可完成 onboarding。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        'Employee Guest 的 UNVERIFIED onboarding 不再要求 LINE 驗證或建立 LINE binding；LINE 綁定僅保留給 LINE-authenticated onboarding flow。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '修正 provisional onboarding 介面，不再把 LINE 綁定顯示或呼叫為 guest fallback 的必要完成步驟。'
+      ]
+    }
+  ],
   '0.11.0': [
     {
       name: '新增',

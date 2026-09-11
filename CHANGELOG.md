@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-09-11
+
+### Added
+
+- Added `POST /api/auth/employee-guest/onboarding` for completing provisional Employee Guest onboarding without a LINE authentication context.
+
+### Changed
+
+- Employee Guest provisional onboarding now creates an `UNVERIFIED` canonical user without requiring LINE authentication or creating a LINE binding; LINE binding remains limited to the LINE-authenticated onboarding flow.
+
+### Fixed
+
+- Fixed the provisional onboarding UI so a guest fallback no longer presents or invokes LINE binding as a required completion step.
+
 ## [0.11.0] - 2026-09-11
 
 ### Added
