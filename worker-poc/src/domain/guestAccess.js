@@ -1,7 +1,11 @@
 import { conflict, forbidden, unauthorized, badRequest } from '../http/errors.js';
 import { getUserByEmployeeId, getUserById, getUserByLineId, publicUser } from '../db/users.js';
 import { createGuestSession, inspectGuestSession } from '../auth/guestSession.js';
-import { capabilitiesFor, VERIFICATION_STATUSES } from '../auth/permissions.js';
+import {
+  capabilitiesFor,
+  identityStateFor,
+  VERIFICATION_STATUSES
+} from '../auth/permissions.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
 import { VALID_PICKUP_FLOORS } from './users.js';
 
@@ -57,6 +61,10 @@ export const employeeGuestLogin = async (
     return {
       success: true,
       status: 'UNVERIFIED_EMPLOYEE',
+      identityState: identityStateFor({
+        provisional: true,
+        verificationStatus: VERIFICATION_STATUSES.UNVERIFIED
+      }),
       verificationStatus: VERIFICATION_STATUSES.UNVERIFIED,
       authMode: 'employee_guest',
       token: session.token,
@@ -86,6 +94,12 @@ export const employeeGuestLogin = async (
   return {
     success: true,
     status,
+    identityState: identityStateFor({
+      userId: user.userId,
+      registered: status === 'VERIFIED',
+      verificationStatus: user.verificationStatus,
+      active: user.active
+    }),
     verificationStatus: user.verificationStatus,
     authMode: 'employee_guest',
     token: session.token,
@@ -103,6 +117,11 @@ export const employeeGuestLogin = async (
 const provisionalGuestResult = (user, session) => ({
   success: true,
   status: 'UNVERIFIED_EMPLOYEE',
+  identityState: identityStateFor({
+    userId: user.userId,
+    verificationStatus: user.verificationStatus,
+    active: user.active
+  }),
   verificationStatus: user.verificationStatus,
   authMode: 'employee_guest',
   expiresAt: session?.expiresAt || null,
@@ -221,6 +240,10 @@ export const lineEmployeeLookup = async (
     return {
       success: true,
       status: 'UNVERIFIED_EMPLOYEE',
+      identityState: identityStateFor({
+        provisional: true,
+        verificationStatus: VERIFICATION_STATUSES.UNVERIFIED
+      }),
       verificationStatus: VERIFICATION_STATUSES.UNVERIFIED,
       authMode: 'line',
       employeeId,
@@ -239,6 +262,12 @@ export const lineEmployeeLookup = async (
   return {
     success: true,
     status: 'FOUND',
+    identityState: identityStateFor({
+      userId: user.userId,
+      registered: user.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED,
+      verificationStatus: user.verificationStatus,
+      active: user.active
+    }),
     verificationStatus: user.verificationStatus,
     authMode: 'line',
     employeeId,

@@ -51,16 +51,21 @@ test('guest session storage persists only opaque token and expiry', async () => 
   assert.equal(storage.getItem(GUEST_SESSION_STORAGE_KEY), null);
 });
 
-test('auth boot plan is deterministic and gives guest sessions precedence over LIFF', async () => {
-  const { AUTH_BOOT_STAGES, resolveAuthBootPlan } = await import('../src/auth/bootFlow.js');
+test('auth boot plan checks LIFF before restoring a guest fallback', async () => {
+  const {
+    AUTH_BOOT_STAGES,
+    resolveAuthBootPlan,
+    resolveWorkerAuthResolution,
+    WORKER_AUTH_RESOLUTIONS
+  } = await import('../src/auth/bootFlow.js');
   assert.deepEqual(resolveAuthBootPlan({
     transport: 'worker',
     hasGuestSession: true,
     isLoggedIn: false
   }), [
     AUTH_BOOT_STAGES.UNKNOWN,
-    AUTH_BOOT_STAGES.RESTORE_GUEST,
     AUTH_BOOT_STAGES.LIFF_CHECK,
+    AUTH_BOOT_STAGES.RESTORE_GUEST,
     AUTH_BOOT_STAGES.AUTH_GUEST
   ]);
   assert.deepEqual(resolveAuthBootPlan({
@@ -70,10 +75,18 @@ test('auth boot plan is deterministic and gives guest sessions precedence over L
     isLoggedIn: true
   }), [
     AUTH_BOOT_STAGES.UNKNOWN,
-    AUTH_BOOT_STAGES.RESTORE_GUEST,
     AUTH_BOOT_STAGES.LIFF_CHECK,
-    AUTH_BOOT_STAGES.AUTH_GUEST,
+    AUTH_BOOT_STAGES.RESTORE_GUEST,
     AUTH_BOOT_STAGES.BIND_LINE
+  ]);
+  assert.deepEqual(resolveAuthBootPlan({
+    transport: 'worker',
+    hasGuestSession: true,
+    isLoggedIn: true
+  }), [
+    AUTH_BOOT_STAGES.UNKNOWN,
+    AUTH_BOOT_STAGES.LIFF_CHECK,
+    AUTH_BOOT_STAGES.AUTH_LINE
   ]);
   assert.deepEqual(resolveAuthBootPlan({
     transport: 'worker',
@@ -81,10 +94,73 @@ test('auth boot plan is deterministic and gives guest sessions precedence over L
     isLoggedIn: false
   }), [
     AUTH_BOOT_STAGES.UNKNOWN,
-    AUTH_BOOT_STAGES.RESTORE_GUEST,
     AUTH_BOOT_STAGES.LIFF_CHECK,
     AUTH_BOOT_STAGES.LOGIN_REQUIRED
   ]);
+
+  assert.equal(resolveWorkerAuthResolution({
+    hasGuestSession: true,
+    lineAuthState: 'authenticated'
+  }), WORKER_AUTH_RESOLUTIONS.LINE);
+  assert.equal(resolveWorkerAuthResolution({
+    hasGuestSession: true,
+    lineAuthState: 'anonymous'
+  }), WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST);
+  assert.equal(resolveWorkerAuthResolution({
+    hasGuestSession: true,
+    lineAuthState: 'unavailable'
+  }), WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST);
+  assert.equal(resolveWorkerAuthResolution({
+    hasGuestSession: true,
+    lineAuthState: 'unknown'
+  }), WORKER_AUTH_RESOLUTIONS.CHECK_LINE);
+});
+
+test('Worker startup gives resolved LINE identity precedence over stale guest state', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const bootSource = appSource.match(/const initLiffAndFetchData[\s\S]*?\n  useEffect/)?.[0] || '';
+  const liffCheckIndex = bootSource.indexOf("logAuthDiagnostic('LIFF_INIT_START')");
+  const guestRestoreIndex = bootSource.indexOf("logAuthDiagnostic('RESTORE_GUEST_SESSION')");
+  const lineBootstrapIndex = bootSource.indexOf('fetchBootstrapData(accessToken, bootId)');
+  const clearGuestIndex = bootSource.indexOf("reason: 'line-precedence'");
+
+  assert.ok(liffCheckIndex >= 0);
+  assert.ok(guestRestoreIndex > liffCheckIndex);
+  assert.ok(clearGuestIndex > liffCheckIndex);
+  assert.ok(lineBootstrapIndex > clearGuestIndex);
+  assert.match(bootSource, /lineAuthState: isLoggedIn && accessToken/);
+  assert.match(bootSource, /workerResolution === WORKER_AUTH_RESOLUTIONS\.LINE/);
+  assert.match(bootSource, /guestSessionStore\.clearGuestSession\(\{ reason: 'line-precedence', notify: false \}\)/);
+  assert.match(bootSource, /resolveWorkerAuthResolution/);
+});
+
+test('existing provisional LINE identity stays on profile update instead of recreating onboarding', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
+
+  assert.match(submitBlock, /authMode === 'line'[\s\S]*?identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
+  assert.match(submitBlock, /handleLineEmployeeBind/);
+  assert.match(submitBlock, /apiClient\.updatePickupFloor/);
+  assert.match(submitBlock, /apiClient\.getIdentity/);
+  assert.match(submitBlock, /setEmployeeGuestSuccess\(authMode === 'line'/);
+});
+
+test('guest identity state controls create-versus-existing onboarding routing', async () => {
+  const { IDENTITY_STATES } = await import('../src/auth/bootFlow.js');
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const workerIdentitySource = fs.readFileSync(path.join(__dirname, '..', 'worker-poc', 'src', 'auth', 'identity.js'), 'utf8');
+  const workerUsersSource = fs.readFileSync(path.join(__dirname, '..', 'worker-poc', 'src', 'domain', 'users.js'), 'utf8');
+  const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
+
+  assert.equal(IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE, 'NEW_PROVISIONAL_EMPLOYEE');
+  assert.equal(IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.match(appSource, /const \[identityState, setIdentityState\] = useState\(null\)/);
+  assert.match(appSource, /identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
+  assert.match(submitBlock, /authMode === 'employee_guest'[\s\S]*?identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
+  assert.match(submitBlock, /identityState !== IDENTITY_STATES\.EXISTING_UNVERIFIED_EMPLOYEE[\s\S]*?apiClient\.updatePickupFloor/);
+  assert.match(workerIdentitySource, /getUserByEmployeeId/);
+  assert.match(workerIdentitySource, /verificationStatus !== VERIFICATION_STATUSES\.UNVERIFIED/);
+  assert.match(workerUsersSource, /identityState: identityStateFor\(actor\)/);
 });
 
 test('LIFF init is idempotent across concurrent boot attempts', async () => {
@@ -312,4 +388,24 @@ test('employee guest provisional onboarding does not require or initiate LINE bi
   assert.match(submitBlock, /authMode === 'line'/);
   assert.match(onboardingSource, /lineAuthenticated \? '完成 onboarding 並綁定 LINE' : '完成 onboarding'/);
   assert.match(onboardingSource, /lineAuthenticated \? '建立 onboarding 並綁定中\.\.\.' : '建立 onboarding 中\.\.\.'/);
+});
+
+test('UNVERIFIED onboarding exposes pending verification and visible profile update feedback', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
+  const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
+
+  assert.match(appSource, /const \[employeeGuestSuccess, setEmployeeGuestSuccess\] = useState\(''\)/);
+  assert.match(submitBlock, /setEmployeeGuestSuccess\(authMode === 'line'/);
+  assert.match(appSource, /基本資料已更新。LINE 綁定已完成，目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。/);
+  assert.match(appSource, /success=\{employeeGuestSuccess\}/);
+  assert.match(appSource, /bound=\{Boolean\(authUser\?\.userId && authMode === 'line'\)\}/);
+  assert.match(appSource, /profileCompleted=\{identityState === IDENTITY_STATES\.EXISTING_UNVERIFIED_EMPLOYEE\}/);
+  assert.match(onboardingSource, /LINE 綁定完成/);
+  assert.match(onboardingSource, /員工身分待核驗/);
+  assert.match(onboardingSource, /您的基本資料已建立，目前正在等待員工身分核驗。核驗完成後即可使用訂餐功能。/);
+  assert.doesNotMatch(onboardingSource, /LINE onboarding 已完成/);
+  assert.match(appSource, /const isRegistered = authState === AUTH_STATES\.REGISTERED/);
+  assert.match(appSource, /const isUnverified = authState === AUTH_STATES\.UNVERIFIED/);
+  assert.match(appSource, /setAuthState\(AUTH_STATES\.UNVERIFIED\)/);
 });

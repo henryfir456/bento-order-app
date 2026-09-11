@@ -11,6 +11,34 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.11.3': [
+    {
+      name: '修正',
+      changes: [
+        '修正 Worker 啟動時先還原快取 Employee Guest session 的問題，改由可信的 LINE／LIFF 身份優先解析。',
+        'LINE 身份取得優先權後會清除過期或陳舊的 guest credential，避免 line 與 employee_guest 狀態混用。',
+        '已有 canonical UNVERIFIED LINE 身份時改走基本資料更新與待核驗流程，不再重複建立 Employee Guest onboarding。',
+        '還原 guest session 時會解析既有的 UNVERIFIED canonical 員工身份，明確區分新 provisional user 與既有待核驗 user。',
+        '保留 EMPLOYEE_ONBOARDING_CONFLICT 防護，既有待核驗身份改走基本資料更新，不再重複建立 onboarding。'
+      ]
+    }
+  ],
+  '0.11.2': [
+    {
+      name: '變更',
+      changes: [
+        'LINE 綁定或完成基本資料的 UNVERIFIED 身份，在完成正式核驗前仍維持 onboarding-only 流程。',
+        '基本資料更新會同時保存顯示名稱與領取樓層，重新整理後仍保留待核驗資料。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '修正 UNVERIFIED 基本資料更新後沒有成功回饋的問題，並清楚顯示員工身分仍待核驗。',
+        '將誤導性的 LINE onboarding 完成文案改為「LINE 綁定完成」與「員工身分待核驗」。'
+      ]
+    }
+  ],
   '0.11.1': [
     {
       name: '新增',

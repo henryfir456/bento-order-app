@@ -7,7 +7,9 @@ import {
   assertCan,
   assertSelfTarget,
   can,
-  capabilitiesFor
+  capabilitiesFor,
+  identityStateFor,
+  IDENTITY_STATES
 } from '../src/auth/permissions.js';
 
 const identity = (role, lineUserId = 'user-1') => ({
@@ -108,6 +110,31 @@ test('UNVERIFIED User principals receive only central onboarding capabilities', 
       action
     );
   }
+});
+
+test('identity state distinguishes a missing provisional user from an existing UNVERIFIED user', () => {
+  assert.equal(identityStateFor({
+    userId: null,
+    registered: false,
+    provisional: true,
+    verificationStatus: 'UNVERIFIED'
+  }), IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE);
+  assert.equal(identityStateFor({
+    userId: 'unverified-user',
+    registered: false,
+    verificationStatus: 'UNVERIFIED'
+  }), IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE);
+  assert.equal(identityStateFor({
+    userId: 'verified-user',
+    registered: true,
+    active: true,
+    verificationStatus: 'VERIFIED'
+  }), IDENTITY_STATES.VERIFIED);
+  assert.equal(identityStateFor({
+    userId: null,
+    registered: false,
+    verificationStatus: null
+  }), IDENTITY_STATES.UNREGISTERED);
 });
 
 test('admin summary derives member visibility from central capabilities, not a role-only gate', () => {

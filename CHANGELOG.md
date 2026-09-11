@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-09-11
+
+### Fixed
+
+- Fixed Worker startup authentication resolution so a trusted LINE/LIFF identity is checked before restoring a cached Employee Guest session.
+- Cleared stale guest credentials when LINE identity takes precedence, preventing mixed `line` and `employee_guest` authentication state.
+- Routed existing canonical `UNVERIFIED` LINE identities to profile update and pending verification instead of recreating Employee Guest onboarding.
+- Resolved stale Employee Guest sessions against an existing unverified canonical employee identity, with explicit lifecycle state instead of treating every `registered=false` response as a missing user.
+- Kept `EMPLOYEE_ONBOARDING_CONFLICT` protection for direct duplicate or stale onboarding-create attempts while routing reconciled users to profile update.
+
+## [0.11.2] - 2026-09-11
+
+### Changed
+
+- Kept LINE-bound and profile-completed `UNVERIFIED` identities in the onboarding-only flow until an approved verification transition occurs.
+- Extended the self-profile update contract to persist both display name and pickup floor so the pending-verification profile survives refresh.
+
+### Fixed
+
+- Added visible success feedback after an `UNVERIFIED` profile update and clarified that the employee identity is still awaiting verification.
+- Replaced the misleading completed-LINE-onboarding copy with explicit `LINE 綁定完成` and `員工身分待核驗` status messaging.
+
 ## [0.11.1] - 2026-09-11
 
 ### Added

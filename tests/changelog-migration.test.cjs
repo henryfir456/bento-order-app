@@ -139,7 +139,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1'].includes(release.version)
+    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -152,6 +152,18 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     })),
     expectedHistory
   );
+  const authStartupRelease = parsed.find((release) => release.version === '0.11.3');
+  assert.ok(authStartupRelease);
+  assert.equal(authStartupRelease.date, '2026-09-11');
+  assert.deepEqual(authStartupRelease.categories.map(({ name }) => name), ['Fixed']);
+  assert.deepEqual(authStartupRelease.changes, [
+    'Fixed Worker startup authentication resolution so a trusted LINE/LIFF identity is checked before restoring a cached Employee Guest session.',
+    'Cleared stale guest credentials when LINE identity takes precedence, preventing mixed `line` and `employee_guest` authentication state.',
+    'Routed existing canonical `UNVERIFIED` LINE identities to profile update and pending verification instead of recreating Employee Guest onboarding.',
+    'Resolved stale Employee Guest sessions against an existing unverified canonical employee identity, with explicit lifecycle state instead of treating every `registered=false` response as a missing user.',
+    'Kept `EMPLOYEE_ONBOARDING_CONFLICT` protection for direct duplicate or stale onboarding-create attempts while routing reconciled users to profile update.'
+  ]);
+  assert.deepEqual(authStartupRelease.commits, []);
   const finalized = parsed.find((release) => release.version === '0.10.0');
   assert.ok(finalized);
   assert.equal(finalized.date, '2026-09-10');
@@ -176,6 +188,17 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Refresh order, calendar, and balance state after a successful cancellation.'
   ]);
   assert.deepEqual(currentRelease.commits, []);
+  const uxRelease = parsed.find((release) => release.version === '0.11.2');
+  assert.ok(uxRelease);
+  assert.equal(uxRelease.date, '2026-09-11');
+  assert.deepEqual(uxRelease.categories.map(({ name }) => name), ['Changed', 'Fixed']);
+  assert.deepEqual(uxRelease.changes, [
+    'Kept LINE-bound and profile-completed `UNVERIFIED` identities in the onboarding-only flow until an approved verification transition occurs.',
+    'Extended the self-profile update contract to persist both display name and pickup floor so the pending-verification profile survives refresh.',
+    'Added visible success feedback after an `UNVERIFIED` profile update and clarified that the employee identity is still awaiting verification.',
+    'Replaced the misleading completed-LINE-onboarding copy with explicit `LINE 綁定完成` and `員工身分待核驗` status messaging.'
+  ]);
+  assert.deepEqual(uxRelease.commits, []);
   const fixRelease = parsed.find((release) => release.version === '0.11.1');
   assert.ok(fixRelease);
   assert.equal(fixRelease.date, '2026-09-11');
@@ -215,7 +238,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 4), ['0.11.1', '0.11.0', '0.10.1', '0.10.0']);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.11.3', '0.11.2', '0.11.1', '0.11.0', '0.10.1']);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);

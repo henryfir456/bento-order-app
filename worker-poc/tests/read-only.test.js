@@ -139,6 +139,7 @@ test('GET /api/me returns token-derived identity for an unregistered actor witho
   assert.deepEqual(body, {
     success: true,
     registered: false,
+    identityState: 'UNREGISTERED',
     authMode: 'line',
     user: null,
     lineUserId: 'new-user',

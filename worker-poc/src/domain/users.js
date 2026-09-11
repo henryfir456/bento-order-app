@@ -6,6 +6,7 @@ import {
   assertCan,
   assertSelfTarget,
   capabilitiesFor,
+  identityStateFor,
   VERIFICATION_STATUSES
 } from '../auth/permissions.js';
 
@@ -22,14 +23,32 @@ const assertFloor = (pickupFloor) => {
   }
 };
 
+const assertDisplayName = (displayName) => {
+  if (typeof displayName !== 'string') throw badRequest('PROFILE_INVALID');
+  const value = displayName.trim();
+  const hasControlCharacter = [...value].some((character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
+  if (!value || value.length > 100 || hasControlCharacter) {
+    throw badRequest('PROFILE_INVALID');
+  }
+  return value;
+};
+
 export const getMe = (identity) => {
   const actor = identity?.actor || {};
   const provisional = actor.provisional || actor.verificationStatus === 'UNVERIFIED';
+  // Keep registered for the existing frontend contract: it means verified
+  // application access, not whether a canonical user row exists. Consumers
+  // must use identityState to distinguish a new provisional identity from an
+  // existing UNVERIFIED canonical user.
   const registered = Boolean(actor.registered && !provisional);
   const user = actor.userId ? publicUser(actor) : null;
   return {
     success: true,
     registered,
+    identityState: identityStateFor(actor),
     authMode: actor.authMode || null,
     user,
     ...(provisional ? {
@@ -60,19 +79,28 @@ export const updatePickupFloor = async (
   database,
   identity,
   pickupFloor,
-  clock = new Date()
+  clock = new Date(),
+  displayName
 ) => {
   const provisional = identity?.actor?.provisional
     || identity?.actor?.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED;
   assertCan(identity, provisional ? ACTIONS.CAN_COMPLETE_PROFILE : ACTIONS.WRITE_SELF);
   assertSelfTarget(identity, identity.actor.userId);
   assertFloor(pickupFloor);
+  const nextDisplayName = displayName === undefined ? null : assertDisplayName(displayName);
   const timestamp = nowIso(clock);
-  await database.prepare(`
-    UPDATE users
-    SET pickup_floor = ?, updated_at = ?
-    WHERE user_id = ?
-  `).bind(pickupFloor, timestamp, identity.actor.userId).run();
+  const update = nextDisplayName === null
+    ? database.prepare(`
+      UPDATE users
+      SET pickup_floor = ?, updated_at = ?
+      WHERE user_id = ?
+    `).bind(pickupFloor, timestamp, identity.actor.userId)
+    : database.prepare(`
+      UPDATE users
+      SET display_name = ?, pickup_floor = ?, updated_at = ?
+      WHERE user_id = ?
+    `).bind(nextDisplayName, pickupFloor, timestamp, identity.actor.userId);
+  await update.run();
   await appendAuditEvent(database, {
     actorUserId: identity.actor.userId,
     targetUserId: identity.actor.userId,
@@ -84,6 +112,13 @@ export const updatePickupFloor = async (
   return {
     success: true,
     registered: !provisional,
+    identityState: identityStateFor({
+      ...identity.actor,
+      userId: user?.userId || identity.actor.userId,
+      verificationStatus: user?.verificationStatus || identity.actor.verificationStatus,
+      active: user?.active ?? identity.actor.active,
+      registered: !provisional
+    }),
     authMode: identity.actor.authMode,
     ...(provisional ? {
       status: 'UNVERIFIED_EMPLOYEE',

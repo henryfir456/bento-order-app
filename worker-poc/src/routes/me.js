@@ -36,7 +36,13 @@ export const handleMeRoute = async (request, env, {
   }
   if (request.method === 'PATCH' && url.pathname === '/api/me/pickup-floor') {
     const body = await readJson(request);
-    return jsonResponse(await updatePickupFloor(env.DB, identity, body.pickupFloor, now));
+    return jsonResponse(await updatePickupFloor(
+      env.DB,
+      identity,
+      body.pickupFloor,
+      now,
+      body.displayName
+    ));
   }
   return null;
 };

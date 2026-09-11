@@ -45,6 +45,13 @@ export const VERIFICATION_STATUSES = Object.freeze({
   UNVERIFIED: 'UNVERIFIED'
 });
 
+export const IDENTITY_STATES = Object.freeze({
+  NEW_PROVISIONAL_EMPLOYEE: 'NEW_PROVISIONAL_EMPLOYEE',
+  EXISTING_UNVERIFIED_EMPLOYEE: 'EXISTING_UNVERIFIED_EMPLOYEE',
+  VERIFIED: 'VERIFIED',
+  UNREGISTERED: 'UNREGISTERED'
+});
+
 const ONBOARDING_ACTIONS = new Set([
   ACTIONS.CAN_BIND_LINE,
   ACTIONS.CAN_COMPLETE_PROFILE,
@@ -68,6 +75,18 @@ export const isProvisionalPrincipal = (principal) => (
   normalizedVerificationStatus(principal?.verificationStatus)
     === VERIFICATION_STATUSES.UNVERIFIED
 );
+
+export const identityStateFor = (principal) => {
+  if (principal?.provisional || isProvisionalPrincipal(principal)) {
+    return principal?.userId
+      ? IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE
+      : IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE;
+  }
+  if (principal?.registered && principal?.active !== false) {
+    return IDENTITY_STATES.VERIFIED;
+  }
+  return IDENTITY_STATES.UNREGISTERED;
+};
 
 export const capabilitiesFor = (
   role,

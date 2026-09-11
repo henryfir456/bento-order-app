@@ -312,11 +312,11 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/order-page',
     { query: { targetDate, viewAs: viewAsUserId } }
   ),
-  updatePickupFloor: ({ pickupFloor } = {}) => workerRequest(
+  updatePickupFloor: ({ displayName, pickupFloor } = {}) => workerRequest(
     'updatePickupFloor',
     'PATCH',
     '/api/me/pickup-floor',
-    { body: { pickupFloor } }
+    { body: { displayName, pickupFloor } }
   ),
   getBalanceHistory: ({ year, month, viewAsUserId } = {}) => workerRequest(
     'getBalanceHistory',

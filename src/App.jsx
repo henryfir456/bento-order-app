@@ -12,7 +12,12 @@ import {
 import { normalizeWorkerLikeResponse, restoreCalendarEvent } from './api/likeState';
 import { authClient } from './auth/liffClient';
 import { hasPermission } from './auth/permissions';
-import { AUTH_BOOT_STAGES } from './auth/bootFlow';
+import {
+  AUTH_BOOT_STAGES,
+  IDENTITY_STATES,
+  resolveWorkerAuthResolution,
+  WORKER_AUTH_RESOLUTIONS
+} from './auth/bootFlow';
 import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
 import { APP_VERSION, UI_CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
@@ -218,6 +223,7 @@ export default function App() {
   const [lineUserId, setLineUserId] = useState('');
   const [authMode, setAuthMode] = useState(null);
   const [authUser, setAuthUser] = useState(null);
+  const [identityState, setIdentityState] = useState(null);
   const [viewAsUser, setViewAsUser] = useState(null);
   const [userBalance, setUserBalance] = useState(0);
   const [defaultFloor, setDefaultFloor] = useState('');
@@ -230,6 +236,7 @@ export default function App() {
   const [employeeGuestId, setEmployeeGuestId] = useState('');
   const [employeeGuestLoading, setEmployeeGuestLoading] = useState(false);
   const [employeeGuestError, setEmployeeGuestError] = useState('');
+  const [employeeGuestSuccess, setEmployeeGuestSuccess] = useState('');
   const [lineBindLoading, setLineBindLoading] = useState(false);
   const [pendingEmployeeConfirmation, setPendingEmployeeConfirmation] = useState(null);
   const [provisionalProfile, setProvisionalProfile] = useState({
@@ -352,6 +359,7 @@ export default function App() {
     setLineUserId('');
     setAuthMode(null);
     setAuthUser(null);
+    setIdentityState(null);
     setViewAsUser(null);
     setUserBalance(0);
     setDefaultFloor('');
@@ -364,6 +372,7 @@ export default function App() {
       lineDisplayName: ''
     });
     setEmployeeGuestError('');
+    setEmployeeGuestSuccess('');
     setName('');
     setCalendarEvents({});
     setUserOrdersMap({});
@@ -456,6 +465,7 @@ export default function App() {
         capabilities: Array.isArray(data.capabilities) ? data.capabilities : []
       };
       setAuthMode(nextAuthMode);
+      setIdentityState(data.identityState || IDENTITY_STATES.VERIFIED);
       setAuthUser(nextUser);
       setViewAsUser(null);
       setLineUserId(nextUser.userId);
@@ -482,7 +492,12 @@ export default function App() {
       const nextDisplayName = data.displayName
         || provisionalUser?.name
         || '';
+      const nextIdentityState = data.identityState
+        || (provisionalUser
+          ? IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE
+          : IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE);
       setAuthMode(data.authMode || 'line');
+      setIdentityState(nextIdentityState);
       setAuthUser(provisionalUser);
       setViewAsUser(null);
       setLineUserId(data.lineUserId || provisionalUser?.lineUserId || '');
@@ -503,6 +518,7 @@ export default function App() {
 
     if (data.success && data.registered === false) {
       setAuthMode(data.authMode || 'line');
+      setIdentityState(data.identityState || IDENTITY_STATES.UNREGISTERED);
       setLineUserId(data.lineUserId || '');
       setRegistrationDisplayName(data.displayName || '');
       setRegistrationFloor('1樓');
@@ -562,14 +578,68 @@ export default function App() {
       let guestSession = apiClient.transport === 'worker'
         ? guestSessionStore.getGuestSession()
         : null;
-      const hasBindIntent = apiClient.transport === 'worker' && guestSessionStore.hasBindIntent();
+      const hasStoredBindIntent = apiClient.transport === 'worker' && guestSessionStore.hasBindIntent();
+      const hasBindIntent = Boolean(guestSession && hasStoredBindIntent);
+      if (hasStoredBindIntent && !guestSession) guestSessionStore.clearBindIntent();
       const bindIntent = hasBindIntent ? guestSessionStore.getBindIntent() : {};
       if (authClient.isMock) {
         currentStage = 'MOCK_IDENTITY_READY';
         setAuthStage(currentStage);
         identity = authClient.getMockIdentity();
       } else {
-      if (apiClient.transport === 'worker' && guestSession && !hasBindIntent) {
+      currentStage = AUTH_BOOT_STAGES.LIFF_CHECK;
+      setAuthStage(currentStage);
+      logAuthDiagnostic('LIFF_INIT_START');
+      bootTiming.milestone('LIFF_INIT_START');
+      const liffInitStartTime = getPerformanceNow();
+      let liffAvailable = true;
+      try {
+        await authClient.init();
+      } catch (error) {
+        liffAvailable = false;
+        if (apiClient.transport !== 'worker' || !guestSession || hasBindIntent) throw error;
+        logAuthDiagnostic('LIFF_UNAVAILABLE_FALLBACK_TO_GUEST');
+      } finally {
+        bootTiming.milestone('LIFF_INIT_END');
+        bootTiming.metric('LIFF_INIT_MS', getPerformanceNow() - liffInitStartTime);
+      }
+
+      let isLoggedIn = false;
+      let accessToken = '';
+      if (liffAvailable) {
+        try {
+          currentStage = 'LIFF_INIT_SUCCESS';
+          setAuthStage(currentStage);
+          logAuthDiagnostic(currentStage);
+          isLoggedIn = authClient.isLoggedIn();
+          logAuthDiagnostic(`LIFF_IS_LOGGED_IN=${isLoggedIn}`);
+          logAuthDiagnostic(`LIFF_IS_IN_CLIENT=${authClient.isInClient()}`);
+          if (isLoggedIn) {
+            currentStage = 'LIFF_ACCESS_TOKEN_READ';
+            setAuthStage(currentStage);
+            accessToken = authClient.getAccessToken();
+            logAuthDiagnostic(`LIFF_ACCESS_TOKEN_PRESENT=${Boolean(accessToken)}`);
+          }
+        } catch (error) {
+          if (apiClient.transport !== 'worker' || !guestSession || hasBindIntent) throw error;
+          liffAvailable = false;
+          isLoggedIn = false;
+          accessToken = '';
+          logAuthDiagnostic('LINE_AUTH_CONTEXT_UNAVAILABLE_FALLBACK_TO_GUEST');
+        }
+      }
+
+      const workerResolution = apiClient.transport === 'worker'
+        ? resolveWorkerAuthResolution({
+          hasGuestSession: Boolean(guestSession),
+          hasBindIntent,
+          lineAuthState: isLoggedIn && accessToken
+            ? 'authenticated'
+            : liffAvailable ? 'anonymous' : 'unavailable'
+        })
+        : null;
+
+      if (workerResolution === WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST) {
         currentStage = AUTH_BOOT_STAGES.RESTORE_GUEST;
         setAuthStage(currentStage);
         logAuthDiagnostic('RESTORE_GUEST_SESSION');
@@ -580,8 +650,6 @@ export default function App() {
         )) {
           identity = restoredIdentity;
           restoredGuest = true;
-          currentStage = AUTH_BOOT_STAGES.LIFF_CHECK;
-          setAuthStage(currentStage);
           currentStage = AUTH_BOOT_STAGES.AUTH_GUEST;
           setAuthStage(currentStage);
         } else if (restoredIdentity?.code === 'GUEST_SESSION_INVALID') {
@@ -592,30 +660,15 @@ export default function App() {
         }
       }
 
-      if (!restoredGuest) {
-      if (apiClient.transport === 'worker' && guestSession && hasBindIntent) {
-        currentStage = AUTH_BOOT_STAGES.RESTORE_GUEST;
-        setAuthStage(currentStage);
+      if (workerResolution === WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST && !restoredGuest) {
+        setAuthState(AUTH_STATES.AUTH_REQUIRED);
+        setAuthStage(AUTH_STATES.AUTH_REQUIRED);
+        logAuthDiagnostic('AUTH_REQUIRED');
+        return;
       }
-      currentStage = AUTH_BOOT_STAGES.LIFF_CHECK;
-      setAuthStage(currentStage);
-      logAuthDiagnostic('LIFF_INIT_START');
-      bootTiming.milestone('LIFF_INIT_START');
-      const liffInitStartTime = getPerformanceNow();
-      try {
-        await authClient.init();
-      } finally {
-        bootTiming.milestone('LIFF_INIT_END');
-        bootTiming.metric('LIFF_INIT_MS', getPerformanceNow() - liffInitStartTime);
-      }
-      currentStage = 'LIFF_INIT_SUCCESS';
-      setAuthStage(currentStage);
-      logAuthDiagnostic(currentStage);
 
-      const isLoggedIn = authClient.isLoggedIn();
-      logAuthDiagnostic(`LIFF_IS_LOGGED_IN=${isLoggedIn}`);
-      logAuthDiagnostic(`LIFF_IS_IN_CLIENT=${authClient.isInClient()}`);
-      if (!isLoggedIn) {
+      if (workerResolution === WORKER_AUTH_RESOLUTIONS.LOGIN_REQUIRED
+        || (apiClient.transport !== 'worker' && !isLoggedIn)) {
         setAuthState(AUTH_STATES.AUTH_REQUIRED);
         setAuthStage(AUTH_STATES.AUTH_REQUIRED);
         logAuthDiagnostic('AUTH_REQUIRED');
@@ -623,16 +676,20 @@ export default function App() {
         return;
       }
 
-      currentStage = 'LIFF_ACCESS_TOKEN_READ';
-      setAuthStage(currentStage);
-      const accessToken = authClient.getAccessToken();
-      logAuthDiagnostic(`LIFF_ACCESS_TOKEN_PRESENT=${Boolean(accessToken)}`);
-      if (!accessToken) {
+      if (!restoredGuest && !accessToken) {
         failAuthentication('LIFF_ACCESS_TOKEN_MISSING', 'LIFF accessToken 不存在');
         return;
       }
 
+      if (workerResolution === WORKER_AUTH_RESOLUTIONS.LINE && guestSession) {
+        logAuthDiagnostic('LINE_IDENTITY_PRECEDENCE_CLEAR_GUEST');
+        guestSessionStore.clearGuestSession({ reason: 'line-precedence', notify: false });
+        guestSession = null;
+      }
+
       if (apiClient.transport === 'worker' && hasBindIntent && guestSession?.token) {
+        currentStage = AUTH_BOOT_STAGES.RESTORE_GUEST;
+        setAuthStage(currentStage);
         currentStage = AUTH_BOOT_STAGES.BIND_LINE;
         setAuthStage(currentStage);
         const bindResponse = await apiClient.bindLine({
@@ -650,21 +707,22 @@ export default function App() {
         guestSession = null;
       }
 
-      currentStage = 'BACKEND_IDENTITY_VERIFY_START';
-      setAuthStage(currentStage);
-      const bootstrapRequestStartTime = getPerformanceNow();
-      bootTiming.milestone('BOOTSTRAP_REQUEST_START');
-      try {
-        identity = await fetchBootstrapData(accessToken, bootId);
-        bootTiming.backend(identity?.observability?.timing, identity?.bootId);
-        usingLegacyStartup = apiClient.transport === 'gas' && identity?.code === 'INVALID_ACTION';
-        if (usingLegacyStartup) {
-          identity = await fetchUserInfo(accessToken);
+      if (!restoredGuest) {
+        currentStage = 'BACKEND_IDENTITY_VERIFY_START';
+        setAuthStage(currentStage);
+        const bootstrapRequestStartTime = getPerformanceNow();
+        bootTiming.milestone('BOOTSTRAP_REQUEST_START');
+        try {
+          identity = await fetchBootstrapData(accessToken, bootId);
+          bootTiming.backend(identity?.observability?.timing, identity?.bootId);
+          usingLegacyStartup = apiClient.transport === 'gas' && identity?.code === 'INVALID_ACTION';
+          if (usingLegacyStartup) {
+            identity = await fetchUserInfo(accessToken);
+          }
+        } finally {
+          bootstrapNetworkMs = getPerformanceNow() - bootstrapRequestStartTime;
+          bootTiming.milestone('BOOTSTRAP_REQUEST_END');
         }
-      } finally {
-        bootstrapNetworkMs = getPerformanceNow() - bootstrapRequestStartTime;
-        bootTiming.milestone('BOOTSTRAP_REQUEST_END');
-      }
       }
       }
       if (identity?.success && identity.registered && identity.user) {
@@ -1093,6 +1151,7 @@ export default function App() {
     employeeGuestRequestRef.current = true;
     setEmployeeGuestLoading(true);
     setEmployeeGuestError('');
+    setEmployeeGuestSuccess('');
     setAuthError('');
     try {
       const response = await apiClient.employeeGuestLogin({ employeeId });
@@ -1139,6 +1198,7 @@ export default function App() {
 
     setLineBindLoading(true);
     setEmployeeGuestError('');
+    setEmployeeGuestSuccess('');
     setAuthError('');
     try {
       const response = await apiClient.completeEmployeeGuestOnboarding({
@@ -1160,6 +1220,7 @@ export default function App() {
       applyUserInfoData(data);
       setAuthState(AUTH_STATES.UNVERIFIED);
       setAuthStage(AUTH_STATES.UNVERIFIED);
+      setEmployeeGuestSuccess('基本資料已建立。目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。');
     } catch (error) {
       setEmployeeGuestError(getApiErrorPresentation(error, '完成 onboarding').message);
     } finally {
@@ -1204,6 +1265,7 @@ export default function App() {
           lineDisplayName: ''
         }));
         setEmployeeGuestId('');
+        setIdentityState(data.identityState || IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE);
         setAuthState(AUTH_STATES.UNVERIFIED);
         setAuthStage(AUTH_STATES.UNVERIFIED);
         return;
@@ -1337,12 +1399,15 @@ export default function App() {
       return;
     }
 
-    if (authMode === 'employee_guest') {
+    setEmployeeGuestSuccess('');
+    if (authMode === 'employee_guest'
+      && identityState === IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE) {
       await handleEmployeeGuestOnboarding(profile);
       return;
     }
 
-    if (authMode === 'line' && !authUser?.userId) {
+    if (authMode === 'line'
+      && identityState === IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE) {
       await handleLineEmployeeBind({
         employeeId: provisionalProfile.employeeId,
         ...profile
@@ -1350,7 +1415,8 @@ export default function App() {
       return;
     }
 
-    if (!authUser?.userId) {
+    if (identityState !== IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE
+      || !authUser?.userId) {
       setEmployeeGuestError('員工身份狀態已失效，請重新開始 onboarding。');
       setAuthState(AUTH_STATES.AUTH_REQUIRED);
       setAuthStage(AUTH_STATES.AUTH_REQUIRED);
@@ -1359,8 +1425,12 @@ export default function App() {
 
     setLineBindLoading(true);
     setEmployeeGuestError('');
+    setEmployeeGuestSuccess('');
     try {
-      const response = await apiClient.updatePickupFloor({ pickupFloor: profile.pickupFloor });
+      const response = await apiClient.updatePickupFloor({
+        displayName: profile.displayName,
+        pickupFloor: profile.pickupFloor
+      });
       const data = await response.json();
       if (!response.ok || !data.success) {
         throw new Error(data.error || data.message || 'PROFILE_UPDATE_FAILED');
@@ -1376,6 +1446,9 @@ export default function App() {
         displayName: profile.displayName,
         pickupFloor: profile.pickupFloor
       }));
+      setEmployeeGuestSuccess(authMode === 'line'
+        ? '基本資料已更新。LINE 綁定已完成，目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。'
+        : '基本資料已更新。目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。');
     } catch (error) {
       setEmployeeGuestError(getApiErrorPresentation(error, '更新 onboarding 資料').message);
     } finally {
@@ -2552,19 +2625,27 @@ export default function App() {
               employeeId={provisionalProfile.employeeId}
               lineDisplayName={provisionalProfile.lineDisplayName}
               displayName={provisionalProfile.displayName}
-              onDisplayNameChange={(value) => setProvisionalProfile((current) => ({
-                ...current,
-                displayName: value
-              }))}
+              onDisplayNameChange={(value) => {
+                setEmployeeGuestSuccess('');
+                setProvisionalProfile((current) => ({
+                  ...current,
+                  displayName: value
+                }));
+              }}
               pickupFloor={provisionalProfile.pickupFloor}
-              onPickupFloorChange={(value) => setProvisionalProfile((current) => ({
-                ...current,
-                pickupFloor: value
-              }))}
+              onPickupFloorChange={(value) => {
+                setEmployeeGuestSuccess('');
+                setProvisionalProfile((current) => ({
+                  ...current,
+                  pickupFloor: value
+                }));
+              }}
               onSubmit={handleProvisionalProfileSubmit}
               loading={lineBindLoading}
               error={employeeGuestError}
-              bound={Boolean(authUser?.userId)}
+              success={employeeGuestSuccess}
+              bound={Boolean(authUser?.userId && authMode === 'line')}
+              profileCompleted={identityState === IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE}
               lineAuthenticated={authMode === 'line'}
             />
           )}

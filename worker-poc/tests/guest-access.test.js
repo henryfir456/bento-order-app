@@ -135,6 +135,7 @@ test('valid unknown employee IDs enter explicit provisional onboarding', async (
 
   assert.equal(result.response.status, 200);
   assert.equal(result.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(result.body.identityState, 'NEW_PROVISIONAL_EMPLOYEE');
   assert.equal(result.body.verificationStatus, 'UNVERIFIED');
   assert.equal(result.body.employeeId, '139653');
   assert.equal(result.body.user, null);
@@ -158,6 +159,7 @@ test('valid unknown employee IDs enter explicit provisional onboarding', async (
   assert.equal(me.response.status, 200);
   assert.equal(me.body.registered, false);
   assert.equal(me.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(me.body.identityState, 'NEW_PROVISIONAL_EMPLOYEE');
   assert.equal(me.body.employeeId, '139653');
   assert.equal(me.body.user, null);
 
@@ -172,6 +174,64 @@ test('valid unknown employee IDs enter explicit provisional onboarding', async (
     }
   });
   assert.equal(forbiddenOrder.response.status, 403);
+});
+
+test('guest restore reconciles an existing unverified canonical user without attaching or recreating', async () => {
+  const database = new SqliteD1();
+  const guest = await call(database, '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '139653' }
+  });
+  const guestToken = guest.body.token;
+
+  seedUser(database, {
+    userId: 'reconciled-user-139653',
+    employeeId: '139653',
+    lineUserId: null,
+    displayName: 'Existing provisional employee',
+    pickupFloor: '1樓',
+    verificationStatus: 'UNVERIFIED'
+  });
+
+  const restored = await call(database, '/api/me', { token: guestToken });
+  assert.equal(restored.response.status, 200);
+  assert.equal(restored.body.authMode, 'employee_guest');
+  assert.equal(restored.body.registered, false);
+  assert.equal(restored.body.identityState, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(restored.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(restored.body.user.userId, 'reconciled-user-139653');
+  assert.equal(restored.body.user.lineUserId, null);
+  assert.deepEqual(restored.body.capabilities, [
+    'CAN_BIND_LINE',
+    'CAN_COMPLETE_PROFILE',
+    'CAN_VIEW_SELF_ONBOARDING_STATE'
+  ]);
+  assert.equal(database.get(`
+    SELECT user_id FROM employee_guest_sessions WHERE token_hash = ?
+  `, await import('../src/auth/guestSession.js').then(({ hashGuestToken }) => hashGuestToken(guestToken))).user_id, null);
+
+  const profileUpdate = await call(database, '/api/me/pickup-floor', {
+    method: 'PATCH',
+    token: guestToken,
+    body: { displayName: 'Reconciled profile', pickupFloor: '9樓' }
+  });
+  assert.equal(profileUpdate.response.status, 200);
+  assert.equal(profileUpdate.body.identityState, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(profileUpdate.body.user.userId, 'reconciled-user-139653');
+  assert.equal(profileUpdate.body.user.lineUserId, null);
+  assert.equal(profileUpdate.body.user.verificationStatus, 'UNVERIFIED');
+  assert.equal(profileUpdate.body.user.name, 'Reconciled profile');
+  assert.equal(profileUpdate.body.user.floor, '9樓');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+
+  const staleCreate = await call(database, '/api/auth/employee-guest/onboarding', {
+    method: 'POST',
+    token: '',
+    headers: { 'X-Employee-Guest-Session': guestToken },
+    body: { displayName: 'Should not create', pickupFloor: '1樓' }
+  });
+  assert.equal(staleCreate.response.status, 409);
+  assert.deepEqual(staleCreate.body, { error: 'EMPLOYEE_ONBOARDING_CONFLICT' });
 });
 
 test('employee guest provisional onboarding completes without LINE and keeps a null binding', async () => {
@@ -304,6 +364,7 @@ test('LINE-authenticated unknown employee onboarding binds server LINE identity 
   }, { fetchImpl: lineProfile });
   assert.equal(lookup.response.status, 200);
   assert.equal(lookup.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(lookup.body.identityState, 'NEW_PROVISIONAL_EMPLOYEE');
   assert.equal(lookup.body.user, null);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
 
@@ -497,11 +558,23 @@ test('provisional LINE onboarding creates an UNVERIFIED canonical user and disab
   const profileUpdate = await call(database, '/api/me/pickup-floor', {
     method: 'PATCH',
     token: 'line-provisional-token',
-    body: { pickupFloor: '1樓' }
+    body: { displayName: 'Updated Employee 139653', pickupFloor: '1樓' }
   }, { fetchImpl: lineProfile });
   assert.equal(profileUpdate.response.status, 200);
   assert.equal(profileUpdate.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(profileUpdate.body.verificationStatus, 'UNVERIFIED');
+  assert.equal(profileUpdate.body.user.name, 'Updated Employee 139653');
   assert.equal(profileUpdate.body.user.floor, '1樓');
+
+  const refreshed = await call(database, '/api/me', {
+    token: 'line-provisional-token'
+  }, { fetchImpl: lineProfile });
+  assert.equal(refreshed.response.status, 200);
+  assert.equal(refreshed.body.registered, false);
+  assert.equal(refreshed.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(refreshed.body.user.name, 'Updated Employee 139653');
+  assert.equal(refreshed.body.user.floor, '1樓');
+  assert.equal(refreshed.body.user.verificationStatus, 'UNVERIFIED');
 
   const employeeOnly = await call(database, '/api/auth/employee-guest', {
     method: 'POST',

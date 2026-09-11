@@ -1,4 +1,4 @@
-import { getUserById, getUserByLineId } from '../db/users.js';
+import { getUserByEmployeeId, getUserById, getUserByLineId } from '../db/users.js';
 import { forbidden, unauthorized } from '../http/errors.js';
 import {
   capabilitiesFor,
@@ -75,6 +75,22 @@ const viewAsTarget = (url) => (
   || ''
 );
 
+// An older unbound guest token may outlive the canonical user created by a
+// prior onboarding attempt. Resolve only the matching unverified, still
+// unbound user. This is deliberately read-only and never exposes a verified
+// or LINE-bound user through employee-number-only credentials.
+const resolveGuestCanonicalUser = async (database, guest) => {
+  if (!guest?.provisional || guest.user || !guest.employeeId) return guest?.user || null;
+  const user = await getUserByEmployeeId(database, guest.employeeId);
+  if (!user
+    || !user.active
+    || user.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED
+    || user.lineUserId !== null) {
+    return null;
+  }
+  return user;
+};
+
 export const resolveCanonicalIdentity = async (
   request,
   env,
@@ -91,7 +107,8 @@ export const resolveCanonicalIdentity = async (
   if (isGuestToken(token)) {
     if (viewAsTarget(new URL(request.url))) throw forbidden('VIEW_AS_FORBIDDEN');
     if (guest?.provisional) {
-      const actor = actorFromUser(guest.user, {
+      const canonicalUser = await resolveGuestCanonicalUser(env.DB, guest);
+      const actor = actorFromUser(canonicalUser, {
         authMode: 'employee_guest',
         employeeId: guest.employeeId,
         provisional: true

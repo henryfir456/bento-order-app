@@ -1897,15 +1897,17 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.11.1');
-  assert.equal(packageLock.version, '0.11.1');
-  assert.equal(packageLock.packages[''].version, '0.11.1');
+  assert.equal(packageJson.version, '0.11.3');
+  assert.equal(packageLock.version, '0.11.3');
+  assert.equal(packageLock.packages[''].version, '0.11.3');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
   assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);
   assert.doesNotMatch(changelogSource, /export const CHANGELOG = \[\s*\{/);
   assert.match(changelogMarkdown, /# Changelog/);
   assert.match(changelogMarkdown, /## \[Unreleased\]/);
+  assert.match(changelogMarkdown, /## \[0\.11\.3\] - 2026-09-11/);
+  assert.match(changelogMarkdown, /## \[0\.11\.2\] - 2026-09-11/);
   assert.match(changelogMarkdown, /## \[0\.11\.1\] - 2026-09-11/);
   assert.match(changelogMarkdown, /## \[0\.11\.0\] - 2026-09-11/);
   assert.match(changelogMarkdown, /## \[0\.10\.1\] - 2026-09-10/);
