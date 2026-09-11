@@ -11,6 +11,23 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.13.0': [
+    {
+      name: '新增',
+      changes: [
+        'Admin 成員管理與「切換身分」新增登入來源與身份狀態 compact badges，清楚區分 LINE、非 LINE、待綁員編、待審核與已驗證。',
+        'Admin 可對尚未綁定員編的 canonical user 執行「綁員編」，完成後會重新取得伺服器 authoritative 狀態。',
+        '新增全部、待綁員編、待審核、已驗證篩選，手機版改用 compact card，降低欄位增加造成的橫向溢出。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        '可信員工資料唯一匹配、且員工啟用與來源可信時才會自動驗證；其餘資料維持待審核，異常情況留給例外人工審查。',
+        '身份驗證、員編綁定、核驗與授權維持分離，Worker + D1 為本功能唯一 production backend。'
+      ]
+    }
+  ],
   '0.12.1': [
     {
       name: '變更',

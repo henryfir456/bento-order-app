@@ -124,7 +124,7 @@ test('identity state distinguishes a missing provisional user from an existing U
     registered: false,
     employeeId: '139653',
     verificationStatus: 'UNVERIFIED'
-  }), IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE);
+  }), IDENTITY_STATES.PENDING_VERIFICATION);
   assert.equal(identityStateFor({
     userId: 'line-user-without-employee',
     authMode: 'line',

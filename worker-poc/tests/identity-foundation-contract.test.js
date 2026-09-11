@@ -60,6 +60,18 @@ test('local formal migration keeps guest-session constraints and canonical owner
       session_id, token_hash, user_id, auth_mode, expires_at
     ) VALUES (?, ?, ?, ?, ?)
   `, 'guest-session-invalid-mode', 'hash-3', 'foundation-user', 'line', '2099-01-01T00:00:00.000Z'), /CHECK/i);
+  database.run(`
+    INSERT INTO employee_roster (roster_id, employee_id, active, provenance)
+    VALUES (?, ?, ?, ?)
+  `, 'roster-1', '001234', 1, 'TRUSTED_IMPORT');
+  database.run(`
+    INSERT INTO employee_roster (roster_id, employee_id, active, provenance)
+    VALUES (?, ?, ?, ?)
+  `, 'roster-2', '001234', 1, 'TRUSTED_IMPORT');
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM employee_roster WHERE employee_id = ?',
+    '001234'
+  ).count, 2, 'ambiguity must remain representable in the trust source');
   assert.deepEqual(database.database.prepare('PRAGMA foreign_key_check').all(), []);
 });
 

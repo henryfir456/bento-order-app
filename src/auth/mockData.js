@@ -8,7 +8,10 @@ const MOCK_USER_FIXTURES = Object.freeze({
     floor: '1樓',
     defaultFloor: '1樓',
     balance: 500,
-    role: 'User'
+    role: 'User',
+    authSource: 'LINE',
+    identityState: 'VERIFIED',
+    verificationStatus: 'VERIFIED'
   }),
   admin: Object.freeze({
     userId: 'mock-admin-id',
@@ -17,7 +20,10 @@ const MOCK_USER_FIXTURES = Object.freeze({
     floor: '9樓',
     defaultFloor: '9樓',
     balance: 1200,
-    role: 'Admin'
+    role: 'Admin',
+    authSource: 'LINE',
+    identityState: 'VERIFIED',
+    verificationStatus: 'VERIFIED'
   }),
   'proxy-admin': Object.freeze({
     userId: 'mock-proxy-admin-id',
@@ -26,7 +32,10 @@ const MOCK_USER_FIXTURES = Object.freeze({
     floor: '1樓',
     defaultFloor: '1樓',
     balance: 700,
-    role: 'ProxyAdmin'
+    role: 'ProxyAdmin',
+    authSource: 'LINE',
+    identityState: 'VERIFIED',
+    verificationStatus: 'VERIFIED'
   }),
   unregistered: null
 });
@@ -132,7 +141,10 @@ export const registerMockUser = (mockUser, pickupFloor) => {
     floor: pickupFloor,
     defaultFloor: pickupFloor,
     balance: 0,
-    role: 'User'
+    role: 'User',
+    authSource: 'LINE',
+    identityState: 'VERIFIED',
+    verificationStatus: 'VERIFIED'
   };
   state.orders = [];
   return clone(state.user);

@@ -30,6 +30,7 @@ import ViewAsBanner from './components/ViewAsBanner';
 import DevAuthBadge from './components/DevAuthBadge';
 import AnnouncementBar from './components/AnnouncementBar';
 import AnnouncementModal from './components/AnnouncementModal';
+import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import OrderPage from './features/orders/OrderPage';
@@ -59,6 +60,13 @@ const AUTH_STATES = Object.freeze({
 const redactAuthSecrets = (value) => String(value || 'Unknown error')
   .replace(/(access[_-]?token|id[_-]?token|authorization)\s*[:=]?\s*[^\s,;]+/gi, '$1=[REDACTED]')
   .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]');
+
+const requireAuthoritativeIdentityState = (data) => {
+  if (typeof data?.identityState !== 'string' || !data.identityState.trim()) {
+    throw new Error('IDENTITY_STATE_MISSING');
+  }
+  return data.identityState;
+};
 
 const logAuthDiagnostic = (message) => {
   if (import.meta.env.DEV) {
@@ -334,6 +342,10 @@ export default function App() {
   const [topupNote, setTopupNote] = useState('現金收款');
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupIdempotencyKey, setTopupIdempotencyKey] = useState('');
+  const [selectedEmployeeBindUser, setSelectedEmployeeBindUser] = useState(null);
+  const [employeeBindId, setEmployeeBindId] = useState('');
+  const [employeeBindLoading, setEmployeeBindLoading] = useState(false);
+  const [employeeBindError, setEmployeeBindError] = useState('');
 
   // Admin 管理月曆彈窗狀態
   const [adminManageMode, setAdminManageMode] = useState(false);
@@ -429,6 +441,10 @@ export default function App() {
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
+    setSelectedEmployeeBindUser(null);
+    setEmployeeBindId('');
+    setEmployeeBindLoading(false);
+    setEmployeeBindError('');
     likeMutationInFlightRef.current = false;
     setLikeMutationInFlight(false);
     setTopupIdempotencyKey('');
@@ -467,7 +483,7 @@ export default function App() {
         capabilities: Array.isArray(data.capabilities) ? data.capabilities : []
       };
       setAuthMode(nextAuthMode);
-      setIdentityState(data.identityState || IDENTITY_STATES.VERIFIED);
+      setIdentityState(requireAuthoritativeIdentityState(data));
       setAuthUser(nextUser);
       setViewAsUser(null);
       setLineUserId(nextUser.userId);
@@ -497,7 +513,7 @@ export default function App() {
         || nextUser.name
         || '';
       setAuthMode(data.authMode || 'line');
-      setIdentityState(IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED);
+      setIdentityState(requireAuthoritativeIdentityState(data));
       setAuthUser(nextUser);
       setViewAsUser(null);
       setLineUserId(data.lineUserId || nextUser.lineUserId || '');
@@ -533,10 +549,7 @@ export default function App() {
       const nextDisplayName = data.displayName
         || provisionalUser?.name
         || '';
-      const nextIdentityState = data.identityState
-        || (provisionalUser
-          ? IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE
-          : IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE);
+      const nextIdentityState = requireAuthoritativeIdentityState(data);
       setAuthMode(data.authMode || 'line');
       setIdentityState(nextIdentityState);
       setAuthUser(provisionalUser);
@@ -559,7 +572,7 @@ export default function App() {
 
     if (data.success && data.registered === false) {
       setAuthMode(data.authMode || 'line');
-      setIdentityState(data.identityState || IDENTITY_STATES.UNREGISTERED);
+      setIdentityState(requireAuthoritativeIdentityState(data));
       setLineUserId(data.lineUserId || '');
       setRegistrationDisplayName(data.displayName || '');
       setRegistrationFloor('1樓');
@@ -1255,16 +1268,20 @@ export default function App() {
         !response.ok
         || !data.success
         || data.authMode !== 'employee_guest'
-        || data.status !== 'UNVERIFIED_EMPLOYEE'
+        || !['UNVERIFIED_EMPLOYEE', 'VERIFIED'].includes(data.status)
         || !data.user
         || data.user.lineUserId !== null
       ) {
         throw new Error(data.error || data.message || 'EMPLOYEE_GUEST_ONBOARDING_INVALID_RESPONSE');
       }
       applyUserInfoData(data);
-      setAuthState(AUTH_STATES.UNVERIFIED);
-      setAuthStage(AUTH_STATES.UNVERIFIED);
-      setEmployeeGuestSuccess('基本資料已建立。目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。');
+      const automaticallyVerified = data.status === 'VERIFIED'
+        && data.identityState === IDENTITY_STATES.VERIFIED;
+      setAuthState(automaticallyVerified ? AUTH_STATES.REGISTERED : AUTH_STATES.UNVERIFIED);
+      setAuthStage(automaticallyVerified ? AUTH_STATES.REGISTERED : AUTH_STATES.UNVERIFIED);
+      setEmployeeGuestSuccess(automaticallyVerified
+        ? '基本資料已建立，可信員工資料已自動完成驗證。'
+        : '基本資料已建立。目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。');
     } catch (error) {
       setEmployeeGuestError(getApiErrorPresentation(error, '完成 onboarding').message);
     } finally {
@@ -1309,7 +1326,7 @@ export default function App() {
           lineDisplayName: ''
         }));
         setEmployeeGuestId('');
-        setIdentityState(data.identityState || IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE);
+        setIdentityState(requireAuthoritativeIdentityState(data));
         setAuthState(AUTH_STATES.UNVERIFIED);
         setAuthStage(AUTH_STATES.UNVERIFIED);
         return;
@@ -1472,7 +1489,7 @@ export default function App() {
       return;
     }
 
-    if (identityState !== IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE
+    if (![IDENTITY_STATES.PENDING_VERIFICATION, IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE].includes(identityState)
       || !authUser?.userId) {
       setEmployeeGuestError('員工身份狀態已失效，請重新開始 onboarding。');
       setAuthState(AUTH_STATES.AUTH_REQUIRED);
@@ -2228,6 +2245,66 @@ export default function App() {
     }
   };
 
+  const handleOpenEmployeeBindModal = (user) => {
+    if (apiClient.transport !== 'worker'
+      || !canAuth('bindEmployee')
+      || isViewAsMode
+      || !user?.userId
+      || user.employeeId) return;
+    setSelectedEmployeeBindUser(user);
+    setEmployeeBindId('');
+    setEmployeeBindError('');
+  };
+
+  const handleEmployeeBindSubmit = async () => {
+    if (!selectedEmployeeBindUser
+      || employeeBindLoading
+      || apiClient.transport !== 'worker'
+      || !canAuth('bindEmployee')
+      || isViewAsMode) return;
+    if (!(await guardWrite('綁定員編'))) return;
+    const employeeId = String(employeeBindId || '').trim();
+    if (!employeeId) {
+      setEmployeeBindError('請輸入員工編號。');
+      return;
+    }
+
+    setEmployeeBindLoading(true);
+    setEmployeeBindError('');
+    try {
+      const response = await apiClient.adminBindEmployee({
+        userId: selectedEmployeeBindUser.userId,
+        employeeId
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success || !data.user) {
+        throw new Error(data.error || data.message || 'ADMIN_EMPLOYEE_BIND_FAILED');
+      }
+
+      // The binding response is not patched into local identity state. Read
+      // both the actor and member list again so the server remains authoritative.
+      const refreshedIdentity = await fetchUserInfo(readCurrentCredential());
+      if (!refreshedIdentity?.success) throw new Error('ADMIN_EMPLOYEE_BIND_READBACK_FAILED');
+      setMemberBalancesLoaded(false);
+      await loadMemberBalances(true);
+      setSelectedEmployeeBindUser(null);
+      setEmployeeBindId('');
+      await showPopup({
+        icon: 'success',
+        title: '員編綁定完成',
+        text: data.identityState === IDENTITY_STATES.VERIFIED
+          ? '已綁定員編，並依可信員工資料自動完成驗證。'
+          : '已綁定員編，目前身份仍待審核。'
+      });
+    } catch (error) {
+      const presentation = getApiErrorPresentation(error, '綁定員編');
+      setEmployeeBindError(presentation.message);
+      await showPopup({ icon: 'error', title: '員編綁定失敗', text: presentation.message });
+    } finally {
+      setEmployeeBindLoading(false);
+    }
+  };
+
   const getAggregatedOrders = () => {
     const aggregated = {};
     (adminSummary.todayOrders || []).forEach(o => {
@@ -2707,7 +2784,8 @@ export default function App() {
               error={employeeGuestError}
               success={employeeGuestSuccess}
               bound={Boolean(authUser?.userId && authMode === 'line')}
-              profileCompleted={identityState === IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE}
+              profileCompleted={identityState === IDENTITY_STATES.PENDING_VERIFICATION
+                || identityState === IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE}
               lineAuthenticated={authMode === 'line'}
             />
           )}
@@ -2850,8 +2928,10 @@ export default function App() {
                 memberBalancesLoading={memberBalancesLoading}
                 memberBalancesError={memberBalancesError}
                 canTopup={can('topupMember')}
+                canBindEmployee={apiClient.transport === 'worker' && canAuth('bindEmployee')}
                 isViewAsMode={isViewAsMode}
                 onOpenTopupModal={handleOpenTopupModal}
+                onOpenEmployeeBindModal={handleOpenEmployeeBindModal}
               />
             )}
 
@@ -3059,13 +3139,77 @@ export default function App() {
                     className="w-full text-left rounded-2xl border border-gray-100 bg-gray-50 hover:bg-emerald-50 hover:border-emerald-200 p-3 transition-colors"
                   >
                     <span className="block truncate font-bold text-gray-800">{user.name || '未命名使用者'}</span>
-                    <span className="mt-1 block truncate text-xs text-gray-500">
-                      員編 {formatEmployeeId(user.employeeId)} · {user.floor || '未設定'} · {user.role || 'User'}
+                    <span className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-xs text-gray-500">
+                      <span className="whitespace-nowrap">員編 {formatEmployeeId(user.employeeId)}</span>
+                      <span className="whitespace-nowrap">· {user.floor || '未設定'}</span>
+                      <span className="whitespace-nowrap">· {user.role || 'User'}</span>
+                      <IdentityStatusBadges authSource={user.authSource} identityState={user.identityState} />
                     </span>
                   </button>
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {selectedEmployeeBindUser && apiClient.transport === 'worker'
+        && canAuth('bindEmployee') && !isViewAsMode && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl border border-amber-100">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <div>
+                <h3 className="font-bold text-base text-[#2C4A3E]">🔗 綁定員編</h3>
+                <p className="text-xs text-gray-500 mt-1">{selectedEmployeeBindUser.name || '未命名使用者'} 的 Admin 綁定操作</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeBindUser(null)}
+                disabled={employeeBindLoading}
+                className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors disabled:opacity-50"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-3">
+              <p className="rounded-2xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                綁定與人工核准驗證是分開的操作。只有伺服器判定為唯一可信的員工資料時，才會自動完成驗證。
+              </p>
+              <label className="block text-gray-600 font-bold text-sm" htmlFor="employee-bind-id">員工編號</label>
+              <input
+                id="employee-bind-id"
+                type="text"
+                inputMode="text"
+                autoComplete="off"
+                value={employeeBindId}
+                onChange={(event) => setEmployeeBindId(event.target.value)}
+                disabled={employeeBindLoading}
+                className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm uppercase focus:outline-amber-600 focus:bg-white transition-colors shadow-sm disabled:bg-gray-100"
+              />
+              {employeeBindError && (
+                <p className="rounded-xl bg-rose-50 border border-rose-100 p-3 text-xs text-rose-700" role="alert">
+                  {employeeBindError}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeBindUser(null)}
+                disabled={employeeBindLoading}
+                className="w-1/2 bg-gray-100 text-gray-600 py-3 rounded-2xl text-sm font-bold hover:bg-gray-200 transition active:scale-95 shadow-sm disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleEmployeeBindSubmit}
+                disabled={employeeBindLoading}
+                className="w-1/2 bg-amber-600 text-white py-3 rounded-2xl text-sm font-bold hover:bg-amber-500 disabled:bg-gray-300 transition active:scale-95 shadow-md"
+              >
+                {employeeBindLoading ? '處理中...' : '確認綁定'}
+              </button>
+            </div>
           </div>
         </div>
       )}

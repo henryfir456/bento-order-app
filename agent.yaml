@@ -2,11 +2,12 @@ schema_version: 2
 
 project:
   name: bento-order-app
-  type: react-gas-liff
+  type: react-worker-d1-liff
   stack:
     - react
     - vite
-    - gas
+    - worker
+    - d1
     - liff
 
 shared_source:
@@ -39,4 +40,4 @@ verification:
   manual:
     - "Real LIFF authentication"
     - "View As and identity flow"
-    - "GAS deployment and production contract"
+    - "Worker deployment and remote D1 production contract"

@@ -71,7 +71,12 @@ const businessMessages = Object.freeze({
   INVALID_EMPLOYEE_ID: '員工編號格式不正確，請重新輸入。',
   PROFILE_INVALID: '請確認姓名與基本資料格式。',
   GUEST_SESSION_INVALID: '員工登入已失效，請重新輸入員工編號。',
-  EMPLOYEE_BIND_REQUIRED: '此 LINE 帳號尚未綁定員工資料，請先以員工編號登入。'
+  EMPLOYEE_BIND_REQUIRED: '此 LINE 帳號尚未綁定員工資料，請先以員工編號登入。',
+  USER_EMPLOYEE_ALREADY_BOUND: '此帳號已有不同員編，為保護身份資料不會覆蓋。',
+  ADMIN_LINE_AUTH_REQUIRED: '員編綁定需要已驗證的 LINE Admin 身份。',
+  EMPLOYEE_BIND_CONFLICT: '員編綁定狀態已變更，請重新整理後再試。',
+  TRUSTED_UNIQUE_ACTIVE: '可信員工資料已唯一匹配。',
+  PENDING_TRUST_REVIEW: '員編已綁定，但目前仍待管理員審核。'
 });
 
 export const getApiErrorPresentation = (error, operationLabel = '操作') => {

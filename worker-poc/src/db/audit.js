@@ -11,8 +11,17 @@ export const auditStatement = (database, {
   targetLineUserIdSnapshot = null,
   action,
   metadata = {},
-  occurredAt
-}) => prepareStatement(database, `
+  occurredAt,
+  onlyIfPriorMutation = false
+}) => prepareStatement(database, onlyIfPriorMutation ? `
+  INSERT INTO admin_audit_log (
+    audit_id, actor_user_id, actor_auth_mode, actor_employee_id_snapshot,
+    actor_line_user_id_snapshot, target_user_id, target_employee_id_snapshot,
+    target_line_user_id_snapshot, action, metadata_json, occurred_at
+  )
+  SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+  WHERE changes() = 1
+` : `
   INSERT INTO admin_audit_log (
     audit_id, actor_user_id, actor_auth_mode, actor_employee_id_snapshot,
     actor_line_user_id_snapshot, target_user_id, target_employee_id_snapshot,

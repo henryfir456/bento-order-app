@@ -3,7 +3,7 @@
 ## Goal
 
 Extend the formal Cloudflare Worker + D1 authentication flow so a valid but
-unmapped six-character employee ID can complete explicit LINE onboarding as an
+unmapped textual employee ID can complete explicit LINE onboarding as an
 `UNVERIFIED` canonical user, while preserving canonical `user_id` ownership,
 server-side LINE verification, and fail-closed authorization.
 

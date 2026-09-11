@@ -29,17 +29,32 @@ self-contained and must not depend on the AI parent workspace.
 
 ## Bento project contract
 
-- The frontend is a React/Vite application and the backend source is in
-  the GAS directory.
-- VITE_LIFF_ID and VITE_GAS_API_URL are local configuration inputs; do
-  not commit secrets or replace them with machine-specific paths.
+- Active production architecture is Cloudflare Worker + D1. The Worker
+  formal runtime is the only production backend and all new capabilities
+  must be implemented there.
+- GAS is fully retired. Files under `gas/`, the GAS adapter, and GAS tests
+  are legacy artifacts and regression evidence only. Do not add GAS API,
+  identity/auth logic, Sheet contracts, or business logic unless the user
+  explicitly authorizes a legacy change.
+- The frontend is a React/Vite application. `VITE_LIFF_ID` and
+  `VITE_WORKER_API_URL` are local configuration inputs; do not commit
+  secrets or replace them with machine-specific paths.
 - Preserve the separation between authenticated identity, View As
   identity, and effective identity.
-- Preserve the existing LIFF authentication, access-token, GAS
-  authorization, and Google Sheets contracts when changing either side.
-- Real LIFF authentication, View As behavior, and GAS deployment
-  behavior require manual or external evidence and must not be reported
-  as verified from local static checks.
+- Preserve the existing LIFF authentication, access-token, Worker
+  authorization, and D1 contracts when changing either side.
+- Real LIFF authentication, View As behavior, Worker deployment, and
+  production D1 behavior require manual or external evidence and must not
+  be reported as verified from local static checks. GAS deployment is not a
+  production verification target.
+
+## Retired transport governance
+
+Cloudflare Worker + D1 is the sole production transport and source of truth
+for identity, authorization, balances, and new feature behavior. The
+frontend may retain an explicit GAS adapter only as a bounded legacy seam for
+regression evidence; omitted transport configuration defaults to Worker.
+Never recreate a second identity source of truth for transport parity.
 
 ## Verification
 

@@ -357,6 +357,12 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'GET',
     '/api/admin/members/balances'
   ),
+  adminBindEmployee: ({ userId, employeeId } = {}) => workerRequest(
+    'adminBindEmployee',
+    'POST',
+    `/api/admin/users/${encodeURIComponent(String(userId || '').trim())}/employee-binding`,
+    { credentialMode: 'line', body: { employeeId } }
+  ),
   toggleLike: ({ date } = {}) => workerRequest(
     'toggleLike',
     'POST',

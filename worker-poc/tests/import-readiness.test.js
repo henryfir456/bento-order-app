@@ -46,8 +46,7 @@ test('missing Users.employee_id makes final replacement readiness BLOCKED', () =
     [
       'Real LIFF authentication',
       'View As and identity flow',
-      'GAS deployment and production contract',
-      'Production React transport cutover'
+      'Worker deployment and remote D1 production contract'
     ]
   );
   assert.equal(validation.legacyImportReadiness.status, 'BLOCKED');

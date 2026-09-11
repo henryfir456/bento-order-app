@@ -64,8 +64,8 @@ authorize deployment, employee-data import, or account rebind.
 | no LINE auth + known active employee, `line_user_id IS NULL` | verified employee guest session |
 | known employee with any non-null `line_user_id` | `409 {"error":"LINE_LOGIN_REQUIRED"}` |
 | LINE auth + known active employee, `line_user_id IS NULL` | lookup, explicit confirmation, then direct LINE bind; no guest session |
-| LINE auth + valid unknown six-character employee ID | onboarding, then direct LINE bind to an `UNVERIFIED` canonical user; no guest session |
-| no LINE auth + valid unknown six-character employee ID | `200 UNVERIFIED_EMPLOYEE` session |
+| LINE auth + valid unknown textual employee ID | onboarding, then direct LINE bind to an `UNVERIFIED` canonical user; no guest session |
+| no LINE auth + valid unknown textual employee ID | `200 UNVERIFIED_EMPLOYEE` session |
 | invalid employee ID | `400 INVALID_EMPLOYEE_ID` |
 | guest session + verified LINE + profile | new `UNVERIFIED` canonical user |
 | LINE or employee collision | fail closed; no rebind |

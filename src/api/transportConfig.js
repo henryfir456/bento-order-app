@@ -29,7 +29,8 @@ const normalizeHttpUrl = (value, code, label) => {
 };
 
 export const resolveApiTransportConfig = (env = {}, { isMock = false } = {}) => {
-  const requestedTransport = normalizeValue(env.VITE_API_TRANSPORT).toLowerCase() || API_TRANSPORTS.GAS;
+  const requestedTransport = normalizeValue(env.VITE_API_TRANSPORT).toLowerCase()
+    || (isMock ? API_TRANSPORTS.GAS : API_TRANSPORTS.WORKER);
   if (![API_TRANSPORTS.GAS, API_TRANSPORTS.WORKER].includes(requestedTransport)) {
     throw new ApiConfigurationError(
       'API_TRANSPORT_INVALID',

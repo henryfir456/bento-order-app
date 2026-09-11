@@ -1,8 +1,10 @@
 # React-to-Worker transport boundary and cutover matrix
 
-Status: implemented as a bounded pre-cutover slice. `gas` is still the
-default transport. Selecting `worker` is an explicit environment decision and
-does not deploy or cut over production traffic.
+Status: Worker-only production architecture. Cloudflare Worker + D1 is the
+active production backend and omitted transport configuration selects
+`worker`. GAS is retired legacy evidence; explicit GAS selection is retained
+only for bounded regression compatibility and does not define production
+behavior.
 
 ## Architecture
 
@@ -12,9 +14,9 @@ does not deploy or cut over production traffic.
   mapping used by tests. Worker requests use the LINE access token only as a
   Bearer credential; client-supplied user IDs are not sent to Worker routes.
 - `src/api/transportConfig.js` accepts only `gas` or `worker`. An omitted value
-  resolves to `gas`. Worker mode requires `VITE_WORKER_API_URL`; it has no GAS
-  fallback. Mock auth is an explicit local mode and cannot be combined with
-  Worker transport.
+  resolves to `worker`. Worker mode requires `VITE_WORKER_API_URL`; it has no
+  GAS fallback. Mock auth is an explicit local mode and cannot be combined
+  with Worker transport.
 - `src/api/apiErrors.js` gives configuration, authentication, authorization,
   backend, and Worker contract gaps distinct typed error categories.
 - `src/api/gasApi.js` retains the existing GAS wire format and mock adapter. Its
@@ -93,7 +95,8 @@ Status meanings:
 | Current React/domain operation | Legacy GAS wire | Formal Worker wire | Status |
 | --- | --- | --- | --- |
 | `getAdminSummary` | `POST getAdminSummary` with access token and target date | `GET /api/admin/summary?date=...` with Bearer token | ADAPTER_REQUIRED: method, query, and View As read-subject mapping need review |
-| `getMemberBalances` | `POST getMemberBalances` with access token | `GET /api/admin/members/balances` with Bearer token | ADAPTER_REQUIRED: formal authorization/audit and response adapter not wired |
+| `getMemberBalances` | Legacy GAS wire retained only for regression evidence | `GET /api/admin/members/balances` with Bearer token | SUPPORTED: formal authorization/audit and server identity projection |
+| Admin employee binding | No new GAS contract | `POST /api/admin/users/:userId/employee-binding` with Bearer token and `{employeeId}` | SUPPORTED: Admin capability, uniqueness, audit, and authoritative readback |
 | `topUpBalance` | `POST topUpBalance` with access token, target, amount, note | `POST /api/admin/balances/top-up` with Bearer token and formal idempotency key | ADAPTER_REQUIRED: current UI lacks the formal idempotency-key and response adapter |
 | `setCalendarVendor` | `POST adminSetVendor` with access token and date/vendor | `PUT /api/admin/calendar/:date` with Bearer token and `{vendor, mode}` | ADAPTER_REQUIRED: formal mode field and authorization contract are not wired |
 | Role assignment (no current React caller) | `POST assignProxy` | `PUT /api/admin/users/:userId/role` with Bearer token and `{role}` | ADAPTER_REQUIRED: no current React caller or reviewed UI adapter |
@@ -119,8 +122,8 @@ Status meanings:
 
 ## Isolation guarantees
 
-- With no `VITE_API_TRANSPORT`, the selected transport is `gas` and the GAS
-  adapter receives the same action payloads and legacy GET query shapes.
+- With no `VITE_API_TRANSPORT`, the selected transport is `worker` and
+  `VITE_WORKER_API_URL` is required.
 - With `VITE_API_TRANSPORT=worker`, `VITE_WORKER_API_URL` is mandatory; the
   runtime creates no GAS adapter, and unsupported operations throw
   `ApiContractGapError` before any network call.
@@ -139,5 +142,6 @@ formal D1. Finance and admin adapters should follow separately so opening
 balance policy errors, actor/effective-subject audit fields, and top-up
 idempotency are not hidden by a generic compatibility layer.
 
-No production deployment, React cutover, GAS removal, workbook change, remote
-D1 operation, commit, or push is part of this slice.
+No production deployment, remote D1 operation, commit, or push is part of this
+slice. GAS removal is already a governance decision; no new GAS parity is
+permitted.

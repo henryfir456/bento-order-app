@@ -1,3 +1,5 @@
+import { identityStateFor, VERIFICATION_STATUSES } from '../auth/permissions.js';
+
 export const toUser = (row) => {
   if (!row) return null;
   return {
@@ -35,12 +37,13 @@ export const getUserById = async (database, userId) => {
 };
 
 export const getUserByEmployeeId = async (database, employeeId) => {
+  const lookupKey = String(employeeId || '').trim().toUpperCase();
   const row = await database.prepare(`
     SELECT ${USER_COLUMNS}
     FROM users
-    WHERE employee_id = ? AND length(trim(employee_id)) > 0
+    WHERE UPPER(trim(employee_id)) = ? AND length(trim(employee_id)) > 0
     LIMIT 1
-  `).bind(employeeId).first();
+  `).bind(lookupKey).first();
   return toUser(row);
 };
 
@@ -56,6 +59,16 @@ export const getUserByLineId = async (database, lineUserId) => {
 
 export const publicUser = (user) => {
   if (!user) return null;
+  const hasEmployeeId = Boolean(String(user.employeeId || '').trim());
+  const verificationStatus = user.verificationStatus || VERIFICATION_STATUSES.VERIFIED;
+  const identityState = identityStateFor({
+    userId: user.userId,
+    employeeId: user.employeeId,
+    registered: hasEmployeeId && verificationStatus === VERIFICATION_STATUSES.VERIFIED,
+    verificationStatus,
+    active: user.active
+  });
+  const authSource = String(user.lineUserId || '').trim() ? 'LINE' : 'EMPLOYEE_GUEST';
   return {
     userId: user.userId,
     employeeId: user.employeeId,
@@ -65,7 +78,9 @@ export const publicUser = (user) => {
     balance: user.balance,
     role: user.role,
     active: user.active,
-    verificationStatus: user.verificationStatus,
+    authSource,
+    identityState,
+    verificationStatus,
     lineUserId: user.lineUserId,
     displayName: user.displayName
   };

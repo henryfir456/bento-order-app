@@ -83,7 +83,7 @@ const IDENTITY_FOUNDATION_EVIDENCE = Object.freeze({
   frontendLoginFlow: Object.freeze({
     status: 'READY_FOR_CONTROLLED_DEPLOYMENT',
     flow: 'LIFF_OR_EMPLOYEE_GUEST',
-    transportDefault: 'gas',
+    transportDefault: 'worker',
     verifiedBy: [
       'src/auth/authClient.js',
       'src/auth/liffClient.js',
@@ -97,8 +97,7 @@ const IDENTITY_FOUNDATION_EVIDENCE = Object.freeze({
     deferred: [
       'Real LIFF authentication',
       'View As and identity flow',
-      'GAS deployment and production contract',
-      'Production React transport cutover'
+      'Worker deployment and remote D1 production contract'
     ]
   }),
   productionVerification: Object.freeze({

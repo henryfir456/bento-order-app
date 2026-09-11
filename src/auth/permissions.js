@@ -41,6 +41,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     manageCalendar: true,
     manageMenu: true,
     manageUsers: true,
+    bindEmployee: true,
     manageRoles: true,
     viewAsUser: true,
     manageAnnouncements: true
@@ -62,6 +63,7 @@ export const GUEST_PERMISSIONS = Object.freeze({
   manageCalendar: false,
   manageMenu: false,
   manageUsers: false,
+  bindEmployee: false,
   manageRoles: false,
   viewAsUser: false
 });

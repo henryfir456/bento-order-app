@@ -197,7 +197,7 @@ test('guest restore reconciles an existing unverified canonical user without att
   assert.equal(restored.response.status, 200);
   assert.equal(restored.body.authMode, 'employee_guest');
   assert.equal(restored.body.registered, false);
-  assert.equal(restored.body.identityState, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(restored.body.identityState, 'PENDING_VERIFICATION');
   assert.equal(restored.body.status, 'UNVERIFIED_EMPLOYEE');
   assert.equal(restored.body.user.userId, 'reconciled-user-139653');
   assert.equal(restored.body.user.lineUserId, null);
@@ -216,7 +216,7 @@ test('guest restore reconciles an existing unverified canonical user without att
     body: { displayName: 'Reconciled profile', pickupFloor: '9樓' }
   });
   assert.equal(profileUpdate.response.status, 200);
-  assert.equal(profileUpdate.body.identityState, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(profileUpdate.body.identityState, 'PENDING_VERIFICATION');
   assert.equal(profileUpdate.body.user.userId, 'reconciled-user-139653');
   assert.equal(profileUpdate.body.user.lineUserId, null);
   assert.equal(profileUpdate.body.user.verificationStatus, 'UNVERIFIED');
@@ -258,6 +258,7 @@ test('employee guest provisional onboarding completes without LINE and keeps a n
 
   assert.equal(completion.response.status, 200);
   assert.equal(completion.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(completion.body.identityState, 'PENDING_VERIFICATION');
   assert.equal(completion.body.authMode, 'employee_guest');
   assert.equal(completion.body.verificationStatus, 'UNVERIFIED');
   assert.equal(completion.body.user.employeeId, '139653');
@@ -291,8 +292,34 @@ test('employee guest provisional onboarding completes without LINE and keeps a n
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 });
 
+test('trusted employee roster auto-verifies only at guest onboarding, not login knowledge', async () => {
+  const database = new SqliteD1();
+  database.run(`
+    INSERT INTO employee_roster (roster_id, employee_id, active, provenance, source_ref)
+    VALUES ('trusted-139653', '139653', 1, 'TRUSTED_IMPORT', 'roster.csv')
+  `);
+  const login = await call(database, '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '139653' }
+  });
+  assert.equal(login.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(login.body.identityState, 'NEW_PROVISIONAL_EMPLOYEE');
+
+  const completion = await call(database, '/api/auth/employee-guest/onboarding', {
+    method: 'POST',
+    headers: { 'X-Employee-Guest-Session': login.body.token },
+    body: { displayName: 'Trusted Guest', pickupFloor: '1樓' }
+  });
+  assert.equal(completion.response.status, 200);
+  assert.equal(completion.body.status, 'VERIFIED');
+  assert.equal(completion.body.identityState, 'VERIFIED');
+  assert.equal(completion.body.verificationStatus, 'VERIFIED');
+  assert.equal(completion.body.user.lineUserId, null);
+  assert.equal(completion.body.user.authSource, 'EMPLOYEE_GUEST');
+});
+
 test('invalid employee IDs are rejected after trim and uppercase normalization', async () => {
-  for (const employeeId of ['', '12345', '1234567', 'ABC-12', 'ＡＢＣ１２３', 139653]) {
+  for (const employeeId of ['', '-ABC12', 'ABC/12', 'ＡＢＣ１２３', 139653]) {
     const result = await call(new SqliteD1(), '/api/auth/employee-guest', {
       method: 'POST',
       body: { employeeId }
@@ -391,7 +418,7 @@ test('LINE canonical user without employee ID must bind an employee before appli
   }, { fetchImpl: lineProfile });
   assert.equal(binding.response.status, 200);
   assert.equal(binding.body.status, 'BOUND');
-  assert.equal(binding.body.identityState, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(binding.body.identityState, 'PENDING_VERIFICATION');
   assert.equal(binding.body.user.userId, 'line-identity-without-employee');
   assert.equal(binding.body.user.employeeId, '139653');
   assert.equal(binding.body.user.lineUserId, 'line-unbound-identity');
@@ -416,7 +443,7 @@ test('LINE canonical user without employee ID must bind an employee before appli
     token: 'line-unbound-token'
   }, { fetchImpl: lineProfile });
   assert.equal(refreshed.response.status, 200);
-  assert.equal(refreshed.body.identityState, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(refreshed.body.identityState, 'PENDING_VERIFICATION');
   assert.equal(refreshed.body.status, 'UNVERIFIED_EMPLOYEE');
   assert.equal(refreshed.body.user.employeeId, '139653');
   assert.deepEqual(refreshed.body.capabilities, [

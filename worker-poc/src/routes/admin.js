@@ -1,4 +1,5 @@
 import { getAdminSummary, getMemberBalances } from '../domain/adminSummary.js';
+import { adminBindEmployee } from '../domain/adminIdentity.js';
 import {
   createAnnouncement,
   deleteAnnouncement,
@@ -43,6 +44,8 @@ export const handleAdminRoute = async (request, env, {
   const url = new URL(request.url);
   const isSummary = request.method === 'GET' && url.pathname === '/api/admin/summary';
   const isMembers = request.method === 'GET' && url.pathname === '/api/admin/members/balances';
+  const bindingMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/employee-binding$/);
+  const isEmployeeBinding = request.method === 'POST' && Boolean(bindingMatch);
   const isAnnouncementList = request.method === 'GET'
     && url.pathname === '/api/admin/announcements';
   const isAnnouncementCreate = request.method === 'POST'
@@ -55,14 +58,30 @@ export const handleAdminRoute = async (request, env, {
   const isAnnouncementDelete = request.method === 'DELETE' && announcementId !== null;
   const isAnnouncementRoute = isAnnouncementList || isAnnouncementCreate
     || isAnnouncementUpdate || isAnnouncementDelete || isAnnouncementMissingId;
-  if (!isSummary && !isMembers && !isAnnouncementList && !isAnnouncementCreate
+  if (!isSummary && !isMembers && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
     && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: !isAnnouncementRoute,
+    allowViewAs: !isAnnouncementRoute && !isEmployeeBinding,
     now
   });
   if (isAnnouncementMissingId) throw badRequest('ANNOUNCEMENT_ID_REQUIRED');
+  if (isEmployeeBinding) {
+    let targetUserId;
+    try {
+      targetUserId = decodeURIComponent(bindingMatch[1]).trim();
+    } catch {
+      throw badRequest('USER_ID_INVALID');
+    }
+    if (!targetUserId) throw badRequest('USER_ID_REQUIRED');
+    return jsonResponse(await adminBindEmployee(
+      env.DB,
+      identity,
+      targetUserId,
+      await readJson(request),
+      now
+    ));
+  }
   if (isAnnouncementList) {
     return jsonResponse(await getAdminAnnouncements(env.DB, identity));
   }

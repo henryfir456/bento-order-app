@@ -17,6 +17,7 @@ const packageConfig = readJson('package.json');
 const seedScript = fs.readFileSync(new URL('../scripts/seed-parity-poc.mjs', import.meta.url), 'utf8');
 const benchmarkScript = fs.readFileSync(new URL('../scripts/benchmark-bootstrap.mjs', import.meta.url), 'utf8');
 const readme = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+const architecture = fs.readFileSync(new URL('../../docs/identity-verification-architecture.md', import.meta.url), 'utf8');
 const formalPlan = fs.readFileSync(new URL('../../docs/superpowers/plans/2026-09-08-formal-worker-d1-backend.md', import.meta.url), 'utf8');
 const formalSpec = fs.readFileSync(new URL('../../docs/superpowers/specs/2026-09-08-formal-worker-d1-backend-design.md', import.meta.url), 'utf8');
 
@@ -40,7 +41,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0000_formal_initial_schema.sql',
       '0001_balance_integrity_primitives.sql',
       '0002_canonical_identity_rekey.sql',
-      '0003_provisional_employee_identity.sql'
+      '0003_provisional_employee_identity.sql',
+      '0004_employee_roster_verification_source.sql'
     ]
   );
 });
@@ -69,13 +71,13 @@ test('legacy POC runtime is local-only and available only through explicit comma
     '| Real LIFF authentication | NOT VERIFIED |',
     '| Cloudflare-backed non-production D1 | NOT VERIFIED |',
     '| View As and actor/effective-subject separation | NOT VERIFIED |',
-    '| Production GAS contract | NOT VERIFIED |',
-    '| Production Worker deployment | NOT RUN |',
-    '| React cutover | NOT RUN |'
+    '| Production Worker deployment | NOT RUN |'
   ];
   for (const status of requiredStatuses) {
     assert.ok(formalPlan.includes(status) || formalSpec.includes(status), status);
   }
+  assert.match(architecture, /Worker \+ formal D1 is the only production backend/);
+  assert.match(architecture, /REMOTE MIGRATION:\s+NOT\s+EXECUTED/);
 });
 
 test('POC target guard rejects formal Worker or D1 identity collisions', () => {

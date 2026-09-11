@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-09-11
+
+### Added
+
+- Added Worker + D1 authoritative identity projections for `authSource`, `identityState`, and `verificationStatus` in Admin member and View As reads.
+- Added the Admin-only `POST /api/admin/users/:userId/employee-binding` contract with central capability checks, canonical employee-ID uniqueness, idempotent same-user retries, and audit logging.
+- Added a provenance-bearing `employee_roster` verification source and bounded automatic verification for exactly one active trusted match.
+- Added responsive Admin identity filters for employee-binding required, pending verification, and verified members.
+
+### Changed
+
+- Mapped stored `UNVERIFIED` identities to public `PENDING_VERIFICATION`; missing, inactive, ambiguous, or untrusted matches fail closed to pending review.
+- Made Worker + D1 the only production transport for this feature. GAS remains retired legacy regression evidence and receives no new identity contract.
+
 ## [0.12.1] - 2026-09-11
 
 ### Changed

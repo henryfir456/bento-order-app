@@ -54,7 +54,8 @@ test('formal migration creates every source-of-truth table', () => {
     'admin_audit_log',
     'import_quarantine',
     'opening_balance_snapshots',
-    'employee_guest_sessions'
+    'employee_guest_sessions',
+    'employee_roster'
   ];
 
   const actual = tableNames(database);
@@ -74,7 +75,9 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_balance_ledger_reference',
     'idx_balance_ledger_unique_order_reference',
     'idx_idempotency_actor_operation',
-    'idx_import_quarantine_batch_state'
+    'idx_import_quarantine_batch_state',
+    'idx_employee_roster_employee_id',
+    'users_employee_id_normalized_unique'
   ];
   const actual = new Set(rows(database, `
     SELECT name
@@ -82,6 +85,19 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     WHERE type = 'index'
   `).map((row) => row.name));
   for (const indexName of expected) assert.equal(actual.has(indexName), true, indexName);
+});
+
+test('normalized employee ownership rejects case-variant canonical duplicates', () => {
+  const database = openDatabase();
+  const insert = database.prepare(`
+    INSERT INTO users (user_id, employee_id, display_name, pickup_floor)
+    VALUES (?, ?, ?, ?)
+  `);
+  insert.run('case-owner-a', 'e0003', 'Case A', '1樓');
+  assert.throws(
+    () => insert.run('case-owner-b', 'E0003', 'Case B', '1樓'),
+    /UNIQUE|constraint/i
+  );
 });
 
 test('formal monetary columns are INTEGER and negative balances remain valid', () => {

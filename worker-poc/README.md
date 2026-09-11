@@ -1,9 +1,10 @@
 # Bento API Cloudflare Worker
 
 The default Wrangler runtime in this directory is the formal
-`src/formalWorker.js` backend with the `migrations-formal` D1 chain. It does
-not change the React production frontend, GAS backend, Netlify deployment, or
-Google Sheets. The former read-only POC remains available only through
+`src/formalWorker.js` backend with the `migrations-formal` D1 chain. Cloudflare
+Worker + D1 is the only active production backend for new capabilities. GAS is
+fully retired; its source and adapter remain only as legacy regression
+artifacts. The former read-only POC remains available only through
 `wrangler-poc.jsonc` and the explicit `dev:poc`/`db:migrations:poc:local`
 commands. The POC config is local-only: it uses the distinct
 `bento-api-poc-legacy` Worker name, `bento-poc-legacy-local` local D1 name, and
@@ -11,10 +12,10 @@ no remote D1 ID. Its remote seed script is fail-closed.
 
 The formal Worker implements LINE token authentication, canonical relational
 identity, restricted employee guest sessions, explicit provisional employee
-onboarding, conflict-safe LINE binding, View As read isolation, transactional
-order and balance mutations, and the formal D1 schema. React remains
-GAS-bound in production until the separate transport and cutover slice is
-authorized.
+onboarding, conflict-safe LINE binding, bounded trusted-roster verification,
+Admin identity binding, View As read isolation, transactional order and
+balance mutations, and the formal D1 schema. The React production transport
+is Worker-only; the explicit GAS adapter is not a production fallback.
 
 ## Contract boundaries
 
@@ -22,7 +23,7 @@ The machine-readable legacy parity authority is
 `contracts/bootstrap-contract.json`. Its query-user-id surfaces describe the
 retained POC only:
 
-- `GET /api/bootstrap?userId=<id>`: the production GAS
+- `GET /api/bootstrap?userId=<id>`: the legacy GAS
   `getBootstrapData(..., deferUiData: true)` frontend-observable primary
   contract.
 - `GET /api/bootstrap/deferred?userId=<id>`: the production deferred likes
@@ -53,7 +54,7 @@ The formal authenticated startup flow is:
    employee-identity lookup path: `POST /api/auth/line-employee-lookup` with
    the normalized employee ID. An existing unbound employee is shown for
    explicit confirmation, then `POST /api/auth/line-employee-bind` performs
-   the server-side binding. An unknown valid six-character ID enters
+   the server-side binding. An unknown valid textual ID enters
    onboarding; completion uses the same direct LINE-authenticated bind path
    and creates an `UNVERIFIED` canonical user. This LINE-authenticated path
    never creates an employee guest session.
@@ -63,7 +64,7 @@ The formal authenticated startup flow is:
    A known active employee with no LINE binding receives an opaque, expiring
    `VERIFIED` session with self-service permissions. Any employee ID already
    bound to LINE receives HTTP 409 `{"error":"LINE_LOGIN_REQUIRED"}`.
-   A valid but unmapped six-character ID receives HTTP 200 with an opaque
+   A valid but unmapped textual ID receives HTTP 200 with an opaque
    `UNVERIFIED_EMPLOYEE` onboarding session; it receives no canonical user,
    balance, or application-data capability.
 4. For the no-LINE fallback flow, send `POST /api/auth/line-bind` with the
@@ -107,6 +108,7 @@ worker-poc/
   migrations-formal/0001_balance_integrity_primitives.sql
   migrations-formal/0002_canonical_identity_rekey.sql
   migrations-formal/0003_provisional_employee_identity.sql
+  migrations-formal/0004_employee_roster_verification_source.sql
   docs/canonical-identity-guest-access.md
   docs/remote-import-readiness.md
   migrations/                            # retained legacy POC chain
@@ -152,8 +154,9 @@ The default local migration command applies the formal chain
 `migrations-formal/0000_formal_initial_schema.sql`,
 `migrations-formal/0001_balance_integrity_primitives.sql`, and the one-time
 `migrations-formal/0002_canonical_identity_rekey.sql`, followed by
-`migrations-formal/0003_provisional_employee_identity.sql`. It does not
-import workbook data. Raw migrations 0002 and 0003 are forward-only; D1's
+`migrations-formal/0003_provisional_employee_identity.sql` and
+`migrations-formal/0004_employee_roster_verification_source.sql`. It does not
+import workbook data. Raw migrations 0002, 0003, and 0004 are forward-only; D1's
 migration history prevents them from being applied twice. For legacy POC
 inspection, use the explicit POC migration command instead.
 
@@ -309,8 +312,8 @@ correct.
 
 Remote migration and deploy are external writes. Run migrations only after
 the implementation, local Worker/security tests, compatibility checks, root
-verification, and a fresh backup pass. Apply and verify 0002 before applying
-and verifying 0003. Only the later separately authorized deployment activates
+verification, and a fresh backup pass. Apply and verify 0002, 0003, and 0004
+in order. Only the later separately authorized deployment activates
 the new Worker source:
 
 ```powershell

@@ -1,8 +1,8 @@
 # Canonical identity and employee guest access
 
-This document describes the formal Cloudflare Worker + D1 contract. The GAS
-backend, React transport, and production deployment remain unchanged by this
-local implementation.
+This document describes the formal Cloudflare Worker + D1 contract. Worker +
+D1 is the active production architecture; GAS is fully retired and retained
+only as legacy regression evidence.
 
 ## Identity contract
 
@@ -169,8 +169,8 @@ IDENTITY FOUNDATION READINESS: READY
 The evidence covers the canonical `user_id` schema, LINE authentication,
 employee guest login, conflict-safe LINE binding, server-side permission
 enforcement, the Worker employee guest UI, opaque session transport, and the
-deterministic React/LIFF boot boundary. The React app still defaults to GAS
-transport; controlled Worker cutover and real LIFF evidence remain separately
+deterministic React/LIFF boot boundary. The React app defaults to Worker
+transport; real LIFF and production deployment evidence remain separately
 authorized manual steps. Those production steps do not make the formal Worker
 identity foundation or the legacy import gate appear ready or blocked.
 

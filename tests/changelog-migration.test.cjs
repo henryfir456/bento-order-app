@@ -139,7 +139,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0', '0.12.1'].includes(release.version)
+    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0', '0.12.1', '0.13.0'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -186,6 +186,19 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Preserved the existing role, floor, balance, View As, and top-up behavior while keeping the new table column within the existing mobile overflow container.'
   ]);
   assert.deepEqual(adminUiRelease.commits, []);
+  const identityManagementRelease = parsed.find((release) => release.version === '0.13.0');
+  assert.ok(identityManagementRelease);
+  assert.equal(identityManagementRelease.date, '2026-09-11');
+  assert.deepEqual(identityManagementRelease.categories.map(({ name }) => name), ['Added', 'Changed']);
+  assert.deepEqual(identityManagementRelease.changes, [
+    'Added Worker + D1 authoritative identity projections for `authSource`, `identityState`, and `verificationStatus` in Admin member and View As reads.',
+    'Added the Admin-only `POST /api/admin/users/:userId/employee-binding` contract with central capability checks, canonical employee-ID uniqueness, idempotent same-user retries, and audit logging.',
+    'Added a provenance-bearing `employee_roster` verification source and bounded automatic verification for exactly one active trusted match.',
+    'Added responsive Admin identity filters for employee-binding required, pending verification, and verified members.',
+    'Mapped stored `UNVERIFIED` identities to public `PENDING_VERIFICATION`; missing, inactive, ambiguous, or untrusted matches fail closed to pending review.',
+    'Made Worker + D1 the only production transport for this feature. GAS remains retired legacy regression evidence and receives no new identity contract.'
+  ]);
+  assert.deepEqual(identityManagementRelease.commits, []);
   const finalized = parsed.find((release) => release.version === '0.10.0');
   assert.ok(finalized);
   assert.equal(finalized.date, '2026-09-10');
@@ -260,7 +273,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.12.1', '0.12.0', '0.11.3', '0.11.2', '0.11.1']);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.13.0', '0.12.1', '0.12.0', '0.11.3', '0.11.2']);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);

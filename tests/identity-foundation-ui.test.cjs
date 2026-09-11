@@ -153,12 +153,14 @@ test('guest identity state controls create-versus-existing onboarding routing', 
   const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
 
   assert.equal(IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE, 'NEW_PROVISIONAL_EMPLOYEE');
+  assert.equal(IDENTITY_STATES.PENDING_VERIFICATION, 'PENDING_VERIFICATION');
   assert.equal(IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE, 'EXISTING_UNVERIFIED_EMPLOYEE');
   assert.equal(IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED, 'EMPLOYEE_BIND_REQUIRED');
   assert.match(appSource, /const \[identityState, setIdentityState\] = useState\(null\)/);
   assert.match(appSource, /identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
   assert.match(submitBlock, /authMode === 'employee_guest'[\s\S]*?identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
-  assert.match(submitBlock, /identityState !== IDENTITY_STATES\.EXISTING_UNVERIFIED_EMPLOYEE[\s\S]*?apiClient\.updatePickupFloor/);
+  assert.match(submitBlock, /PENDING_VERIFICATION/);
+  assert.match(submitBlock, /apiClient\.updatePickupFloor/);
   assert.match(workerIdentitySource, /getUserByEmployeeId/);
   assert.match(workerIdentitySource, /verificationStatus !== VERIFICATION_STATUSES\.UNVERIFIED/);
   assert.match(workerUsersSource, /const identityState = identityStateFor\(actor\)/);
@@ -412,19 +414,22 @@ test('Admin identity views render the server-authoritative employee ID with a nu
   assert.equal(formatEmployeeId(''), '未綁定');
   assert.equal(getMockMembers('admin').find((member) => member.userId === 'mock-user-id').employeeId, 'MCKUSR');
   assert.match(appSource, /員編 \{formatEmployeeId\(user\.employeeId\)\}/);
-  assert.match(balanceSource, /<th className="p-2 whitespace-nowrap">員編<\/th>/);
-  assert.match(balanceSource, /\{formatEmployeeId\(u\.employeeId\)\}/);
+  assert.match(balanceSource, /<th className="p-2 whitespace-nowrap">登入來源<\/th>/);
+  assert.match(balanceSource, /<th className="p-2 whitespace-nowrap">身份狀態<\/th>/);
+  assert.match(balanceSource, /formatEmployeeId\(user\.employeeId\)/);
 
   const headerRow = balanceSource.match(/<tr>[\s\S]*?<\/tr>/)?.[0] || '';
-  assert.ok(headerRow.indexOf('姓名') < headerRow.indexOf('員編'));
+  assert.ok(headerRow.indexOf('姓名') < headerRow.indexOf('登入來源'));
+  assert.ok(headerRow.indexOf('登入來源') < headerRow.indexOf('身份狀態'));
+  assert.ok(headerRow.indexOf('身份狀態') < headerRow.indexOf('員編'));
   assert.ok(headerRow.indexOf('員編') < headerRow.indexOf('樓層'));
   assert.ok(headerRow.indexOf('樓層') < headerRow.indexOf('餘額'));
   assert.ok(headerRow.indexOf('餘額') < headerRow.indexOf('角色'));
   assert.match(balanceSource, /overflow-x-auto/);
   assert.match(appSource, /\{user\.floor \|\| '未設定'\}/);
   assert.match(appSource, /\{user\.role \|\| 'User'\}/);
-  assert.match(balanceSource, /\{u\.floor \|\| '未設定'\}/);
-  assert.match(balanceSource, /\{u\.role \|\| 'User'\}/);
+  assert.match(balanceSource, /\{user\.floor \|\| '未設定'\}/);
+  assert.match(balanceSource, /\{user\.role \|\| 'User'\}/);
 });
 
 test('employee guest provisional onboarding does not require or initiate LINE binding', () => {
@@ -454,7 +459,7 @@ test('UNVERIFIED onboarding exposes pending verification and visible profile upd
   assert.match(appSource, /基本資料已更新。LINE 綁定已完成，目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。/);
   assert.match(appSource, /success=\{employeeGuestSuccess\}/);
   assert.match(appSource, /bound=\{Boolean\(authUser\?\.userId && authMode === 'line'\)\}/);
-  assert.match(appSource, /profileCompleted=\{identityState === IDENTITY_STATES\.EXISTING_UNVERIFIED_EMPLOYEE\}/);
+  assert.match(appSource, /profileCompleted=\{identityState === IDENTITY_STATES\.PENDING_VERIFICATION/);
   assert.match(onboardingSource, /LINE 綁定完成/);
   assert.match(onboardingSource, /員工身分待核驗/);
   assert.match(onboardingSource, /您的基本資料已建立，目前正在等待員工身分核驗。核驗完成後即可使用訂餐功能。/);

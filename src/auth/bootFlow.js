@@ -20,6 +20,7 @@ export const WORKER_AUTH_RESOLUTIONS = Object.freeze({
 // authentication method; identityState describes canonical-user lifecycle.
 export const IDENTITY_STATES = Object.freeze({
   NEW_PROVISIONAL_EMPLOYEE: 'NEW_PROVISIONAL_EMPLOYEE',
+  PENDING_VERIFICATION: 'PENDING_VERIFICATION',
   EXISTING_UNVERIFIED_EMPLOYEE: 'EXISTING_UNVERIFIED_EMPLOYEE',
   EMPLOYEE_BIND_REQUIRED: 'EMPLOYEE_BIND_REQUIRED',
   VERIFIED: 'VERIFIED',
@@ -48,7 +49,7 @@ export const resolveWorkerAuthResolution = ({
 };
 
 export const resolveAuthBootPlan = ({
-  transport = 'gas',
+  transport = 'worker',
   hasGuestSession = false,
   hasBindIntent = false,
   isLoggedIn = false

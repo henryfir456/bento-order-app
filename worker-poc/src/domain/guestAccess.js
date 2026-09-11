@@ -1,4 +1,4 @@
-import { conflict, forbidden, unauthorized, badRequest } from '../http/errors.js';
+import { badRequest, conflict, forbidden, unauthorized } from '../http/errors.js';
 import { getUserByEmployeeId, getUserById, getUserByLineId, publicUser } from '../db/users.js';
 import { createGuestSession, inspectGuestSession } from '../auth/guestSession.js';
 import {
@@ -8,15 +8,11 @@ import {
 } from '../auth/permissions.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
 import { VALID_PICKUP_FLOORS } from './users.js';
-
-const employeeIdText = (value) => {
-  if (typeof value !== 'string') throw badRequest('INVALID_EMPLOYEE_ID');
-  const employeeId = value.trim().toUpperCase();
-  if (!/^[A-Z0-9]{6}$/.test(employeeId)) {
-    throw badRequest('INVALID_EMPLOYEE_ID');
-  }
-  return employeeId;
-};
+import {
+  employeeIdText,
+  sameEmployeeId,
+  resolveEmployeeVerification
+} from './employeeVerification.js';
 
 const lineIdText = (value) => {
   const lineUserId = typeof value === 'string' ? value.trim() : '';
@@ -114,11 +110,16 @@ export const employeeGuestLogin = async (
   };
 };
 
-const provisionalGuestResult = (user, session) => ({
+const provisionalGuestResult = (user, session) => {
+  const verified = user.verificationStatus === VERIFICATION_STATUSES.VERIFIED;
+  return {
   success: true,
-  status: 'UNVERIFIED_EMPLOYEE',
+  registered: verified,
+  status: verified ? 'VERIFIED' : 'UNVERIFIED_EMPLOYEE',
   identityState: identityStateFor({
     userId: user.userId,
+    employeeId: user.employeeId,
+    registered: verified,
     verificationStatus: user.verificationStatus,
     active: user.active
   }),
@@ -133,7 +134,8 @@ const provisionalGuestResult = (user, session) => ({
   ),
   employeeId: user.employeeId,
   user: publicUser(user)
-});
+  };
+};
 
 export const completeEmployeeGuestOnboarding = async (
   database,
@@ -149,9 +151,13 @@ export const completeEmployeeGuestOnboarding = async (
   }
   const now = resolveClock(clock).toISOString();
   const inspected = await inspectGuestSession(database, guestToken, { now });
-  if (!inspected || !inspected.normal || !inspected.provisional || !inspected.employeeId) {
+  if (!inspected || !inspected.normal || !inspected.employeeId) {
     throw unauthorized('GUEST_SESSION_INVALID');
   }
+  if (inspected.user && !inspected.provisional) {
+    return provisionalGuestResult(inspected.user, inspected.session);
+  }
+  if (!inspected.provisional) throw unauthorized('GUEST_SESSION_INVALID');
   if (inspected.user) {
     if (
       inspected.user.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED
@@ -167,30 +173,33 @@ export const completeEmployeeGuestOnboarding = async (
   const onboardingFloor = pickupFloorText(pickupFloor);
   const existing = await getUserByEmployeeId(database, employeeId);
   if (existing) throw conflict('EMPLOYEE_ONBOARDING_CONFLICT');
+  const decision = await resolveEmployeeVerification(database, employeeId);
 
   const userId = randomId('user');
   const insertUser = prepareStatement(database, `
     INSERT INTO users (
       user_id, employee_id, line_user_id, display_name, pickup_floor,
       balance, role, active, verification_status, created_at, updated_at
-    ) VALUES (?, ?, NULL, ?, ?, 0, 'User', 1, 'UNVERIFIED', ?, ?)
+    ) VALUES (?, ?, NULL, ?, ?, 0, 'User', 1, ?, ?, ?)
   `, [
     userId,
     employeeId,
     onboardingName,
     onboardingFloor,
+    decision.verificationStatus,
     now,
     now
   ]);
   const attachSession = prepareStatement(database, `
     UPDATE employee_guest_sessions
-    SET user_id = ?, status = 'UNVERIFIED_EMPLOYEE'
+    SET user_id = ?, status = ?
     WHERE session_id = ?
-      AND employee_id = ?
+      AND UPPER(trim(employee_id)) = ?
       AND status = 'UNVERIFIED_EMPLOYEE'
       AND user_id IS NULL
       AND revoked_at IS NULL
-  `, [userId, inspected.session.sessionId, employeeId]);
+  `, [userId, decision.verificationStatus === VERIFICATION_STATUSES.VERIFIED
+    ? 'VERIFIED' : 'UNVERIFIED_EMPLOYEE', inspected.session.sessionId, employeeId]);
 
   try {
     const [insertResult, attachResult] = await database.batch([insertUser, attachSession]);
@@ -209,7 +218,7 @@ export const completeEmployeeGuestOnboarding = async (
   }
 
   const user = await getUserById(database, userId);
-  if (!user || user.lineUserId !== null || user.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED) {
+  if (!user || user.lineUserId !== null || user.verificationStatus !== decision.verificationStatus) {
     throw new Error('Employee guest onboarding readback failed.');
   }
   return provisionalGuestResult(user, inspected.session);
@@ -292,6 +301,7 @@ const createProvisionalCanonicalUser = async (
     lineDisplayName,
     displayName,
     pickupFloor,
+    verificationStatus = VERIFICATION_STATUSES.UNVERIFIED,
     clock
   }
 ) => {
@@ -303,13 +313,14 @@ const createProvisionalCanonicalUser = async (
     INSERT INTO users (
       user_id, employee_id, line_user_id, display_name, pickup_floor,
       balance, role, active, verification_status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, 0, 'User', 1, 'UNVERIFIED', ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, 0, 'User', 1, ?, ?, ?)
   `, [
     userId,
     employeeId,
     lineUserId,
     onboardingName,
     onboardingFloor,
+    verificationStatus,
     timestamp,
     timestamp
   ]).run();
@@ -337,7 +348,7 @@ export const lineEmployeeBind = async (
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
   if (currentLineUser) {
     if (!currentLineUser.active) throw forbidden('EMPLOYEE_INACTIVE');
-    if (currentLineUser.employeeId === employeeId) {
+    if (sameEmployeeId(currentLineUser.employeeId, employeeId)) {
       return {
         success: true,
         status: 'ALREADY_BOUND',
@@ -364,23 +375,25 @@ export const lineEmployeeBind = async (
     }
 
     const timestamp = resolveClock(clock).toISOString();
+    const decision = await resolveEmployeeVerification(database, employeeId);
     try {
       const result = await database.prepare(`
         UPDATE users
-        SET employee_id = ?, updated_at = ?
+        SET employee_id = ?, verification_status = ?, updated_at = ?
         WHERE user_id = ?
           AND line_user_id = ?
           AND employee_id IS NULL
           AND active = 1
       `).bind(
         employeeId,
+        decision.verificationStatus,
         timestamp,
         currentLineUser.userId,
         verifiedLineUserId
       ).run();
       if (statementChanges(result) !== 1) {
         const concurrentUser = await getUserByLineId(database, verifiedLineUserId);
-        if (concurrentUser?.employeeId === employeeId) {
+        if (sameEmployeeId(concurrentUser?.employeeId, employeeId)) {
           return {
             success: true,
             status: 'ALREADY_BOUND',
@@ -415,7 +428,7 @@ export const lineEmployeeBind = async (
     }
 
     const boundUser = await getUserByLineId(database, verifiedLineUserId);
-    if (!boundUser || boundUser.userId !== currentLineUser.userId || boundUser.employeeId !== employeeId) {
+    if (!boundUser || boundUser.userId !== currentLineUser.userId || !sameEmployeeId(boundUser.employeeId, employeeId)) {
       throw conflict('LINE_BIND_CONFLICT');
     }
     return {
@@ -442,18 +455,20 @@ export const lineEmployeeBind = async (
       throw conflict('EMPLOYEE_ALREADY_LINE_BOUND');
     }
     const timestamp = resolveClock(clock).toISOString();
+    const decision = await resolveEmployeeVerification(database, employeeId);
     try {
       const result = await database.prepare(`
         UPDATE users
-        SET line_user_id = ?, updated_at = ?
-        WHERE employee_id = ? AND active = 1 AND line_user_id IS NULL
-      `).bind(verifiedLineUserId, timestamp, employeeId).run();
+        SET line_user_id = ?, verification_status = ?, updated_at = ?
+        WHERE UPPER(trim(employee_id)) = ? AND active = 1 AND line_user_id IS NULL
+      `).bind(verifiedLineUserId, decision.verificationStatus, timestamp, employeeId).run();
       if (statementChanges(result) !== 1) {
         const concurrent = await getUserByEmployeeId(database, employeeId);
         if (concurrent?.lineUserId === verifiedLineUserId) {
           return {
             success: true,
             status: 'ALREADY_BOUND',
+            identityState: publicUser(concurrent).identityState,
             verificationStatus: concurrent.verificationStatus,
             authMode: 'line',
             user: publicUser(concurrent)
@@ -464,7 +479,7 @@ export const lineEmployeeBind = async (
     } catch (error) {
       if (/unique|constraint/i.test(error?.message || error?.cause?.message || '')) {
         const conflicting = await getUserByLineId(database, verifiedLineUserId);
-        if (conflicting && conflicting.employeeId !== employeeId) {
+        if (conflicting && !sameEmployeeId(conflicting.employeeId, employeeId)) {
           throw conflict('LINE_ALREADY_BOUND');
         }
         throw conflict('LINE_BIND_CONFLICT');
@@ -478,6 +493,7 @@ export const lineEmployeeBind = async (
     return {
       success: true,
       status: 'BOUND',
+      identityState: publicUser(boundUser).identityState,
       verificationStatus: boundUser.verificationStatus,
       authMode: 'line',
       user: publicUser(boundUser)
@@ -485,18 +501,21 @@ export const lineEmployeeBind = async (
   }
 
   try {
+    const decision = await resolveEmployeeVerification(database, employeeId);
     const provisionalUser = await createProvisionalCanonicalUser(database, {
       employeeId,
       lineUserId: verifiedLineUserId,
       lineDisplayName,
       displayName,
       pickupFloor,
+      verificationStatus: decision.verificationStatus,
       clock
     });
     return {
       success: true,
       status: 'BOUND',
-      verificationStatus: VERIFICATION_STATUSES.UNVERIFIED,
+      identityState: publicUser(provisionalUser).identityState,
+      verificationStatus: provisionalUser.verificationStatus,
       authMode: 'line',
       lineDisplayName: provisionalUser.displayName,
       user: publicUser(provisionalUser)
@@ -508,6 +527,7 @@ export const lineEmployeeBind = async (
         return {
           success: true,
           status: 'ALREADY_BOUND',
+          identityState: publicUser(conflictingEmployee).identityState,
           verificationStatus: conflictingEmployee.verificationStatus,
           authMode: 'line',
           user: publicUser(conflictingEmployee)
@@ -549,6 +569,7 @@ export const bindLineIdentity = async (
       return {
         success: true,
         status: 'ALREADY_BOUND',
+        identityState: publicUser(inspected.user).identityState,
         authMode: 'line',
         user: publicUser(inspected.user)
       };
@@ -564,6 +585,8 @@ export const bindLineIdentity = async (
 
   if (inspected.provisional && !inspected.user) {
     const timestamp = now;
+    const employeeId = employeeIdText(inspected.employeeId);
+    const decision = await resolveEmployeeVerification(database, employeeId);
     const onboardingName = profileText(displayName || lineDisplayName);
     const onboardingFloor = pickupFloorText(pickupFloor);
     const userId = randomId('user');
@@ -571,21 +594,23 @@ export const bindLineIdentity = async (
       INSERT INTO users (
         user_id, employee_id, line_user_id, display_name, pickup_floor,
         balance, role, active, verification_status, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 0, 'User', 1, 'UNVERIFIED', ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, 0, 'User', 1, ?, ?, ?)
     `, [
       userId,
-      inspected.employeeId,
+      employeeId,
       verifiedLineUserId,
       onboardingName,
       onboardingFloor,
+      decision.verificationStatus,
       timestamp,
       timestamp
     ]);
     const attachAndRevoke = prepareStatement(database, `
       UPDATE employee_guest_sessions
-      SET user_id = ?, status = 'UNVERIFIED_EMPLOYEE', revoked_at = ?, revoked_reason = 'line_bound'
-      WHERE employee_id = ? AND revoked_at IS NULL
-    `, [userId, timestamp, inspected.employeeId]);
+      SET user_id = ?, status = ?, revoked_at = ?, revoked_reason = 'line_bound'
+      WHERE UPPER(trim(employee_id)) = ? AND revoked_at IS NULL
+    `, [userId, decision.verificationStatus === VERIFICATION_STATUSES.VERIFIED
+      ? 'VERIFIED' : 'UNVERIFIED_EMPLOYEE', timestamp, employeeId]);
     try {
       const [insertResult, attachResult] = await database.batch([
         insertUser,
@@ -596,7 +621,7 @@ export const bindLineIdentity = async (
       }
     } catch (error) {
       if (/unique|constraint/i.test(error?.message || error?.cause?.message || '')) {
-        const conflictingEmployee = await getUserByEmployeeId(database, inspected.employeeId);
+        const conflictingEmployee = await getUserByEmployeeId(database, employeeId);
         if (conflictingEmployee) throw conflict('EMPLOYEE_BIND_CONFLICT');
         const conflictingLine = await getUserByLineId(database, verifiedLineUserId);
         if (conflictingLine) throw conflict('LINE_ALREADY_BOUND');
@@ -608,18 +633,24 @@ export const bindLineIdentity = async (
     return {
       success: true,
       status: 'BOUND',
-      verificationStatus: VERIFICATION_STATUSES.UNVERIFIED,
+      identityState: publicUser(user).identityState,
+      verificationStatus: user.verificationStatus,
       authMode: 'line',
       lineDisplayName: onboardingName,
       user: publicUser(user)
     };
   }
 
+  const decision = inspected.user.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED
+    ? await resolveEmployeeVerification(database, inspected.user.employeeId)
+    : {
+      verificationStatus: inspected.user.verificationStatus
+    };
   const update = prepareStatement(database, `
     UPDATE users
-    SET line_user_id = ?, updated_at = ?
+    SET line_user_id = ?, verification_status = ?, updated_at = ?
     WHERE user_id = ? AND active = 1 AND line_user_id IS NULL
-  `, [verifiedLineUserId, now, inspected.user.userId]);
+  `, [verifiedLineUserId, decision.verificationStatus, now, inspected.user.userId]);
   const revoke = prepareStatement(database, `
     UPDATE employee_guest_sessions
     SET revoked_at = ?, revoked_reason = 'line_bound'
@@ -643,6 +674,7 @@ export const bindLineIdentity = async (
       success: true,
       status: updateCount === 1 ? 'BOUND' : 'ALREADY_BOUND',
       verificationStatus: user.verificationStatus,
+      identityState: publicUser(user).identityState,
       authMode: 'line',
       lineDisplayName,
       user: publicUser(user)

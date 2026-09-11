@@ -55,8 +55,8 @@ unexecuted in this task.
    balances/orders/ledger/audit/likes, guest-session schema, and
    `PRAGMA foreign_key_check`.
 5. `DEPLOY - NOT RUN`: deploy the Worker and then the React bundle configured
-   for Worker transport in the approved environment. GAS remains the current
-   default until this explicit cutover.
+   for Worker transport in the approved environment. GAS is retired and is
+   not a production fallback.
 6. `MANUAL - NOT RUN`: execute all six real-LIFF scenarios and record evidence.
 7. Roll out in waves: wave 1 is the owner/tester; wave 2 is two or three
    employees; wave 3 is the remaining employees. At each wave verify guest

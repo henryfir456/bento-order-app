@@ -121,7 +121,8 @@ Run `node --test tests/permissions.test.js tests/auth.test.js tests/read-only.te
 - Modify: `worker-poc/tests/line-binding-concurrency.test.js`
 
 **Interfaces:**
-- `employeeIdText(value)` returns a canonical uppercase six-character ID or
+- `employeeIdText(value)` returns a canonical uppercase textual ID matching
+  the import contract or
   throws `INVALID_EMPLOYEE_ID`.
 - `employeeGuestLogin(database, employeeIdInput, clock)` returns
   `VERIFIED` with the existing user-backed session, or
@@ -129,8 +130,9 @@ Run `node --test tests/permissions.test.js tests/auth.test.js tests/read-only.te
 
 - [ ] **Step 1: Replace the old regression expectation with contract tests.**
 
-Test `139653` as a valid six-character ID, `ab1234` as `AB1234`, unknown
-`ABC123` as HTTP 200 with `UNVERIFIED_EMPLOYEE`, and `123`, `1234567`,
+Test `139653` as a valid textual ID, `ab12cd` as `AB12CD`, unknown
+`ABC123` as HTTP 200 with `UNVERIFIED_EMPLOYEE`, and malformed IDs such as
+`-ABC12`,
 `12-456`, full-width digits, and `ABC 12` as HTTP 400 `INVALID_EMPLOYEE_ID`.
 Assert the unknown response has no user, role, balance, or ordinary capability.
 

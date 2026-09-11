@@ -11,7 +11,7 @@ const rowsFrom = (result) => (
 const memberRows = async (database) => {
   const result = await database.prepare(`
     SELECT user_id, employee_id, line_user_id, display_name, pickup_floor,
-           balance, role, active, created_at, updated_at
+           balance, role, active, verification_status, created_at, updated_at
     FROM users
     ORDER BY display_name ASC, user_id ASC
   `).all();
@@ -24,6 +24,7 @@ const memberRows = async (database) => {
     balance: Number(row.balance),
     role: row.role,
     active: Boolean(row.active),
+    verificationStatus: row.verification_status,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }));

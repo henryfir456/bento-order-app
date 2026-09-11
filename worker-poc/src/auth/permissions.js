@@ -15,6 +15,7 @@ export const ACTIONS = Object.freeze({
   ADMIN_CALENDAR: 'ADMIN_CALENDAR',
   ADMIN_ROLE: 'ADMIN_ROLE',
   ADMIN_ANNOUNCEMENTS: 'ADMIN_ANNOUNCEMENTS',
+  ADMIN_EMPLOYEE_BIND: 'ADMIN_EMPLOYEE_BIND',
   VIEW_AS: 'VIEW_AS'
 });
 
@@ -48,6 +49,9 @@ export const VERIFICATION_STATUSES = Object.freeze({
 
 export const IDENTITY_STATES = Object.freeze({
   NEW_PROVISIONAL_EMPLOYEE: 'NEW_PROVISIONAL_EMPLOYEE',
+  PENDING_VERIFICATION: 'PENDING_VERIFICATION',
+  // Retained as a source-compatibility name for onboarding callers. New
+  // canonical-user projections use PENDING_VERIFICATION publicly.
   EXISTING_UNVERIFIED_EMPLOYEE: 'EXISTING_UNVERIFIED_EMPLOYEE',
   EMPLOYEE_BIND_REQUIRED: 'EMPLOYEE_BIND_REQUIRED',
   VERIFIED: 'VERIFIED',
@@ -84,7 +88,7 @@ export const identityStateFor = (principal) => {
   }
   if (principal?.provisional || isProvisionalPrincipal(principal)) {
     return principal?.userId
-      ? IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE
+      ? IDENTITY_STATES.PENDING_VERIFICATION
       : IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE;
   }
   if (principal?.registered && principal?.active !== false) {

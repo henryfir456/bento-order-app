@@ -25,15 +25,23 @@ The formal chain is exactly:
 0001_balance_integrity_primitives.sql
 0002_canonical_identity_rekey.sql  # one-time rebuild of an existing formal DB
 0003_provisional_employee_identity.sql
+0004_employee_roster_verification_source.sql
 ```
 
-Migrations 0002 and 0003 are intentionally forward-only when executed as raw
+Migrations 0002, 0003, and 0004 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database still
-applies all four files in order. Migration 0003 defaults existing users to
+applies all five files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
+Migration 0004 creates an empty, provenance-bearing `employee_roster`
+verification source. It deliberately has no unique employee-ID constraint so
+duplicate source records remain representable and auto-verification fails
+closed on ambiguity. Canonical `users.employee_id` uniqueness remains the
+exact-text ownership guard, and `users_employee_id_normalized_unique`
+enforces case-insensitive ownership after trim/case normalization. Any
+pre-existing normalized collision must fail migration closed.
 
 ## Recovery procedure
 

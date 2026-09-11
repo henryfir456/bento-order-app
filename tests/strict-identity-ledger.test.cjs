@@ -1931,9 +1931,9 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.12.1');
-  assert.equal(packageLock.version, '0.12.1');
-  assert.equal(packageLock.packages[''].version, '0.12.1');
+  assert.equal(packageJson.version, '0.13.0');
+  assert.equal(packageLock.version, '0.13.0');
+  assert.equal(packageLock.packages[''].version, '0.13.0');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
   assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);
@@ -2488,7 +2488,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
   assert.equal(gasCalls.length, 0);
 
   const gas = createApiClient({
-    env: { VITE_GAS_API_URL: 'https://gas.example.test/exec' },
+    env: { VITE_API_TRANSPORT: 'gas', VITE_GAS_API_URL: 'https://gas.example.test/exec' },
     authClient,
     gasApi,
     fetchImpl: () => {
@@ -2793,7 +2793,7 @@ test('Worker order mutation adapters map canonical requests and isolate GAS', as
   assert.equal(gasCalls.length, 0);
 
   const gas = createApiClient({
-    env: { VITE_GAS_API_URL: 'https://gas.example.test/exec' },
+    env: { VITE_API_TRANSPORT: 'gas', VITE_GAS_API_URL: 'https://gas.example.test/exec' },
     authClient,
     gasApi,
     fetchImpl: () => {
@@ -2951,7 +2951,7 @@ test('Worker like adapter maps like and unlike responses without GAS fallback', 
   assert.equal(gasCalls.length, 0);
 
   const gas = createApiClient({
-    env: { VITE_GAS_API_URL: 'https://gas.example.test/exec' },
+    env: { VITE_API_TRANSPORT: 'gas', VITE_GAS_API_URL: 'https://gas.example.test/exec' },
     authClient,
     gasApi,
     fetchImpl: () => {
@@ -3081,7 +3081,7 @@ test('Worker read adapters propagate View As only for the effective read subject
   assert.equal(workerCalls[6].searchParams.get('viewAs'), 'viewed-user');
 
   const gas = createApiClient({
-    env: { VITE_GAS_API_URL: 'https://gas.example.test/exec' },
+    env: { VITE_API_TRANSPORT: 'gas', VITE_GAS_API_URL: 'https://gas.example.test/exec' },
     authClient,
     gasApi: {
       get: async (query) => { gasCalls.push(['GET', query]); return jsonResponse({ success: true }); },
