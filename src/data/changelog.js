@@ -11,6 +11,16 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.12.1': [
+    {
+      name: '變更',
+      changes: [
+        'Admin「切換身分」顯示伺服器回傳的姓名、員編、樓層與角色；沒有員編時顯示「未綁定」。',
+        '若 legacy GAS 的 Users source 明確提供員工編號欄位，管理清單會沿用該伺服器欄位；沒有欄位時不猜測員編。',
+        '餘額管理新增員編欄位，保留既有角色、樓層、餘額與操作行為，並沿用手機版的局部橫向滾動。'
+      ]
+    }
+  ],
   '0.12.0': [
     {
       name: '新增',

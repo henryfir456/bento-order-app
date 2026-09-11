@@ -397,6 +397,36 @@ test('Worker App keeps provisional onboarding separate from registered applicati
   assert.match(errorSource, /LINE_LOGIN_REQUIRED/);
 });
 
+test('Admin identity views render the server-authoritative employee ID with a null fallback', async () => {
+  const { formatEmployeeId } = await import('../src/components/userIdentityDisplay.js');
+  const { getMockMembers } = await import('../src/auth/mockData.js');
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const balanceSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'features', 'balances', 'MemberBalanceManagement.jsx'),
+    'utf8'
+  );
+
+  assert.equal(formatEmployeeId('  A1B2C3  '), 'A1B2C3');
+  assert.equal(formatEmployeeId(null), '未綁定');
+  assert.equal(formatEmployeeId(undefined), '未綁定');
+  assert.equal(formatEmployeeId(''), '未綁定');
+  assert.equal(getMockMembers('admin').find((member) => member.userId === 'mock-user-id').employeeId, 'MCKUSR');
+  assert.match(appSource, /員編 \{formatEmployeeId\(user\.employeeId\)\}/);
+  assert.match(balanceSource, /<th className="p-2 whitespace-nowrap">員編<\/th>/);
+  assert.match(balanceSource, /\{formatEmployeeId\(u\.employeeId\)\}/);
+
+  const headerRow = balanceSource.match(/<tr>[\s\S]*?<\/tr>/)?.[0] || '';
+  assert.ok(headerRow.indexOf('姓名') < headerRow.indexOf('員編'));
+  assert.ok(headerRow.indexOf('員編') < headerRow.indexOf('樓層'));
+  assert.ok(headerRow.indexOf('樓層') < headerRow.indexOf('餘額'));
+  assert.ok(headerRow.indexOf('餘額') < headerRow.indexOf('角色'));
+  assert.match(balanceSource, /overflow-x-auto/);
+  assert.match(appSource, /\{user\.floor \|\| '未設定'\}/);
+  assert.match(appSource, /\{user\.role \|\| 'User'\}/);
+  assert.match(balanceSource, /\{u\.floor \|\| '未設定'\}/);
+  assert.match(balanceSource, /\{u\.role \|\| 'User'\}/);
+});
+
 test('employee guest provisional onboarding does not require or initiate LINE binding', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');

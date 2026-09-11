@@ -30,6 +30,7 @@ import ViewAsBanner from './components/ViewAsBanner';
 import DevAuthBadge from './components/DevAuthBadge';
 import AnnouncementBar from './components/AnnouncementBar';
 import AnnouncementModal from './components/AnnouncementModal';
+import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import OrderPage from './features/orders/OrderPage';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
@@ -3057,9 +3058,10 @@ export default function App() {
                     onClick={() => handleSelectViewAs(user)}
                     className="w-full text-left rounded-2xl border border-gray-100 bg-gray-50 hover:bg-emerald-50 hover:border-emerald-200 p-3 transition-colors"
                   >
-                    <span className="font-bold text-gray-800">{user.name}</span>
-                    <span className="ml-2 text-xs text-gray-500">{user.floor}</span>
-                    <span className="ml-2 text-xs font-bold text-emerald-800">{user.role}</span>
+                    <span className="block truncate font-bold text-gray-800">{user.name || '未命名使用者'}</span>
+                    <span className="mt-1 block truncate text-xs text-gray-500">
+                      員編 {formatEmployeeId(user.employeeId)} · {user.floor || '未設定'} · {user.role || 'User'}
+                    </span>
                   </button>
                 ))}
               </div>

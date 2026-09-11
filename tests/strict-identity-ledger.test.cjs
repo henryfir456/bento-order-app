@@ -1818,6 +1818,40 @@ test('member balance API is permission-gated by the authenticated LINE identity'
   assert.equal(JSON.parse(output.text).success, false);
 });
 
+test('legacy GAS admin member responses map an explicit employee_id column without guessing absent data', () => {
+  const spreadsheet = new MockSpreadsheet({
+    Users: new MockSheet([
+      ['LINE_UserID', '姓名', '樓層', 'Balance', 'Role', 'employee_id'],
+      ['admin-id', 'Admin User', '9樓', 100, 'Admin', '139653'],
+      ['user-id', 'Leo Wu Leo', '9樓', -80, 'User', '']
+    ])
+  });
+  const gas = loadGas(spreadsheet);
+
+  const result = gas.getMemberBalances('admin-id');
+  assert.deepEqual(JSON.parse(JSON.stringify(result.members)), [
+    {
+      userId: 'admin-id',
+      name: 'Admin User',
+      floor: '9樓',
+      balance: 100,
+      role: 'Admin',
+      employeeId: '139653'
+    },
+    {
+      userId: 'user-id',
+      name: 'Leo Wu Leo',
+      floor: '9樓',
+      balance: -80,
+      role: 'User',
+      employeeId: null
+    }
+  ]);
+
+  const withoutEmployeeColumn = loadGas(new MockSpreadsheet({ Users: usersSheet() }));
+  assert.equal(Object.hasOwn(withoutEmployeeColumn.getMemberBalances('admin-id').members[0], 'employeeId'), false);
+});
+
 test('token-authenticated order writes ignore forged user ids', () => {
   const spreadsheet = orderSpreadsheet();
   const gas = loadGas(spreadsheet, { userId: 'user-id', displayName: 'Leo Wu Leo' });
@@ -1897,15 +1931,16 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.12.0');
-  assert.equal(packageLock.version, '0.12.0');
-  assert.equal(packageLock.packages[''].version, '0.12.0');
+  assert.equal(packageJson.version, '0.12.1');
+  assert.equal(packageLock.version, '0.12.1');
+  assert.equal(packageLock.packages[''].version, '0.12.1');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
   assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);
   assert.doesNotMatch(changelogSource, /export const CHANGELOG = \[\s*\{/);
   assert.match(changelogMarkdown, /# Changelog/);
   assert.match(changelogMarkdown, /## \[Unreleased\]/);
+  assert.match(changelogMarkdown, /## \[0\.12\.1\] - 2026-09-11/);
   assert.match(changelogMarkdown, /## \[0\.12\.0\] - 2026-09-11/);
   assert.match(changelogMarkdown, /## \[0\.11\.3\] - 2026-09-11/);
   assert.match(changelogMarkdown, /## \[0\.11\.2\] - 2026-09-11/);

@@ -139,7 +139,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0'].includes(release.version)
+    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0', '0.12.1'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -176,6 +176,16 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Fixed LINE-authenticated canonical users without an employee ID being treated as an already-bound identity or being routed into the wrong unregistered flow.'
   ]);
   assert.deepEqual(employeeBindingRelease.commits, []);
+  const adminUiRelease = parsed.find((release) => release.version === '0.12.1');
+  assert.ok(adminUiRelease);
+  assert.equal(adminUiRelease.date, '2026-09-11');
+  assert.deepEqual(adminUiRelease.categories.map(({ name }) => name), ['Changed']);
+  assert.deepEqual(adminUiRelease.changes, [
+    'Added authoritative employee ID display to the Admin View As selector and balance-management member table, with `未綁定` shown when no employee ID is present.',
+    'Added header-aware employee ID mapping to the legacy GAS admin member response when the Users source explicitly provides an employee ID column.',
+    'Preserved the existing role, floor, balance, View As, and top-up behavior while keeping the new table column within the existing mobile overflow container.'
+  ]);
+  assert.deepEqual(adminUiRelease.commits, []);
   const finalized = parsed.find((release) => release.version === '0.10.0');
   assert.ok(finalized);
   assert.equal(finalized.date, '2026-09-10');
@@ -250,7 +260,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.12.0', '0.11.3', '0.11.2', '0.11.1', '0.11.0']);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.12.1', '0.12.0', '0.11.3', '0.11.2', '0.11.1']);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);

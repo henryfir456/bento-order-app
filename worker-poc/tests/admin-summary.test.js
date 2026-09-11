@@ -19,7 +19,7 @@ const seedSummary = () => {
   seedUser(database, { lineUserId: 'admin-1', role: 'Admin' });
   seedUser(database, { lineUserId: 'proxy-1', role: 'ProxyAdmin' });
   seedUser(database, { lineUserId: 'user-1', displayName: 'User One', pickupFloor: '1樓' });
-  seedUser(database, { lineUserId: 'user-2', displayName: 'User Two', pickupFloor: '9樓' });
+  seedUser(database, { lineUserId: 'user-2', employeeId: null, displayName: 'User Two', pickupFloor: '9樓' });
   database.run(`
     INSERT INTO orders (
       order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
@@ -113,15 +113,16 @@ test('member balances are Admin-only, token-derived, and mapped to public member
   assert.equal(admin.body.requesterRole, 'Admin');
   assert.deepEqual(admin.body.members.map((member) => ({
     userId: member.userId,
+    employeeId: member.employeeId,
     name: member.name,
     floor: member.floor,
     balance: member.balance,
     role: member.role
   })), [
-    { userId: 'user-1', name: 'User One', floor: '1樓', balance: 0, role: 'User' },
-    { userId: 'user-2', name: 'User Two', floor: '9樓', balance: 0, role: 'User' },
-    { userId: 'admin-1', name: 'admin-1', floor: '1樓', balance: 0, role: 'Admin' },
-    { userId: 'proxy-1', name: 'proxy-1', floor: '1樓', balance: 0, role: 'ProxyAdmin' }
+    { userId: 'user-1', employeeId: 'employee-user-1', name: 'User One', floor: '1樓', balance: 0, role: 'User' },
+    { userId: 'user-2', employeeId: null, name: 'User Two', floor: '9樓', balance: 0, role: 'User' },
+    { userId: 'admin-1', employeeId: 'employee-admin-1', name: 'admin-1', floor: '1樓', balance: 0, role: 'Admin' },
+    { userId: 'proxy-1', employeeId: 'employee-proxy-1', name: 'proxy-1', floor: '1樓', balance: 0, role: 'ProxyAdmin' }
   ]);
 
   const user = await call(

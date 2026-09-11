@@ -1,3 +1,20 @@
+function normalizeUserHeader(value) {
+  return String(value || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+function getEmployeeIdColumnIndex(data) {
+  const headerRow = Array.isArray(data) && Array.isArray(data[0]) ? data[0] : [];
+  const acceptedHeaders = ['employeeid', '員工編號', '工號', '員工代號'];
+  return headerRow.findIndex(header => acceptedHeaders.indexOf(normalizeUserHeader(header)) >= 0);
+}
+
+function readEmployeeId(row, employeeIdColumnIndex) {
+  if (employeeIdColumnIndex < 0) return undefined;
+  const rawValue = row[employeeIdColumnIndex];
+  const employeeId = rawValue === null || rawValue === undefined ? '' : String(rawValue).trim();
+  return employeeId || null;
+}
+
 function getRegisteredUser(userId, preloadedData) {
   const normalizedUserId = String(userId || '').trim();
   if (!normalizedUserId) return null;
@@ -7,6 +24,7 @@ function getRegisteredUser(userId, preloadedData) {
     const userSheet = ss.getSheetByName(USERS_SHEET);
     return userSheet ? userSheet.getDataRange().getValues() : [];
   })();
+  const employeeIdColumnIndex = getEmployeeIdColumnIndex(data);
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     if (String(row[0] || '').trim() === normalizedUserId) {
@@ -17,7 +35,10 @@ function getRegisteredUser(userId, preloadedData) {
         defaultFloor: String(row[2] || '').trim(),
         floor: String(row[2] || '').trim(),
         balance: Number(row[3] || 0),
-        role: String(row[4] || 'User').trim() || 'User'
+        role: String(row[4] || 'User').trim() || 'User',
+        ...(employeeIdColumnIndex >= 0
+          ? { employeeId: readEmployeeId(row, employeeIdColumnIndex) }
+          : {})
       };
     }
   }
@@ -45,18 +66,24 @@ function toPublicUser(user) {
     floor: user.defaultFloor,
     defaultFloor: user.defaultFloor,
     balance: user.balance,
-    role: user.role
+    role: user.role,
+    ...(user.employeeId !== undefined ? { employeeId: user.employeeId } : {})
   };
 }
 
 function getAllUserSummaries(userSheet) {
-  const userData = userSheet.getDataRange().getValues().slice(1);
+  const data = userSheet.getDataRange().getValues();
+  const employeeIdColumnIndex = getEmployeeIdColumnIndex(data);
+  const userData = data.slice(1);
   return userData.map(row => ({
     userId: row[0],
     name: row[1],
     floor: row[2],
     balance: Number(row[3] || 0),
-    role: row[4] || "User"
+    role: row[4] || "User",
+    ...(employeeIdColumnIndex >= 0
+      ? { employeeId: readEmployeeId(row, employeeIdColumnIndex) }
+      : {})
   }));
 }
 

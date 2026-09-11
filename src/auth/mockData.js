@@ -3,6 +3,7 @@ const MOCK_VENDORS = Object.freeze(['Mock Bento A', 'Mock Bento B']);
 const MOCK_USER_FIXTURES = Object.freeze({
   user: Object.freeze({
     userId: 'mock-user-id',
+    employeeId: 'MCKUSR',
     name: 'Mock User',
     floor: '1樓',
     defaultFloor: '1樓',
@@ -11,6 +12,7 @@ const MOCK_USER_FIXTURES = Object.freeze({
   }),
   admin: Object.freeze({
     userId: 'mock-admin-id',
+    employeeId: 'MCKADM',
     name: 'Mock Admin',
     floor: '9樓',
     defaultFloor: '9樓',
@@ -19,6 +21,7 @@ const MOCK_USER_FIXTURES = Object.freeze({
   }),
   'proxy-admin': Object.freeze({
     userId: 'mock-proxy-admin-id',
+    employeeId: 'MCKPRX',
     name: 'Mock Proxy Admin',
     floor: '1樓',
     defaultFloor: '1樓',

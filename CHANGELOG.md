@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-09-11
+
+### Changed
+
+- Added authoritative employee ID display to the Admin View As selector and balance-management member table, with `未綁定` shown when no employee ID is present.
+- Added header-aware employee ID mapping to the legacy GAS admin member response when the Users source explicitly provides an employee ID column.
+- Preserved the existing role, floor, balance, View As, and top-up behavior while keeping the new table column within the existing mobile overflow container.
+
 ## [0.12.0] - 2026-09-11
 
 ### Added
