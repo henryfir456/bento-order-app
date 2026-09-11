@@ -83,7 +83,7 @@ export const getAdminSummary = async (
     pickupSummary[floor].totalAmount += order.subtotal;
   }
 
-  const canReadMembers = identity.actor.role === 'Admin'
+  const canReadMembers = identity.actor.capabilities?.includes(ACTIONS.READ_MEMBER_BALANCES)
     && (includeMemberBalances || Boolean(identity.viewAs));
   if (canReadMembers || identity.viewAs) {
     await appendAuditEvent(database, {

@@ -196,7 +196,7 @@ test('formal migration exposes canonical relational identity columns', () => {
     [...tableColumns(database, 'users').keys()],
     [
       'user_id', 'employee_id', 'line_user_id', 'display_name', 'pickup_floor',
-      'balance', 'role', 'active', 'created_at', 'updated_at'
+      'balance', 'role', 'active', 'created_at', 'updated_at', 'verification_status'
     ]
   );
   assert.equal(tableColumns(database, 'orders').has('user_id'), true);

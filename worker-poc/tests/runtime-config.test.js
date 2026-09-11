@@ -39,7 +39,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
     [
       '0000_formal_initial_schema.sql',
       '0001_balance_integrity_primitives.sql',
-      '0002_canonical_identity_rekey.sql'
+      '0002_canonical_identity_rekey.sql',
+      '0003_provisional_employee_identity.sql'
     ]
   );
 });

@@ -8,6 +8,13 @@ Remote import status: `NOT EXECUTED`. This file documents the exact commands
 for a later, separately authorized checkpoint; none of the remote commands
 below are part of local verification.
 
+The canonical schema migrations are separate from workbook import. On
+2026-09-11 a fresh backup was created and remote migrations `0002` and `0003`
+were applied in that order with row-count, index, schema, and foreign-key
+verification between and after the writes. This did not create employee
+mapping data; the workbook import gate below remains `BLOCKED`, and the new
+Worker source still requires a later deploy before remote auth smoke testing.
+
 ## Current evidence
 
 The source is `gas/便當系統設定.xlsx`. The Users sheet has only the legacy

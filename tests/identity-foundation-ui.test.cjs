@@ -146,14 +146,26 @@ test('Worker transport sends guest login without auth and protected calls with o
   assert.equal(calls[0].options.headers.Authorization, undefined);
   assert.deepEqual(JSON.parse(calls[0].options.body), { employeeId: '001234' });
 
+  await client.lineEmployeeLookup({ employeeId: '001234' });
+  assert.equal(calls[1].options.headers.Authorization, 'Bearer line-token');
+  assert.deepEqual(JSON.parse(calls[1].options.body), { employeeId: '001234' });
+
+  await client.lineEmployeeBind({ employeeId: '001234', displayName: 'Name', pickupFloor: '1樓' });
+  assert.equal(calls[2].options.headers.Authorization, 'Bearer line-token');
+  assert.deepEqual(JSON.parse(calls[2].options.body), {
+    employeeId: '001234',
+    displayName: 'Name',
+    pickupFloor: '1樓'
+  });
+
   sessionStore.setGuestSession({ token: 'eg_opaque', expiresAt: '2099-01-01T00:00:00.000Z' });
   await client.getIdentity();
-  assert.equal(calls[1].options.headers.Authorization, 'Bearer eg_opaque');
-  assert.equal(new URL(calls[1].url).search, '');
+  assert.equal(calls[3].options.headers.Authorization, 'Bearer eg_opaque');
+  assert.equal(new URL(calls[3].url).search, '');
 
   await client.bindLine({ guestToken: 'eg_opaque' });
-  assert.equal(calls[2].options.headers.Authorization, 'Bearer line-token');
-  assert.equal(calls[2].options.headers['X-Employee-Guest-Session'], 'eg_opaque');
+  assert.equal(calls[4].options.headers.Authorization, 'Bearer line-token');
+  assert.equal(calls[4].options.headers['X-Employee-Guest-Session'], 'eg_opaque');
 });
 
 test('Worker guest 401 keeps stable code and clears only the guest credential', async () => {
@@ -199,7 +211,9 @@ test('frontend permissions treat employee guest as self-only even when canonical
 test('Worker App wires the employee guest and bind flow without exposing LINE IDs or client authority', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const loginSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'EmployeeGuestLogin.jsx'), 'utf8');
+  const lineLookupSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'LineEmployeeLookup.jsx'), 'utf8');
   const sessionSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'sessionStore.js'), 'utf8');
+  const guestRender = appSource.match(/<EmployeeGuestLogin[\s\S]*?\/>/)?.[0] || '';
 
   assert.match(appSource, /EmployeeGuestLogin/);
   assert.match(appSource, /apiClient\.employeeGuestLogin/);
@@ -209,6 +223,37 @@ test('Worker App wires the employee guest and bind flow without exposing LINE ID
   assert.match(loginSource, /type="text"/);
   assert.match(loginSource, /inputMode="text"/);
   assert.match(loginSource, /onEmployeeSubmit/);
+  assert.match(loginSource, /其他登入方式/);
+  assert.doesNotMatch(loginSource, /lineEmployeeLookup|lineAuthenticated/);
+  assert.match(lineLookupSource, /LINE 已登入/);
+  assert.match(lineLookupSource, /onSubmit/);
+  assert.doesNotMatch(lineLookupSource, /employeeGuestLogin|guestSession/);
+  assert.doesNotMatch(guestRender, /AUTH_STATES\.UNREGISTERED/);
+  assert.match(appSource, /LineEmployeeLookup/);
+  assert.match(appSource, /lineEmployeeLookup/);
+  assert.match(appSource, /lineEmployeeBind/);
+  assert.match(appSource, /AUTH_STATES\.UNREGISTERED/);
   assert.doesNotMatch(sessionSource, /localStorage/);
   assert.doesNotMatch(sessionSource, /setItem\([^\n]*(role|permission|balance)/i);
+});
+
+test('Worker App keeps provisional onboarding separate from registered application data', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const confirmationSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'EmployeeIdentityConfirmation.jsx'), 'utf8');
+  const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
+  const clientSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js'), 'utf8');
+  const errorSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiErrors.js'), 'utf8');
+
+  assert.match(appSource, /AUTH_STATES\.UNVERIFIED/);
+  assert.match(appSource, /status === 'UNVERIFIED_EMPLOYEE'/);
+  assert.match(appSource, /EmployeeIdentityConfirmation/);
+  assert.match(appSource, /ProvisionalEmployeeOnboarding/);
+  assert.match(confirmationSource, /確認並綁定 LINE/);
+  assert.match(confirmationSource, /user\?\.name/);
+  assert.match(onboardingSource, /employeeId/);
+  assert.match(onboardingSource, /pickupFloor/);
+  assert.doesNotMatch(onboardingSource, /lineUserId|userId|verificationStatus|balance/);
+  assert.match(clientSource, /body: \{ displayName, pickupFloor \}/);
+  assert.doesNotMatch(clientSource, /body: \{[^}]*lineUserId/);
+  assert.match(errorSource, /LINE_LOGIN_REQUIRED/);
 });

@@ -24,13 +24,16 @@ The formal chain is exactly:
 0000_formal_initial_schema.sql
 0001_balance_integrity_primitives.sql
 0002_canonical_identity_rekey.sql  # one-time rebuild of an existing formal DB
+0003_provisional_employee_identity.sql
 ```
 
-Migration 0002 is intentionally not idempotent when executed as raw SQL: D1
-must record it in `d1_migrations` once. The local test database initializer
+Migrations 0002 and 0003 are intentionally forward-only when executed as raw
+SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database still
-applies all three files in order.
+applies all four files in order. Migration 0003 defaults existing users to
+`VERIFIED`, adds the nullable provisional guest-session shape, and preserves
+old Worker guest-session inserts that omit the new columns.
 
 ## Recovery procedure
 

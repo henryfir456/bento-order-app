@@ -225,12 +225,30 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/auth/employee-guest',
     { credentialMode: 'none', body: { employeeId } }
   ),
-  bindLine: ({ guestToken } = {}) => workerRequest(
+  lineEmployeeLookup: ({ employeeId } = {}) => workerRequest(
+    'lineEmployeeLookup',
+    'POST',
+    '/api/auth/line-employee-lookup',
+    { credentialMode: 'line', body: { employeeId } }
+  ),
+  lineEmployeeBind: ({ employeeId, displayName, pickupFloor } = {}) => workerRequest(
+    'lineEmployeeBind',
+    'POST',
+    '/api/auth/line-employee-bind',
+    {
+      credentialMode: 'line',
+      body: { employeeId, displayName, pickupFloor }
+    }
+  ),
+  bindLine: ({ guestToken, displayName, pickupFloor } = {}) => workerRequest(
     'bindLine',
     'POST',
     '/api/auth/line-bind',
     {
       credentialMode: 'line',
+      ...((displayName || pickupFloor) ? {
+        body: { displayName, pickupFloor }
+      } : {}),
       extraHeaders: { 'X-Employee-Guest-Session': String(guestToken || '').trim() }
     }
   ),

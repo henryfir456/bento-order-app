@@ -139,7 +139,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1'].includes(release.version)
+    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -176,6 +176,28 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Refresh order, calendar, and balance state after a successful cancellation.'
   ]);
   assert.deepEqual(currentRelease.commits, []);
+  const featureRelease = parsed.find((release) => release.version === '0.11.0');
+  assert.ok(featureRelease);
+  assert.equal(featureRelease.date, '2026-09-11');
+  assert.deepEqual(featureRelease.categories.map(({ name }) => name), [
+    'Added',
+    'Changed',
+    'Fixed',
+    'Known Limitations'
+  ]);
+  assert.deepEqual(featureRelease.changes, [
+    'Added a server-authenticated LINE employee identity lookup and explicit binding flow for first-time LINE sign-in.',
+    'Added provisional onboarding for valid but unknown employee IDs as `UNVERIFIED` canonical users.',
+    'Added centralized verification-aware authorization and capability derivation.',
+    'Added provisional identity migration `0003` for verification state and nullable onboarding sessions.',
+    'Employee-number-only login is rejected with `LINE_LOGIN_REQUIRED` after an employee is bound to LINE, regardless of verification state.',
+    'Restricted Employee Guest Login to the fallback flow where no LINE authentication context is available.',
+    'Restricted `UNVERIFIED` principals to onboarding capabilities and denied ordinary application-data and privileged capabilities by default.',
+    'Completed the remote canonical identity migration and applied the provisional identity migration to the formal D1 database.',
+    'Made LINE binding, employee collision, and silent-rebind protection fail closed.',
+    'The workbook still lacks `employee_id` and an approved employee mapping, so the full production employee import remains `BLOCKED`.'
+  ]);
+  assert.deepEqual(featureRelease.commits, []);
   const unreleased = parsed.filter((release) => release.version === null);
   assert.equal(unreleased.length, 1);
   assert.equal(parsed[0].version, null);
@@ -183,7 +205,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 2), ['0.10.1', '0.10.0']);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 3), ['0.11.0', '0.10.1', '0.10.0']);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);

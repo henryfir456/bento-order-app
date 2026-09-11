@@ -6,15 +6,16 @@ export const seedUser = (database, {
   pickupFloor = '1樓',
   balance = 0,
   role = 'User',
-  active = 1
+  active = 1,
+  verificationStatus = 'VERIFIED'
 }) => {
   database.run(`
     INSERT INTO users (
       user_id, employee_id, line_user_id, display_name, pickup_floor,
-      balance, role, active
+      balance, role, active, verification_status
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `, userId, employeeId, lineUserId, displayName, pickupFloor, balance, role, active);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, userId, employeeId, lineUserId, displayName, pickupFloor, balance, role, active, verificationStatus);
 };
 
 export const seedMenuVersion = (database, {

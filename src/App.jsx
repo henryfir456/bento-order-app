@@ -17,6 +17,9 @@ import { createBootId, createBootTimingLogger, getPerformanceNow } from './obser
 import { APP_VERSION, UI_CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
 import EmployeeGuestLogin from './components/EmployeeGuestLogin';
+import EmployeeIdentityConfirmation from './components/EmployeeIdentityConfirmation';
+import LineEmployeeLookup from './components/LineEmployeeLookup';
+import ProvisionalEmployeeOnboarding from './components/ProvisionalEmployeeOnboarding';
 import PickupFloorModal from './components/PickupFloorModal';
 import ViewAsBanner from './components/ViewAsBanner';
 import DevAuthBadge from './components/DevAuthBadge';
@@ -41,6 +44,8 @@ const AUTH_STATES = Object.freeze({
   AUTH_REQUIRED: 'AUTH_REQUIRED',
   AUTH_FAILED: 'AUTH_FAILED',
   UNREGISTERED: 'UNREGISTERED',
+  EMPLOYEE_CONFIRMATION: 'EMPLOYEE_CONFIRMATION',
+  UNVERIFIED: 'UNVERIFIED',
   REGISTERED: 'REGISTERED'
 });
 
@@ -226,6 +231,13 @@ export default function App() {
   const [employeeGuestLoading, setEmployeeGuestLoading] = useState(false);
   const [employeeGuestError, setEmployeeGuestError] = useState('');
   const [lineBindLoading, setLineBindLoading] = useState(false);
+  const [pendingEmployeeConfirmation, setPendingEmployeeConfirmation] = useState(null);
+  const [provisionalProfile, setProvisionalProfile] = useState({
+    employeeId: '',
+    displayName: '',
+    pickupFloor: '1樓',
+    lineDisplayName: ''
+  });
   const authInitInFlightRef = useRef(false);
   const authBootPromiseRef = useRef(null);
   const authBootCompletedRef = useRef(false);
@@ -344,6 +356,13 @@ export default function App() {
     setUserBalance(0);
     setDefaultFloor('');
     setRegistrationDisplayName('');
+    setPendingEmployeeConfirmation(null);
+    setProvisionalProfile({
+      employeeId: '',
+      displayName: '',
+      pickupFloor: '1樓',
+      lineDisplayName: ''
+    });
     setEmployeeGuestError('');
     setName('');
     setCalendarEvents({});
@@ -447,6 +466,41 @@ export default function App() {
       return data;
     }
 
+    if (data.success && data.registered === false && data.status === 'UNVERIFIED_EMPLOYEE') {
+      const provisionalUser = data.user ? {
+        ...data.user,
+        userId: data.user.userId,
+        name: data.user.name || data.user.displayName || '',
+        floor: data.user.defaultFloor || data.user.floor || '',
+        defaultFloor: data.user.defaultFloor || data.user.floor || '',
+        balance: 0,
+        role: data.user.role || 'User',
+        authMode: data.authMode || 'line',
+        capabilities: Array.isArray(data.capabilities) ? data.capabilities : []
+      } : null;
+      const nextEmployeeId = data.employeeId || provisionalUser?.employeeId || '';
+      const nextDisplayName = data.displayName
+        || provisionalUser?.name
+        || '';
+      setAuthMode(data.authMode || 'line');
+      setAuthUser(provisionalUser);
+      setViewAsUser(null);
+      setLineUserId(data.lineUserId || provisionalUser?.lineUserId || '');
+      setRegistrationDisplayName(nextDisplayName);
+      setRegistrationFloor(provisionalUser?.defaultFloor || '1樓');
+      setProvisionalProfile({
+        employeeId: nextEmployeeId,
+        displayName: nextDisplayName,
+        pickupFloor: provisionalUser?.defaultFloor || '1樓',
+        lineDisplayName: data.displayName || provisionalUser?.name || ''
+      });
+      setName(nextDisplayName);
+      setDefaultFloor(provisionalUser?.defaultFloor || '');
+      setFloor(provisionalUser?.defaultFloor || '1樓');
+      setUserBalance(0);
+      return data;
+    }
+
     if (data.success && data.registered === false) {
       setAuthMode(data.authMode || 'line');
       setLineUserId(data.lineUserId || '');
@@ -457,6 +511,7 @@ export default function App() {
       setName('');
       setDefaultFloor('');
       setUserBalance(0);
+      setPendingEmployeeConfirmation(null);
       return data;
     }
 
@@ -508,6 +563,7 @@ export default function App() {
         ? guestSessionStore.getGuestSession()
         : null;
       const hasBindIntent = apiClient.transport === 'worker' && guestSessionStore.hasBindIntent();
+      const bindIntent = hasBindIntent ? guestSessionStore.getBindIntent() : {};
       if (authClient.isMock) {
         currentStage = 'MOCK_IDENTITY_READY';
         setAuthStage(currentStage);
@@ -518,7 +574,10 @@ export default function App() {
         setAuthStage(currentStage);
         logAuthDiagnostic('RESTORE_GUEST_SESSION');
         const restoredIdentity = await fetchBootstrapData(guestSession.token, bootId);
-        if (restoredIdentity?.success && restoredIdentity.registered && restoredIdentity.user) {
+        if (restoredIdentity?.success && (
+          (restoredIdentity.registered && restoredIdentity.user)
+          || restoredIdentity.status === 'UNVERIFIED_EMPLOYEE'
+        )) {
           identity = restoredIdentity;
           restoredGuest = true;
           currentStage = AUTH_BOOT_STAGES.LIFF_CHECK;
@@ -576,7 +635,11 @@ export default function App() {
       if (apiClient.transport === 'worker' && hasBindIntent && guestSession?.token) {
         currentStage = AUTH_BOOT_STAGES.BIND_LINE;
         setAuthStage(currentStage);
-        const bindResponse = await apiClient.bindLine({ guestToken: guestSession.token });
+        const bindResponse = await apiClient.bindLine({
+          guestToken: guestSession.token,
+          displayName: bindIntent.displayName,
+          pickupFloor: bindIntent.pickupFloor
+        });
         if (!bindResponse.ok) throw new Error(`LINE bind HTTP ${bindResponse.status}`);
         const bindData = await bindResponse.json();
         if (!bindData.success || !bindData.user) {
@@ -641,8 +704,11 @@ export default function App() {
       } else if (identity?.success && identity.registered === false) {
         const stateApplyStartedAt = getPerformanceNow();
         applyUserInfoData(identity);
-        setAuthState(AUTH_STATES.UNREGISTERED);
-        setAuthStage('UNREGISTERED');
+        const nextAuthState = identity.status === 'UNVERIFIED_EMPLOYEE'
+          ? AUTH_STATES.UNVERIFIED
+          : AUTH_STATES.UNREGISTERED;
+        setAuthState(nextAuthState);
+        setAuthStage(nextAuthState);
         setAuthError('');
         logAuthDiagnostic('BACKEND_IDENTITY_VERIFY_SUCCESS=true');
         logAuthDiagnostic('USER_REGISTERED=false');
@@ -691,7 +757,11 @@ export default function App() {
   useEffect(() => {
     const pendingBoot = bootRenderPendingRef.current;
     if (!pendingBoot || loading) return;
-    if (authState !== AUTH_STATES.REGISTERED && authState !== AUTH_STATES.UNREGISTERED) return;
+    if (
+      authState !== AUTH_STATES.REGISTERED
+      && authState !== AUTH_STATES.UNREGISTERED
+      && authState !== AUTH_STATES.UNVERIFIED
+    ) return;
 
     bootRenderPendingRef.current = null;
     pendingBoot.timing.milestone('BOOTSTRAP_STATE_READY');
@@ -1032,13 +1102,73 @@ export default function App() {
       }
       guestSessionStore.setGuestSession({ token: data.token, expiresAt: data.expiresAt });
       authBootCompletedRef.current = false;
-      setEmployeeGuestId('');
+      if (data.status === 'UNVERIFIED_EMPLOYEE') {
+        setProvisionalProfile((current) => ({
+          ...current,
+          employeeId: data.employeeId || employeeId.toUpperCase(),
+          displayName: '',
+          pickupFloor: '1樓',
+          lineDisplayName: ''
+        }));
+        setEmployeeGuestId(data.employeeId || employeeId.toUpperCase());
+      } else {
+        setEmployeeGuestId('');
+      }
       await initLiffAndFetchData({ force: true });
     } catch (error) {
       setEmployeeGuestError(getApiErrorPresentation(error, '員工登入').message);
     } finally {
       employeeGuestRequestRef.current = false;
       setEmployeeGuestLoading(false);
+    }
+  };
+
+  const handleLineEmployeeLookup = async (event) => {
+    event?.preventDefault?.();
+    if (apiClient.transport !== 'worker' || lineBindLoading) return;
+
+    const employeeId = String(employeeGuestId || '').trim();
+    if (!employeeId) {
+      setEmployeeGuestError('請輸入員工編號。');
+      return;
+    }
+
+    setLineBindLoading(true);
+    setEmployeeGuestError('');
+    try {
+      const response = await apiClient.lineEmployeeLookup({ employeeId });
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || data.message || 'LINE_EMPLOYEE_LOOKUP_FAILED');
+      }
+      if (data.status === 'FOUND') {
+        setPendingEmployeeConfirmation({
+          employeeId: data.employeeId || employeeId.toUpperCase(),
+          user: data.user
+        });
+        setEmployeeGuestId('');
+        setAuthState(AUTH_STATES.EMPLOYEE_CONFIRMATION);
+        setAuthStage(AUTH_STATES.EMPLOYEE_CONFIRMATION);
+        return;
+      }
+      if (data.status === 'UNVERIFIED_EMPLOYEE') {
+        setProvisionalProfile((current) => ({
+          ...current,
+          employeeId: data.employeeId || employeeId.toUpperCase(),
+          displayName: '',
+          pickupFloor: '1樓',
+          lineDisplayName: ''
+        }));
+        setEmployeeGuestId('');
+        setAuthState(AUTH_STATES.UNVERIFIED);
+        setAuthStage(AUTH_STATES.UNVERIFIED);
+        return;
+      }
+      throw new Error(data.error || 'LINE_EMPLOYEE_LOOKUP_INVALID_RESPONSE');
+    } catch (error) {
+      setEmployeeGuestError(getApiErrorPresentation(error, '員工身份查詢').message);
+    } finally {
+      setLineBindLoading(false);
     }
   };
 
@@ -1057,7 +1187,7 @@ export default function App() {
     }
   };
 
-  const handleBindLine = async () => {
+  const handleBindLine = async (profile = {}) => {
     if (apiClient.transport !== 'worker' || lineBindLoading) return;
     const guestSession = guestSessionStore.getGuestSession();
     if (!guestSession) {
@@ -1066,7 +1196,7 @@ export default function App() {
       return;
     }
 
-    guestSessionStore.setBindIntent();
+    guestSessionStore.setBindIntent(profile);
     authBootCompletedRef.current = false;
     setLineBindLoading(true);
     setEmployeeGuestError('');
@@ -1080,7 +1210,11 @@ export default function App() {
         return;
       }
 
-      const response = await apiClient.bindLine({ guestToken: guestSession.token });
+      const response = await apiClient.bindLine({
+        guestToken: guestSession.token,
+        displayName: profile.displayName,
+        pickupFloor: profile.pickupFloor
+      });
       const data = await response.json();
       if (!data.success || !data.user) {
         throw new Error(data.error || data.message || 'LINE_BIND_FAILED');
@@ -1092,6 +1226,107 @@ export default function App() {
     } catch (error) {
       guestSessionStore.clearBindIntent();
       setEmployeeGuestError(getApiErrorPresentation(error, '綁定 LINE').message);
+    } finally {
+      setLineBindLoading(false);
+    }
+  };
+
+  const handleLineEmployeeBind = async ({ employeeId, displayName, pickupFloor } = {}) => {
+    if (apiClient.transport !== 'worker' || lineBindLoading) return;
+    const normalizedEmployeeId = String(employeeId || '').trim();
+    if (!normalizedEmployeeId) {
+      setEmployeeGuestError('員工身份查詢已失效，請重新輸入員工編號。');
+      setAuthState(AUTH_STATES.UNREGISTERED);
+      setAuthStage(AUTH_STATES.UNREGISTERED);
+      return;
+    }
+
+    setLineBindLoading(true);
+    setEmployeeGuestError('');
+    setAuthError('');
+    try {
+      await authClient.init();
+      if (!authClient.isLoggedIn()) {
+        setAuthState(AUTH_STATES.AUTH_REQUIRED);
+        setAuthStage(AUTH_BOOT_STAGES.LIFF_CHECK);
+        authClient.login();
+        return;
+      }
+
+      const response = await apiClient.lineEmployeeBind({
+        employeeId: normalizedEmployeeId,
+        displayName,
+        pickupFloor
+      });
+      const data = await response.json();
+      if (!data.success || !data.user) {
+        throw new Error(data.error || data.message || 'LINE_EMPLOYEE_BIND_FAILED');
+      }
+      setPendingEmployeeConfirmation(null);
+      authBootCompletedRef.current = false;
+      await initLiffAndFetchData({ force: true });
+    } catch (error) {
+      setEmployeeGuestError(getApiErrorPresentation(error, '綁定 LINE').message);
+    } finally {
+      setLineBindLoading(false);
+    }
+  };
+
+  const handleCancelEmployeeConfirmation = () => {
+    guestSessionStore.clearBindIntent();
+    guestSessionStore.clearGuestSession({ reason: 'employee-confirmation-cancelled', notify: false });
+    setPendingEmployeeConfirmation(null);
+    setEmployeeGuestError('');
+    setAuthState(AUTH_STATES.UNREGISTERED);
+    setAuthStage(AUTH_STATES.UNREGISTERED);
+  };
+
+  const handleProvisionalProfileSubmit = async (event) => {
+    event?.preventDefault?.();
+    if (lineBindLoading) return;
+    const profile = {
+      displayName: provisionalProfile.displayName.trim(),
+      pickupFloor: provisionalProfile.pickupFloor
+    };
+    if (!profile.displayName || !profile.pickupFloor) {
+      setEmployeeGuestError('請填寫顯示名稱與領取樓層。');
+      return;
+    }
+
+    if (guestSessionStore.getGuestSession()) {
+      await handleBindLine(profile);
+      return;
+    }
+
+    if (!authUser?.userId) {
+      await handleLineEmployeeBind({
+        employeeId: provisionalProfile.employeeId,
+        ...profile
+      });
+      return;
+    }
+
+    setLineBindLoading(true);
+    setEmployeeGuestError('');
+    try {
+      const response = await apiClient.updatePickupFloor({ pickupFloor: profile.pickupFloor });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || 'PROFILE_UPDATE_FAILED');
+      }
+      const identityResponse = await apiClient.getIdentity();
+      const identity = await identityResponse.json();
+      if (!identityResponse.ok || !identity.success) {
+        throw new Error(identity.error || identity.message || 'PROFILE_READBACK_FAILED');
+      }
+      applyUserInfoData(identity);
+      setProvisionalProfile((current) => ({
+        ...current,
+        displayName: profile.displayName,
+        pickupFloor: profile.pickupFloor
+      }));
+    } catch (error) {
+      setEmployeeGuestError(getApiErrorPresentation(error, '更新 onboarding 資料').message);
     } finally {
       setLineBindLoading(false);
     }
@@ -2050,6 +2285,7 @@ export default function App() {
   const aggregatedOrders = getAggregatedOrders();
   const isRegistered = authState === AUTH_STATES.REGISTERED;
   const isUnregistered = authState === AUTH_STATES.UNREGISTERED;
+  const isUnverified = authState === AUTH_STATES.UNVERIFIED;
   const authUserId = authUser?.userId || lineUserId;
   const authRole = authUser?.role || 'User';
   const effectiveUser = viewAsUser || authUser;
@@ -2062,6 +2298,8 @@ export default function App() {
     [AUTH_STATES.AUTH_REQUIRED]: '請登入 LINE',
     [AUTH_STATES.AUTH_FAILED]: '身份驗證失敗',
     [AUTH_STATES.UNREGISTERED]: '尚未註冊',
+    [AUTH_STATES.EMPLOYEE_CONFIRMATION]: '確認員工身份',
+    [AUTH_STATES.UNVERIFIED]: '待完成核驗',
     [AUTH_STATES.REGISTERED]: '身份已驗證'
   }[authState];
   const displayName = effectiveUser?.name || name || registrationDisplayName || authStateLabel;
@@ -2206,7 +2444,7 @@ export default function App() {
         )}
 
         {apiClient.transport === 'worker'
-          && [AUTH_STATES.AUTH_REQUIRED, AUTH_STATES.AUTH_FAILED, AUTH_STATES.UNREGISTERED].includes(authState)
+          && [AUTH_STATES.AUTH_REQUIRED, AUTH_STATES.AUTH_FAILED].includes(authState)
           && !loading
           && (
             <EmployeeGuestLogin
@@ -2219,7 +2457,64 @@ export default function App() {
               onLineLogin={handleLineLogin}
               loading={employeeGuestLoading || lineBindLoading}
               error={employeeGuestError || (authState === AUTH_STATES.AUTH_FAILED ? authError : '')}
-              lineBindingRequired={isUnregistered}
+            />
+          )}
+
+        {apiClient.transport === 'worker'
+          && authState === AUTH_STATES.UNREGISTERED
+          && !loading
+          && (
+            <LineEmployeeLookup
+              employeeId={employeeGuestId}
+              onEmployeeIdChange={(value) => {
+                setEmployeeGuestId(value);
+                if (employeeGuestError) setEmployeeGuestError('');
+              }}
+              onSubmit={handleLineEmployeeLookup}
+              loading={lineBindLoading}
+              error={employeeGuestError}
+            />
+          )}
+
+        {apiClient.transport === 'worker'
+          && authState === AUTH_STATES.EMPLOYEE_CONFIRMATION
+          && !loading
+          && pendingEmployeeConfirmation
+          && (
+            <EmployeeIdentityConfirmation
+              employeeId={pendingEmployeeConfirmation.employeeId}
+              user={pendingEmployeeConfirmation.user}
+              onConfirm={() => handleLineEmployeeBind({
+                employeeId: pendingEmployeeConfirmation.employeeId
+              })}
+              onCancel={handleCancelEmployeeConfirmation}
+              loading={lineBindLoading}
+              error={employeeGuestError}
+            />
+          )}
+
+        {apiClient.transport === 'worker'
+          && isUnverified
+          && !loading
+          && (
+            <ProvisionalEmployeeOnboarding
+              employeeId={provisionalProfile.employeeId}
+              lineDisplayName={provisionalProfile.lineDisplayName}
+              displayName={provisionalProfile.displayName}
+              onDisplayNameChange={(value) => setProvisionalProfile((current) => ({
+                ...current,
+                displayName: value
+              }))}
+              pickupFloor={provisionalProfile.pickupFloor}
+              onPickupFloorChange={(value) => setProvisionalProfile((current) => ({
+                ...current,
+                pickupFloor: value
+              }))}
+              onSubmit={handleProvisionalProfileSubmit}
+              loading={lineBindLoading}
+              error={employeeGuestError}
+              bound={Boolean(authUser?.userId)}
+              lineAuthenticated={authMode === 'line'}
             />
           )}
 

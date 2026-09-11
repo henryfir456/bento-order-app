@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import {
   ACTIONS,
   assertCan,
   assertSelfTarget,
-  can
+  can,
+  capabilitiesFor
 } from '../src/auth/permissions.js';
 
 const identity = (role, lineUserId = 'user-1') => ({
@@ -68,4 +70,45 @@ test('assertCan requires a registered actor and assertSelfTarget rejects imperso
     () => assertSelfTarget(identity('User'), 'other-user'),
     (error) => error.code === 'FORBIDDEN_TARGET'
   );
+});
+
+test('UNVERIFIED User principals receive only central onboarding capabilities', () => {
+  const capabilities = capabilitiesFor('User', 'line', 'UNVERIFIED', true);
+  assert.deepEqual(capabilities, [
+    ACTIONS.CAN_BIND_LINE,
+    ACTIONS.CAN_COMPLETE_PROFILE,
+    ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
+  ]);
+  for (const action of [
+    ACTIONS.READ_SELF,
+    ACTIONS.WRITE_SELF,
+    ACTIONS.READ_ADMIN_SUMMARY,
+    ACTIONS.READ_MEMBER_BALANCES,
+    ACTIONS.ADMIN_TOP_UP,
+    ACTIONS.ADMIN_CALENDAR,
+    ACTIONS.ADMIN_ROLE,
+    ACTIONS.ADMIN_ANNOUNCEMENTS,
+    ACTIONS.VIEW_AS
+  ]) {
+    assert.equal(can('User', action, 'line', 'UNVERIFIED', true), false, action);
+    assert.throws(
+      () => assertCan({
+        actor: {
+          userId: 'unverified-user',
+          role: 'User',
+          active: true,
+          registered: true,
+          verificationStatus: 'UNVERIFIED'
+        }
+      }, action),
+      (error) => error.code === 'FORBIDDEN',
+      action
+    );
+  }
+});
+
+test('admin summary derives member visibility from central capabilities, not a role-only gate', () => {
+  const source = readFileSync(new URL('../src/domain/adminSummary.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /identity\.actor\.role\s*===\s*['"]Admin['"]/);
+  assert.match(source, /identity\.actor\.capabilities\?\.includes\(ACTIONS\.READ_MEMBER_BALANCES\)/);
 });

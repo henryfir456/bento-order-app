@@ -13,6 +13,7 @@ export const toUser = (row) => {
     balance: Number(row.balance),
     role: String(row.role || 'User'),
     active: Boolean(row.active),
+    verificationStatus: row.verification_status || 'VERIFIED',
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
   };
@@ -20,7 +21,7 @@ export const toUser = (row) => {
 
 const USER_COLUMNS = `
   user_id, employee_id, line_user_id, display_name, pickup_floor,
-  balance, role, active, created_at, updated_at
+  balance, role, active, verification_status, created_at, updated_at
 `;
 
 export const getUserById = async (database, userId) => {
@@ -64,6 +65,7 @@ export const publicUser = (user) => {
     balance: user.balance,
     role: user.role,
     active: user.active,
+    verificationStatus: user.verificationStatus,
     lineUserId: user.lineUserId,
     displayName: user.displayName
   };

@@ -5,7 +5,8 @@ import {
   ACTIONS,
   assertCan,
   assertSelfTarget,
-  capabilitiesFor
+  capabilitiesFor,
+  VERIFICATION_STATUSES
 } from '../auth/permissions.js';
 
 export const VALID_PICKUP_FLOORS = Object.freeze(['1樓', '9樓']);
@@ -22,19 +23,30 @@ const assertFloor = (pickupFloor) => {
 };
 
 export const getMe = (identity) => {
-  const registered = Boolean(identity?.actor?.registered);
+  const actor = identity?.actor || {};
+  const provisional = actor.provisional || actor.verificationStatus === 'UNVERIFIED';
+  const registered = Boolean(actor.registered && !provisional);
+  const user = actor.userId ? publicUser(actor) : null;
   return {
     success: true,
     registered,
-    authMode: identity?.actor?.authMode || null,
-    user: registered ? publicUser(identity.actor) : null,
-    ...(registered && identity?.actor?.authMode === 'employee_guest'
-      ? { capabilities: capabilitiesFor(identity.actor.role, identity.actor.authMode) }
-      : {}),
-    ...(!registered ? {
-      lineUserId: identity?.actor?.lineUserId || '',
-      displayName: identity?.actor?.displayName || ''
-    } : {})
+    authMode: actor.authMode || null,
+    user,
+    ...(provisional ? {
+      status: 'UNVERIFIED_EMPLOYEE',
+      capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
+      employeeId: actor.employeeId || '',
+      lineUserId: actor.lineUserId || '',
+      displayName: actor.displayName || ''
+    } : registered ? {
+      status: 'VERIFIED',
+      ...(actor.authMode === 'employee_guest' && Array.isArray(actor.capabilities)
+        ? { capabilities: actor.capabilities }
+        : {})
+    } : {
+      lineUserId: actor.lineUserId || '',
+      displayName: actor.displayName || ''
+    })
   };
 };
 
@@ -50,7 +62,9 @@ export const updatePickupFloor = async (
   pickupFloor,
   clock = new Date()
 ) => {
-  assertCan(identity, ACTIONS.WRITE_SELF);
+  const provisional = identity?.actor?.provisional
+    || identity?.actor?.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED;
+  assertCan(identity, provisional ? ACTIONS.CAN_COMPLETE_PROFILE : ACTIONS.WRITE_SELF);
   assertSelfTarget(identity, identity.actor.userId);
   assertFloor(pickupFloor);
   const timestamp = nowIso(clock);
@@ -66,10 +80,24 @@ export const updatePickupFloor = async (
     action: 'UPDATE_PICKUP_FLOOR',
     occurredAt: timestamp
   });
+  const user = await getUserById(database, identity.actor.userId);
   return {
     success: true,
-    registered: true,
+    registered: !provisional,
     authMode: identity.actor.authMode,
-    user: publicUser(await getUserById(database, identity.actor.userId))
+    ...(provisional ? {
+      status: 'UNVERIFIED_EMPLOYEE',
+      verificationStatus: VERIFICATION_STATUSES.UNVERIFIED,
+      employeeId: user.employeeId,
+      capabilities: capabilitiesFor(
+        user.role,
+        identity.actor.authMode,
+        user.verificationStatus,
+        user.active
+      )
+    } : {
+      status: 'VERIFIED'
+    }),
+    user: publicUser(user)
   };
 };

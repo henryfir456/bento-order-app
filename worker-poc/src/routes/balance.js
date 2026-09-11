@@ -162,6 +162,7 @@ export const handleBalanceRoute = async (request, env, {
     now
   });
   if (isHistory) {
+    assertCan(identity, ACTIONS.READ_SELF);
     const month = url.searchParams.get('month') || '';
     return jsonResponse(await getBalanceHistory(
       env.DB,

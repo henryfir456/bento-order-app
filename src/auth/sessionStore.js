@@ -64,13 +64,30 @@ export const createAuthSessionStore = (storage = globalThis.sessionStorage) => {
       if (shouldNotify) notify({ type: 'guest-session-cleared', reason });
     },
 
-    setBindIntent() {
-      target?.setItem?.(BIND_INTENT_STORAGE_KEY, '1');
+    setBindIntent({ displayName = '', pickupFloor = '' } = {}) {
+      target?.setItem?.(BIND_INTENT_STORAGE_KEY, JSON.stringify({
+        displayName: typeof displayName === 'string' ? displayName.trim() : '',
+        pickupFloor: typeof pickupFloor === 'string' ? pickupFloor.trim() : ''
+      }));
       notify({ type: 'bind-intent-set' });
     },
 
     hasBindIntent() {
-      return target?.getItem?.(BIND_INTENT_STORAGE_KEY) === '1';
+      return Boolean(target?.getItem?.(BIND_INTENT_STORAGE_KEY));
+    },
+
+    getBindIntent() {
+      const raw = target?.getItem?.(BIND_INTENT_STORAGE_KEY) || '';
+      if (!raw || raw === '1') return {};
+      try {
+        const parsed = JSON.parse(raw);
+        return {
+          displayName: typeof parsed?.displayName === 'string' ? parsed.displayName : '',
+          pickupFloor: typeof parsed?.pickupFloor === 'string' ? parsed.pickupFloor : ''
+        };
+      } catch {
+        return {};
+      }
     },
 
     clearBindIntent() {

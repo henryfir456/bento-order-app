@@ -10,10 +10,11 @@ commands. The POC config is local-only: it uses the distinct
 no remote D1 ID. Its remote seed script is fail-closed.
 
 The formal Worker implements LINE token authentication, canonical relational
-identity, restricted employee guest sessions, conflict-safe LINE binding,
-View As read isolation, transactional order and balance mutations, and the
-formal D1 schema. React remains GAS-bound until the separate transport and
-cutover slice is authorized.
+identity, restricted employee guest sessions, explicit provisional employee
+onboarding, conflict-safe LINE binding, View As read isolation, transactional
+order and balance mutations, and the formal D1 schema. React remains
+GAS-bound in production until the separate transport and cutover slice is
+authorized.
 
 ## Contract boundaries
 
@@ -39,19 +40,38 @@ comparison.
 The formal authenticated startup flow is:
 
 1. Send `GET /api/me` with `Authorization: Bearer <LINE access token>`.
-2. If `registered` is `false`, show the employee-ID binding path. The server
-   does not create a user from a LINE profile or a display name; the legacy
-   `POST /api/register` route only reads back an already registered user and
-   returns `EMPLOYEE_BIND_REQUIRED` for an unknown LINE identity.
-3. An unbound active employee may instead send
+2. If `registered` is `false`, LINE authentication has succeeded but the LINE
+   identity is not bound. Show the separate employee-identity lookup path:
+   `POST /api/auth/line-employee-lookup` with the normalized employee ID.
+   An existing unbound employee is shown for explicit confirmation, then
+   `POST /api/auth/line-employee-bind` performs the server-side binding.
+   An unknown valid six-character ID enters onboarding; completion uses the
+   same direct LINE-authenticated bind path and creates an `UNVERIFIED`
+   canonical user. This LINE-authenticated path never creates an employee
+   guest session.
+3. When no LINE authentication context is available, an unbound active
+   employee may instead send
    `POST /api/auth/employee-guest` with a string `{ "employeeId": "001234" }`.
-   The response is an opaque, expiring `employee_guest` session with only
-   self-service permissions.
-4. To bind LINE, send `POST /api/auth/line-bind` with the LINE Bearer token
-   and `X-Employee-Guest-Session`. The server updates the same canonical
-   `user_id` and revokes all of that employee's guest sessions atomically.
-5. After LINE binding, send `GET /api/bootstrap` with the LINE Bearer token.
-6. Send `GET /api/bootstrap/deferred?bootId=<same caller boot id>` for likes
+   A known active employee with no LINE binding receives an opaque, expiring
+   `VERIFIED` session with self-service permissions. Any employee ID already
+   bound to LINE receives HTTP 409 `{"error":"LINE_LOGIN_REQUIRED"}`.
+   A valid but unmapped six-character ID receives HTTP 200 with an opaque
+   `UNVERIFIED_EMPLOYEE` onboarding session; it receives no canonical user,
+   balance, or application-data capability.
+4. For the no-LINE fallback flow, send `POST /api/auth/line-bind` with the
+   server-verified LINE Bearer token and `X-Employee-Guest-Session`. A known
+   employee requires explicit confirmation. An unknown employee must also
+   submit only a display name and pickup floor; the Worker creates a
+   canonical `User` row with `role = User`, `active = 1`, `balance = 0`, and
+   `verification_status = UNVERIFIED`. The session and LINE binding are
+   collision-safe and the guest session is revoked after binding.
+5. `UNVERIFIED` principals resolve through `/api/me` and may only use the
+   central onboarding capabilities `CAN_VIEW_SELF_ONBOARDING_STATE`,
+   `CAN_COMPLETE_PROFILE`, and `CAN_BIND_LINE`. They cannot access calendar,
+   balances, orders, administration, View As, or another user's data.
+6. After a verified LINE binding, send `GET /api/bootstrap` with the LINE
+   Bearer token.
+7. Send `GET /api/bootstrap/deferred?bootId=<same caller boot id>` for likes
    and announcements. The formal response echoes that boot ID exactly.
 
 The formal Worker ignores client-supplied user IDs, employee IDs, roles,
@@ -76,6 +96,7 @@ worker-poc/
   migrations-formal/0000_formal_initial_schema.sql
   migrations-formal/0001_balance_integrity_primitives.sql
   migrations-formal/0002_canonical_identity_rekey.sql
+  migrations-formal/0003_provisional_employee_identity.sql
   docs/canonical-identity-guest-access.md
   docs/remote-import-readiness.md
   migrations/                            # retained legacy POC chain
@@ -120,9 +141,10 @@ environment or CI secret store. Never put it in this repository or an
 The default local migration command applies the formal chain
 `migrations-formal/0000_formal_initial_schema.sql`,
 `migrations-formal/0001_balance_integrity_primitives.sql`, and the one-time
-`migrations-formal/0002_canonical_identity_rekey.sql`. It does not import
-workbook data. Raw migration 0002 is intentionally a one-time rebuild; D1's
-migration history prevents it from being applied twice. For legacy POC
+`migrations-formal/0002_canonical_identity_rekey.sql`, followed by
+`migrations-formal/0003_provisional_employee_identity.sql`. It does not
+import workbook data. Raw migrations 0002 and 0003 are forward-only; D1's
+migration history prevents them from being applied twice. For legacy POC
 inspection, use the explicit POC migration command instead.
 
 Run local migration verification twice, then run Worker tests:
@@ -273,9 +295,11 @@ correct.
 
 ## Formal remote migration and deployment
 
-Remote migration and deploy are external writes. Run them only after local
-Worker/parity tests and root verification pass, and only against the existing
-`bento-formal` resource:
+Remote migration and deploy are external writes. Run migrations only after
+the implementation, local Worker/security tests, compatibility checks, root
+verification, and a fresh backup pass. Apply and verify 0002 before applying
+and verifying 0003. Only the later separately authorized deployment activates
+the new Worker source:
 
 ```powershell
 npm.cmd run db:migrations:remote
@@ -283,10 +307,13 @@ npm.cmd run deploy
 ```
 
 The package guard refuses remote writes when `wrangler.jsonc` contains an
-invalid database ID. After a separately authorized formal deployment, smoke-
-test `/api/me`, `/api/bootstrap`, `/api/bootstrap/deferred?bootId=...`, and
-`/api/order-page` with a representative Bearer token. Do not route React to
-the Worker in this slice.
+invalid database ID. This task does not deploy. After a separately
+authorized formal deployment, smoke-test `/api/me`, the employee guest and
+LINE onboarding contracts, `/api/bootstrap`,
+`/api/bootstrap/deferred?bootId=...`, and `/api/order-page` with a
+representative Bearer token. The local Vite topology intentionally keeps
+`.env.development` pointed at the remote formal Worker and does not require a
+local Worker or local D1.
 
 There is intentionally no remote migration, deploy, or seed command for the
 legacy POC. `wrangler-poc.jsonc` omits `database_id`, and

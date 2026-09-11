@@ -126,14 +126,147 @@ test('unbound active employee can use a restricted guest session for self-servic
   assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', USER_ID).balance, 100);
 });
 
-test('missing employee guest ID returns a business 404 instead of a generic 500', async () => {
-  const result = await call(new SqliteD1(), '/api/auth/employee-guest', {
+test('valid unknown employee IDs enter explicit provisional onboarding', async () => {
+  const database = new SqliteD1();
+  const result = await call(database, '/api/auth/employee-guest', {
     method: 'POST',
-    body: { employeeId: '139653' }
+    body: { employeeId: ' 139653 ' }
   });
 
-  assert.equal(result.response.status, 404);
-  assert.deepEqual(result.body, { error: 'EMPLOYEE_NOT_FOUND' });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(result.body.verificationStatus, 'UNVERIFIED');
+  assert.equal(result.body.employeeId, '139653');
+  assert.equal(result.body.user, null);
+  assert.deepEqual(result.body.capabilities, [
+    'CAN_BIND_LINE',
+    'CAN_COMPLETE_PROFILE',
+    'CAN_VIEW_SELF_ONBOARDING_STATE'
+  ]);
+  const session = database.get(`
+    SELECT user_id, employee_id, status
+    FROM employee_guest_sessions
+    WHERE token_hash = ?
+  `, await import('../src/auth/guestSession.js').then(({ hashGuestToken }) => hashGuestToken(result.body.token)));
+  assert.deepEqual({ ...session }, {
+    user_id: null,
+    employee_id: '139653',
+    status: 'UNVERIFIED_EMPLOYEE'
+  });
+
+  const me = await call(database, '/api/me', { token: result.body.token });
+  assert.equal(me.response.status, 200);
+  assert.equal(me.body.registered, false);
+  assert.equal(me.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(me.body.employeeId, '139653');
+  assert.equal(me.body.user, null);
+
+  const forbiddenOrder = await call(database, '/api/orders', {
+    method: 'POST',
+    token: result.body.token,
+    headers: { 'Idempotency-Key': 'provisional-order' },
+    body: {
+      targetDate: '2026-09-08',
+      pickupFloor: '1樓',
+      items: []
+    }
+  });
+  assert.equal(forbiddenOrder.response.status, 403);
+});
+
+test('invalid employee IDs are rejected after trim and uppercase normalization', async () => {
+  for (const employeeId of ['', '12345', '1234567', 'ABC-12', 'ＡＢＣ１２３', 139653]) {
+    const result = await call(new SqliteD1(), '/api/auth/employee-guest', {
+      method: 'POST',
+      body: { employeeId }
+    });
+    assert.equal(result.response.status, 400, String(employeeId));
+    assert.deepEqual(result.body, { error: 'INVALID_EMPLOYEE_ID' });
+  }
+  const normalized = await call(new SqliteD1(), '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: 'ab12cd' }
+  });
+  assert.equal(normalized.response.status, 200);
+  assert.equal(normalized.body.employeeId, 'AB12CD');
+});
+
+test('LINE-authenticated employee lookup and binding never create a guest session', async () => {
+  const database = seedGuestDatabase();
+  const lineProfile = profileFetch({
+    token: 'line-direct-token',
+    lineUserId: 'line-direct-001234',
+    displayName: 'Direct LINE'
+  });
+
+  const lookup = await call(database, '/api/auth/line-employee-lookup', {
+    method: 'POST',
+    token: 'line-direct-token',
+    body: { employeeId: ' 001234 ' }
+  }, { fetchImpl: lineProfile });
+  assert.equal(lookup.response.status, 200);
+  assert.equal(lookup.body.status, 'FOUND');
+  assert.deepEqual(lookup.body.user, {
+    employeeId: EMPLOYEE_ID,
+    name: 'Guest Admin',
+    floor: '1樓',
+    defaultFloor: '1樓',
+    verificationStatus: 'VERIFIED'
+  });
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
+
+  const binding = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'line-direct-token',
+    body: {
+      employeeId: EMPLOYEE_ID,
+      lineUserId: 'forged-line-id',
+      displayName: 'Ignored for existing employee',
+      pickupFloor: '9樓'
+    }
+  }, { fetchImpl: lineProfile });
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.status, 'BOUND');
+  assert.equal(binding.body.user.userId, USER_ID);
+  assert.equal(binding.body.user.lineUserId, 'line-direct-001234');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
+});
+
+test('LINE-authenticated unknown employee onboarding binds server LINE identity without a guest session', async () => {
+  const database = new SqliteD1();
+  const lineProfile = profileFetch({
+    token: 'line-direct-provisional-token',
+    lineUserId: 'line-direct-139653',
+    displayName: 'Direct Provisional LINE'
+  });
+
+  const lookup = await call(database, '/api/auth/line-employee-lookup', {
+    method: 'POST',
+    token: 'line-direct-provisional-token',
+    body: { employeeId: '139653' }
+  }, { fetchImpl: lineProfile });
+  assert.equal(lookup.response.status, 200);
+  assert.equal(lookup.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(lookup.body.user, null);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
+
+  const binding = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'line-direct-provisional-token',
+    body: {
+      employeeId: '139653',
+      lineUserId: 'forged-line-id',
+      displayName: 'Employee 139653',
+      pickupFloor: '9樓'
+    }
+  }, { fetchImpl: lineProfile });
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.status, 'BOUND');
+  assert.equal(binding.body.user.employeeId, '139653');
+  assert.equal(binding.body.user.lineUserId, 'line-direct-139653');
+  assert.equal(binding.body.user.verificationStatus, 'UNVERIFIED');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 });
 
 test('LINE binding is canonical, idempotent, conflict-safe, and revokes every old guest session', async () => {
@@ -190,7 +323,7 @@ test('LINE binding is canonical, idempotent, conflict-safe, and revokes every ol
 
   const newLogin = await guestLogin(database);
   assert.equal(newLogin.response.status, 409);
-  assert.equal(newLogin.body.error, 'EMPLOYEE_ALREADY_LINE_BOUND');
+  assert.deepEqual(newLogin.body, { error: 'LINE_LOGIN_REQUIRED' });
 
   const conflictDatabase = seedGuestDatabase();
   seedUser(conflictDatabase, {
@@ -211,4 +344,112 @@ test('LINE binding is canonical, idempotent, conflict-safe, and revokes every ol
   assert.equal(conflict.body.error, 'LINE_ALREADY_BOUND');
   assert.equal(conflictDatabase.get('SELECT line_user_id FROM users WHERE user_id = ?', USER_ID).line_user_id, null);
   assert.equal(conflictDatabase.get('SELECT revoked_at FROM employee_guest_sessions WHERE user_id = ?', USER_ID).revoked_at, null);
+});
+
+test('provisional LINE onboarding creates an UNVERIFIED canonical user and disables employee-only login', async () => {
+  const database = new SqliteD1();
+  const guest = await call(database, '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '139653' }
+  });
+  const lineProfile = profileFetch({
+    token: 'line-provisional-token',
+    lineUserId: 'line-139653',
+    displayName: 'LINE Provisional'
+  });
+  const binding = await call(database, '/api/auth/line-bind', {
+    method: 'POST',
+    token: 'line-provisional-token',
+    headers: { 'X-Employee-Guest-Session': guest.body.token },
+    body: {
+      displayName: 'Employee 139653',
+      pickupFloor: '9樓',
+      lineUserId: 'forged-line-value'
+    }
+  }, { fetchImpl: lineProfile });
+
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.status, 'BOUND');
+  assert.equal(binding.body.verificationStatus, 'UNVERIFIED');
+  assert.equal(binding.body.user.employeeId, '139653');
+  assert.equal(binding.body.user.lineUserId, 'line-139653');
+  assert.equal(binding.body.user.balance, 0);
+  assert.equal(binding.body.user.role, 'User');
+  assert.equal(binding.body.user.verificationStatus, 'UNVERIFIED');
+  const canonical = database.get(`
+    SELECT user_id, employee_id, line_user_id, display_name, pickup_floor,
+           balance, role, active, verification_status
+    FROM users WHERE employee_id = ?
+  `, '139653');
+  assert.deepEqual({ ...canonical }, {
+    user_id: binding.body.user.userId,
+    employee_id: '139653',
+    line_user_id: 'line-139653',
+    display_name: 'Employee 139653',
+    pickup_floor: '9樓',
+    balance: 0,
+    role: 'User',
+    active: 1,
+    verification_status: 'UNVERIFIED'
+  });
+
+  const replay = await call(database, '/api/auth/line-bind', {
+    method: 'POST',
+    token: 'line-provisional-token',
+    headers: { 'X-Employee-Guest-Session': guest.body.token },
+    body: { displayName: 'Different Name', pickupFloor: '1樓' }
+  }, { fetchImpl: lineProfile });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.body.status, 'ALREADY_BOUND');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+
+  const lineMe = await call(database, '/api/me', {
+    token: 'line-provisional-token'
+  }, { fetchImpl: lineProfile });
+  assert.equal(lineMe.response.status, 200);
+  assert.equal(lineMe.body.registered, false);
+  assert.equal(lineMe.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.deepEqual(lineMe.body.capabilities, [
+    'CAN_BIND_LINE',
+    'CAN_COMPLETE_PROFILE',
+    'CAN_VIEW_SELF_ONBOARDING_STATE'
+  ]);
+
+  const provisionalProtectedRequests = [
+    ['/api/bootstrap', { method: 'GET' }],
+    ['/api/calendar', { method: 'GET' }],
+    ['/api/orders/map', { method: 'GET' }],
+    ['/api/order-page?targetDate=2026-09-08', { method: 'GET' }],
+    ['/api/me/balance/history?month=2026-09', { method: 'GET' }],
+    ['/api/admin/summary?date=2026-09-08', { method: 'GET' }],
+    ['/api/admin/members/balances', { method: 'GET' }],
+    ['/api/admin/announcements', { method: 'GET' }],
+    ['/api/admin/announcements', { method: 'POST', body: {} }],
+    ['/api/admin/balances/top-up', { method: 'POST', body: {} }],
+    ['/api/admin/users/any-user/role', { method: 'PUT', body: {} }],
+    ['/api/orders', { method: 'POST', body: {} }]
+  ];
+  for (const [path, options] of provisionalProtectedRequests) {
+    const protectedResponse = await call(database, path, {
+      ...options,
+      token: 'line-provisional-token'
+    }, { fetchImpl: lineProfile });
+    assert.equal(protectedResponse.response.status, 403, path);
+  }
+
+  const profileUpdate = await call(database, '/api/me/pickup-floor', {
+    method: 'PATCH',
+    token: 'line-provisional-token',
+    body: { pickupFloor: '1樓' }
+  }, { fetchImpl: lineProfile });
+  assert.equal(profileUpdate.response.status, 200);
+  assert.equal(profileUpdate.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(profileUpdate.body.user.floor, '1樓');
+
+  const employeeOnly = await call(database, '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '139653' }
+  });
+  assert.equal(employeeOnly.response.status, 409);
+  assert.deepEqual(employeeOnly.body, { error: 'LINE_LOGIN_REQUIRED' });
 });

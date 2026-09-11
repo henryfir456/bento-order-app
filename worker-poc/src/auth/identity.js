@@ -1,5 +1,10 @@
 import { getUserById, getUserByLineId } from '../db/users.js';
 import { forbidden, unauthorized } from '../http/errors.js';
+import {
+  capabilitiesFor,
+  isVerifiedPrincipal,
+  VERIFICATION_STATUSES
+} from './permissions.js';
 import { fetchLineProfile } from './lineProfile.js';
 import { inspectGuestSession, isGuestToken } from './guestSession.js';
 
@@ -11,16 +16,37 @@ const bearerToken = (request) => {
 
 const actorFromUser = (
   user,
-  { authMode = 'line', displayName = '', lineUserId = null } = {}
-) => ({
-  userId: user?.userId || null,
-  employeeId: user?.employeeId || null,
-  lineUserId: user?.lineUserId || lineUserId || null,
-  displayName: user?.displayName || displayName || '',
-  registered: Boolean(user),
-  ...(user || {}),
-  authMode
-});
+  {
+    authMode = 'line',
+    displayName = '',
+    lineUserId = null,
+    employeeId = null,
+    provisional = false
+  } = {}
+) => {
+  const verificationStatus = provisional
+    ? VERIFICATION_STATUSES.UNVERIFIED
+    : (user?.verificationStatus || null);
+  const active = user ? Boolean(user.active) : true;
+  const actor = {
+    userId: user?.userId || null,
+    employeeId: user?.employeeId || employeeId || null,
+    lineUserId: user?.lineUserId || lineUserId || null,
+    displayName: user?.displayName || displayName || '',
+    registered: Boolean(user && verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED),
+    provisional: Boolean(provisional || verificationStatus === VERIFICATION_STATUSES.UNVERIFIED),
+    verificationStatus,
+    ...(user || {}),
+    authMode
+  };
+  actor.capabilities = capabilitiesFor(
+    actor.role,
+    authMode,
+    verificationStatus,
+    active
+  );
+  return actor;
+};
 
 export const resolveLineIdentity = async (
   request,
@@ -63,8 +89,21 @@ export const resolveCanonicalIdentity = async (
 
   const guest = await inspectGuestSession(env.DB, token, { now });
   if (isGuestToken(token)) {
-    if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
     if (viewAsTarget(new URL(request.url))) throw forbidden('VIEW_AS_FORBIDDEN');
+    if (guest?.provisional) {
+      const actor = actorFromUser(guest.user, {
+        authMode: 'employee_guest',
+        employeeId: guest.employeeId,
+        provisional: true
+      });
+      return {
+        actor,
+        authorizationActor: actor,
+        effectiveSubject: actor,
+        viewAs: null
+      };
+    }
+    if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
     const actor = actorFromUser(guest.user, { authMode: 'employee_guest' });
     return {
       actor,
@@ -88,7 +127,9 @@ export const resolveCanonicalIdentity = async (
     };
   }
 
-  if (!allowViewAs || !actor.registered || actor.authMode !== 'line' || actor.role !== 'Admin') {
+  if (!allowViewAs || !isVerifiedPrincipal(actor)
+    || actor.authMode !== 'line'
+    || !actor.capabilities.includes('VIEW_AS')) {
     throw forbidden('VIEW_AS_FORBIDDEN');
   }
   const effectiveUser = await getUserById(env.DB, requestedTarget);

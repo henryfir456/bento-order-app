@@ -4,13 +4,45 @@ import { isFormalRelease, parseChangelog } from './changelogParser';
 
 export const CHANGELOG = parseChangelog(changelogMarkdown);
 
-// The footer is a user-visible release label. Keep package.json at the
-// dependency/package version until a package release is explicitly cut.
+// The footer is a user-visible release label. Numbered releases are sourced
+// from CHANGELOG; package.json remains the fallback when no release exists.
 export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJson.version;
 
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.11.0': [
+    {
+      name: '新增',
+      changes: [
+        'LINE 首次登入新增伺服器驗證的員工身份查詢與明確綁定流程。',
+        '格式正確但尚未有 mapping 的員工編號可進入 UNVERIFIED onboarding。',
+        '新增集中式 verification-aware authorization 與 capability derivation。',
+        '新增 provisional identity migration 0003，支援核驗狀態與 onboarding session。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        '員工編號完成 LINE 綁定後，禁止純員編登入並要求使用 LINE。',
+        'Employee Guest Login 僅保留為沒有 LINE auth context 時的 fallback。',
+        'UNVERIFIED 身份僅允許 onboarding capabilities，預設拒絕一般 application-data 與 privileged capabilities。',
+        '完成 remote canonical identity migration，並將 provisional identity migration 0003 套用至 formal D1。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '強化 LINE binding、employee collision 與 silent rebind protection，採 fail-closed 行為。'
+      ]
+    },
+    {
+      name: '已知限制',
+      changes: [
+        '目前 workbook 仍缺少 employee_id 與 approved mapping，production employee import 仍為 BLOCKED。'
+      ]
+    }
+  ],
   '0.10.1': [
     {
       name: '修正',
@@ -56,7 +88,8 @@ const uiCategoryName = Object.freeze({
   Added: '新增',
   Changed: '變更',
   Changes: '異動',
-  Fixed: '修正'
+  Fixed: '修正',
+  'Known Limitations': '已知限制'
 });
 
 const LEGACY_UI_RELEASES = new Set([

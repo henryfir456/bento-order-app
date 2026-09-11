@@ -4,6 +4,9 @@ export const ACTIONS = Object.freeze({
   READ_SELF: 'READ_SELF',
   REGISTER_SELF: 'REGISTER_SELF',
   WRITE_SELF: 'WRITE_SELF',
+  CAN_VIEW_SELF_ONBOARDING_STATE: 'CAN_VIEW_SELF_ONBOARDING_STATE',
+  CAN_COMPLETE_PROFILE: 'CAN_COMPLETE_PROFILE',
+  CAN_BIND_LINE: 'CAN_BIND_LINE',
   READ_ADMIN_SUMMARY: 'READ_ADMIN_SUMMARY',
   READ_MEMBER_BALANCES: 'READ_MEMBER_BALANCES',
   ADMIN_BALANCE: 'ADMIN_BALANCE',
@@ -37,23 +40,70 @@ const GUEST_ACTIONS = new Set([
   ACTIONS.WRITE_SELF
 ]);
 
-export const can = (role, action, authMode = 'line') => {
-  if (authMode === 'employee_guest') {
-    return GUEST_ACTIONS.has(action);
-  }
-  return Boolean(ROLE_ACTIONS[role]?.has(action));
-};
+export const VERIFICATION_STATUSES = Object.freeze({
+  VERIFIED: 'VERIFIED',
+  UNVERIFIED: 'UNVERIFIED'
+});
 
-export const capabilitiesFor = (role, authMode = 'line') => {
+const ONBOARDING_ACTIONS = new Set([
+  ACTIONS.CAN_BIND_LINE,
+  ACTIONS.CAN_COMPLETE_PROFILE,
+  ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
+]);
+
+const normalizedVerificationStatus = (value) => (
+  value === VERIFICATION_STATUSES.UNVERIFIED
+    ? VERIFICATION_STATUSES.UNVERIFIED
+    : VERIFICATION_STATUSES.VERIFIED
+);
+
+export const isVerifiedPrincipal = (principal) => Boolean(
+  principal?.registered
+  && principal?.active !== false
+  && normalizedVerificationStatus(principal?.verificationStatus)
+    === VERIFICATION_STATUSES.VERIFIED
+);
+
+export const isProvisionalPrincipal = (principal) => (
+  normalizedVerificationStatus(principal?.verificationStatus)
+    === VERIFICATION_STATUSES.UNVERIFIED
+);
+
+export const capabilitiesFor = (
+  role,
+  authMode = 'line',
+  verificationStatus = VERIFICATION_STATUSES.VERIFIED,
+  active = true
+) => {
+  if (!active) return [];
+  if (normalizedVerificationStatus(verificationStatus) === VERIFICATION_STATUSES.UNVERIFIED) {
+    return [...ONBOARDING_ACTIONS].sort();
+  }
   const actions = authMode === 'employee_guest'
     ? GUEST_ACTIONS
     : (ROLE_ACTIONS[role] || new Set());
   return [...actions].sort();
 };
 
+export const can = (
+  role,
+  action,
+  authMode = 'line',
+  verificationStatus = VERIFICATION_STATUSES.VERIFIED,
+  active = true
+) => capabilitiesFor(role, authMode, verificationStatus, active).includes(action);
+
 export const assertCan = (identity, action) => {
-  if (!identity?.actor?.registered
-    || !can(identity.actor.role, action, identity.actor.authMode || 'line')) {
+  const actor = identity?.actor;
+  if (!actor
+    || (!actor.registered && !isProvisionalPrincipal(actor))
+    || !can(
+    actor.role,
+    action,
+    actor.authMode || 'line',
+    actor.verificationStatus,
+    actor.active !== false
+  )) {
     throw forbidden();
   }
   return true;
