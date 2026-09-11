@@ -19,7 +19,7 @@ const isExplicitDevOrTestCorsMode = (env) => (
   isLocalCorsMode(env) || isRemoteTestCorsMode(env)
 );
 
-const PINGGY_REMOTE_TEST_HOST_PATTERN = /^(?!run\.)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.run)?\.pinggy-free\.link$/i;
+const PINGGY_REMOTE_TEST_HOST_PATTERN = /^(?!run\.)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.run\.pinggy\.link|[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.run)?\.pinggy-free\.link)$/i;
 
 const normalizeExactOrigin = (value) => {
   const candidate = String(value || '').trim();

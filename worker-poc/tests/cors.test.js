@@ -24,6 +24,7 @@ const remoteTestEnv = (origins = '') => ({
 });
 
 const remoteTestPinggyOrigin = 'https://abc-123.run.pinggy-free.link';
+const currentRunPinggyOrigin = 'https://current-session.run.pinggy.link';
 
 const callMe = async (origin, env = {}, options = {}) => {
   const database = new SqliteD1();
@@ -120,7 +121,8 @@ test('Pinggy is rejected without remote-test CORS mode', async () => {
 test('remote-test CORS allows a dynamic Pinggy subdomain without exact configuration', async () => {
   for (const origin of [
     'https://current-session.pinggy-free.link',
-    'https://current-session.run.pinggy-free.link'
+    'https://current-session.run.pinggy-free.link',
+    currentRunPinggyOrigin
   ]) {
     const response = await callMe(origin, remoteTestEnv());
 
@@ -146,7 +148,15 @@ test('remote-test CORS rejects nonconforming Pinggy origins', async () => {
     'http://foo.run.pinggy-free.link',
     'https://foo.run.pinggy-free.link:443',
     'https://foo.run.pinggy-free.link/path',
-    'https://*.run.pinggy-free.link'
+    'https://*.run.pinggy-free.link',
+    'http://current-session.run.pinggy.link',
+    'https://current-session.run.pinggy.link:443',
+    'https://current-session.run.pinggy.link/path',
+    'https://*.run.pinggy.link',
+    'https://foo.bar.run.pinggy.link',
+    'https://pinggy.link',
+    'https://foo.pinggy.link',
+    'https://run.pinggy.link'
   ];
 
   for (const origin of invalidOrigins) {
@@ -301,6 +311,20 @@ test('OPTIONS preserves the CORS preflight contract in remote-test mode', async 
   assertCorsAllowed(response, origin);
 });
 
+test('current run.pinggy.link OPTIONS preserves the CORS preflight contract', async () => {
+  const response = await handleFormalRequest(request('/api/me', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: currentRunPinggyOrigin,
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Headers': 'Authorization, Content-Type'
+    }
+  }), remoteTestEnv());
+
+  assert.equal(response.status, 204);
+  assertCorsAllowed(response, currentRunPinggyOrigin);
+});
+
 test('employee guest OPTIONS allows localhost and required authenticated headers', async () => {
   const response = await handleFormalRequest(request('/api/auth/employee-guest', {
     method: 'OPTIONS',
@@ -320,6 +344,20 @@ test('employee guest OPTIONS allows localhost and required authenticated headers
       new RegExp(`(^|, )${header}(,|$)`, 'i')
     );
   }
+});
+
+test('employee guest OPTIONS allows the current run.pinggy.link origin', async () => {
+  const response = await handleFormalRequest(request('/api/auth/employee-guest', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: currentRunPinggyOrigin,
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'Content-Type'
+    }
+  }), remoteTestEnv());
+
+  assert.equal(response.status, 204);
+  assertCorsAllowed(response, currentRunPinggyOrigin);
 });
 
 test('employee guest OPTIONS denies unknown remote-test origins', async () => {
