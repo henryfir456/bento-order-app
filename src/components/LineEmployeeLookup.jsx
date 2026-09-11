@@ -3,7 +3,8 @@ export default function LineEmployeeLookup({
   onEmployeeIdChange,
   onSubmit,
   loading = false,
-  error = ''
+  error = '',
+  bindingRequired = false
 }) {
   return (
     <section
@@ -12,9 +13,13 @@ export default function LineEmployeeLookup({
     >
       <div className="space-y-2 text-center">
         <div className="text-4xl">🔗</div>
-        <h2 className="text-xl font-bold text-[#2C4A3E]">確認員工身份</h2>
+        <h2 className="text-xl font-bold text-[#2C4A3E]">
+          {bindingRequired ? 'LINE 登入完成' : '確認員工身份'}
+        </h2>
         <p className="text-sm text-gray-500">
-          LINE 已登入。員工編號只用於查找並確認綁定，不會建立另一個員工 guest 登入 session。
+          {bindingRequired
+            ? '目前 LINE 身份：尚未綁定員編。請完成員編綁定後繼續使用訂餐功能。'
+            : 'LINE 已登入。員工編號只用於查找並確認綁定，不會建立另一個員工 guest 登入 session。'}
         </p>
       </div>
 
@@ -41,7 +46,7 @@ export default function LineEmployeeLookup({
           disabled={loading || !employeeId.trim()}
           className="w-full rounded-2xl bg-[#2C4A3E] py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
         >
-          {loading ? '查詢中...' : '查詢並繼續'}
+          {loading ? (bindingRequired ? '綁定中...' : '查詢中...') : (bindingRequired ? '綁定員編' : '查詢並繼續')}
         </button>
         {error && (
           <p role="alert" className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">

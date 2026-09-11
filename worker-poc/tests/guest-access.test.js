@@ -349,6 +349,142 @@ test('LINE-authenticated employee lookup and binding never create a guest sessio
   assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
 });
 
+test('LINE canonical user without employee ID must bind an employee before application access', async () => {
+  const database = new SqliteD1();
+  seedUser(database, {
+    userId: 'line-identity-without-employee',
+    employeeId: null,
+    lineUserId: 'line-unbound-identity',
+    displayName: 'LINE-only identity',
+    verificationStatus: 'UNVERIFIED'
+  });
+  const lineProfile = profileFetch({
+    token: 'line-unbound-token',
+    lineUserId: 'line-unbound-identity',
+    displayName: 'LINE-only identity'
+  });
+
+  const me = await call(database, '/api/me', {
+    token: 'line-unbound-token'
+  }, { fetchImpl: lineProfile });
+  assert.equal(me.response.status, 200);
+  assert.equal(me.body.registered, false);
+  assert.equal(me.body.status, 'EMPLOYEE_BIND_REQUIRED');
+  assert.equal(me.body.identityState, 'EMPLOYEE_BIND_REQUIRED');
+  assert.equal(me.body.authMode, 'line');
+  assert.equal(me.body.user.userId, 'line-identity-without-employee');
+  assert.equal(me.body.user.employeeId, null);
+  assert.deepEqual(me.body.capabilities, [
+    'CAN_BIND_EMPLOYEE',
+    'CAN_VIEW_SELF_ONBOARDING_STATE'
+  ]);
+
+  const binding = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'line-unbound-token',
+    body: {
+      employeeId: ' 139653 ',
+      lineUserId: 'forged-line-id',
+      displayName: 'Must not overwrite canonical profile',
+      pickupFloor: '9樓'
+    }
+  }, { fetchImpl: lineProfile });
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.status, 'BOUND');
+  assert.equal(binding.body.identityState, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(binding.body.user.userId, 'line-identity-without-employee');
+  assert.equal(binding.body.user.employeeId, '139653');
+  assert.equal(binding.body.user.lineUserId, 'line-unbound-identity');
+  assert.equal(binding.body.user.verificationStatus, 'UNVERIFIED');
+  assert.equal(binding.body.user.displayName, 'LINE-only identity');
+  assert.equal(binding.body.user.floor, '1樓');
+  assert.equal(binding.body.user.balance, 0);
+  assert.equal(binding.body.user.role, 'User');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+
+  const replay = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'line-unbound-token',
+    body: { employeeId: '139653' }
+  }, { fetchImpl: lineProfile });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.body.status, 'ALREADY_BOUND');
+  assert.equal(replay.body.user.userId, 'line-identity-without-employee');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+
+  const refreshed = await call(database, '/api/me', {
+    token: 'line-unbound-token'
+  }, { fetchImpl: lineProfile });
+  assert.equal(refreshed.response.status, 200);
+  assert.equal(refreshed.body.identityState, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(refreshed.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(refreshed.body.user.employeeId, '139653');
+  assert.deepEqual(refreshed.body.capabilities, [
+    'CAN_BIND_LINE',
+    'CAN_COMPLETE_PROFILE',
+    'CAN_VIEW_SELF_ONBOARDING_STATE'
+  ]);
+});
+
+test('employee binding fails closed when the requested employee ID belongs to another canonical user', async () => {
+  const database = new SqliteD1();
+  seedUser(database, {
+    userId: 'line-unbound-conflict-source',
+    employeeId: null,
+    lineUserId: 'line-conflict-source',
+    displayName: 'LINE source'
+  });
+  seedUser(database, {
+    userId: 'employee-139653-owner',
+    employeeId: '139653',
+    lineUserId: null,
+    displayName: 'Existing employee'
+  });
+  const lineProfile = profileFetch({
+    token: 'line-conflict-source-token',
+    lineUserId: 'line-conflict-source',
+    displayName: 'LINE source'
+  });
+
+  const conflict = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'line-conflict-source-token',
+    body: { employeeId: '139653' }
+  }, { fetchImpl: lineProfile });
+  assert.equal(conflict.response.status, 409);
+  assert.deepEqual(conflict.body, { error: 'EMPLOYEE_ID_ALREADY_BOUND' });
+  assert.deepEqual({
+    ...database.get(`
+      SELECT employee_id, line_user_id
+      FROM users WHERE user_id = ?
+    `, 'line-unbound-conflict-source')
+  }, {
+    employee_id: null,
+    line_user_id: 'line-conflict-source'
+  });
+});
+
+test('employee guest credentials cannot use the direct LINE employee-binding endpoint', async () => {
+  const database = new SqliteD1();
+  const guest = await call(database, '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '139653' }
+  });
+  const rejected = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: guest.body.token,
+    body: { employeeId: '139653' }
+  }, {
+    fetchImpl: profileFetch({
+      token: 'line-token',
+      lineUserId: 'line-should-not-authenticate'
+    })
+  });
+  assert.equal(rejected.response.status, 401);
+  assert.equal(rejected.body.error, 'TOKEN_INVALID');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 0);
+});
+
 test('LINE-authenticated unknown employee onboarding binds server LINE identity without a guest session', async () => {
   const database = new SqliteD1();
   const lineProfile = profileFetch({

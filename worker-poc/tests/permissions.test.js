@@ -122,11 +122,20 @@ test('identity state distinguishes a missing provisional user from an existing U
   assert.equal(identityStateFor({
     userId: 'unverified-user',
     registered: false,
+    employeeId: '139653',
     verificationStatus: 'UNVERIFIED'
   }), IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE);
   assert.equal(identityStateFor({
+    userId: 'line-user-without-employee',
+    authMode: 'line',
+    registered: false,
+    employeeId: null,
+    verificationStatus: 'UNVERIFIED'
+  }), IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED);
+  assert.equal(identityStateFor({
     userId: 'verified-user',
     registered: true,
+    employeeId: '139654',
     active: true,
     verificationStatus: 'VERIFIED'
   }), IDENTITY_STATES.VERIFIED);
@@ -135,6 +144,56 @@ test('identity state distinguishes a missing provisional user from an existing U
     registered: false,
     verificationStatus: null
   }), IDENTITY_STATES.UNREGISTERED);
+});
+
+test('LINE canonical users without employee IDs receive only employee-binding capability', () => {
+  assert.deepEqual(
+    capabilitiesFor('Admin', 'line', 'VERIFIED', true, null, true),
+    [ACTIONS.CAN_BIND_EMPLOYEE, ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE]
+  );
+  for (const action of [
+    ACTIONS.READ_SELF,
+    ACTIONS.WRITE_SELF,
+    ACTIONS.READ_ADMIN_SUMMARY,
+    ACTIONS.READ_MEMBER_BALANCES,
+    ACTIONS.ADMIN_TOP_UP,
+    ACTIONS.ADMIN_CALENDAR,
+    ACTIONS.ADMIN_ROLE,
+    ACTIONS.VIEW_AS
+  ]) {
+    assert.equal(
+      can('Admin', action, 'line', 'VERIFIED', true, null, true),
+      false,
+      action
+    );
+  }
+  assert.doesNotThrow(() => assertCan({
+    actor: {
+      userId: 'line-unbound',
+      role: 'Admin',
+      active: true,
+      registered: false,
+      authMode: 'line',
+      employeeId: null,
+      requiresEmployeeBinding: true,
+      verificationStatus: 'VERIFIED'
+    }
+  }, ACTIONS.CAN_BIND_EMPLOYEE));
+  assert.throws(
+    () => assertCan({
+      actor: {
+        userId: 'line-unbound',
+        role: 'Admin',
+        active: true,
+        registered: false,
+        authMode: 'line',
+        employeeId: null,
+        requiresEmployeeBinding: true,
+        verificationStatus: 'VERIFIED'
+      }
+    }, ACTIONS.READ_SELF),
+    (error) => error.code === 'FORBIDDEN'
+  );
 });
 
 test('admin summary derives member visibility from central capabilities, not a role-only gate', () => {

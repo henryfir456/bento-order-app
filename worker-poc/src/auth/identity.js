@@ -2,6 +2,7 @@ import { getUserByEmployeeId, getUserById, getUserByLineId } from '../db/users.j
 import { forbidden, unauthorized } from '../http/errors.js';
 import {
   capabilitiesFor,
+  identityStateFor,
   isVerifiedPrincipal,
   VERIFICATION_STATUSES
 } from './permissions.js';
@@ -27,14 +28,25 @@ const actorFromUser = (
   const verificationStatus = provisional
     ? VERIFICATION_STATUSES.UNVERIFIED
     : (user?.verificationStatus || null);
+  const hasEmployeeId = Boolean(String(user?.employeeId || employeeId || '').trim());
+  const requiresEmployeeBinding = Boolean(
+    user
+    && authMode === 'line'
+    && !hasEmployeeId
+  );
   const active = user ? Boolean(user.active) : true;
   const actor = {
     userId: user?.userId || null,
     employeeId: user?.employeeId || employeeId || null,
     lineUserId: user?.lineUserId || lineUserId || null,
     displayName: user?.displayName || displayName || '',
-    registered: Boolean(user && verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED),
+    registered: Boolean(
+      user
+      && hasEmployeeId
+      && verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED
+    ),
     provisional: Boolean(provisional || verificationStatus === VERIFICATION_STATUSES.UNVERIFIED),
+    requiresEmployeeBinding,
     verificationStatus,
     ...(user || {}),
     authMode
@@ -43,8 +55,11 @@ const actorFromUser = (
     actor.role,
     authMode,
     verificationStatus,
-    active
+    active,
+    actor.employeeId,
+    requiresEmployeeBinding
   );
+  actor.identityState = identityStateFor(actor);
   return actor;
 };
 

@@ -49,6 +49,7 @@ const AUTH_STATES = Object.freeze({
   AUTH_REQUIRED: 'AUTH_REQUIRED',
   AUTH_FAILED: 'AUTH_FAILED',
   UNREGISTERED: 'UNREGISTERED',
+  EMPLOYEE_BIND_REQUIRED: 'EMPLOYEE_BIND_REQUIRED',
   EMPLOYEE_CONFIRMATION: 'EMPLOYEE_CONFIRMATION',
   UNVERIFIED: 'UNVERIFIED',
   REGISTERED: 'REGISTERED'
@@ -476,6 +477,45 @@ export default function App() {
       return data;
     }
 
+    if (data.success
+      && data.registered === false
+      && data.identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED
+      && data.user) {
+      const nextUser = {
+        ...data.user,
+        userId: data.user.userId,
+        name: data.user.name || data.user.displayName || '',
+        floor: data.user.defaultFloor || data.user.floor || '',
+        defaultFloor: data.user.defaultFloor || data.user.floor || '',
+        balance: Number(data.user.balance || 0),
+        role: data.user.role || 'User',
+        authMode: data.authMode || 'line',
+        capabilities: Array.isArray(data.capabilities) ? data.capabilities : []
+      };
+      const nextDisplayName = data.displayName
+        || nextUser.name
+        || '';
+      setAuthMode(data.authMode || 'line');
+      setIdentityState(IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED);
+      setAuthUser(nextUser);
+      setViewAsUser(null);
+      setLineUserId(data.lineUserId || nextUser.lineUserId || '');
+      setRegistrationDisplayName(nextDisplayName);
+      setRegistrationFloor(nextUser.defaultFloor || '1樓');
+      setProvisionalProfile({
+        employeeId: data.employeeId || nextUser.employeeId || '',
+        displayName: nextDisplayName,
+        pickupFloor: nextUser.defaultFloor || '1樓',
+        lineDisplayName: data.displayName || nextDisplayName
+      });
+      setName(nextDisplayName);
+      setDefaultFloor(nextUser.defaultFloor || '');
+      setFloor(nextUser.defaultFloor || '1樓');
+      setUserBalance(nextUser.balance);
+      setPendingEmployeeConfirmation(null);
+      return data;
+    }
+
     if (data.success && data.registered === false && data.status === 'UNVERIFIED_EMPLOYEE') {
       const provisionalUser = data.user ? {
         ...data.user,
@@ -762,7 +802,9 @@ export default function App() {
       } else if (identity?.success && identity.registered === false) {
         const stateApplyStartedAt = getPerformanceNow();
         applyUserInfoData(identity);
-        const nextAuthState = identity.status === 'UNVERIFIED_EMPLOYEE'
+        const nextAuthState = identity.identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED
+          ? AUTH_STATES.EMPLOYEE_BIND_REQUIRED
+          : identity.status === 'UNVERIFIED_EMPLOYEE'
           ? AUTH_STATES.UNVERIFIED
           : AUTH_STATES.UNREGISTERED;
         setAuthState(nextAuthState);
@@ -818,6 +860,7 @@ export default function App() {
     if (
       authState !== AUTH_STATES.REGISTERED
       && authState !== AUTH_STATES.UNREGISTERED
+      && authState !== AUTH_STATES.EMPLOYEE_BIND_REQUIRED
       && authState !== AUTH_STATES.UNVERIFIED
     ) return;
 
@@ -1276,6 +1319,19 @@ export default function App() {
     } finally {
       setLineBindLoading(false);
     }
+  };
+
+  const handleLineEmployeeBindRequired = async (event) => {
+    event?.preventDefault?.();
+    if (apiClient.transport !== 'worker' || lineBindLoading) return;
+
+    const employeeId = String(employeeGuestId || '').trim();
+    if (!employeeId) {
+      setEmployeeGuestError('請輸入員工編號。');
+      return;
+    }
+
+    await handleLineEmployeeBind({ employeeId });
   };
 
   const handleLineLogin = async () => {
@@ -2409,6 +2465,7 @@ export default function App() {
   const aggregatedOrders = getAggregatedOrders();
   const isRegistered = authState === AUTH_STATES.REGISTERED;
   const isUnregistered = authState === AUTH_STATES.UNREGISTERED;
+  const isEmployeeBindRequired = authState === AUTH_STATES.EMPLOYEE_BIND_REQUIRED;
   const isUnverified = authState === AUTH_STATES.UNVERIFIED;
   const authUserId = authUser?.userId || lineUserId;
   const authRole = authUser?.role || 'User';
@@ -2422,6 +2479,7 @@ export default function App() {
     [AUTH_STATES.AUTH_REQUIRED]: '請登入 LINE',
     [AUTH_STATES.AUTH_FAILED]: '身份驗證失敗',
     [AUTH_STATES.UNREGISTERED]: '尚未註冊',
+    [AUTH_STATES.EMPLOYEE_BIND_REQUIRED]: '尚未綁定員編',
     [AUTH_STATES.EMPLOYEE_CONFIRMATION]: '確認員工身份',
     [AUTH_STATES.UNVERIFIED]: '待完成核驗',
     [AUTH_STATES.REGISTERED]: '身份已驗證'
@@ -2585,7 +2643,7 @@ export default function App() {
           )}
 
         {apiClient.transport === 'worker'
-          && authState === AUTH_STATES.UNREGISTERED
+          && [AUTH_STATES.UNREGISTERED, AUTH_STATES.EMPLOYEE_BIND_REQUIRED].includes(authState)
           && !loading
           && (
             <LineEmployeeLookup
@@ -2594,7 +2652,10 @@ export default function App() {
                 setEmployeeGuestId(value);
                 if (employeeGuestError) setEmployeeGuestError('');
               }}
-              onSubmit={handleLineEmployeeLookup}
+              onSubmit={isEmployeeBindRequired
+                ? handleLineEmployeeBindRequired
+                : handleLineEmployeeLookup}
+              bindingRequired={isEmployeeBindRequired}
               loading={lineBindLoading}
               error={employeeGuestError}
             />

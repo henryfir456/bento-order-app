@@ -154,13 +154,37 @@ test('guest identity state controls create-versus-existing onboarding routing', 
 
   assert.equal(IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE, 'NEW_PROVISIONAL_EMPLOYEE');
   assert.equal(IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE, 'EXISTING_UNVERIFIED_EMPLOYEE');
+  assert.equal(IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED, 'EMPLOYEE_BIND_REQUIRED');
   assert.match(appSource, /const \[identityState, setIdentityState\] = useState\(null\)/);
   assert.match(appSource, /identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
   assert.match(submitBlock, /authMode === 'employee_guest'[\s\S]*?identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
   assert.match(submitBlock, /identityState !== IDENTITY_STATES\.EXISTING_UNVERIFIED_EMPLOYEE[\s\S]*?apiClient\.updatePickupFloor/);
   assert.match(workerIdentitySource, /getUserByEmployeeId/);
   assert.match(workerIdentitySource, /verificationStatus !== VERIFICATION_STATUSES\.UNVERIFIED/);
-  assert.match(workerUsersSource, /identityState: identityStateFor\(actor\)/);
+  assert.match(workerUsersSource, /const identityState = identityStateFor\(actor\)/);
+});
+
+test('LINE identities without employee IDs use explicit binding-required state and flow', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const bootSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'bootFlow.js'), 'utf8');
+  const lookupSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'LineEmployeeLookup.jsx'), 'utf8');
+  const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'worker-poc', 'src', 'auth', 'permissions.js'), 'utf8');
+  const errorSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiErrors.js'), 'utf8');
+  const applyIdentityBlock = appSource.match(/const applyUserInfoData = \(data\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+
+  assert.match(bootSource, /EMPLOYEE_BIND_REQUIRED: 'EMPLOYEE_BIND_REQUIRED'/);
+  assert.match(permissionsSource, /CAN_BIND_EMPLOYEE: 'CAN_BIND_EMPLOYEE'/);
+  assert.match(errorSource, /EMPLOYEE_ID_ALREADY_BOUND/);
+  assert.match(applyIdentityBlock, /data\.identityState === IDENTITY_STATES\.EMPLOYEE_BIND_REQUIRED/);
+  assert.match(appSource, /AUTH_STATES\.EMPLOYEE_BIND_REQUIRED/);
+  assert.match(appSource, /apiClient\.lineEmployeeBind/);
+  assert.match(appSource, /handleLineEmployeeBindRequired/);
+  assert.match(appSource, /bindingRequired=\{isEmployeeBindRequired\}/);
+  assert.match(appSource, /\[AUTH_STATES\.UNREGISTERED, AUTH_STATES\.EMPLOYEE_BIND_REQUIRED\]/);
+  assert.match(lookupSource, /bindingRequired = false/);
+  assert.match(lookupSource, /尚未綁定員編/);
+  assert.match(lookupSource, /綁定員編/);
+  assert.doesNotMatch(appSource.match(/const handleLineEmployeeBindRequired[\s\S]*?const handleLineLogin/)?.[0] || '', /employeeGuestLogin|completeEmployeeGuestOnboarding/);
 });
 
 test('LIFF init is idempotent across concurrent boot attempts', async () => {

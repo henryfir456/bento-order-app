@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-09-11
+
+### Added
+
+- Added an explicit `EMPLOYEE_BIND_REQUIRED` state and binding-only capability set for canonical LINE identities that do not yet have an `employee_id`.
+- Added direct employee binding for those identities through the existing server-validated `POST /api/auth/line-employee-bind` endpoint, without creating an Employee Guest session.
+
+### Changed
+
+- Kept employee binding, verification status, role, balance, and canonical user ownership separate; binding an employee ID does not promote an `UNVERIFIED` user.
+- Kept the LINE-authenticated binding flow fail-closed on employee collisions and idempotent for same-user retries.
+
+### Fixed
+
+- Fixed LINE-authenticated canonical users without an employee ID being treated as an already-bound identity or being routed into the wrong unregistered flow.
+
 ## [0.11.3] - 2026-09-11
 
 ### Fixed

@@ -233,7 +233,16 @@ export const lineEmployeeLookup = async (
   const employeeId = employeeIdText(employeeIdInput);
   const verifiedLineUserId = lineIdText(lineUserId);
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
-  if (currentLineUser) throw conflict('LINE_ALREADY_BOUND');
+  if (currentLineUser) {
+    if (!currentLineUser.active) throw forbidden('EMPLOYEE_INACTIVE');
+    if (currentLineUser.employeeId !== null && currentLineUser.employeeId !== undefined) {
+      throw conflict('LINE_ALREADY_BOUND');
+    }
+    const boundEmployee = await getUserByEmployeeId(database, employeeId);
+    if (boundEmployee && boundEmployee.userId !== currentLineUser.userId) {
+      throw conflict('EMPLOYEE_ID_ALREADY_BOUND');
+    }
+  }
 
   const user = await getUserByEmployeeId(database, employeeId);
   if (!user) {
@@ -327,16 +336,103 @@ export const lineEmployeeBind = async (
   const verifiedLineUserId = lineIdText(lineUserId);
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
   if (currentLineUser) {
+    if (!currentLineUser.active) throw forbidden('EMPLOYEE_INACTIVE');
     if (currentLineUser.employeeId === employeeId) {
       return {
         success: true,
         status: 'ALREADY_BOUND',
+        identityState: identityStateFor({
+          userId: currentLineUser.userId,
+          employeeId: currentLineUser.employeeId,
+          registered: currentLineUser.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED,
+          provisional: currentLineUser.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED,
+          verificationStatus: currentLineUser.verificationStatus,
+          active: currentLineUser.active
+        }),
         verificationStatus: currentLineUser.verificationStatus,
         authMode: 'line',
         user: publicUser(currentLineUser)
       };
     }
-    throw conflict('LINE_ALREADY_BOUND');
+    if (currentLineUser.employeeId !== null && currentLineUser.employeeId !== undefined) {
+      throw conflict('LINE_ALREADY_BOUND');
+    }
+
+    const conflictingEmployee = await getUserByEmployeeId(database, employeeId);
+    if (conflictingEmployee && conflictingEmployee.userId !== currentLineUser.userId) {
+      throw conflict('EMPLOYEE_ID_ALREADY_BOUND');
+    }
+
+    const timestamp = resolveClock(clock).toISOString();
+    try {
+      const result = await database.prepare(`
+        UPDATE users
+        SET employee_id = ?, updated_at = ?
+        WHERE user_id = ?
+          AND line_user_id = ?
+          AND employee_id IS NULL
+          AND active = 1
+      `).bind(
+        employeeId,
+        timestamp,
+        currentLineUser.userId,
+        verifiedLineUserId
+      ).run();
+      if (statementChanges(result) !== 1) {
+        const concurrentUser = await getUserByLineId(database, verifiedLineUserId);
+        if (concurrentUser?.employeeId === employeeId) {
+          return {
+            success: true,
+            status: 'ALREADY_BOUND',
+            identityState: identityStateFor({
+              userId: concurrentUser.userId,
+              employeeId: concurrentUser.employeeId,
+              registered: concurrentUser.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED,
+              provisional: concurrentUser.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED,
+              verificationStatus: concurrentUser.verificationStatus,
+              active: concurrentUser.active
+            }),
+            verificationStatus: concurrentUser.verificationStatus,
+            authMode: 'line',
+            user: publicUser(concurrentUser)
+          };
+        }
+        if (await getUserByEmployeeId(database, employeeId)) {
+          throw conflict('EMPLOYEE_ID_ALREADY_BOUND');
+        }
+        throw conflict('LINE_BIND_CONFLICT');
+      }
+    } catch (error) {
+      if (error?.status === 409) throw error;
+      if (/unique|constraint/i.test(error?.message || error?.cause?.message || '')) {
+        const conflicting = await getUserByEmployeeId(database, employeeId);
+        if (conflicting && conflicting.userId !== currentLineUser.userId) {
+          throw conflict('EMPLOYEE_ID_ALREADY_BOUND');
+        }
+        throw conflict('LINE_BIND_CONFLICT');
+      }
+      throw error;
+    }
+
+    const boundUser = await getUserByLineId(database, verifiedLineUserId);
+    if (!boundUser || boundUser.userId !== currentLineUser.userId || boundUser.employeeId !== employeeId) {
+      throw conflict('LINE_BIND_CONFLICT');
+    }
+    return {
+      success: true,
+      status: 'BOUND',
+      identityState: identityStateFor({
+        userId: boundUser.userId,
+        employeeId: boundUser.employeeId,
+        registered: boundUser.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED,
+        provisional: boundUser.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED,
+        verificationStatus: boundUser.verificationStatus,
+        active: boundUser.active
+      }),
+      verificationStatus: boundUser.verificationStatus,
+      authMode: 'line',
+      user: publicUser(boundUser)
+    };
   }
 
   const user = await getUserByEmployeeId(database, employeeId);

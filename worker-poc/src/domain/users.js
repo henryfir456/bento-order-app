@@ -7,6 +7,7 @@ import {
   assertSelfTarget,
   capabilitiesFor,
   identityStateFor,
+  IDENTITY_STATES,
   VERIFICATION_STATUSES
 } from '../auth/permissions.js';
 
@@ -39,6 +40,8 @@ const assertDisplayName = (displayName) => {
 export const getMe = (identity) => {
   const actor = identity?.actor || {};
   const provisional = actor.provisional || actor.verificationStatus === 'UNVERIFIED';
+  const identityState = identityStateFor(actor);
+  const employeeBindingRequired = identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED;
   // Keep registered for the existing frontend contract: it means verified
   // application access, not whether a canonical user row exists. Consumers
   // must use identityState to distinguish a new provisional identity from an
@@ -48,10 +51,17 @@ export const getMe = (identity) => {
   return {
     success: true,
     registered,
-    identityState: identityStateFor(actor),
+    identityState,
     authMode: actor.authMode || null,
     user,
-    ...(provisional ? {
+    ...(employeeBindingRequired ? {
+      status: 'EMPLOYEE_BIND_REQUIRED',
+      verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.VERIFIED,
+      capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
+      employeeId: actor.employeeId || '',
+      lineUserId: actor.lineUserId || '',
+      displayName: actor.displayName || ''
+    } : provisional ? {
       status: 'UNVERIFIED_EMPLOYEE',
       capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
       employeeId: actor.employeeId || '',
@@ -128,7 +138,9 @@ export const updatePickupFloor = async (
         user.role,
         identity.actor.authMode,
         user.verificationStatus,
-        user.active
+        user.active,
+        user.employeeId,
+        identity.actor.requiresEmployeeBinding
       )
     } : {
       status: 'VERIFIED'

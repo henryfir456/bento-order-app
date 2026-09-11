@@ -40,15 +40,23 @@ comparison.
 The formal authenticated startup flow is:
 
 1. Send `GET /api/me` with `Authorization: Bearer <LINE access token>`.
-2. If `registered` is `false`, LINE authentication has succeeded but the LINE
-   identity is not bound. Show the separate employee-identity lookup path:
-   `POST /api/auth/line-employee-lookup` with the normalized employee ID.
-   An existing unbound employee is shown for explicit confirmation, then
-   `POST /api/auth/line-employee-bind` performs the server-side binding.
-   An unknown valid six-character ID enters onboarding; completion uses the
-   same direct LINE-authenticated bind path and creates an `UNVERIFIED`
-   canonical user. This LINE-authenticated path never creates an employee
-   guest session.
+2. If `registered` is `false`, inspect `identityState`. An existing canonical
+   LINE identity with `employee_id IS NULL` returns
+   `EMPLOYEE_BIND_REQUIRED` and must show the employee-binding prompt. Submit
+   the normalized employee ID to `POST /api/auth/line-employee-bind` with the
+   LINE bearer token; this fills only that canonical row's `employee_id` and
+   does not change verification, role, balance, or create a guest session.
+   A collision with another canonical user returns
+   `409 {"error":"EMPLOYEE_ID_ALREADY_BOUND"}`. A same-user retry is
+   idempotent and returns `ALREADY_BOUND`.
+   For a LINE identity with no canonical user, show the separate
+   employee-identity lookup path: `POST /api/auth/line-employee-lookup` with
+   the normalized employee ID. An existing unbound employee is shown for
+   explicit confirmation, then `POST /api/auth/line-employee-bind` performs
+   the server-side binding. An unknown valid six-character ID enters
+   onboarding; completion uses the same direct LINE-authenticated bind path
+   and creates an `UNVERIFIED` canonical user. This LINE-authenticated path
+   never creates an employee guest session.
 3. When no LINE authentication context is available, an unbound active
    employee may instead send
    `POST /api/auth/employee-guest` with a string `{ "employeeId": "001234" }`.
@@ -65,7 +73,9 @@ The formal authenticated startup flow is:
    canonical `User` row with `role = User`, `active = 1`, `balance = 0`, and
    `verification_status = UNVERIFIED`. The session and LINE binding are
    collision-safe and the guest session is revoked after binding.
-5. `UNVERIFIED` principals resolve through `/api/me` and may only use the
+5. A binding-required principal receives only
+   `CAN_BIND_EMPLOYEE` and `CAN_VIEW_SELF_ONBOARDING_STATE` until an employee
+   ID is attached. `UNVERIFIED` principals resolve through `/api/me` and may only use the
    central onboarding capabilities `CAN_VIEW_SELF_ONBOARDING_STATE`,
    `CAN_COMPLETE_PROFILE`, and `CAN_BIND_LINE`. They cannot access calendar,
    balances, orders, administration, View As, or another user's data.

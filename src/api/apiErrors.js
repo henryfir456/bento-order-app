@@ -66,6 +66,7 @@ const businessMessages = Object.freeze({
   LINE_LOGIN_REQUIRED: '此員工編號已綁定 LINE，請使用 LINE 登入。',
   UNVERIFIED_EMPLOYEE: '此員工編號尚未完成核驗，請先使用 LINE 完成 onboarding。',
   LINE_ALREADY_BOUND: '此 LINE 帳號已綁定其他員工，請確認後再試。',
+  EMPLOYEE_ID_ALREADY_BOUND: '此員編已綁定其他帳號，請確認員編或聯絡管理員。',
   LINE_BIND_CONFLICT: 'LINE 綁定狀態已變更，請重新登入後再試。',
   INVALID_EMPLOYEE_ID: '員工編號格式不正確，請重新輸入。',
   PROFILE_INVALID: '請確認姓名與基本資料格式。',

@@ -139,7 +139,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3'].includes(release.version)
+    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -164,6 +164,18 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Kept `EMPLOYEE_ONBOARDING_CONFLICT` protection for direct duplicate or stale onboarding-create attempts while routing reconciled users to profile update.'
   ]);
   assert.deepEqual(authStartupRelease.commits, []);
+  const employeeBindingRelease = parsed.find((release) => release.version === '0.12.0');
+  assert.ok(employeeBindingRelease);
+  assert.equal(employeeBindingRelease.date, '2026-09-11');
+  assert.deepEqual(employeeBindingRelease.categories.map(({ name }) => name), ['Added', 'Changed', 'Fixed']);
+  assert.deepEqual(employeeBindingRelease.changes, [
+    'Added an explicit `EMPLOYEE_BIND_REQUIRED` state and binding-only capability set for canonical LINE identities that do not yet have an `employee_id`.',
+    'Added direct employee binding for those identities through the existing server-validated `POST /api/auth/line-employee-bind` endpoint, without creating an Employee Guest session.',
+    'Kept employee binding, verification status, role, balance, and canonical user ownership separate; binding an employee ID does not promote an `UNVERIFIED` user.',
+    'Kept the LINE-authenticated binding flow fail-closed on employee collisions and idempotent for same-user retries.',
+    'Fixed LINE-authenticated canonical users without an employee ID being treated as an already-bound identity or being routed into the wrong unregistered flow.'
+  ]);
+  assert.deepEqual(employeeBindingRelease.commits, []);
   const finalized = parsed.find((release) => release.version === '0.10.0');
   assert.ok(finalized);
   assert.equal(finalized.date, '2026-09-10');
@@ -238,7 +250,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.11.3', '0.11.2', '0.11.1', '0.11.0', '0.10.1']);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.12.0', '0.11.3', '0.11.2', '0.11.1', '0.11.0']);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);

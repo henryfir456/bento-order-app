@@ -7,6 +7,7 @@ export const ACTIONS = Object.freeze({
   CAN_VIEW_SELF_ONBOARDING_STATE: 'CAN_VIEW_SELF_ONBOARDING_STATE',
   CAN_COMPLETE_PROFILE: 'CAN_COMPLETE_PROFILE',
   CAN_BIND_LINE: 'CAN_BIND_LINE',
+  CAN_BIND_EMPLOYEE: 'CAN_BIND_EMPLOYEE',
   READ_ADMIN_SUMMARY: 'READ_ADMIN_SUMMARY',
   READ_MEMBER_BALANCES: 'READ_MEMBER_BALANCES',
   ADMIN_BALANCE: 'ADMIN_BALANCE',
@@ -48,6 +49,7 @@ export const VERIFICATION_STATUSES = Object.freeze({
 export const IDENTITY_STATES = Object.freeze({
   NEW_PROVISIONAL_EMPLOYEE: 'NEW_PROVISIONAL_EMPLOYEE',
   EXISTING_UNVERIFIED_EMPLOYEE: 'EXISTING_UNVERIFIED_EMPLOYEE',
+  EMPLOYEE_BIND_REQUIRED: 'EMPLOYEE_BIND_REQUIRED',
   VERIFIED: 'VERIFIED',
   UNREGISTERED: 'UNREGISTERED'
 });
@@ -77,6 +79,9 @@ export const isProvisionalPrincipal = (principal) => (
 );
 
 export const identityStateFor = (principal) => {
+  if (principal?.userId && !String(principal.employeeId || '').trim()) {
+    return IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED;
+  }
   if (principal?.provisional || isProvisionalPrincipal(principal)) {
     return principal?.userId
       ? IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE
@@ -92,9 +97,17 @@ export const capabilitiesFor = (
   role,
   authMode = 'line',
   verificationStatus = VERIFICATION_STATUSES.VERIFIED,
-  active = true
+  active = true,
+  employeeId = null,
+  employeeBindingRequired = false
 ) => {
   if (!active) return [];
+  if (employeeBindingRequired && !String(employeeId || '').trim()) {
+    return [
+      ACTIONS.CAN_BIND_EMPLOYEE,
+      ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
+    ].sort();
+  }
   if (normalizedVerificationStatus(verificationStatus) === VERIFICATION_STATUSES.UNVERIFIED) {
     return [...ONBOARDING_ACTIONS].sort();
   }
@@ -109,20 +122,39 @@ export const can = (
   action,
   authMode = 'line',
   verificationStatus = VERIFICATION_STATUSES.VERIFIED,
-  active = true
-) => capabilitiesFor(role, authMode, verificationStatus, active).includes(action);
+  active = true,
+  employeeId = null,
+  employeeBindingRequired = false
+) => capabilitiesFor(
+  role,
+  authMode,
+  verificationStatus,
+  active,
+  employeeId,
+  employeeBindingRequired
+).includes(action);
+
+export const isEmployeeBindingPrincipal = (principal) => Boolean(
+  principal?.userId
+  && principal?.authMode === 'line'
+  && principal?.requiresEmployeeBinding
+);
 
 export const assertCan = (identity, action) => {
   const actor = identity?.actor;
   if (!actor
-    || (!actor.registered && !isProvisionalPrincipal(actor))
+    || (!actor.registered
+      && !isProvisionalPrincipal(actor)
+      && !isEmployeeBindingPrincipal(actor))
     || !can(
     actor.role,
     action,
-    actor.authMode || 'line',
-    actor.verificationStatus,
-    actor.active !== false
-  )) {
+      actor.authMode || 'line',
+      actor.verificationStatus,
+      actor.active !== false,
+      actor.employeeId,
+      actor.requiresEmployeeBinding
+    )) {
     throw forbidden();
   }
   return true;

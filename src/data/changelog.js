@@ -11,6 +11,29 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.12.0': [
+    {
+      name: '新增',
+      changes: [
+        '新增「尚未綁定員編」身份狀態，LINE 已登入但 canonical user 尚無員編時，改顯示明確的員編綁定入口。',
+        '沿用伺服器驗證的 LINE 員編綁定流程，不建立另一個 Employee Guest session。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        '員編綁定只補上同一個 canonical user 的員編，不會改變核驗狀態、角色、餘額或使用者所有權。',
+        '尚未綁定員編的 LINE identity 僅保留員編綁定與查看 onboarding 狀態所需權限。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '修正 LINE canonical user 缺少員編時被誤判為已綁定或落入錯誤未註冊流程的問題。',
+        '補強員編 collision 的拒絕行為，並保留同一身份重試的冪等處理。'
+      ]
+    }
+  ],
   '0.11.3': [
     {
       name: '修正',
