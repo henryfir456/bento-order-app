@@ -25,6 +25,48 @@ const MOCK_USER_FIXTURES = Object.freeze({
     identityState: 'VERIFIED',
     verificationStatus: 'VERIFIED'
   }),
+  'admin-unverified': Object.freeze({
+    userId: 'mock-admin-unverified-id',
+    employeeId: '139653',
+    name: 'Mock Admin Pending Legacy Status',
+    floor: '9樓',
+    defaultFloor: '9樓',
+    balance: 1200,
+    role: 'Admin',
+    authSource: 'LINE',
+    authMode: 'line',
+    identityState: 'VERIFIED',
+    registered: true,
+    verificationStatus: 'UNVERIFIED'
+  }),
+  'admin-unbound': Object.freeze({
+    userId: 'mock-admin-unbound-id',
+    employeeId: null,
+    name: 'Mock Unbound Admin',
+    floor: '1樓',
+    defaultFloor: '1樓',
+    balance: 0,
+    role: 'Admin',
+    authSource: 'LINE',
+    authMode: 'line',
+    identityState: 'EMPLOYEE_BIND_REQUIRED',
+    registered: false,
+    verificationStatus: 'UNVERIFIED'
+  }),
+  'guest-admin': Object.freeze({
+    userId: 'mock-guest-admin-id',
+    employeeId: '139653',
+    name: 'Mock Guest Admin Row',
+    floor: '1樓',
+    defaultFloor: '1樓',
+    balance: 0,
+    role: 'Admin',
+    authSource: 'EMPLOYEE_GUEST',
+    authMode: 'employee_guest',
+    identityState: 'PENDING_VERIFICATION',
+    registered: false,
+    verificationStatus: 'UNVERIFIED'
+  }),
   'proxy-admin': Object.freeze({
     userId: 'mock-proxy-admin-id',
     employeeId: 'MCKPRX',
@@ -107,6 +149,11 @@ export const getMockIdentityResponse = (mockUser) => {
   }
 
   const user = clone(state.user);
+  const authMode = user.authMode
+    || (user.authSource === 'EMPLOYEE_GUEST' ? 'employee_guest' : 'line');
+  const registered = user.registered !== undefined
+    ? Boolean(user.registered)
+    : Boolean(authMode === 'line' && user.employeeId);
   const calendarEvents = getMockCalendarEvents(mockUser);
   const ordersMap = {};
   state.orders.forEach((order) => {
@@ -115,10 +162,11 @@ export const getMockIdentityResponse = (mockUser) => {
 
   return {
     success: true,
-    registered: true,
+    registered,
+    authMode,
     user: {
       ...user,
-      lineUserId: user.userId,
+      lineUserId: authMode === 'line' ? user.userId : null,
       displayName: user.name
     },
     calendar: {

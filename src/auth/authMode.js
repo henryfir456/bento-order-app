@@ -2,6 +2,9 @@ export const MOCK_USER_KEYS = Object.freeze([
   'user',
   'admin',
   'proxy-admin',
+  'admin-unverified',
+  'admin-unbound',
+  'guest-admin',
   'unregistered'
 ]);
 
@@ -18,4 +21,3 @@ export const resolveAuthConfig = (env = {}) => {
     liffId: String(env.VITE_LIFF_ID || '').trim()
   });
 };
-

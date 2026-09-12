@@ -4,7 +4,6 @@ const toneClasses = Object.freeze({
   line: 'bg-green-50 text-green-800 border-green-200',
   guest: 'bg-slate-50 text-slate-700 border-slate-200',
   bind: 'bg-amber-50 text-amber-800 border-amber-200',
-  pending: 'bg-orange-50 text-orange-800 border-orange-200',
   verified: 'bg-emerald-50 text-emerald-800 border-emerald-200',
   unknown: 'bg-gray-50 text-gray-600 border-gray-200'
 });

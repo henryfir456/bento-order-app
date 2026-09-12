@@ -6,14 +6,16 @@
 
 ### Added
 
-- Added Worker + D1 authoritative identity projections for `authSource`, `identityState`, and `verificationStatus` in Admin member and View As reads.
-- Added the Admin-only `POST /api/admin/users/:userId/employee-binding` contract with central capability checks, canonical employee-ID uniqueness, idempotent same-user retries, and audit logging.
-- Added a provenance-bearing `employee_roster` verification source and bounded automatic verification for exactly one active trusted match.
-- Added responsive Admin identity filters for employee-binding required, pending verification, and verified members.
+- Added Worker + D1 authoritative identity projections for `authSource`, `identityState`, and the informational legacy `verificationStatus` in Admin member and View As reads.
+- Added the Admin-only `POST /api/admin/users/:userId/employee-binding` contract with registered-LINE capability checks, canonical employee-ID uniqueness, idempotent same-user retries, and audit logging.
+- Added the guarded atomic provisional employee claim: historical employee_guest provenance, dependency checks, SQL-level rollback assertions, session revocation, retirement, and `PROVISIONAL_EMPLOYEE_CLAIMED` audit lineage.
+- Retained `employee_roster` and `verification_status` as compatibility data without making them active LINE access prerequisites.
 
 ### Changed
 
-- Mapped stored `UNVERIFIED` identities to public `PENDING_VERIFICATION`; missing, inactive, ambiguous, or untrusted matches fail closed to pending review.
+- Active LINE canonical users with `employee_id` are immediately registered and receive their stored canonical role capabilities, regardless of historical verification status.
+- Active LINE users without an employee ID remain in `EMPLOYEE_BIND_REQUIRED`; employee_guest users remain guest-only even when their stored role is privileged.
+- Provisional ownership is claimable only through the server decision tree; every other existing owner remains `EMPLOYEE_ID_ALREADY_BOUND`, and unsafe business ownership fails closed.
 - Made Worker + D1 the only production transport for this feature. GAS remains retired legacy regression evidence and receives no new identity contract.
 
 ## [0.12.1] - 2026-09-11

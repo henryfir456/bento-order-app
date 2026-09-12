@@ -134,18 +134,18 @@ test('Worker startup gives resolved LINE identity precedence over stale guest st
   assert.match(bootSource, /resolveWorkerAuthResolution/);
 });
 
-test('existing provisional LINE identity stays on profile update instead of recreating onboarding', () => {
+test('bound LINE identity never re-enters provisional onboarding', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
 
-  assert.match(submitBlock, /authMode === 'line'[\s\S]*?identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
-  assert.match(submitBlock, /handleLineEmployeeBind/);
-  assert.match(submitBlock, /apiClient\.updatePickupFloor/);
-  assert.match(submitBlock, /apiClient\.getIdentity/);
-  assert.match(submitBlock, /setEmployeeGuestSuccess\(authMode === 'line'/);
+  assert.match(appSource, /const isGuestOnboarding = authMode === 'employee_guest'/);
+  assert.match(appSource, /&& isGuestOnboarding/);
+  assert.match(submitBlock, /authMode !== 'employee_guest'/);
+  assert.match(submitBlock, /handleEmployeeGuestOnboarding/);
+  assert.doesNotMatch(submitBlock, /handleLineEmployeeBind|updatePickupFloor|PENDING_VERIFICATION/);
 });
 
-test('guest identity state controls create-versus-existing onboarding routing', async () => {
+test('legacy guest identity states remain compatibility-only and do not gate LINE access', async () => {
   const { IDENTITY_STATES } = await import('../src/auth/bootFlow.js');
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const workerIdentitySource = fs.readFileSync(path.join(__dirname, '..', 'worker-poc', 'src', 'auth', 'identity.js'), 'utf8');
@@ -156,13 +156,14 @@ test('guest identity state controls create-versus-existing onboarding routing', 
   assert.equal(IDENTITY_STATES.PENDING_VERIFICATION, 'PENDING_VERIFICATION');
   assert.equal(IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE, 'EXISTING_UNVERIFIED_EMPLOYEE');
   assert.equal(IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED, 'EMPLOYEE_BIND_REQUIRED');
-  assert.match(appSource, /const \[identityState, setIdentityState\] = useState\(null\)/);
-  assert.match(appSource, /identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
-  assert.match(submitBlock, /authMode === 'employee_guest'[\s\S]*?identityState === IDENTITY_STATES\.NEW_PROVISIONAL_EMPLOYEE/);
-  assert.match(submitBlock, /PENDING_VERIFICATION/);
-  assert.match(submitBlock, /apiClient\.updatePickupFloor/);
+  assert.match(appSource, /const \[, setIdentityState\] = useState\(null\)/);
+  assert.match(appSource, /authMode === 'employee_guest'/);
+  assert.match(submitBlock, /authMode !== 'employee_guest'/);
+  assert.match(submitBlock, /handleEmployeeGuestOnboarding/);
+  assert.doesNotMatch(submitBlock, /PENDING_VERIFICATION|EXISTING_UNVERIFIED_EMPLOYEE/);
   assert.match(workerIdentitySource, /getUserByEmployeeId/);
-  assert.match(workerIdentitySource, /verificationStatus !== VERIFICATION_STATUSES\.UNVERIFIED/);
+  assert.match(workerIdentitySource, /user\.lineUserId !== null/);
+  assert.doesNotMatch(workerIdentitySource, /isVerifiedPrincipal/);
   assert.match(workerUsersSource, /const identityState = identityStateFor\(actor\)/);
 });
 
@@ -183,6 +184,7 @@ test('LINE identities without employee IDs use explicit binding-required state a
   assert.match(appSource, /handleLineEmployeeBindRequired/);
   assert.match(appSource, /bindingRequired=\{isEmployeeBindRequired\}/);
   assert.match(appSource, /\[AUTH_STATES\.UNREGISTERED, AUTH_STATES\.EMPLOYEE_BIND_REQUIRED\]/);
+  assert.doesNotMatch(appSource, /lineEmployeeLookup/);
   assert.match(lookupSource, /bindingRequired = false/);
   assert.match(lookupSource, /尚未綁定員編/);
   assert.match(lookupSource, /綁定員編/);
@@ -366,34 +368,31 @@ test('Worker App wires the employee guest and bind flow without exposing LINE ID
   assert.match(loginSource, /onEmployeeSubmit/);
   assert.match(loginSource, /其他登入方式/);
   assert.doesNotMatch(loginSource, /lineEmployeeLookup|lineAuthenticated/);
-  assert.match(lineLookupSource, /LINE 已登入/);
+  assert.match(lineLookupSource, /LINE 綁定員編/);
   assert.match(lineLookupSource, /onSubmit/);
   assert.doesNotMatch(lineLookupSource, /employeeGuestLogin|guestSession/);
   assert.doesNotMatch(guestRender, /AUTH_STATES\.UNREGISTERED/);
   assert.match(appSource, /LineEmployeeLookup/);
-  assert.match(appSource, /lineEmployeeLookup/);
+  assert.doesNotMatch(appSource, /lineEmployeeLookup/);
   assert.match(appSource, /lineEmployeeBind/);
   assert.match(appSource, /AUTH_STATES\.UNREGISTERED/);
   assert.doesNotMatch(sessionSource, /localStorage/);
   assert.doesNotMatch(sessionSource, /setItem\([^\n]*(role|permission|balance)/i);
 });
 
-test('Worker App keeps provisional onboarding separate from registered application data', () => {
+test('Worker App keeps employee_guest onboarding separate from registered LINE application data', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
-  const confirmationSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'EmployeeIdentityConfirmation.jsx'), 'utf8');
   const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
   const clientSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js'), 'utf8');
   const errorSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiErrors.js'), 'utf8');
 
   assert.match(appSource, /AUTH_STATES\.UNVERIFIED/);
   assert.match(appSource, /status === 'UNVERIFIED_EMPLOYEE'/);
-  assert.match(appSource, /EmployeeIdentityConfirmation/);
   assert.match(appSource, /ProvisionalEmployeeOnboarding/);
-  assert.match(confirmationSource, /確認並綁定 LINE/);
-  assert.match(confirmationSource, /user\?\.name/);
   assert.match(onboardingSource, /employeeId/);
   assert.match(onboardingSource, /pickupFloor/);
   assert.doesNotMatch(onboardingSource, /lineUserId|userId|verificationStatus|balance/);
+  assert.doesNotMatch(onboardingSource, /待核驗|待審核|LINE 綁定完成/);
   assert.match(clientSource, /body: \{ displayName, pickupFloor \}/);
   assert.doesNotMatch(clientSource, /body: \{[^}]*lineUserId/);
   assert.match(errorSource, /LINE_LOGIN_REQUIRED/);
@@ -438,33 +437,23 @@ test('employee guest provisional onboarding does not require or initiate LINE bi
   const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
 
   assert.match(appSource, /apiClient\.completeEmployeeGuestOnboarding/);
-  assert.match(submitBlock, /authMode === 'employee_guest'/);
+  assert.match(submitBlock, /authMode !== 'employee_guest'/);
   assert.match(submitBlock, /handleEmployeeGuestOnboarding/);
-  assert.doesNotMatch(
-    submitBlock.match(/if \(authMode === 'employee_guest'[\s\S]*?return;/)?.[0] || '',
-    /handleLineEmployeeBind|handleBindLine/
-  );
-  assert.match(submitBlock, /authMode === 'line'/);
-  assert.match(onboardingSource, /lineAuthenticated \? '完成 onboarding 並綁定 LINE' : '完成 onboarding'/);
-  assert.match(onboardingSource, /lineAuthenticated \? '建立 onboarding 並綁定中\.\.\.' : '建立 onboarding 中\.\.\.'/);
+  assert.doesNotMatch(submitBlock, /handleLineEmployeeBind|handleBindLine/);
+  assert.doesNotMatch(onboardingSource, /lineAuthenticated|LINE 綁定/);
+  assert.match(onboardingSource, /員工訪客功能/);
 });
 
-test('UNVERIFIED onboarding exposes pending verification and visible profile update feedback', () => {
+test('bound LINE Admin copy preserves role and immediate capability semantics', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
-  const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
-
   assert.match(appSource, /const \[employeeGuestSuccess, setEmployeeGuestSuccess\] = useState\(''\)/);
-  assert.match(submitBlock, /setEmployeeGuestSuccess\(authMode === 'line'/);
-  assert.match(appSource, /基本資料已更新。LINE 綁定已完成，目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。/);
+  assert.match(appSource, /Admin 角色與既有權限已保留，員編綁定完成後可直接使用 Admin 功能。/);
+  assert.match(appSource, /const isGuestOnboarding = authMode === 'employee_guest'/);
   assert.match(appSource, /success=\{employeeGuestSuccess\}/);
-  assert.match(appSource, /bound=\{Boolean\(authUser\?\.userId && authMode === 'line'\)\}/);
-  assert.match(appSource, /profileCompleted=\{identityState === IDENTITY_STATES\.PENDING_VERIFICATION/);
-  assert.match(onboardingSource, /LINE 綁定完成/);
-  assert.match(onboardingSource, /員工身分待核驗/);
-  assert.match(onboardingSource, /您的基本資料已建立，目前正在等待員工身分核驗。核驗完成後即可使用訂餐功能。/);
-  assert.doesNotMatch(onboardingSource, /LINE onboarding 已完成/);
+  assert.doesNotMatch(appSource, /員工身分尚待核驗|核驗完成後即可使用訂餐功能/);
+  assert.doesNotMatch(onboardingSource, /待核驗|待審核|核驗完成後/);
   assert.match(appSource, /const isRegistered = authState === AUTH_STATES\.REGISTERED/);
-  assert.match(appSource, /const isUnverified = authState === AUTH_STATES\.UNVERIFIED/);
-  assert.match(appSource, /setAuthState\(AUTH_STATES\.UNVERIFIED\)/);
+  assert.match(appSource, /const isGuestOnboarding = authMode === 'employee_guest'/);
+  assert.match(appSource, /authMode === 'employee_guest'[\s\S]*?AUTH_STATES\.UNVERIFIED/);
 });

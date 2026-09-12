@@ -39,14 +39,10 @@ const assertDisplayName = (displayName) => {
 
 export const getMe = (identity) => {
   const actor = identity?.actor || {};
-  const provisional = actor.provisional || actor.verificationStatus === 'UNVERIFIED';
+  const guest = actor.authMode === 'employee_guest';
   const identityState = identityStateFor(actor);
   const employeeBindingRequired = identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED;
-  // Keep registered for the existing frontend contract: it means verified
-  // application access, not whether a canonical user row exists. Consumers
-  // must use identityState to distinguish a new provisional identity from an
-  // existing UNVERIFIED canonical user.
-  const registered = Boolean(actor.registered && !provisional);
+  const registered = Boolean(actor.registered && !guest);
   const user = actor.userId ? publicUser(actor) : null;
   return {
     success: true,
@@ -61,8 +57,9 @@ export const getMe = (identity) => {
       employeeId: actor.employeeId || '',
       lineUserId: actor.lineUserId || '',
       displayName: actor.displayName || ''
-    } : provisional ? {
-      status: 'UNVERIFIED_EMPLOYEE',
+    } : guest ? {
+      status: actor.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED
+        ? 'UNVERIFIED_EMPLOYEE' : 'VERIFIED',
       verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.UNVERIFIED,
       capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
       employeeId: actor.employeeId || '',
@@ -70,9 +67,11 @@ export const getMe = (identity) => {
       displayName: actor.displayName || ''
     } : registered ? {
       status: 'VERIFIED',
-      ...(actor.authMode === 'employee_guest' && Array.isArray(actor.capabilities)
-        ? { capabilities: actor.capabilities }
-        : {})
+      verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.VERIFIED,
+      capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
+      employeeId: actor.employeeId || '',
+      lineUserId: actor.lineUserId || '',
+      displayName: actor.displayName || ''
     } : {
       lineUserId: actor.lineUserId || '',
       displayName: actor.displayName || ''
@@ -93,9 +92,8 @@ export const updatePickupFloor = async (
   clock = new Date(),
   displayName
 ) => {
-  const provisional = identity?.actor?.provisional
-    || identity?.actor?.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED;
-  assertCan(identity, provisional ? ACTIONS.CAN_COMPLETE_PROFILE : ACTIONS.WRITE_SELF);
+  const guest = identity?.actor?.authMode === 'employee_guest';
+  assertCan(identity, ACTIONS.WRITE_SELF);
   assertSelfTarget(identity, identity.actor.userId);
   assertFloor(pickupFloor);
   const nextDisplayName = displayName === undefined ? null : assertDisplayName(displayName);
@@ -122,29 +120,41 @@ export const updatePickupFloor = async (
   const user = await getUserById(database, identity.actor.userId);
   return {
     success: true,
-    registered: !provisional,
+    registered: !guest && identity.actor.authMode === 'line'
+      && Boolean(String(user?.employeeId || '').trim()),
     identityState: identityStateFor({
       ...identity.actor,
       userId: user?.userId || identity.actor.userId,
       verificationStatus: user?.verificationStatus || identity.actor.verificationStatus,
       active: user?.active ?? identity.actor.active,
-      registered: !provisional
+      authMode: identity.actor.authMode,
+      employeeId: user?.employeeId || identity.actor.employeeId,
+      registered: !guest && identity.actor.authMode === 'line'
+        && Boolean(String(user?.employeeId || '').trim())
     }),
     authMode: identity.actor.authMode,
-    ...(provisional ? {
-      status: 'UNVERIFIED_EMPLOYEE',
-      verificationStatus: VERIFICATION_STATUSES.UNVERIFIED,
+    ...(guest ? {
+      status: user.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED
+        ? 'UNVERIFIED_EMPLOYEE' : 'VERIFIED',
+      verificationStatus: user.verificationStatus || VERIFICATION_STATUSES.UNVERIFIED,
       employeeId: user.employeeId,
       capabilities: capabilitiesFor(
         user.role,
         identity.actor.authMode,
-        user.verificationStatus,
         user.active,
         user.employeeId,
         identity.actor.requiresEmployeeBinding
       )
     } : {
-      status: 'VERIFIED'
+      status: 'VERIFIED',
+      verificationStatus: user.verificationStatus || VERIFICATION_STATUSES.VERIFIED,
+      capabilities: capabilitiesFor(
+        user.role,
+        identity.actor.authMode,
+        user.active,
+        user.employeeId,
+        identity.actor.requiresEmployeeBinding
+      )
     }),
     user: publicUser(user)
   };

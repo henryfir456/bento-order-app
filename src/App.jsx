@@ -22,7 +22,6 @@ import { createBootId, createBootTimingLogger, getPerformanceNow } from './obser
 import { APP_VERSION, UI_CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
 import EmployeeGuestLogin from './components/EmployeeGuestLogin';
-import EmployeeIdentityConfirmation from './components/EmployeeIdentityConfirmation';
 import LineEmployeeLookup from './components/LineEmployeeLookup';
 import ProvisionalEmployeeOnboarding from './components/ProvisionalEmployeeOnboarding';
 import PickupFloorModal from './components/PickupFloorModal';
@@ -52,7 +51,6 @@ const AUTH_STATES = Object.freeze({
   AUTH_FAILED: 'AUTH_FAILED',
   UNREGISTERED: 'UNREGISTERED',
   EMPLOYEE_BIND_REQUIRED: 'EMPLOYEE_BIND_REQUIRED',
-  EMPLOYEE_CONFIRMATION: 'EMPLOYEE_CONFIRMATION',
   UNVERIFIED: 'UNVERIFIED',
   REGISTERED: 'REGISTERED'
 });
@@ -233,7 +231,7 @@ export default function App() {
   const [lineUserId, setLineUserId] = useState('');
   const [authMode, setAuthMode] = useState(null);
   const [authUser, setAuthUser] = useState(null);
-  const [identityState, setIdentityState] = useState(null);
+  const [, setIdentityState] = useState(null);
   const [viewAsUser, setViewAsUser] = useState(null);
   const [userBalance, setUserBalance] = useState(0);
   const [defaultFloor, setDefaultFloor] = useState('');
@@ -248,7 +246,6 @@ export default function App() {
   const [employeeGuestError, setEmployeeGuestError] = useState('');
   const [employeeGuestSuccess, setEmployeeGuestSuccess] = useState('');
   const [lineBindLoading, setLineBindLoading] = useState(false);
-  const [pendingEmployeeConfirmation, setPendingEmployeeConfirmation] = useState(null);
   const [provisionalProfile, setProvisionalProfile] = useState({
     employeeId: '',
     displayName: '',
@@ -378,7 +375,6 @@ export default function App() {
     setUserBalance(0);
     setDefaultFloor('');
     setRegistrationDisplayName('');
-    setPendingEmployeeConfirmation(null);
     setProvisionalProfile({
       employeeId: '',
       displayName: '',
@@ -529,11 +525,13 @@ export default function App() {
       setDefaultFloor(nextUser.defaultFloor || '');
       setFloor(nextUser.defaultFloor || '1樓');
       setUserBalance(nextUser.balance);
-      setPendingEmployeeConfirmation(null);
       return data;
     }
 
-    if (data.success && data.registered === false && data.status === 'UNVERIFIED_EMPLOYEE') {
+    if (data.success
+      && data.registered === false
+      && data.authMode === 'employee_guest'
+      && data.status === 'UNVERIFIED_EMPLOYEE') {
       const provisionalUser = data.user ? {
         ...data.user,
         userId: data.user.userId,
@@ -581,7 +579,6 @@ export default function App() {
       setName('');
       setDefaultFloor('');
       setUserBalance(0);
-      setPendingEmployeeConfirmation(null);
       return data;
     }
 
@@ -818,7 +815,8 @@ export default function App() {
         applyUserInfoData(identity);
         const nextAuthState = identity.identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED
           ? AUTH_STATES.EMPLOYEE_BIND_REQUIRED
-          : identity.status === 'UNVERIFIED_EMPLOYEE'
+          : identity.authMode === 'employee_guest'
+          && identity.status === 'UNVERIFIED_EMPLOYEE'
           ? AUTH_STATES.UNVERIFIED
           : AUTH_STATES.UNREGISTERED;
         setAuthState(nextAuthState);
@@ -965,7 +963,7 @@ export default function App() {
     && authState === AUTH_STATES.REGISTERED
     && Boolean(authUser?.userId)
     && !viewAsUser
-    && hasPermission(authUser?.role, 'manageAnnouncements', authMode)
+    && hasPermission(authUser?.role, 'manageAnnouncements', authMode, true)
   );
 
   const loadAdminAnnouncements = async (force = false) => {
@@ -1005,7 +1003,7 @@ export default function App() {
 
   const assertAdminAnnouncementMutationAllowed = () => {
     if (!canManageAdminAnnouncements()) {
-      throw new Error('公告管理僅限已驗證的 Admin 使用。');
+      throw new Error('公告管理僅限已註冊的 Admin 使用。');
     }
   };
 
@@ -1083,7 +1081,7 @@ export default function App() {
 
   const loadMemberBalances = async (force = false) => {
     const visibleRole = viewAsUser?.role || authUser?.role;
-    if (!authUser?.userId || !hasPermission(visibleRole, 'viewMemberBalances', authMode)) return;
+    if (!authUser?.userId || !hasPermission(visibleRole, 'viewMemberBalances', authMode, true)) return;
     if (!force && memberBalancesLoaded) return;
 
     const requestId = ++memberBalancesRequestRef.current;
@@ -1275,65 +1273,14 @@ export default function App() {
         throw new Error(data.error || data.message || 'EMPLOYEE_GUEST_ONBOARDING_INVALID_RESPONSE');
       }
       applyUserInfoData(data);
-      const automaticallyVerified = data.status === 'VERIFIED'
-        && data.identityState === IDENTITY_STATES.VERIFIED;
-      setAuthState(automaticallyVerified ? AUTH_STATES.REGISTERED : AUTH_STATES.UNVERIFIED);
-      setAuthStage(automaticallyVerified ? AUTH_STATES.REGISTERED : AUTH_STATES.UNVERIFIED);
-      setEmployeeGuestSuccess(automaticallyVerified
-        ? '基本資料已建立，可信員工資料已自動完成驗證。'
-        : '基本資料已建立。目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。');
+      const guestState = data.status === 'VERIFIED'
+        ? AUTH_STATES.REGISTERED
+        : AUTH_STATES.UNVERIFIED;
+      setAuthState(guestState);
+      setAuthStage(guestState);
+      setEmployeeGuestSuccess('基本資料已建立，員工訪客模式可繼續使用；如需完整系統功能，請使用 LINE 綁定員編。');
     } catch (error) {
       setEmployeeGuestError(getApiErrorPresentation(error, '完成 onboarding').message);
-    } finally {
-      setLineBindLoading(false);
-    }
-  };
-
-  const handleLineEmployeeLookup = async (event) => {
-    event?.preventDefault?.();
-    if (apiClient.transport !== 'worker' || lineBindLoading) return;
-
-    const employeeId = String(employeeGuestId || '').trim();
-    if (!employeeId) {
-      setEmployeeGuestError('請輸入員工編號。');
-      return;
-    }
-
-    setLineBindLoading(true);
-    setEmployeeGuestError('');
-    try {
-      const response = await apiClient.lineEmployeeLookup({ employeeId });
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || data.message || 'LINE_EMPLOYEE_LOOKUP_FAILED');
-      }
-      if (data.status === 'FOUND') {
-        setPendingEmployeeConfirmation({
-          employeeId: data.employeeId || employeeId.toUpperCase(),
-          user: data.user
-        });
-        setEmployeeGuestId('');
-        setAuthState(AUTH_STATES.EMPLOYEE_CONFIRMATION);
-        setAuthStage(AUTH_STATES.EMPLOYEE_CONFIRMATION);
-        return;
-      }
-      if (data.status === 'UNVERIFIED_EMPLOYEE') {
-        setProvisionalProfile((current) => ({
-          ...current,
-          employeeId: data.employeeId || employeeId.toUpperCase(),
-          displayName: '',
-          pickupFloor: '1樓',
-          lineDisplayName: ''
-        }));
-        setEmployeeGuestId('');
-        setIdentityState(requireAuthoritativeIdentityState(data));
-        setAuthState(AUTH_STATES.UNVERIFIED);
-        setAuthStage(AUTH_STATES.UNVERIFIED);
-        return;
-      }
-      throw new Error(data.error || 'LINE_EMPLOYEE_LOOKUP_INVALID_RESPONSE');
-    } catch (error) {
-      setEmployeeGuestError(getApiErrorPresentation(error, '員工身份查詢').message);
     } finally {
       setLineBindLoading(false);
     }
@@ -1349,7 +1296,11 @@ export default function App() {
       return;
     }
 
-    await handleLineEmployeeBind({ employeeId });
+    await handleLineEmployeeBind({
+      employeeId,
+      displayName: registrationDisplayName || undefined,
+      pickupFloor: registrationFloor || '1樓'
+    });
   };
 
   const handleLineLogin = async () => {
@@ -1442,7 +1393,6 @@ export default function App() {
       if (!data.success || !data.user) {
         throw new Error(data.error || data.message || 'LINE_EMPLOYEE_BIND_FAILED');
       }
-      setPendingEmployeeConfirmation(null);
       authBootCompletedRef.current = false;
       await initLiffAndFetchData({ force: true });
     } catch (error) {
@@ -1452,18 +1402,9 @@ export default function App() {
     }
   };
 
-  const handleCancelEmployeeConfirmation = () => {
-    guestSessionStore.clearBindIntent();
-    guestSessionStore.clearGuestSession({ reason: 'employee-confirmation-cancelled', notify: false });
-    setPendingEmployeeConfirmation(null);
-    setEmployeeGuestError('');
-    setAuthState(AUTH_STATES.UNREGISTERED);
-    setAuthStage(AUTH_STATES.UNREGISTERED);
-  };
-
   const handleProvisionalProfileSubmit = async (event) => {
     event?.preventDefault?.();
-    if (lineBindLoading) return;
+    if (lineBindLoading || authMode !== 'employee_guest') return;
     const profile = {
       displayName: provisionalProfile.displayName.trim(),
       pickupFloor: provisionalProfile.pickupFloor
@@ -1474,60 +1415,7 @@ export default function App() {
     }
 
     setEmployeeGuestSuccess('');
-    if (authMode === 'employee_guest'
-      && identityState === IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE) {
-      await handleEmployeeGuestOnboarding(profile);
-      return;
-    }
-
-    if (authMode === 'line'
-      && identityState === IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE) {
-      await handleLineEmployeeBind({
-        employeeId: provisionalProfile.employeeId,
-        ...profile
-      });
-      return;
-    }
-
-    if (![IDENTITY_STATES.PENDING_VERIFICATION, IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE].includes(identityState)
-      || !authUser?.userId) {
-      setEmployeeGuestError('員工身份狀態已失效，請重新開始 onboarding。');
-      setAuthState(AUTH_STATES.AUTH_REQUIRED);
-      setAuthStage(AUTH_STATES.AUTH_REQUIRED);
-      return;
-    }
-
-    setLineBindLoading(true);
-    setEmployeeGuestError('');
-    setEmployeeGuestSuccess('');
-    try {
-      const response = await apiClient.updatePickupFloor({
-        displayName: profile.displayName,
-        pickupFloor: profile.pickupFloor
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || data.message || 'PROFILE_UPDATE_FAILED');
-      }
-      const identityResponse = await apiClient.getIdentity();
-      const identity = await identityResponse.json();
-      if (!identityResponse.ok || !identity.success) {
-        throw new Error(identity.error || identity.message || 'PROFILE_READBACK_FAILED');
-      }
-      applyUserInfoData(identity);
-      setProvisionalProfile((current) => ({
-        ...current,
-        displayName: profile.displayName,
-        pickupFloor: profile.pickupFloor
-      }));
-      setEmployeeGuestSuccess(authMode === 'line'
-        ? '基本資料已更新。LINE 綁定已完成，目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。'
-        : '基本資料已更新。目前員工身分尚待核驗；核驗完成後即可使用訂餐功能。');
-    } catch (error) {
-      setEmployeeGuestError(getApiErrorPresentation(error, '更新 onboarding 資料').message);
-    } finally {
-      setLineBindLoading(false);
-    }
+    await handleEmployeeGuestOnboarding(profile);
   };
 
   const fetchCalendarEvents = async (uId, viewAsUserId = null) => {
@@ -2092,7 +1980,12 @@ export default function App() {
       void fetchCalendarEvents(user.userId, user.userId);
       void fetchUserAllOrders(user.userId, user.userId);
     }
-    if (hasPermission(user.role, 'viewAdminOrderSummary', authMode)) {
+    if (hasPermission(
+      user.role,
+      'viewAdminOrderSummary',
+      user.authMode || (user.authSource === 'EMPLOYEE_GUEST' ? 'employee_guest' : 'line'),
+      user.authSource !== 'LINE' || Boolean(String(user.employeeId || '').trim())
+    )) {
       setAdminSection('orders');
       setViewMode('admin');
       loadAdminSummary(selectedOrderDate, user.userId, true);
@@ -2114,7 +2007,7 @@ export default function App() {
       void fetchUserAllOrders(authUserId, null);
     }
     setAdminSection('orders');
-    if (hasPermission(authUser?.role, 'viewAdminOrderSummary', authMode)) {
+    if (hasPermission(authUser?.role, 'viewAdminOrderSummary', authMode, true)) {
       setViewMode('admin');
       loadAdminSummary(selectedOrderDate, null, true);
     } else {
@@ -2292,9 +2185,7 @@ export default function App() {
       await showPopup({
         icon: 'success',
         title: '員編綁定完成',
-        text: data.identityState === IDENTITY_STATES.VERIFIED
-          ? '已綁定員編，並依可信員工資料自動完成驗證。'
-          : '已綁定員編，目前身份仍待審核。'
+        text: 'Admin 角色與既有權限已保留，員編綁定完成後可直接使用 Admin 功能。'
       });
     } catch (error) {
       const presentation = getApiErrorPresentation(error, '綁定員編');
@@ -2544,23 +2435,25 @@ export default function App() {
   const isRegistered = authState === AUTH_STATES.REGISTERED;
   const isUnregistered = authState === AUTH_STATES.UNREGISTERED;
   const isEmployeeBindRequired = authState === AUTH_STATES.EMPLOYEE_BIND_REQUIRED;
-  const isUnverified = authState === AUTH_STATES.UNVERIFIED;
+  const isGuestOnboarding = authMode === 'employee_guest'
+    && authState === AUTH_STATES.UNVERIFIED;
   const authUserId = authUser?.userId || lineUserId;
   const authRole = authUser?.role || 'User';
   const effectiveUser = viewAsUser || authUser;
   const effectiveRole = effectiveUser?.role || 'User';
   const isViewAsMode = Boolean(viewAsUser);
-  const can = (permission) => isRegistered && hasPermission(effectiveRole, permission, authMode);
-  const canAuth = (permission) => isRegistered && hasPermission(authRole, permission, authMode);
+  const can = (permission) => isRegistered
+    && hasPermission(effectiveRole, permission, authMode, isRegistered);
+  const canAuth = (permission) => isRegistered
+    && hasPermission(authRole, permission, authMode, isRegistered);
   const authStateLabel = {
     [AUTH_STATES.AUTH_LOADING]: '身份驗證中',
     [AUTH_STATES.AUTH_REQUIRED]: '請登入 LINE',
     [AUTH_STATES.AUTH_FAILED]: '身份驗證失敗',
     [AUTH_STATES.UNREGISTERED]: '尚未註冊',
     [AUTH_STATES.EMPLOYEE_BIND_REQUIRED]: '尚未綁定員編',
-    [AUTH_STATES.EMPLOYEE_CONFIRMATION]: '確認員工身份',
-    [AUTH_STATES.UNVERIFIED]: '待完成核驗',
-    [AUTH_STATES.REGISTERED]: '身份已驗證'
+    [AUTH_STATES.UNVERIFIED]: '員工訪客 onboarding',
+    [AUTH_STATES.REGISTERED]: '已註冊'
   }[authState];
   const displayName = effectiveUser?.name || name || registrationDisplayName || authStateLabel;
   const displayFloor = effectiveUser?.defaultFloor || effectiveUser?.floor || defaultFloor;
@@ -2730,9 +2623,7 @@ export default function App() {
                 setEmployeeGuestId(value);
                 if (employeeGuestError) setEmployeeGuestError('');
               }}
-              onSubmit={isEmployeeBindRequired
-                ? handleLineEmployeeBindRequired
-                : handleLineEmployeeLookup}
+              onSubmit={handleLineEmployeeBindRequired}
               bindingRequired={isEmployeeBindRequired}
               loading={lineBindLoading}
               error={employeeGuestError}
@@ -2740,29 +2631,11 @@ export default function App() {
           )}
 
         {apiClient.transport === 'worker'
-          && authState === AUTH_STATES.EMPLOYEE_CONFIRMATION
-          && !loading
-          && pendingEmployeeConfirmation
-          && (
-            <EmployeeIdentityConfirmation
-              employeeId={pendingEmployeeConfirmation.employeeId}
-              user={pendingEmployeeConfirmation.user}
-              onConfirm={() => handleLineEmployeeBind({
-                employeeId: pendingEmployeeConfirmation.employeeId
-              })}
-              onCancel={handleCancelEmployeeConfirmation}
-              loading={lineBindLoading}
-              error={employeeGuestError}
-            />
-          )}
-
-        {apiClient.transport === 'worker'
-          && isUnverified
+          && isGuestOnboarding
           && !loading
           && (
             <ProvisionalEmployeeOnboarding
               employeeId={provisionalProfile.employeeId}
-              lineDisplayName={provisionalProfile.lineDisplayName}
               displayName={provisionalProfile.displayName}
               onDisplayNameChange={(value) => {
                 setEmployeeGuestSuccess('');
@@ -2783,10 +2656,6 @@ export default function App() {
               loading={lineBindLoading}
               error={employeeGuestError}
               success={employeeGuestSuccess}
-              bound={Boolean(authUser?.userId && authMode === 'line')}
-              profileCompleted={identityState === IDENTITY_STATES.PENDING_VERIFICATION
-                || identityState === IDENTITY_STATES.EXISTING_UNVERIFIED_EMPLOYEE}
-              lineAuthenticated={authMode === 'line'}
             />
           )}
 
@@ -3173,7 +3042,7 @@ export default function App() {
             </div>
             <div className="space-y-3">
               <p className="rounded-2xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-                綁定與人工核准驗證是分開的操作。只有伺服器判定為唯一可信的員工資料時，才會自動完成驗證。
+                此操作只綁定員工編號，不會變更既有角色或餘額；Worker 會檢查員工編號的 ownership conflict。
               </p>
               <label className="block text-gray-600 font-bold text-sm" htmlFor="employee-bind-id">員工編號</label>
               <input

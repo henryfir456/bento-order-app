@@ -1,6 +1,8 @@
 export const IDENTITY_FILTERS = Object.freeze({
   ALL: 'ALL',
   BIND_REQUIRED: 'EMPLOYEE_BIND_REQUIRED',
+  // Kept for compatibility with historical member payloads. It is not an
+  // active verification-review filter and is intentionally not rendered.
   PENDING_VERIFICATION: 'PENDING_VERIFICATION',
   VERIFIED: 'VERIFIED'
 });
@@ -12,8 +14,8 @@ const SOURCE_LABELS = Object.freeze({
 
 const STATE_LABELS = Object.freeze({
   EMPLOYEE_BIND_REQUIRED: '待綁員編',
-  PENDING_VERIFICATION: '待審核',
-  VERIFIED: '已驗證'
+  PENDING_VERIFICATION: '員工訪客',
+  VERIFIED: '已註冊'
 });
 
 export const getIdentityBadges = ({ authSource, identityState } = {}) => ([
@@ -30,7 +32,7 @@ export const getIdentityBadges = ({ authSource, identityState } = {}) => ([
     tone: identityState === 'VERIFIED'
       ? 'verified'
       : identityState === 'PENDING_VERIFICATION'
-        ? 'pending'
+        ? 'guest'
         : identityState === 'EMPLOYEE_BIND_REQUIRED'
           ? 'bind'
           : 'unknown'
@@ -44,6 +46,5 @@ export const identityFilterMatches = (member, filter) => (
 export const identityFilterOptions = Object.freeze([
   { value: IDENTITY_FILTERS.ALL, label: '全部' },
   { value: IDENTITY_FILTERS.BIND_REQUIRED, label: '待綁員編' },
-  { value: IDENTITY_FILTERS.PENDING_VERIFICATION, label: '待審核' },
-  { value: IDENTITY_FILTERS.VERIFIED, label: '已驗證' }
+  { value: IDENTITY_FILTERS.VERIFIED, label: '已註冊' }
 ]);

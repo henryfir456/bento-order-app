@@ -8,18 +8,18 @@ export default function LineEmployeeLookup({
 }) {
   return (
     <section
-      aria-label="LINE 員工身份確認"
+      aria-label="LINE 綁定員編"
       className="mb-4 rounded-3xl border border-emerald-900/10 bg-white p-6 shadow-sm"
     >
       <div className="space-y-2 text-center">
         <div className="text-4xl">🔗</div>
         <h2 className="text-xl font-bold text-[#2C4A3E]">
-          {bindingRequired ? 'LINE 登入完成' : '確認員工身份'}
+          {bindingRequired ? 'LINE 綁定員編' : '完成 LINE 綁定'}
         </h2>
         <p className="text-sm text-gray-500">
           {bindingRequired
-            ? '目前 LINE 身份：尚未綁定員編。請完成員編綁定後繼續使用訂餐功能。'
-            : 'LINE 已登入。員工編號只用於查找並確認綁定，不會建立另一個員工 guest 登入 session。'}
+            ? '目前 LINE 身份尚未綁定員編，請輸入員工編號完成綁定。Worker 會安全處理既有暫存員工身份。'
+            : '請輸入員工編號完成 LINE 綁定；Worker 會處理新綁定、既有 ownership 與暫存員工 claim。'}
         </p>
       </div>
 
@@ -46,7 +46,7 @@ export default function LineEmployeeLookup({
           disabled={loading || !employeeId.trim()}
           className="w-full rounded-2xl bg-[#2C4A3E] py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
         >
-          {loading ? (bindingRequired ? '綁定中...' : '查詢中...') : (bindingRequired ? '綁定員編' : '查詢並繼續')}
+          {loading ? '綁定中...' : (bindingRequired ? '綁定員編' : '綁定 LINE 與員編')}
         </button>
         {error && (
           <p role="alert" className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">

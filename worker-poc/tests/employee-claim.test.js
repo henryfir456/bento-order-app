@@ -89,7 +89,7 @@ const createClaimFixture = ({
     pickupFloor: '1樓',
     role: 'Admin',
     active: 1,
-    verificationStatus: 'VERIFIED'
+    verificationStatus: 'UNVERIFIED'
   });
   seedUser(database, {
     userId: PROVISIONAL_ID,
@@ -219,7 +219,7 @@ const addBusinessDependency = (database, dependency) => {
   'dependency-request', 'dependency-claim', 'COMPLETED', NOW_ISO);
 };
 
-test('claimable 139653 provisional owner transfers to LINE survivor and reads back pending verification', async () => {
+test('claimable 139653 provisional owner transfers to LINE survivor and preserves historical status', async () => {
   const database = createClaimFixture();
 
   const bound = await call(database, '/api/auth/line-employee-bind', {
@@ -236,7 +236,7 @@ test('claimable 139653 provisional owner transfers to LINE survivor and reads ba
   assert.equal(bound.body.user.employeeId, EMPLOYEE_ID);
   assert.equal(bound.body.user.active, true);
   assert.equal(bound.body.user.role, 'Admin');
-  assert.equal(bound.body.user.identityState, 'PENDING_VERIFICATION');
+  assert.equal(bound.body.user.identityState, 'VERIFIED');
 
   assert.deepEqual({ ...survivorRow(database) }, {
     user_id: SURVIVOR_ID,
@@ -269,10 +269,7 @@ test('claimable 139653 provisional owner transfers to LINE survivor and reads ba
   const metadata = JSON.parse(audits[0].metadata_json);
   assert.equal(metadata.employeeIdDigest.length, 64);
   assert.match(metadata.employeeIdDigest, /^[0-9a-f]{64}$/);
-  assert.equal(metadata.verificationDecision, 'PENDING_TRUST_REVIEW');
-  assert.equal(metadata.verificationStatus, 'UNVERIFIED');
-  assert.equal(metadata.identityState, 'PENDING_VERIFICATION');
-  assert.equal(metadata.reason, 'NO_TRUSTED_MATCH');
+  assert.equal(metadata.survivorVerificationStatus, 'UNVERIFIED');
   assert.equal(metadata.outcome, 'CLAIMED');
   assert.equal(metadata.retiredProvisionalUserId, PROVISIONAL_ID);
   assert.doesNotMatch(audits[0].metadata_json, /guest-owner-1-hash|eg_[A-Za-z0-9]/);
@@ -280,32 +277,28 @@ test('claimable 139653 provisional owner transfers to LINE survivor and reads ba
   const me = await call(database, '/api/me');
   assert.equal(me.response.status, 200);
   assert.equal(me.body.authMode, 'line');
-  assert.equal(me.body.status, 'UNVERIFIED_EMPLOYEE');
-  assert.equal(me.body.identityState, 'PENDING_VERIFICATION');
+  assert.equal(me.body.status, 'VERIFIED');
+  assert.equal(me.body.identityState, 'VERIFIED');
   assert.equal(me.body.verificationStatus, 'UNVERIFIED');
   assert.equal(me.body.employeeId, EMPLOYEE_ID);
   assert.equal(me.body.user.authSource, 'LINE');
-  assert.equal(me.body.user.identityState, 'PENDING_VERIFICATION');
+  assert.equal(me.body.user.identityState, 'VERIFIED');
   assert.equal(me.body.user.employeeId, EMPLOYEE_ID);
   assert.equal(me.body.user.role, 'Admin');
-  assert.deepEqual(me.body.capabilities, [
-    'CAN_BIND_LINE',
-    'CAN_COMPLETE_PROFILE',
-    'CAN_VIEW_SELF_ONBOARDING_STATE'
-  ]);
+  assert.ok(me.body.capabilities.includes('ADMIN_ROLE'));
 
-  const roleMutation = await call(database, '/api/admin/users/' + PROVISIONAL_ID + '/role', {
+  const roleMutation = await call(database, '/api/admin/users/' + SURVIVOR_ID + '/role', {
     method: 'PUT',
-    body: { role: 'User' }
+    body: { role: 'Admin' }
   });
-  assert.equal(roleMutation.response.status, 403);
+  assert.equal(roleMutation.response.status, 200);
   assert.equal(survivorRow(database).role, 'Admin');
   assert.equal(database.get(
     "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ROLE_UPDATED'"
-  ).count, 0);
+  ).count, 1);
 });
 
-test('trusted unique roster match produces VERIFIED claim and audit decision', async () => {
+test('employee roster is ignored by claim and survivor verification status is preserved', async () => {
   const database = createClaimFixture({
     roster: [{
       rosterId: 'roster-trusted',
@@ -319,15 +312,16 @@ test('trusted unique roster match produces VERIFIED claim and audit decision', a
   });
 
   assert.equal(bound.response.status, 200);
-  assert.equal(bound.body.verificationStatus, 'VERIFIED');
+  assert.equal(bound.body.verificationStatus, 'UNVERIFIED');
   assert.equal(bound.body.user.identityState, 'VERIFIED');
-  assert.equal(survivorRow(database).verification_status, 'VERIFIED');
+  assert.equal(survivorRow(database).verification_status, 'UNVERIFIED');
   const metadata = JSON.parse(mergeAuditRows(database)[0].metadata_json);
-  assert.equal(metadata.verificationDecision, 'AUTO_VERIFIED');
-  assert.equal(metadata.reason, 'TRUSTED_UNIQUE_ACTIVE');
+  assert.equal(metadata.survivorVerificationStatus, 'UNVERIFIED');
+  assert.equal(metadata.verificationDecision, undefined);
+  assert.equal(metadata.reason, undefined);
 });
 
-test('ADMIN_APPROVED is also a trusted unique roster source', async () => {
+test('ADMIN_APPROVED roster evidence does not affect the active claim contract', async () => {
   const database = createClaimFixture({
     roster: [{
       rosterId: 'roster-approved',
@@ -341,7 +335,7 @@ test('ADMIN_APPROVED is also a trusted unique roster source', async () => {
   });
 
   assert.equal(bound.response.status, 200);
-  assert.equal(bound.body.verificationStatus, 'VERIFIED');
+  assert.equal(bound.body.verificationStatus, 'UNVERIFIED');
 });
 
 for (const [label, roster] of [
@@ -352,7 +346,7 @@ for (const [label, roster] of [
     { rosterId: 'roster-b', provenance: 'ADMIN_APPROVED' }
   ]]
 ]) {
-  test('' + label + ' or ambiguous roster match stays UNVERIFIED', async () => {
+  test('' + label + ' or ambiguous roster match does not affect claim', async () => {
     const database = createClaimFixture({ roster });
     const bound = await call(database, '/api/auth/line-employee-bind', {
       method: 'POST',
@@ -360,7 +354,7 @@ for (const [label, roster] of [
     });
     assert.equal(bound.response.status, 200);
     assert.equal(bound.body.verificationStatus, 'UNVERIFIED');
-    assert.equal(bound.body.user.identityState, 'PENDING_VERIFICATION');
+    assert.equal(bound.body.user.identityState, 'VERIFIED');
     assert.equal(survivorRow(database).verification_status, 'UNVERIFIED');
   });
 }
@@ -385,7 +379,6 @@ test('same LINE survivor replay is idempotent and does not duplicate merge audit
 
 for (const [label, owner] of [
   ['LINE-bound owner', { lineUserId: 'line-owner' }],
-  ['VERIFIED owner', { verificationStatus: 'VERIFIED' }],
   ['Admin provisional owner', { role: 'Admin' }],
   ['ProxyAdmin provisional owner', { role: 'ProxyAdmin' }]
 ]) {
@@ -400,6 +393,20 @@ for (const [label, owner] of [
     assertNoTransferSideEffects(database);
   });
 }
+
+test('owner verification status alone does not block a safe provisional claim', async () => {
+  const database = createClaimFixture({
+    owner: { verificationStatus: 'VERIFIED' }
+  });
+  const result = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    body: { employeeId: EMPLOYEE_ID }
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.status, 'BOUND');
+  assert.equal(ownerRow(database).active, 0);
+  assert.equal(ownerRow(database).employee_id, null);
+});
 
 test('missing employee_guest evidence fails closed', async () => {
   const database = createClaimFixture({ sessions: false });
@@ -450,6 +457,72 @@ test('historical employee_guest provenance remains claimable when every session 
       AND revoked_at IS NOT NULL
   `, EMPLOYEE_ID).count, 0);
   assert.equal(mergeAuditRows(database).length, 1);
+});
+
+test('claim revokes only currently valid matching employee_guest sessions', async () => {
+  const database = createClaimFixture({ sessions: false });
+  insertGuestSession(database, 'guest-live-owner', {
+    userId: PROVISIONAL_ID
+  });
+  insertGuestSession(database, 'guest-live-loose', {
+    userId: null
+  });
+  insertGuestSession(database, 'guest-expired-owner', {
+    userId: PROVISIONAL_ID,
+    expiresAt: '2026-09-11T00:00:00.000Z'
+  });
+  insertGuestSession(database, 'guest-expired-loose', {
+    userId: null,
+    expiresAt: '2026-09-11T00:00:00.000Z'
+  });
+  insertGuestSession(database, 'guest-revoked-owner', {
+    userId: PROVISIONAL_ID,
+    revokedAt: '2026-09-10T00:00:00.000Z',
+    revokedReason: 'admin_revoke'
+  });
+  insertGuestSession(database, 'guest-revoked-loose', {
+    userId: null,
+    revokedAt: '2026-09-10T00:00:00.000Z',
+    revokedReason: 'admin_revoke'
+  });
+
+  const result = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    body: { employeeId: EMPLOYEE_ID }
+  });
+
+  assert.equal(result.response.status, 200);
+  for (const sessionId of ['guest-live-owner', 'guest-live-loose']) {
+    assert.deepEqual({
+      ...database.get(`
+        SELECT revoked_at, revoked_reason
+        FROM employee_guest_sessions
+        WHERE session_id = ?
+      `, sessionId)
+    }, {
+      revoked_at: NOW_ISO,
+      revoked_reason: 'line_bound'
+    });
+  }
+  for (const sessionId of [
+    'guest-expired-owner',
+    'guest-expired-loose',
+    'guest-revoked-owner',
+    'guest-revoked-loose'
+  ]) {
+    assert.deepEqual({
+      ...database.get(`
+        SELECT revoked_at, revoked_reason
+        FROM employee_guest_sessions
+        WHERE session_id = ?
+      `, sessionId)
+    }, {
+      revoked_at: sessionId.includes('revoked')
+        ? '2026-09-10T00:00:00.000Z'
+        : null,
+      revoked_reason: sessionId.includes('revoked') ? 'admin_revoke' : null
+    });
+  }
 });
 
 test('true business dependencies block claim while audit references do not', async () => {
@@ -650,7 +723,7 @@ test('normal LINE binding remains unchanged for an unowned employee id', async (
   assert.equal(result.body.status, 'BOUND');
   assert.equal(result.body.user.userId, SURVIVOR_ID);
   assert.equal(result.body.user.employeeId, '777777');
-  assert.equal(result.body.verificationStatus, 'UNVERIFIED');
+  assert.equal(result.body.verificationStatus, 'VERIFIED');
   assert.equal(database.get(
     'SELECT COUNT(*) AS count FROM employee_guest_sessions'
   ).count, 0);

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import {
@@ -26,7 +27,7 @@ test('employee ID digest is canonical and reusable by audit flows', async () => 
   assert.match(normalized, /^[0-9a-f]{64}$/);
 });
 
-test('trusted unique active employee records auto-verify', async () => {
+test('legacy resolver auto-verifies a trusted unique active employee record', async () => {
   const database = new SqliteD1();
   addRosterRow(database, { rosterId: 'roster-139653' });
   const result = await resolveEmployeeVerification(database, ' 139653 ');
@@ -37,7 +38,7 @@ test('trusted unique active employee records auto-verify', async () => {
   assert.equal(result.reason, 'TRUSTED_UNIQUE_ACTIVE');
 });
 
-test('missing, inactive, and ambiguous employee records remain pending', async () => {
+test('legacy resolver keeps missing, inactive, and ambiguous records pending', async () => {
   const missing = await resolveEmployeeVerification(new SqliteD1(), '139653');
   assert.equal(missing.identityState, 'PENDING_VERIFICATION');
   assert.equal(missing.decision, VERIFICATION_DECISIONS.PENDING_TRUST_REVIEW);
@@ -70,4 +71,44 @@ test('case-variant roster records remain ambiguous after normalization', async (
   const result = await resolveEmployeeVerification(database, 'e0003');
   assert.equal(result.identityState, 'PENDING_VERIFICATION');
   assert.equal(result.reason, 'AMBIGUOUS_MATCH');
+});
+
+test('active LINE binding, claim, and Admin identity paths do not use roster verification', () => {
+  const guestAccessSource = readFileSync(
+    new URL('../src/domain/guestAccess.js', import.meta.url),
+    'utf8'
+  );
+  const lineBindingSource = guestAccessSource.match(
+    /export const lineEmployeeBind[\s\S]*?(?=export const bindLineIdentity)/
+  )?.[0] || '';
+  const claimSource = readFileSync(
+    new URL('../src/domain/employeeClaim.js', import.meta.url),
+    'utf8'
+  );
+  const adminIdentitySource = readFileSync(
+    new URL('../src/domain/adminIdentity.js', import.meta.url),
+    'utf8'
+  );
+
+  assert.match(lineBindingSource, /export const lineEmployeeBind/);
+  assert.doesNotMatch(lineBindingSource, /resolveEmployeeVerification|employee_roster/);
+  assert.doesNotMatch(claimSource, /resolveEmployeeVerification|employee_roster/);
+  assert.doesNotMatch(adminIdentitySource, /resolveEmployeeVerification|employee_roster/);
+
+  const revokePredicate = claimSource.match(
+    /const LIVE_MATCHING_GUEST_SESSION_PREDICATE = `([\s\S]*?)`/
+  )?.[1] || '';
+  const revokeUpdate = claimSource.match(
+    /const revokeGuestSessionsStatement[\s\S]*?(?=const revokePostconditionAssertion)/
+  )?.[0] || '';
+  const revokePostcondition = claimSource.match(
+    /const revokePostconditionAssertion[\s\S]*?(?=const auditStatement)/
+  )?.[0] || '';
+  assert.match(revokePredicate, /auth_mode = 'employee_guest'/);
+  assert.match(revokePredicate, /revoked_at IS NULL/);
+  assert.match(revokePredicate, /expires_at > \?/);
+  assert.match(revokePredicate, /AND \(\s*\(/);
+  assert.match(revokePredicate, /\)\s*OR user_id = \?\s*\)/);
+  assert.match(revokeUpdate, /LIVE_MATCHING_GUEST_SESSION_PREDICATE/);
+  assert.match(revokePostcondition, /LIVE_MATCHING_GUEST_SESSION_PREDICATE/);
 });

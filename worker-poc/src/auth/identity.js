@@ -3,7 +3,7 @@ import { forbidden, unauthorized } from '../http/errors.js';
 import {
   capabilitiesFor,
   identityStateFor,
-  isVerifiedPrincipal,
+  isRegisteredLinePrincipal,
   VERIFICATION_STATUSES
 } from './permissions.js';
 import { fetchLineProfile } from './lineProfile.js';
@@ -25,9 +25,8 @@ const actorFromUser = (
     provisional = false
   } = {}
 ) => {
-  const verificationStatus = provisional
-    ? VERIFICATION_STATUSES.UNVERIFIED
-    : (user?.verificationStatus || null);
+  const verificationStatus = user?.verificationStatus
+    || (provisional ? VERIFICATION_STATUSES.UNVERIFIED : null);
   const hasEmployeeId = Boolean(String(user?.employeeId || employeeId || '').trim());
   const requiresEmployeeBinding = Boolean(
     user
@@ -35,17 +34,21 @@ const actorFromUser = (
     && !hasEmployeeId
   );
   const active = user ? Boolean(user.active) : true;
+  const registered = Boolean(
+    user
+    && authMode === 'line'
+    && active
+    && hasEmployeeId
+  );
+  const guestProvisional = authMode === 'employee_guest'
+    && (provisional || user?.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED);
   const actor = {
     userId: user?.userId || null,
     employeeId: user?.employeeId || employeeId || null,
     lineUserId: user?.lineUserId || lineUserId || null,
     displayName: user?.displayName || displayName || '',
-    registered: Boolean(
-      user
-      && hasEmployeeId
-      && verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED
-    ),
-    provisional: Boolean(provisional || verificationStatus === VERIFICATION_STATUSES.UNVERIFIED),
+    registered,
+    provisional: guestProvisional,
     requiresEmployeeBinding,
     verificationStatus,
     ...(user || {}),
@@ -54,7 +57,6 @@ const actorFromUser = (
   actor.capabilities = capabilitiesFor(
     actor.role,
     authMode,
-    verificationStatus,
     active,
     actor.employeeId,
     requiresEmployeeBinding
@@ -91,15 +93,14 @@ const viewAsTarget = (url) => (
 );
 
 // An older unbound guest token may outlive the canonical user created by a
-// prior onboarding attempt. Resolve only the matching unverified, still
-// unbound user. This is deliberately read-only and never exposes a verified
-// or LINE-bound user through employee-number-only credentials.
+// prior onboarding attempt. Resolve only the matching active, still-unbound
+// user. This is deliberately read-only and never exposes a LINE-bound user
+// through employee-number-only credentials.
 const resolveGuestCanonicalUser = async (database, guest) => {
   if (!guest?.provisional || guest.user || !guest.employeeId) return guest?.user || null;
   const user = await getUserByEmployeeId(database, guest.employeeId);
   if (!user
     || !user.active
-    || user.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED
     || user.lineUserId !== null) {
     return null;
   }
@@ -159,7 +160,7 @@ export const resolveCanonicalIdentity = async (
     };
   }
 
-  if (!allowViewAs || !isVerifiedPrincipal(actor)
+  if (!allowViewAs || !isRegisteredLinePrincipal(actor)
     || actor.authMode !== 'line'
     || !actor.capabilities.includes('VIEW_AS')) {
     throw forbidden('VIEW_AS_FORBIDDEN');

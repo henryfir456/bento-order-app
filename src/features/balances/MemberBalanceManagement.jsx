@@ -81,7 +81,7 @@ export default function MemberBalanceManagement({
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
         <div>
           <h3 className="font-bold text-base text-[#2C4A3E]">💰 餘額與身份管理</h3>
-          <p className="text-xs text-gray-500">身份來源與狀態以 Worker authoritative response 為準；餘額為目前帳戶總額。</p>
+          <p className="text-xs text-gray-500">登入來源與註冊狀態以 Worker authoritative response 為準；餘額為目前帳戶總額。</p>
         </div>
         <div className="flex max-w-full flex-wrap gap-2" role="group" aria-label="身份狀態篩選">
           {identityFilterOptions.map((option) => (

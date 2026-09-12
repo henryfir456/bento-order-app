@@ -1,4 +1,4 @@
-import { ACTIONS, assertCan, isVerifiedPrincipal } from '../auth/permissions.js';
+import { ACTIONS, assertCan, isRegisteredLinePrincipal } from '../auth/permissions.js';
 import { auditStatement, appendAuditEvent } from '../db/audit.js';
 import { getUserByEmployeeId, getUserById, publicUser } from '../db/users.js';
 import { conflict, forbidden, notFound } from '../http/errors.js';
@@ -7,7 +7,6 @@ import {
   employeeIdText,
   digestEmployeeId,
   sameEmployeeId,
-  resolveEmployeeVerification,
   VERIFICATION_DECISIONS
 } from './employeeVerification.js';
 
@@ -74,11 +73,15 @@ export const adminBindEmployee = async (
   { employeeId: employeeIdInput } = {},
   clock = new Date()
 ) => {
-  assertCan(identity, ACTIONS.ADMIN_EMPLOYEE_BIND);
   const actor = identity?.authorizationActor;
-  if (!isVerifiedPrincipal(actor) || actor.authMode !== 'line') {
+  const registeredAdmin = Boolean(
+    isRegisteredLinePrincipal(actor)
+    && actor.role === 'Admin'
+  );
+  if (!registeredAdmin) {
     throw forbidden('ADMIN_LINE_AUTH_REQUIRED');
   }
+  assertCan(identity, ACTIONS.ADMIN_EMPLOYEE_BIND);
 
   const targetId = String(targetUserId || '').trim();
   if (!targetId) throw notFound('USER_NOT_FOUND');
@@ -100,12 +103,16 @@ export const adminBindEmployee = async (
   if (owner && owner.userId !== target.userId) {
     throw conflict('EMPLOYEE_ID_ALREADY_BOUND');
   }
-  const decision = await resolveEmployeeVerification(database, employeeId);
+  const decision = {
+    decision: VERIFICATION_DECISIONS.NO_CHANGE,
+    reason: 'LEGACY_COMPATIBILITY_UNCHANGED',
+    verificationStatus: target.verificationStatus
+  };
   const update = prepareStatement(database, `
     UPDATE users
-    SET employee_id = ?, verification_status = ?, updated_at = ?
+    SET employee_id = ?, updated_at = ?
     WHERE user_id = ? AND employee_id IS NULL AND active = 1
-  `, [employeeId, decision.verificationStatus, timestamp, target.userId]);
+  `, [employeeId, timestamp, target.userId]);
   const audit = auditStatement(database, auditInput({
     identity,
     target,

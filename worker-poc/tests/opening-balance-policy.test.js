@@ -65,7 +65,15 @@ test('negative imported snapshot remains policy-bound after a top-up to zero', a
     batchId: 'snapshot-negative'
   });
   seedUser(database, { lineUserId: 'admin-1', role: 'Admin' });
-  const actor = { userId: 'admin-1', lineUserId: 'admin-1', role: 'Admin', registered: true };
+  const actor = {
+    userId: 'admin-1',
+    lineUserId: 'admin-1',
+    employeeId: 'employee-admin-1',
+    role: 'Admin',
+    active: true,
+    authMode: 'line',
+    registered: true
+  };
   await topUpBalance(
     database,
     { actor, authorizationActor: actor, effectiveSubject: actor },

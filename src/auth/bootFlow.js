@@ -18,6 +18,9 @@ export const WORKER_AUTH_RESOLUTIONS = Object.freeze({
 
 // This mirrors the Worker identity contract. authMode remains the
 // authentication method; identityState describes canonical-user lifecycle.
+// PENDING_VERIFICATION and EXISTING_UNVERIFIED_EMPLOYEE are retained only
+// for legacy employee_guest payloads; active LINE routing uses registered or
+// employee-binding-required state and never waits for verification.
 export const IDENTITY_STATES = Object.freeze({
   NEW_PROVISIONAL_EMPLOYEE: 'NEW_PROVISIONAL_EMPLOYEE',
   PENDING_VERIFICATION: 'PENDING_VERIFICATION',

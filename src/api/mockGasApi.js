@@ -14,6 +14,13 @@ import {
 const VALID_FLOORS = ['1樓', '9樓'];
 const MOCK_API_UNSUPPORTED = 'This API is not implemented by the local mock adapter.';
 
+const hasMockPermission = (user, permission) => hasPermission(
+  user?.role,
+  permission,
+  user?.authMode || (user?.authSource === 'EMPLOYEE_GUEST' ? 'employee_guest' : 'line'),
+  user?.registered !== false
+);
+
 const jsonResponse = (data) => new Response(JSON.stringify(data), {
   status: 200,
   headers: { 'Content-Type': 'application/json' }
@@ -132,7 +139,7 @@ export const createMockGasApi = ({ mockUser }) => {
     if (!user) return errorResponse('Mock user is not registered.');
 
     if (action === 'getAdminSummary') {
-      if (!hasPermission(user.role, 'viewAdminOrderSummary')) {
+      if (!hasMockPermission(user, 'viewAdminOrderSummary')) {
         return errorResponse('Mock user does not have admin summary permission.');
       }
       const todayOrders = getMockAdminOrders(payload.targetDate);
@@ -170,7 +177,7 @@ export const createMockGasApi = ({ mockUser }) => {
     }
 
     if (action === 'getMemberBalances') {
-      return hasPermission(user.role, 'viewMemberBalances')
+      return hasMockPermission(user, 'viewMemberBalances')
         ? jsonResponse({ success: true, requesterRole: user.role, members: getMockMembers(mockUser) })
         : errorResponse('Mock user does not have member balance permission.');
     }
@@ -200,7 +207,7 @@ export const createMockGasApi = ({ mockUser }) => {
     }
 
     if (action === 'adminSetVendor') {
-      if (!hasPermission(user.role, 'manageCalendar')) {
+      if (!hasMockPermission(user, 'manageCalendar')) {
         return errorResponse('Mock user does not have calendar permission.');
       }
       state.vendors[String(payload.dateStr || '')] = String(payload.vendor || '');
@@ -208,7 +215,7 @@ export const createMockGasApi = ({ mockUser }) => {
     }
 
     if (action === 'submitOrder') {
-      if (!hasPermission(user.role, 'orderOwn')) return errorResponse('Mock user cannot submit orders.');
+      if (!hasMockPermission(user, 'orderOwn')) return errorResponse('Mock user cannot submit orders.');
       const date = String(payload.target_date || '');
       const items = Array.isArray(payload.items) ? payload.items : [];
       const normalizedItems = items
@@ -253,7 +260,7 @@ export const createMockGasApi = ({ mockUser }) => {
     }
 
     if (action === 'topUpBalance') {
-      if (!hasPermission(user.role, 'topupMember')) return errorResponse('Mock user cannot top up balances.');
+      if (!hasMockPermission(user, 'topupMember')) return errorResponse('Mock user cannot top up balances.');
       const targetUserId = String(payload.targetUserId || '');
       const amount = Number(payload.amount);
       const target = state.members.find((member) => member.userId === targetUserId);

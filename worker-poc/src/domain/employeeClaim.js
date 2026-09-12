@@ -1,11 +1,6 @@
 import { conflict, forbidden } from '../http/errors.js';
 import { getUserById, getUserByLineId, publicUser, toUser } from '../db/users.js';
-import {
-  digestEmployeeId,
-  employeeIdText,
-  resolveEmployeeVerification
-} from './employeeVerification.js';
-import { VERIFICATION_STATUSES } from '../auth/permissions.js';
+import { digestEmployeeId, employeeIdText } from './employeeVerification.js';
 import {
   prepareStatement,
   randomId,
@@ -42,6 +37,15 @@ const rowsFrom = (result) => (
     : (Array.isArray(result?.results) ? result.results : [])
 );
 
+const normalizedEmployeeId = (value) => String(value ?? '').trim().toUpperCase();
+
+const hasEmployeeId = (value) => normalizedEmployeeId(value).length > 0;
+
+const sameNormalizedEmployeeId = (left, right) => (
+  hasEmployeeId(left)
+  && normalizedEmployeeId(left) === normalizedEmployeeId(right)
+);
+
 const readCanonicalOwners = async (database, employeeId) => {
   const result = await database.prepare(`
     SELECT
@@ -64,6 +68,9 @@ const readBusinessDependencies = async (database, userId) => {
   return names;
 };
 
+// This is intentionally historical provenance. Expiry and revocation are
+// runtime session properties, not evidence that the provisional user never
+// originated from this employee_guest flow.
 const readEmployeeGuestEvidence = async (
   database,
   { ownerUserId, employeeId }
@@ -74,6 +81,8 @@ const readEmployeeGuestEvidence = async (
     WHERE user_id = ?
       AND auth_mode = 'employee_guest'
       AND status = 'UNVERIFIED_EMPLOYEE'
+      AND employee_id IS NOT NULL
+      AND length(trim(employee_id)) > 0
       AND UPPER(trim(employee_id)) = ?
     LIMIT 1
   `).bind(ownerUserId, employeeId).first();
@@ -120,14 +129,13 @@ const hasClaimableOwnerShape = (
     && owner
     && owner.userId !== survivorUserId
     && state.survivor?.userId === survivorUserId
+    && state.lineOwner?.userId === survivorUserId
     && state.survivor.lineUserId === lineUserId
-    && state.survivor.active
+    && state.survivor.active === true
     && state.survivor.employeeId === null
-    && owner.active
-    && owner.employeeId !== null
-    && owner.employeeId.trim().toUpperCase() === employeeId
+    && owner.active === true
+    && sameNormalizedEmployeeId(owner.employeeId, employeeId)
     && owner.lineUserId === null
-    && owner.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED
     && owner.role !== 'Admin'
     && owner.role !== 'ProxyAdmin'
     && state.hasEmployeeGuestEvidence
@@ -137,40 +145,35 @@ const hasClaimableOwnerShape = (
 const bindingResult = (user, status = 'BOUND') => ({
   success: true,
   status,
+  registered: true,
   identityState: publicUser(user).identityState,
   verificationStatus: user.verificationStatus,
   authMode: 'line',
   user: publicUser(user)
 });
 
+// The same trusted SQL predicate is used by both the revoke UPDATE and its
+// postcondition. Keep the OR group parenthesized under the guest/validity
+// guards so an expired, revoked, or non-guest row cannot be updated.
+const LIVE_MATCHING_GUEST_SESSION_PREDICATE = `
+  auth_mode = 'employee_guest'
+  AND revoked_at IS NULL
+  AND expires_at > ?
+  AND (
+    (
+      employee_id IS NOT NULL
+      AND length(trim(employee_id)) > 0
+      AND UPPER(trim(employee_id)) = ?
+    )
+    OR user_id = ?
+  )
+`;
+
 const claimAssertion = (database, timestamp) => prepareStatement(database, `
   INSERT INTO employee_guest_sessions (session_id, token_hash, expires_at)
   SELECT ?, NULL, ?
   WHERE changes() <> 1
 `, [randomId('claim_assert'), timestamp]);
-
-const revokePostconditionAssertion = (
-  database,
-  { employeeId, ownerUserId, timestamp }
-) => prepareStatement(database, `
-  INSERT INTO employee_guest_sessions (session_id, token_hash, expires_at)
-  SELECT ?, NULL, ?
-  WHERE EXISTS (
-    SELECT 1
-    FROM employee_guest_sessions
-    WHERE revoked_at IS NULL
-      AND expires_at > ?
-      AND auth_mode = 'employee_guest'
-      AND (
-        (
-          employee_id IS NOT NULL
-          AND length(trim(employee_id)) > 0
-          AND UPPER(trim(employee_id)) = ?
-        )
-        OR user_id = ?
-      )
-  )
-`, [randomId('claim_revoke_assert'), timestamp, timestamp, employeeId, ownerUserId]);
 
 const survivorGuardStatement = (database, {
   survivorUserId,
@@ -186,6 +189,8 @@ const survivorGuardStatement = (database, {
 `, [timestamp, survivorUserId, lineUserId]);
 
 const ownerReleaseStatement = (database, {
+  survivorUserId,
+  lineUserId,
   ownerUserId,
   employeeId,
   timestamp
@@ -194,9 +199,9 @@ const ownerReleaseStatement = (database, {
   SET employee_id = NULL,
       updated_at = ?
   WHERE user_id = ?
+    AND user_id <> ?
     AND active = 1
     AND line_user_id IS NULL
-    AND verification_status = 'UNVERIFIED'
     AND role NOT IN ('Admin', 'ProxyAdmin')
     AND employee_id IS NOT NULL
     AND length(trim(employee_id)) > 0
@@ -233,17 +238,18 @@ const ownerReleaseStatement = (database, {
     AND NOT EXISTS (
       SELECT 1 FROM idempotency_keys WHERE actor_user_id = ?
     )
-    AND NOT EXISTS (
+    AND EXISTS (
       SELECT 1
-      FROM users AS competing
-      WHERE competing.employee_id IS NOT NULL
-        AND length(trim(competing.employee_id)) > 0
-        AND UPPER(trim(competing.employee_id)) = ?
-        AND competing.user_id <> ?
+      FROM users AS survivor
+      WHERE survivor.user_id = ?
+        AND survivor.line_user_id = ?
+        AND survivor.active = 1
+        AND survivor.employee_id IS NULL
     )
 `, [
   timestamp,
   ownerUserId,
+  survivorUserId,
   employeeId,
   employeeId,
   ownerUserId,
@@ -253,11 +259,13 @@ const ownerReleaseStatement = (database, {
   ownerUserId,
   ownerUserId,
   ownerUserId,
-  employeeId,
-  ownerUserId
+  survivorUserId,
+  lineUserId
 ]);
 
 const ownerRetireStatement = (database, {
+  survivorUserId,
+  lineUserId,
   ownerUserId,
   timestamp
 }) => prepareStatement(database, `
@@ -268,10 +276,17 @@ const ownerRetireStatement = (database, {
   WHERE user_id = ?
     AND active = 1
     AND line_user_id IS NULL
-    AND verification_status = 'UNVERIFIED'
-    AND role NOT IN ('Admin', 'ProxyAdmin')
     AND employee_id IS NULL
-`, [timestamp, ownerUserId]);
+    AND role NOT IN ('Admin', 'ProxyAdmin')
+    AND EXISTS (
+      SELECT 1
+      FROM users AS survivor
+      WHERE survivor.user_id = ?
+        AND survivor.line_user_id = ?
+        AND survivor.active = 1
+        AND survivor.employee_id IS NULL
+    )
+`, [timestamp, ownerUserId, survivorUserId, lineUserId]);
 
 const survivorAssignStatement = (database, {
   survivorUserId,
@@ -280,28 +295,8 @@ const survivorAssignStatement = (database, {
   employeeId,
   timestamp
 }) => prepareStatement(database, `
-  WITH roster AS (
-    SELECT
-      COUNT(*) AS match_count,
-      COALESCE(SUM(
-        CASE
-          WHEN active = 1
-            AND provenance IN ('TRUSTED_IMPORT', 'ADMIN_APPROVED')
-          THEN 1
-          ELSE 0
-        END
-      ), 0) AS trusted_count
-    FROM employee_roster
-    WHERE UPPER(trim(employee_id)) = ?
-  )
   UPDATE users
   SET employee_id = ?,
-      verification_status = CASE
-        WHEN (SELECT match_count FROM roster) = 1
-          AND (SELECT trusted_count FROM roster) = 1
-        THEN 'VERIFIED'
-        ELSE 'UNVERIFIED'
-      END,
       updated_at = ?
   WHERE user_id = ?
     AND line_user_id = ?
@@ -309,33 +304,29 @@ const survivorAssignStatement = (database, {
     AND employee_id IS NULL
     AND EXISTS (
       SELECT 1
-      FROM users AS provisional
-      WHERE provisional.user_id = ?
-        AND provisional.active = 0
-        AND provisional.employee_id IS NULL
-        AND provisional.line_user_id IS NULL
-        AND provisional.verification_status = 'UNVERIFIED'
-        AND provisional.role NOT IN ('Admin', 'ProxyAdmin')
+      FROM users AS retired_owner
+      WHERE retired_owner.user_id = ?
+        AND retired_owner.active = 0
+        AND retired_owner.employee_id IS NULL
+        AND retired_owner.line_user_id IS NULL
+        AND retired_owner.role NOT IN ('Admin', 'ProxyAdmin')
     )
     AND NOT EXISTS (
       SELECT 1
       FROM users AS competing
-      WHERE competing.employee_id IS NOT NULL
+      WHERE competing.user_id <> ?
+        AND competing.employee_id IS NOT NULL
         AND length(trim(competing.employee_id)) > 0
         AND UPPER(trim(competing.employee_id)) = ?
-        AND competing.user_id <> ?
-        AND competing.user_id <> ?
     )
 `, [
-  employeeId,
   employeeId,
   timestamp,
   survivorUserId,
   lineUserId,
   ownerUserId,
-  employeeId,
   survivorUserId,
-  ownerUserId
+  employeeId
 ]);
 
 const revokeGuestSessionsStatement = (database, {
@@ -346,96 +337,56 @@ const revokeGuestSessionsStatement = (database, {
   UPDATE employee_guest_sessions
   SET revoked_at = ?,
       revoked_reason = 'line_bound'
-  WHERE revoked_at IS NULL
-    AND expires_at > ?
-    AND auth_mode = 'employee_guest'
-    AND (
-      (
-        employee_id IS NOT NULL
-        AND length(trim(employee_id)) > 0
-        AND UPPER(trim(employee_id)) = ?
-      )
-      OR user_id = ?
-    )
+  WHERE ${LIVE_MATCHING_GUEST_SESSION_PREDICATE}
 `, [timestamp, timestamp, employeeId, ownerUserId]);
+
+const revokePostconditionAssertion = (
+  database,
+  { employeeId, ownerUserId, timestamp }
+) => prepareStatement(database, `
+  INSERT INTO employee_guest_sessions (session_id, token_hash, expires_at)
+  SELECT ?, NULL, ?
+  WHERE EXISTS (
+    SELECT 1
+    FROM employee_guest_sessions
+    WHERE ${LIVE_MATCHING_GUEST_SESSION_PREDICATE}
+  )
+`, [
+  randomId('claim_revoke_assert'),
+  timestamp,
+  timestamp,
+  employeeId,
+  ownerUserId
+]);
 
 const auditStatement = (database, {
   auditId,
   survivorUserId,
   lineUserId,
   ownerUserId,
-  employeeId,
   employeeIdDigest,
+  survivorVerificationStatus,
   timestamp
 }) => prepareStatement(database, `
-  WITH roster AS (
-    SELECT
-      COUNT(*) AS match_count,
-      COALESCE(SUM(
-        CASE
-          WHEN active = 1
-            AND provenance IN ('TRUSTED_IMPORT', 'ADMIN_APPROVED')
-          THEN 1
-          ELSE 0
-        END
-      ), 0) AS trusted_count
-    FROM employee_roster
-    WHERE UPPER(trim(employee_id)) = ?
-  ),
-  decision AS (
-    SELECT
-      CASE
-        WHEN match_count = 1 AND trusted_count = 1
-        THEN 'AUTO_VERIFIED'
-        ELSE 'PENDING_TRUST_REVIEW'
-      END AS verification_decision,
-      CASE
-        WHEN match_count = 1 AND trusted_count = 1
-        THEN 'VERIFIED'
-        ELSE 'UNVERIFIED'
-      END AS verification_status,
-      CASE
-        WHEN match_count = 1 AND trusted_count = 1
-        THEN 'VERIFIED'
-        ELSE 'PENDING_VERIFICATION'
-      END AS identity_state,
-      CASE
-        WHEN match_count = 1 AND trusted_count = 1
-        THEN 'TRUSTED_UNIQUE_ACTIVE'
-        WHEN match_count = 0
-        THEN 'NO_TRUSTED_MATCH'
-        WHEN match_count > 1
-        THEN 'AMBIGUOUS_MATCH'
-        ELSE 'INACTIVE_OR_UNTRUSTED_MATCH'
-      END AS verification_reason
-    FROM roster
-  )
   INSERT INTO admin_audit_log (
     audit_id, actor_user_id, actor_auth_mode, actor_employee_id_snapshot,
     actor_line_user_id_snapshot, target_user_id, target_employee_id_snapshot,
     target_line_user_id_snapshot, action, metadata_json, occurred_at
   )
-  SELECT ?, ?, 'line', NULL, ?, ?, NULL, NULL,
-         'PROVISIONAL_EMPLOYEE_CLAIMED',
-         json_object(
-           'employeeIdDigest', ?,
-           'verificationDecision', decision.verification_decision,
-           'verificationStatus', decision.verification_status,
-           'identityState', decision.identity_state,
-           'reason', decision.verification_reason,
-           'outcome', 'CLAIMED',
-           'retiredProvisionalUserId', ?
-         ),
-         ?
-  FROM decision
+  VALUES (?, ?, 'line', NULL, ?, ?, NULL, NULL,
+          'PROVISIONAL_EMPLOYEE_CLAIMED', ?, ?)
 `, [
-  employeeId,
   auditId,
   survivorUserId,
   lineUserId,
   ownerUserId,
-  employeeIdDigest,
-  ownerUserId,
+  JSON.stringify({
+    survivorUserId,
+    retiredProvisionalUserId: ownerUserId,
+    employeeIdDigest,
+    survivorVerificationStatus: survivorVerificationStatus || null,
+    outcome: 'CLAIMED'
+  }),
   timestamp
 ]);
 
@@ -454,38 +405,31 @@ const classifyTransactionFailure = async (
     employeeId
   });
   if (
-    state.survivor?.active
-    && state.survivor.lineUserId === lineUserId
-    && state.survivor.userId === survivorUserId
-    && state.survivor.employeeId !== null
-    && state.survivor.employeeId !== undefined
-    && state.survivor.employeeId.trim().toUpperCase() === employeeId
+    state.survivor?.active === true
+    && state.lineOwner?.userId === survivorUserId
+    && sameNormalizedEmployeeId(state.survivor.employeeId, employeeId)
   ) {
     return bindingResult(state.survivor, 'ALREADY_BOUND');
   }
   if (
     state.survivor?.lineUserId === lineUserId
-    && state.survivor.employeeId !== null
-    && state.survivor.employeeId !== undefined
-    && state.survivor.employeeId.trim().toUpperCase() !== employeeId
+    && hasEmployeeId(state.survivor.employeeId)
+    && !sameNormalizedEmployeeId(state.survivor.employeeId, employeeId)
   ) {
     throw conflict('LINE_ALREADY_BOUND');
   }
-  if (
-    state.owners.length !== 1
-    || !state.owner
-    || state.owner.userId === survivorUserId
-    || state.owner.lineUserId !== null
-    || state.owner.verificationStatus !== VERIFICATION_STATUSES.UNVERIFIED
-    || state.owner.role === 'Admin'
-    || state.owner.role === 'ProxyAdmin'
-    || !state.hasEmployeeGuestEvidence
-    || !hasClaimableOwnerShape(state, { survivorUserId, lineUserId, employeeId })
-  ) {
-    throw conflict('EMPLOYEE_ID_ALREADY_BOUND');
-  }
-  if (state.dependencies.length > 0) {
-    throw conflict('PROVISIONAL_IDENTITY_HAS_DEPENDENCIES');
+  if (state.owner && state.owner.userId !== survivorUserId) {
+    const claimable = hasClaimableOwnerShape(state, {
+      survivorUserId,
+      lineUserId,
+      employeeId
+    });
+    if (claimable && state.dependencies.length > 0) {
+      throw conflict('PROVISIONAL_IDENTITY_HAS_DEPENDENCIES');
+    }
+    if (state.owners.length !== 1 || !claimable) {
+      throw conflict('EMPLOYEE_ID_ALREADY_BOUND');
+    }
   }
   throw error;
 };
@@ -514,8 +458,8 @@ export const claimProvisionalEmployee = async (
     throw conflict('LINE_BIND_CONFLICT');
   }
   if (!state.survivor.active) throw forbidden('EMPLOYEE_INACTIVE');
-  if (state.survivor.employeeId !== null && state.survivor.employeeId !== undefined) {
-    if (state.survivor.employeeId.trim().toUpperCase() === employeeId) {
+  if (hasEmployeeId(state.survivor.employeeId)) {
+    if (sameNormalizedEmployeeId(state.survivor.employeeId, employeeId)) {
       return bindingResult(state.survivor, 'ALREADY_BOUND');
     }
     throw conflict('LINE_ALREADY_BOUND');
@@ -534,7 +478,6 @@ export const claimProvisionalEmployee = async (
     throw conflict('PROVISIONAL_IDENTITY_HAS_DEPENDENCIES');
   }
 
-  await resolveEmployeeVerification(database, employeeId);
   const employeeIdDigest = await digestEmployeeId(employeeId);
   const ownerUserId = state.owner.userId;
   const statements = [
@@ -545,12 +488,16 @@ export const claimProvisionalEmployee = async (
     }),
     claimAssertion(database, timestamp),
     ownerReleaseStatement(database, {
+      survivorUserId: survivorId,
+      lineUserId: verifiedLineUserId,
       ownerUserId,
       employeeId,
       timestamp
     }),
     claimAssertion(database, timestamp),
     ownerRetireStatement(database, {
+      survivorUserId: survivorId,
+      lineUserId: verifiedLineUserId,
       ownerUserId,
       timestamp
     }),
@@ -578,8 +525,8 @@ export const claimProvisionalEmployee = async (
       survivorUserId: survivorId,
       lineUserId: verifiedLineUserId,
       ownerUserId,
-      employeeId,
       employeeIdDigest,
+      survivorVerificationStatus: state.survivor.verificationStatus,
       timestamp
     }),
     claimAssertion(database, timestamp)
@@ -599,10 +546,10 @@ export const claimProvisionalEmployee = async (
   const bound = await getUserById(database, survivorId);
   if (
     !bound
-    || !bound.active
+    || bound.active !== true
     || bound.lineUserId !== verifiedLineUserId
-    || bound.employeeId === null
-    || bound.employeeId.trim().toUpperCase() !== employeeId
+    || !sameNormalizedEmployeeId(bound.employeeId, employeeId)
+    || bound.verificationStatus !== state.survivor.verificationStatus
   ) {
     throw conflict('LINE_BIND_CONFLICT');
   }

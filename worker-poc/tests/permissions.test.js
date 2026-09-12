@@ -16,23 +16,26 @@ const identity = (role, lineUserId = 'user-1') => ({
   actor: {
     userId: lineUserId,
     lineUserId,
+    employeeId: 'employee-' + lineUserId,
     role,
-    registered: true
+    registered: true,
+    active: true,
+    authMode: 'line'
   }
 });
 
 test('permission matrix preserves User, ProxyAdmin, and Admin boundaries', () => {
-  assert.equal(can('User', ACTIONS.READ_SELF), true);
-  assert.equal(can('User', ACTIONS.ADMIN_CALENDAR), false);
-  assert.equal(can('User', ACTIONS.READ_ADMIN_SUMMARY), true);
-  assert.equal(can('ProxyAdmin', ACTIONS.READ_ADMIN_SUMMARY), true);
-  assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_CALENDAR), true);
-  assert.equal(can('ProxyAdmin', ACTIONS.READ_MEMBER_BALANCES), false);
-  assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_BALANCE), false);
-  assert.equal(can('Admin', ACTIONS.READ_MEMBER_BALANCES), true);
-  assert.equal(can('Admin', ACTIONS.ADMIN_CALENDAR), true);
-  assert.equal(can('Admin', ACTIONS.ADMIN_ROLE), true);
-  for (const role of ['Admin', 'ProxyAdmin']) {
+  assert.equal(can('User', ACTIONS.READ_SELF, 'line', true, 'employee-user'), true);
+  assert.equal(can('User', ACTIONS.ADMIN_CALENDAR, 'line', true, 'employee-user'), false);
+  assert.equal(can('User', ACTIONS.READ_ADMIN_SUMMARY, 'line', true, 'employee-user'), true);
+  assert.equal(can('ProxyAdmin', ACTIONS.READ_ADMIN_SUMMARY, 'line', true, 'employee-proxy'), true);
+  assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_CALENDAR, 'line', true, 'employee-proxy'), true);
+  assert.equal(can('ProxyAdmin', ACTIONS.READ_MEMBER_BALANCES, 'line', true, 'employee-proxy'), false);
+  assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_BALANCE, 'line', true, 'employee-proxy'), false);
+  assert.equal(can('Admin', ACTIONS.READ_MEMBER_BALANCES, 'line', true, 'employee-admin'), true);
+  assert.equal(can('Admin', ACTIONS.ADMIN_CALENDAR, 'line', true, 'employee-admin'), true);
+  assert.equal(can('Admin', ACTIONS.ADMIN_ROLE, 'line', true, 'employee-admin'), true);
+  for (const role of ['User', 'ProxyAdmin', 'Admin']) {
     assert.equal(can(role, ACTIONS.READ_SELF, 'employee_guest'), true);
     assert.equal(can(role, ACTIONS.WRITE_SELF, 'employee_guest'), true);
     assert.equal(can(role, ACTIONS.READ_ADMIN_SUMMARY, 'employee_guest'), false);
@@ -52,12 +55,23 @@ test('User gains only order-summary read access and no other administrative acti
     ACTIONS.ADMIN_ANNOUNCEMENTS,
     ACTIONS.VIEW_AS
   ]) {
-    assert.equal(can('User', action), false, `User must not receive ${action}`);
+    assert.equal(
+      can('User', action, 'line', true, 'employee-user'),
+      false,
+      'User must not receive ' + action
+    );
   }
-  assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_ANNOUNCEMENTS), false);
-  assert.equal(can('ProxyAdmin', ACTIONS.VIEW_AS), false);
+  assert.equal(
+    can('ProxyAdmin', ACTIONS.ADMIN_ANNOUNCEMENTS, 'line', true, 'employee-proxy'),
+    false
+  );
+  assert.equal(can('ProxyAdmin', ACTIONS.VIEW_AS, 'line', true, 'employee-proxy'), false);
   for (const action of Object.values(ACTIONS)) {
-    assert.equal(can('Admin', action), true, `Admin must retain ${action}`);
+    assert.equal(
+      can('Admin', action, 'line', true, 'employee-admin'),
+      true,
+      'Admin must retain ' + action
+    );
   }
 });
 
@@ -74,45 +88,32 @@ test('assertCan requires a registered actor and assertSelfTarget rejects imperso
   );
 });
 
-test('UNVERIFIED User principals receive only central onboarding capabilities', () => {
-  const expectedCapabilities = [
-    ACTIONS.CAN_BIND_LINE,
-    ACTIONS.CAN_COMPLETE_PROFILE,
-    ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
-  ];
-  for (const authMode of ['line', 'employee_guest']) {
-    const capabilities = capabilitiesFor('User', authMode, 'UNVERIFIED', true);
-    assert.deepEqual(capabilities, expectedCapabilities);
-  }
-  for (const action of [
+test('verification status does not change registered LINE or guest capabilities', () => {
+  const registeredLineCapabilities = [
     ACTIONS.READ_SELF,
+    ACTIONS.REGISTER_SELF,
     ACTIONS.WRITE_SELF,
-    ACTIONS.READ_ADMIN_SUMMARY,
-    ACTIONS.READ_MEMBER_BALANCES,
-    ACTIONS.ADMIN_TOP_UP,
-    ACTIONS.ADMIN_CALENDAR,
-    ACTIONS.ADMIN_ROLE,
-    ACTIONS.ADMIN_ANNOUNCEMENTS,
-    ACTIONS.VIEW_AS
-  ]) {
-    assert.equal(can('User', action, 'line', 'UNVERIFIED', true), false, action);
-    assert.throws(
-      () => assertCan({
-        actor: {
-          userId: 'unverified-user',
-          role: 'User',
-          active: true,
-          registered: true,
-          verificationStatus: 'UNVERIFIED'
-        }
-      }, action),
-      (error) => error.code === 'FORBIDDEN',
-      action
-    );
-  }
+    ACTIONS.READ_ADMIN_SUMMARY
+  ].sort();
+  assert.deepEqual(
+    capabilitiesFor('User', 'line', true, '139653'),
+    registeredLineCapabilities
+  );
+  assert.deepEqual(
+    capabilitiesFor('User', 'employee_guest', true, '139653'),
+    [ACTIONS.READ_SELF, ACTIONS.REGISTER_SELF, ACTIONS.WRITE_SELF].sort()
+  );
+  assert.equal(
+    can('User', ACTIONS.WRITE_SELF, 'line', true, '139653'),
+    true
+  );
+  assert.equal(
+    can('User', ACTIONS.WRITE_SELF, 'employee_guest', true, '139653'),
+    true
+  );
 });
 
-test('UNVERIFIED Admin principals cannot retain Admin mutation capabilities', () => {
+test('UNVERIFIED registered LINE Admin principals retain Admin capabilities', () => {
   const adminMutations = [
     ACTIONS.ADMIN_BALANCE,
     ACTIONS.ADMIN_TOP_UP,
@@ -130,28 +131,17 @@ test('UNVERIFIED Admin principals cannot retain Admin mutation capabilities', ()
       role: 'Admin',
       active: true,
       registered: true,
+      authMode: 'line',
       verificationStatus: 'UNVERIFIED'
     }
   };
-  assert.deepEqual(
-    capabilitiesFor('Admin', 'line', 'UNVERIFIED', true, '139653'),
-    [
-      ACTIONS.CAN_BIND_LINE,
-      ACTIONS.CAN_COMPLETE_PROFILE,
-      ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
-    ].sort()
-  );
   for (const action of adminMutations) {
     assert.equal(
-      can('Admin', action, 'line', 'UNVERIFIED', true, '139653'),
-      false,
+      can('Admin', action, 'line', true, '139653'),
+      true,
       action
     );
-    assert.throws(
-      () => assertCan(principal, action),
-      (error) => error.code === 'FORBIDDEN',
-      action
-    );
+    assert.doesNotThrow(() => assertCan(principal, action), action);
   }
 });
 
@@ -166,6 +156,8 @@ test('identity state distinguishes a missing provisional user from an existing U
     userId: 'unverified-user',
     registered: false,
     employeeId: '139653',
+    authMode: 'employee_guest',
+    provisional: true,
     verificationStatus: 'UNVERIFIED'
   }), IDENTITY_STATES.PENDING_VERIFICATION);
   assert.equal(identityStateFor({
@@ -179,6 +171,7 @@ test('identity state distinguishes a missing provisional user from an existing U
     userId: 'verified-user',
     registered: true,
     employeeId: '139654',
+    authMode: 'line',
     active: true,
     verificationStatus: 'VERIFIED'
   }), IDENTITY_STATES.VERIFIED);
@@ -191,7 +184,7 @@ test('identity state distinguishes a missing provisional user from an existing U
 
 test('LINE canonical users without employee IDs receive only employee-binding capability', () => {
   assert.deepEqual(
-    capabilitiesFor('Admin', 'line', 'VERIFIED', true, null, true),
+    capabilitiesFor('Admin', 'line', true, null, true),
     [ACTIONS.CAN_BIND_EMPLOYEE, ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE]
   );
   for (const action of [
@@ -205,7 +198,7 @@ test('LINE canonical users without employee IDs receive only employee-binding ca
     ACTIONS.VIEW_AS
   ]) {
     assert.equal(
-      can('Admin', action, 'line', 'VERIFIED', true, null, true),
+      can('Admin', action, 'line', true, null, true),
       false,
       action
     );

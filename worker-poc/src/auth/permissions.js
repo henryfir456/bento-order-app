@@ -58,32 +58,26 @@ export const IDENTITY_STATES = Object.freeze({
   UNREGISTERED: 'UNREGISTERED'
 });
 
-const ONBOARDING_ACTIONS = new Set([
-  ACTIONS.CAN_BIND_LINE,
-  ACTIONS.CAN_COMPLETE_PROFILE,
-  ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
-]);
+const hasEmployeeId = (value) => String(value ?? '').trim().length > 0;
 
-const normalizedVerificationStatus = (value) => (
-  value === VERIFICATION_STATUSES.UNVERIFIED
-    ? VERIFICATION_STATUSES.UNVERIFIED
-    : VERIFICATION_STATUSES.VERIFIED
+export const isRegisteredLinePrincipal = (principal) => Boolean(
+  principal?.authMode === 'line'
+    && principal?.active === true
+    && hasEmployeeId(principal?.employeeId)
 );
 
-export const isVerifiedPrincipal = (principal) => Boolean(
-  principal?.registered
-  && principal?.active !== false
-  && normalizedVerificationStatus(principal?.verificationStatus)
-    === VERIFICATION_STATUSES.VERIFIED
-);
-
-export const isProvisionalPrincipal = (principal) => (
-  normalizedVerificationStatus(principal?.verificationStatus)
-    === VERIFICATION_STATUSES.UNVERIFIED
+export const isProvisionalPrincipal = (principal) => Boolean(
+  principal?.authMode === 'employee_guest'
+    && principal?.provisional
 );
 
 export const identityStateFor = (principal) => {
-  if (principal?.userId && !String(principal.employeeId || '').trim()) {
+  const authMode = principal?.authMode || 'line';
+  if (
+    principal?.userId
+    && authMode === 'line'
+    && !hasEmployeeId(principal.employeeId)
+  ) {
     return IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED;
   }
   if (principal?.provisional || isProvisionalPrincipal(principal)) {
@@ -91,8 +85,22 @@ export const identityStateFor = (principal) => {
       ? IDENTITY_STATES.PENDING_VERIFICATION
       : IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE;
   }
-  if (principal?.registered && principal?.active !== false) {
+  if (
+    authMode === 'employee_guest'
+    && principal?.userId
+    && principal?.active !== false
+    && principal?.verificationStatus === VERIFICATION_STATUSES.VERIFIED
+  ) {
     return IDENTITY_STATES.VERIFIED;
+  }
+  if (
+    isRegisteredLinePrincipal(principal)
+    || (principal?.registered && principal?.active !== false)
+  ) {
+    return IDENTITY_STATES.VERIFIED;
+  }
+  if (principal?.userId && !hasEmployeeId(principal.employeeId)) {
+    return IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED;
   }
   return IDENTITY_STATES.UNREGISTERED;
 };
@@ -100,24 +108,24 @@ export const identityStateFor = (principal) => {
 export const capabilitiesFor = (
   role,
   authMode = 'line',
-  verificationStatus = VERIFICATION_STATUSES.VERIFIED,
   active = true,
   employeeId = null,
   employeeBindingRequired = false
 ) => {
   if (!active) return [];
-  if (employeeBindingRequired && !String(employeeId || '').trim()) {
+  if (authMode === 'employee_guest') {
+    return [...GUEST_ACTIONS].sort();
+  }
+  if (
+    authMode === 'line'
+    && (employeeBindingRequired || !hasEmployeeId(employeeId))
+  ) {
     return [
       ACTIONS.CAN_BIND_EMPLOYEE,
       ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
     ].sort();
   }
-  if (normalizedVerificationStatus(verificationStatus) === VERIFICATION_STATUSES.UNVERIFIED) {
-    return [...ONBOARDING_ACTIONS].sort();
-  }
-  const actions = authMode === 'employee_guest'
-    ? GUEST_ACTIONS
-    : (ROLE_ACTIONS[role] || new Set());
+  const actions = ROLE_ACTIONS[role] || new Set();
   return [...actions].sort();
 };
 
@@ -125,14 +133,12 @@ export const can = (
   role,
   action,
   authMode = 'line',
-  verificationStatus = VERIFICATION_STATUSES.VERIFIED,
   active = true,
   employeeId = null,
   employeeBindingRequired = false
 ) => capabilitiesFor(
   role,
   authMode,
-  verificationStatus,
   active,
   employeeId,
   employeeBindingRequired
@@ -141,24 +147,24 @@ export const can = (
 export const isEmployeeBindingPrincipal = (principal) => Boolean(
   principal?.userId
   && principal?.authMode === 'line'
+  && principal?.active === true
   && principal?.requiresEmployeeBinding
 );
 
 export const assertCan = (identity, action) => {
   const actor = identity?.actor;
-  if (!actor
-    || (!actor.registered
-      && !isProvisionalPrincipal(actor)
-      && !isEmployeeBindingPrincipal(actor))
-    || !can(
+  const authMode = actor?.authMode || 'line';
+  const registered = isRegisteredLinePrincipal(actor);
+  const guest = authMode === 'employee_guest' && actor?.active === true;
+  const unbound = isEmployeeBindingPrincipal(actor);
+  if (!actor || (!registered && !guest && !unbound) || !can(
     actor.role,
     action,
-      actor.authMode || 'line',
-      actor.verificationStatus,
-      actor.active !== false,
-      actor.employeeId,
-      actor.requiresEmployeeBinding
-    )) {
+    authMode,
+    actor.active === true,
+    actor.employeeId,
+    actor.requiresEmployeeBinding
+  )) {
     throw forbidden();
   }
   return true;

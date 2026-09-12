@@ -219,6 +219,10 @@ test('formal migration exposes canonical relational identity columns', () => {
   assert.equal(tableColumns(database, 'orders').has('line_user_id'), false);
   assert.equal(tableColumns(database, 'balance_ledger').has('user_id'), true);
   assert.equal(tableColumns(database, 'idempotency_keys').has('actor_user_id'), true);
+  assert.equal(
+    tableColumns(database, 'employee_guest_sessions').get('token_hash').notnull,
+    1
+  );
 });
 
 test('formal migration assigns a committed sequence on ledger insertion', () => {

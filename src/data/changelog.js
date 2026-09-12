@@ -15,16 +15,16 @@ const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
     {
       name: '新增',
       changes: [
-        'Admin 成員管理與「切換身分」新增登入來源與身份狀態 compact badges，清楚區分 LINE、非 LINE、待綁員編、待審核與已驗證。',
-        'Admin 可對尚未綁定員編的 canonical user 執行「綁員編」，完成後會重新取得伺服器 authoritative 狀態。',
-        '新增全部、待綁員編、待審核、已驗證篩選，手機版改用 compact card，降低欄位增加造成的橫向溢出。'
+        '新增 Worker + D1 authoritative identity 與安全的 provisional employee claim；claim 會保留 audit/history、撤銷有效 guest sessions，並退休 provisional row。',
+        'Admin 綁定員編沿用 central authorization、canonical ownership 與 authoritative readback。'
       ]
     },
     {
       name: '變更',
       changes: [
-        '可信員工資料唯一匹配、且員工啟用與來源可信時才會自動驗證；其餘資料維持待審核，異常情況留給例外人工審查。',
-        '身份驗證、員編綁定、核驗與授權維持分離，Worker + D1 為本功能唯一 production backend。'
+        'active LINE canonical user 綁定員編後立即視為已註冊，沿用既有 canonical role 與權限；verificationStatus 僅保留為歷史相容欄位。',
+        'employee_guest 維持訪客專用邊界；employee_roster 不再是 LINE 登入、綁定、授權或正常功能的前置條件。',
+        'LINE user 未綁員編時顯示綁定提示；綁定完成後直接進入系統，不進入 pending verification 或 Admin approval 流程。'
       ]
     }
   ],

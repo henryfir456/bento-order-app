@@ -68,6 +68,15 @@ export const GUEST_PERMISSIONS = Object.freeze({
   viewAsUser: false
 });
 
-export const hasPermission = (role, permission, authMode = 'line') => (
-  Boolean((authMode === 'employee_guest' ? GUEST_PERMISSIONS : ROLE_PERMISSIONS[role])?.[permission])
+export const hasPermission = (
+  role,
+  permission,
+  authMode = 'line',
+  registered = true
+) => (
+  Boolean(
+    (authMode === 'employee_guest'
+      ? GUEST_PERMISSIONS
+      : registered ? ROLE_PERMISSIONS[role] : null)?.[permission]
+  )
 );

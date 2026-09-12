@@ -48,7 +48,10 @@ test('pickup floor update is actor-bound and audited', async () => {
     actor: {
       userId: 'user-1',
       lineUserId: 'user-1',
+      employeeId: 'employee-user-1',
       registered: true,
+      active: true,
+      authMode: 'line',
       role: 'User'
     }
   };

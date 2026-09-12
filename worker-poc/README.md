@@ -12,10 +12,12 @@ no remote D1 ID. Its remote seed script is fail-closed.
 
 The formal Worker implements LINE token authentication, canonical relational
 identity, restricted employee guest sessions, explicit provisional employee
-onboarding, conflict-safe LINE binding, bounded trusted-roster verification,
-Admin identity binding, View As read isolation, transactional order and
-balance mutations, and the formal D1 schema. The React production transport
-is Worker-only; the explicit GAS adapter is not a production fallback.
+onboarding, conflict-safe LINE binding and provisional claim, Admin identity
+binding, View As read isolation, transactional order and balance mutations,
+and the formal D1 schema. `verification_status` and `employee_roster` remain
+legacy compatibility data; they are not active LINE access gates. The React
+production transport is Worker-only; the explicit GAS adapter is not a
+production fallback.
 
 ## Contract boundaries
 
@@ -41,49 +43,33 @@ comparison.
 The formal authenticated startup flow is:
 
 1. Send `GET /api/me` with `Authorization: Bearer <LINE access token>`.
-2. If `registered` is `false`, inspect `identityState`. An existing canonical
-   LINE identity with `employee_id IS NULL` returns
-   `EMPLOYEE_BIND_REQUIRED` and must show the employee-binding prompt. Submit
-   the normalized employee ID to `POST /api/auth/line-employee-bind` with the
-   LINE bearer token; this fills only that canonical row's `employee_id` and
-   does not change verification, role, balance, or create a guest session.
-   A collision with another canonical user returns
-   `409 {"error":"EMPLOYEE_ID_ALREADY_BOUND"}`. A same-user retry is
-   idempotent and returns `ALREADY_BOUND`.
-   For a LINE identity with no canonical user, show the separate
-   employee-identity lookup path: `POST /api/auth/line-employee-lookup` with
-   the normalized employee ID. An existing unbound employee is shown for
-   explicit confirmation, then `POST /api/auth/line-employee-bind` performs
-   the server-side binding. An unknown valid textual ID enters
-   onboarding; completion uses the same direct LINE-authenticated bind path
-   and creates an `UNVERIFIED` canonical user. This LINE-authenticated path
-   never creates an employee guest session.
-3. When no LINE authentication context is available, an unbound active
-   employee may instead send
-   `POST /api/auth/employee-guest` with a string `{ "employeeId": "001234" }`.
-   A known active employee with no LINE binding receives an opaque, expiring
-   `VERIFIED` session with self-service permissions. Any employee ID already
-   bound to LINE receives HTTP 409 `{"error":"LINE_LOGIN_REQUIRED"}`.
-   A valid but unmapped textual ID receives HTTP 200 with an opaque
-   `UNVERIFIED_EMPLOYEE` onboarding session; it receives no canonical user,
-   balance, or application-data capability.
-4. For the no-LINE fallback flow, send `POST /api/auth/line-bind` with the
-   server-verified LINE Bearer token and `X-Employee-Guest-Session`. A known
-   employee requires explicit confirmation. An unknown employee must also
-   submit only a display name and pickup floor; the Worker creates a
-   canonical `User` row with `role = User`, `active = 1`, `balance = 0`, and
-   `verification_status = UNVERIFIED`. The session and LINE binding are
-   collision-safe and the guest session is revoked after binding.
-5. A binding-required principal receives only
-   `CAN_BIND_EMPLOYEE` and `CAN_VIEW_SELF_ONBOARDING_STATE` until an employee
-   ID is attached. `UNVERIFIED` principals resolve through `/api/me` and may only use the
-   central onboarding capabilities `CAN_VIEW_SELF_ONBOARDING_STATE`,
-   `CAN_COMPLETE_PROFILE`, and `CAN_BIND_LINE`. They cannot access calendar,
-   balances, orders, administration, View As, or another user's data.
-6. After a verified LINE binding, send `GET /api/bootstrap` with the LINE
-   Bearer token.
-7. Send `GET /api/bootstrap/deferred?bootId=<same caller boot id>` for likes
-   and announcements. The formal response echoes that boot ID exactly.
+2. An active LINE canonical user with an employee ID is immediately
+   `registered=true` and proceeds to normal application/bootstrap flow. The
+   stored canonical role is authoritative even when the historical
+   `verification_status` is `UNVERIFIED`.
+3. An active LINE canonical user without an employee ID receives
+   `EMPLOYEE_BIND_REQUIRED` and the binding prompt. Submit only the normalized
+   employee ID to `POST /api/auth/line-employee-bind`. The Worker resolves the
+   LINE identity from the token, performs normal binding, same-survivor
+   idempotence, or the guarded atomic provisional claim. A non-claimable owner
+   returns `409 {"error":"EMPLOYEE_ID_ALREADY_BOUND"}`. No roster match or
+   client claim flag is used.
+4. A LINE identity without an existing canonical row may use the same direct
+   binding endpoint; an unknown valid employee ID creates a normal registered
+   LINE canonical row with the existing schema compatibility defaults. The
+   active frontend does not use the old lookup/confirmation review path.
+5. When no LINE authentication context is available, an unbound active
+   employee may instead send `POST /api/auth/employee-guest` with a string
+   `{ "employeeId": "001234" }`. The returned credential is opaque and
+   self-only. A valid but unmapped textual ID remains an employee_guest
+   provisional session with no canonical application access.
+6. The legacy guest-to-LINE `POST /api/auth/line-bind` path remains bounded to
+   the two-credential guest compatibility flow. It never grants Admin
+   capability from a stored guest role and never uses roster verification as
+   an active access gate.
+7. After a registered LINE binding, send `GET /api/bootstrap` and then
+   `GET /api/bootstrap/deferred?bootId=<same caller boot id>` with the LINE
+   Bearer token. The formal response echoes that boot ID exactly.
 
 The formal Worker ignores client-supplied user IDs, employee IDs, roles,
 balances, and display names for identity and keeps authenticated actor,

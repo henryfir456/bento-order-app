@@ -61,14 +61,20 @@ export const publicUser = (user) => {
   if (!user) return null;
   const hasEmployeeId = Boolean(String(user.employeeId || '').trim());
   const verificationStatus = user.verificationStatus || VERIFICATION_STATUSES.VERIFIED;
+  const authMode = String(user.lineUserId || '').trim()
+    ? 'line'
+    : 'employee_guest';
   const identityState = identityStateFor({
     userId: user.userId,
     employeeId: user.employeeId,
-    registered: hasEmployeeId && verificationStatus === VERIFICATION_STATUSES.VERIFIED,
+    authMode,
+    registered: authMode === 'line' && user.active && hasEmployeeId,
+    provisional: authMode === 'employee_guest'
+      && verificationStatus === VERIFICATION_STATUSES.UNVERIFIED,
     verificationStatus,
     active: user.active
   });
-  const authSource = String(user.lineUserId || '').trim() ? 'LINE' : 'EMPLOYEE_GUEST';
+  const authSource = authMode === 'line' ? 'LINE' : 'EMPLOYEE_GUEST';
   return {
     userId: user.userId,
     employeeId: user.employeeId,

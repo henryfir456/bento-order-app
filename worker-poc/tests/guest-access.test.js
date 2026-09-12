@@ -140,9 +140,9 @@ test('valid unknown employee IDs enter explicit provisional onboarding', async (
   assert.equal(result.body.employeeId, '139653');
   assert.equal(result.body.user, null);
   assert.deepEqual(result.body.capabilities, [
-    'CAN_BIND_LINE',
-    'CAN_COMPLETE_PROFILE',
-    'CAN_VIEW_SELF_ONBOARDING_STATE'
+    'READ_SELF',
+    'REGISTER_SELF',
+    'WRITE_SELF'
   ]);
   const session = database.get(`
     SELECT user_id, employee_id, status
@@ -202,9 +202,9 @@ test('guest restore reconciles an existing unverified canonical user without att
   assert.equal(restored.body.user.userId, 'reconciled-user-139653');
   assert.equal(restored.body.user.lineUserId, null);
   assert.deepEqual(restored.body.capabilities, [
-    'CAN_BIND_LINE',
-    'CAN_COMPLETE_PROFILE',
-    'CAN_VIEW_SELF_ONBOARDING_STATE'
+    'READ_SELF',
+    'REGISTER_SELF',
+    'WRITE_SELF'
   ]);
   assert.equal(database.get(`
     SELECT user_id FROM employee_guest_sessions WHERE token_hash = ?
@@ -292,7 +292,7 @@ test('employee guest provisional onboarding completes without LINE and keeps a n
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 });
 
-test('trusted employee roster auto-verifies only at guest onboarding, not login knowledge', async () => {
+test('legacy employee_guest onboarding may project roster verification, not LINE access', async () => {
   const database = new SqliteD1();
   database.run(`
     INSERT INTO employee_roster (roster_id, employee_id, active, provenance, source_ref)
@@ -335,7 +335,7 @@ test('invalid employee IDs are rejected after trim and uppercase normalization',
   assert.equal(normalized.body.employeeId, 'AB12CD');
 });
 
-test('LINE-authenticated employee lookup and binding never create a guest session', async () => {
+test('LINE binding does not attach to an unbound canonical owner without a survivor claim', async () => {
   const database = seedGuestDatabase();
   const lineProfile = profileFetch({
     token: 'line-direct-token',
@@ -369,10 +369,9 @@ test('LINE-authenticated employee lookup and binding never create a guest sessio
       pickupFloor: '9樓'
     }
   }, { fetchImpl: lineProfile });
-  assert.equal(binding.response.status, 200);
-  assert.equal(binding.body.status, 'BOUND');
-  assert.equal(binding.body.user.userId, USER_ID);
-  assert.equal(binding.body.user.lineUserId, 'line-direct-001234');
+  assert.equal(binding.response.status, 409);
+  assert.deepEqual(binding.body, { error: 'EMPLOYEE_ID_ALREADY_BOUND' });
+  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', USER_ID).line_user_id, null);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
 });
 
@@ -418,7 +417,7 @@ test('LINE canonical user without employee ID must bind an employee before appli
   }, { fetchImpl: lineProfile });
   assert.equal(binding.response.status, 200);
   assert.equal(binding.body.status, 'BOUND');
-  assert.equal(binding.body.identityState, 'PENDING_VERIFICATION');
+  assert.equal(binding.body.identityState, 'VERIFIED');
   assert.equal(binding.body.user.userId, 'line-identity-without-employee');
   assert.equal(binding.body.user.employeeId, '139653');
   assert.equal(binding.body.user.lineUserId, 'line-unbound-identity');
@@ -443,13 +442,15 @@ test('LINE canonical user without employee ID must bind an employee before appli
     token: 'line-unbound-token'
   }, { fetchImpl: lineProfile });
   assert.equal(refreshed.response.status, 200);
-  assert.equal(refreshed.body.identityState, 'PENDING_VERIFICATION');
-  assert.equal(refreshed.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(refreshed.body.identityState, 'VERIFIED');
+  assert.equal(refreshed.body.status, 'VERIFIED');
   assert.equal(refreshed.body.user.employeeId, '139653');
+  assert.equal(refreshed.body.user.verificationStatus, 'UNVERIFIED');
   assert.deepEqual(refreshed.body.capabilities, [
-    'CAN_BIND_LINE',
-    'CAN_COMPLETE_PROFILE',
-    'CAN_VIEW_SELF_ONBOARDING_STATE'
+    'READ_ADMIN_SUMMARY',
+    'READ_SELF',
+    'REGISTER_SELF',
+    'WRITE_SELF'
   ]);
 });
 
@@ -545,7 +546,7 @@ test('LINE-authenticated unknown employee onboarding binds server LINE identity 
   assert.equal(binding.body.status, 'BOUND');
   assert.equal(binding.body.user.employeeId, '139653');
   assert.equal(binding.body.user.lineUserId, 'line-direct-139653');
-  assert.equal(binding.body.user.verificationStatus, 'UNVERIFIED');
+  assert.equal(binding.body.user.verificationStatus, 'VERIFIED');
   assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 });
@@ -627,7 +628,7 @@ test('LINE binding is canonical, idempotent, conflict-safe, and revokes every ol
   assert.equal(conflictDatabase.get('SELECT revoked_at FROM employee_guest_sessions WHERE user_id = ?', USER_ID).revoked_at, null);
 });
 
-test('provisional LINE onboarding creates an UNVERIFIED canonical user and disables employee-only login', async () => {
+test('legacy guest-to-LINE binding creates a registered canonical user without roster gating', async () => {
   const database = new SqliteD1();
   const guest = await call(database, '/api/auth/employee-guest', {
     method: 'POST',
@@ -651,12 +652,12 @@ test('provisional LINE onboarding creates an UNVERIFIED canonical user and disab
 
   assert.equal(binding.response.status, 200);
   assert.equal(binding.body.status, 'BOUND');
-  assert.equal(binding.body.verificationStatus, 'UNVERIFIED');
+  assert.equal(binding.body.verificationStatus, 'VERIFIED');
   assert.equal(binding.body.user.employeeId, '139653');
   assert.equal(binding.body.user.lineUserId, 'line-139653');
   assert.equal(binding.body.user.balance, 0);
   assert.equal(binding.body.user.role, 'User');
-  assert.equal(binding.body.user.verificationStatus, 'UNVERIFIED');
+  assert.equal(binding.body.user.verificationStatus, 'VERIFIED');
   const canonical = database.get(`
     SELECT user_id, employee_id, line_user_id, display_name, pickup_floor,
            balance, role, active, verification_status
@@ -671,7 +672,7 @@ test('provisional LINE onboarding creates an UNVERIFIED canonical user and disab
     balance: 0,
     role: 'User',
     active: 1,
-    verification_status: 'UNVERIFIED'
+    verification_status: 'VERIFIED'
   });
 
   const replay = await call(database, '/api/auth/line-bind', {
@@ -688,35 +689,20 @@ test('provisional LINE onboarding creates an UNVERIFIED canonical user and disab
     token: 'line-provisional-token'
   }, { fetchImpl: lineProfile });
   assert.equal(lineMe.response.status, 200);
-  assert.equal(lineMe.body.registered, false);
-  assert.equal(lineMe.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(lineMe.body.registered, true);
+  assert.equal(lineMe.body.status, 'VERIFIED');
+  assert.equal(lineMe.body.identityState, 'VERIFIED');
   assert.deepEqual(lineMe.body.capabilities, [
-    'CAN_BIND_LINE',
-    'CAN_COMPLETE_PROFILE',
-    'CAN_VIEW_SELF_ONBOARDING_STATE'
+    'READ_ADMIN_SUMMARY',
+    'READ_SELF',
+    'REGISTER_SELF',
+    'WRITE_SELF'
   ]);
 
-  const provisionalProtectedRequests = [
-    ['/api/bootstrap', { method: 'GET' }],
-    ['/api/calendar', { method: 'GET' }],
-    ['/api/orders/map', { method: 'GET' }],
-    ['/api/order-page?targetDate=2026-09-08', { method: 'GET' }],
-    ['/api/me/balance/history?month=2026-09', { method: 'GET' }],
-    ['/api/admin/summary?date=2026-09-08', { method: 'GET' }],
-    ['/api/admin/members/balances', { method: 'GET' }],
-    ['/api/admin/announcements', { method: 'GET' }],
-    ['/api/admin/announcements', { method: 'POST', body: {} }],
-    ['/api/admin/balances/top-up', { method: 'POST', body: {} }],
-    ['/api/admin/users/any-user/role', { method: 'PUT', body: {} }],
-    ['/api/orders', { method: 'POST', body: {} }]
-  ];
-  for (const [path, options] of provisionalProtectedRequests) {
-    const protectedResponse = await call(database, path, {
-      ...options,
-      token: 'line-provisional-token'
-    }, { fetchImpl: lineProfile });
-    assert.equal(protectedResponse.response.status, 403, path);
-  }
+  const readable = await call(database, '/api/orders/map', {
+    token: 'line-provisional-token'
+  }, { fetchImpl: lineProfile });
+  assert.notEqual(readable.response.status, 403);
 
   const profileUpdate = await call(database, '/api/me/pickup-floor', {
     method: 'PATCH',
@@ -724,8 +710,8 @@ test('provisional LINE onboarding creates an UNVERIFIED canonical user and disab
     body: { displayName: 'Updated Employee 139653', pickupFloor: '1樓' }
   }, { fetchImpl: lineProfile });
   assert.equal(profileUpdate.response.status, 200);
-  assert.equal(profileUpdate.body.status, 'UNVERIFIED_EMPLOYEE');
-  assert.equal(profileUpdate.body.verificationStatus, 'UNVERIFIED');
+  assert.equal(profileUpdate.body.status, 'VERIFIED');
+  assert.equal(profileUpdate.body.verificationStatus, 'VERIFIED');
   assert.equal(profileUpdate.body.user.name, 'Updated Employee 139653');
   assert.equal(profileUpdate.body.user.floor, '1樓');
 
@@ -733,11 +719,11 @@ test('provisional LINE onboarding creates an UNVERIFIED canonical user and disab
     token: 'line-provisional-token'
   }, { fetchImpl: lineProfile });
   assert.equal(refreshed.response.status, 200);
-  assert.equal(refreshed.body.registered, false);
-  assert.equal(refreshed.body.status, 'UNVERIFIED_EMPLOYEE');
+  assert.equal(refreshed.body.registered, true);
+  assert.equal(refreshed.body.status, 'VERIFIED');
   assert.equal(refreshed.body.user.name, 'Updated Employee 139653');
   assert.equal(refreshed.body.user.floor, '1樓');
-  assert.equal(refreshed.body.user.verificationStatus, 'UNVERIFIED');
+  assert.equal(refreshed.body.user.verificationStatus, 'VERIFIED');
 
   const employeeOnly = await call(database, '/api/auth/employee-guest', {
     method: 'POST',
