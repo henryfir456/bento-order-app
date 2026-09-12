@@ -1920,6 +1920,82 @@ test('frontend separates auth/view-as identity, guards writes, and keeps date ch
   assert.doesNotMatch(selectViewAsHandler[0], /setAuthUser|setLineUserId/);
 });
 
+test('admin identity list hides inactive employee guests and only exposes eligible binding targets', async () => {
+  const { getAdminMemberRows, isEligibleEmployeeBindingTarget } = await import(
+    pathToFileURL(path.join(__dirname, '..', 'src', 'features', 'balances', 'identityStatus.js')).href
+  );
+  const canonical = {
+    userId: 'line-canonical',
+    authMode: 'line',
+    authSource: 'LINE',
+    active: true,
+    employeeId: '139653',
+    identityState: 'VERIFIED'
+  };
+  const unboundLine = {
+    userId: 'line-unbound',
+    authMode: 'line',
+    authSource: 'LINE',
+    active: true,
+    employeeId: null,
+    identityState: 'EMPLOYEE_BIND_REQUIRED'
+  };
+  const activeProvisional = {
+    userId: 'provisional-active',
+    authMode: 'employee_guest',
+    authSource: 'EMPLOYEE_GUEST',
+    active: true,
+    employeeId: null,
+    identityState: 'PENDING_VERIFICATION',
+    verificationStatus: 'UNVERIFIED'
+  };
+  const inactiveProvisional = {
+    userId: 'provisional-retired',
+    authMode: 'employee_guest',
+    authSource: 'EMPLOYEE_GUEST',
+    active: false,
+    employeeId: null,
+    identityState: 'VERIFIED',
+    verificationStatus: 'UNVERIFIED'
+  };
+  const inactiveLine = {
+    userId: 'line-inactive',
+    authMode: 'line',
+    authSource: 'LINE',
+    active: false,
+    employeeId: '139654',
+    identityState: 'VERIFIED'
+  };
+
+  const projected = getAdminMemberRows([
+    canonical,
+    unboundLine,
+    activeProvisional,
+    inactiveProvisional,
+    inactiveLine
+  ]);
+  assert.deepEqual(projected.map(({ userId }) => userId), [
+    'line-canonical',
+    'line-unbound',
+    'provisional-active',
+    'line-inactive'
+  ]);
+  assert.equal(
+    projected.find(({ userId }) => userId === 'provisional-active').identityState,
+    'EMPLOYEE_BIND_REQUIRED'
+  );
+  assert.equal(isEligibleEmployeeBindingTarget(canonical), false);
+  assert.equal(isEligibleEmployeeBindingTarget(unboundLine), true);
+  assert.equal(isEligibleEmployeeBindingTarget(activeProvisional), true);
+  assert.equal(isEligibleEmployeeBindingTarget(inactiveProvisional), false);
+  assert.equal(isEligibleEmployeeBindingTarget(inactiveLine), false);
+
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const bindingHandler = appSource.match(/const handleOpenEmployeeBindModal = \(user\) => \{[\s\S]*?\n  \};/);
+  assert.ok(bindingHandler);
+  assert.match(bindingHandler[0], /isEligibleEmployeeBindingTarget\(user\)/);
+});
+
 test('frontend wires floor editing, version history, modal preview, and corrected finance permissions', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');

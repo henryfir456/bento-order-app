@@ -145,6 +145,32 @@ test('bound LINE identity never re-enters provisional onboarding', () => {
   assert.doesNotMatch(submitBlock, /handleLineEmployeeBind|updatePickupFloor|PENDING_VERIFICATION/);
 });
 
+test('registered bootstrap consumes nested identity state for an UNVERIFIED Admin', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const bootstrap = {
+    success: true,
+    registered: true,
+    user: {
+      userId: 'line-admin-139653',
+      employeeId: '139653',
+      role: 'Admin',
+      authSource: 'LINE',
+      identityState: 'VERIFIED',
+      verificationStatus: 'UNVERIFIED'
+    }
+  };
+  const identityResolver = appSource.match(/const requireAuthoritativeIdentityState[\s\S]*?\n};/)?.[0] || '';
+  const registeredBranch = appSource.match(/if \(identity\?\.success && identity\.registered && identity\.user\)[\s\S]*?\n      } else if \(identity\?\.success && identity\.registered === false\)/)?.[0] || '';
+
+  assert.equal(bootstrap.user.identityState, 'VERIFIED');
+  assert.equal(bootstrap.user.verificationStatus, 'UNVERIFIED');
+  assert.equal(bootstrap.user.role, 'Admin');
+  assert.match(identityResolver, /data\?\.user\?\.identityState/);
+  assert.match(appSource, /applyUserInfoData\(identity\)/);
+  assert.match(registeredBranch, /setAuthState\(AUTH_STATES\.REGISTERED\)/);
+  assert.doesNotMatch(registeredBranch, /employeeGuestLogin|handleProvisionalProfileSubmit|PENDING_VERIFICATION/);
+});
+
 test('legacy guest identity states remain compatibility-only and do not gate LINE access', async () => {
   const { IDENTITY_STATES } = await import('../src/auth/bootFlow.js');
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
@@ -444,11 +470,12 @@ test('employee guest provisional onboarding does not require or initiate LINE bi
   assert.match(onboardingSource, /員工訪客功能/);
 });
 
-test('bound LINE Admin copy preserves role and immediate capability semantics', () => {
+test('employee binding success copy is role-neutral for every target role', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
   assert.match(appSource, /const \[employeeGuestSuccess, setEmployeeGuestSuccess\] = useState\(''\)/);
-  assert.match(appSource, /Admin 角色與既有權限已保留，員編綁定完成後可直接使用 Admin 功能。/);
+  assert.match(appSource, /使用者原有角色與權限已保留。/);
+  assert.doesNotMatch(appSource, /Admin 角色與既有權限已保留/);
   assert.match(appSource, /const isGuestOnboarding = authMode === 'employee_guest'/);
   assert.match(appSource, /success=\{employeeGuestSuccess\}/);
   assert.doesNotMatch(appSource, /員工身分尚待核驗|核驗完成後即可使用訂餐功能/);

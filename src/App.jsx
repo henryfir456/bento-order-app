@@ -43,6 +43,10 @@ import AdminOrderSummary from './features/admin/AdminOrderSummary';
 import AnnouncementManagement from './features/admin/AnnouncementManagement';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
+import {
+  getAdminMemberRows,
+  isEligibleEmployeeBindingTarget
+} from './features/balances/identityStatus';
 
 // 自動根據目前環境讀取對應的變數
 const AUTH_STATES = Object.freeze({
@@ -60,10 +64,11 @@ const redactAuthSecrets = (value) => String(value || 'Unknown error')
   .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]');
 
 const requireAuthoritativeIdentityState = (data) => {
-  if (typeof data?.identityState !== 'string' || !data.identityState.trim()) {
+  const identityState = data?.user?.identityState || data?.identityState;
+  if (typeof identityState !== 'string' || !identityState.trim()) {
     throw new Error('IDENTITY_STATE_MISSING');
   }
-  return data.identityState;
+  return identityState;
 };
 
 const logAuthDiagnostic = (message) => {
@@ -306,6 +311,7 @@ export default function App() {
   const [memberBalancesError, setMemberBalancesError] = useState('');
   const [memberBalancesLoaded, setMemberBalancesLoaded] = useState(false);
   const memberBalancesRequestRef = useRef(0);
+  const adminMemberRows = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
   const [showViewAsModal, setShowViewAsModal] = useState(false);
   const [showFloorModal, setShowFloorModal] = useState(false);
   const [floorDraft, setFloorDraft] = useState('');
@@ -2142,8 +2148,7 @@ export default function App() {
     if (apiClient.transport !== 'worker'
       || !canAuth('bindEmployee')
       || isViewAsMode
-      || !user?.userId
-      || user.employeeId) return;
+      || !isEligibleEmployeeBindingTarget(user)) return;
     setSelectedEmployeeBindUser(user);
     setEmployeeBindId('');
     setEmployeeBindError('');
@@ -2185,7 +2190,7 @@ export default function App() {
       await showPopup({
         icon: 'success',
         title: '員編綁定完成',
-        text: 'Admin 角色與既有權限已保留，員編綁定完成後可直接使用 Admin 功能。'
+        text: '使用者原有角色與權限已保留。'
       });
     } catch (error) {
       const presentation = getApiErrorPresentation(error, '綁定員編');
@@ -2793,7 +2798,7 @@ export default function App() {
 
             {adminSection === 'balances' && can('viewMemberBalances') && (
               <MemberBalanceManagement
-                memberBalances={memberBalances}
+                memberBalances={adminMemberRows}
                 memberBalancesLoading={memberBalancesLoading}
                 memberBalancesError={memberBalancesError}
                 canTopup={can('topupMember')}
@@ -2996,11 +3001,11 @@ export default function App() {
               <div className="text-center text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">
                 {memberBalancesError}
               </div>
-            ) : memberBalances.length === 0 ? (
+            ) : adminMemberRows.length === 0 ? (
               <p className="text-center text-sm text-gray-400 py-6">目前沒有可檢視的成員資料</p>
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                {memberBalances.map((user, idx) => (
+                {adminMemberRows.map((user, idx) => (
                   <button
                     type="button"
                     key={user.userId || `view-as-${idx}`}

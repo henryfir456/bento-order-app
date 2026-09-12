@@ -18,6 +18,52 @@ const STATE_LABELS = Object.freeze({
   VERIFIED: '已註冊'
 });
 
+const hasEmployeeId = (value) => String(value ?? '').trim().length > 0;
+
+const isEmployeeGuestMember = (member) => (
+  member?.authMode === 'employee_guest' || member?.authSource === 'EMPLOYEE_GUEST'
+);
+
+const isLineMember = (member) => (
+  member?.authMode === 'line' || member?.authSource === 'LINE'
+);
+
+const isProvisionalEmployeeGuest = (member) => (
+  isEmployeeGuestMember(member)
+  && (
+    member?.provisional === true
+    || member?.identityState === IDENTITY_FILTERS.PENDING_VERIFICATION
+    || member?.verificationStatus === 'UNVERIFIED'
+  )
+);
+
+export const isHistoricalProvisionalMember = (member) => (
+  member?.active === false && isEmployeeGuestMember(member)
+);
+
+export const isActiveProvisionalEmployeeGuest = (member) => (
+  member?.active === true && isProvisionalEmployeeGuest(member)
+);
+
+export const isEligibleEmployeeBindingTarget = (member) => Boolean(
+  member?.userId
+  && member?.active === true
+  && !hasEmployeeId(member.employeeId)
+  && (isLineMember(member) || isActiveProvisionalEmployeeGuest(member))
+);
+
+const projectAdminMember = (member) => (
+  isActiveProvisionalEmployeeGuest(member)
+    ? { ...member, identityState: IDENTITY_FILTERS.BIND_REQUIRED }
+    : member
+);
+
+export const getAdminMemberRows = (members = []) => (
+  (Array.isArray(members) ? members : [])
+    .filter((member) => !isHistoricalProvisionalMember(member))
+    .map(projectAdminMember)
+);
+
 export const getIdentityBadges = ({ authSource, identityState } = {}) => ([
   {
     key: 'authSource',

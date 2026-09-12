@@ -3,9 +3,11 @@ import { formatBalanceAmount } from './formatters';
 import { formatEmployeeId } from '../../components/userIdentityDisplay';
 import IdentityStatusBadges from '../../components/IdentityStatusBadges';
 import {
+  getAdminMemberRows,
   identityFilterMatches,
   identityFilterOptions,
-  IDENTITY_FILTERS
+  IDENTITY_FILTERS,
+  isEligibleEmployeeBindingTarget
 } from './identityStatus';
 
 const memberKey = (user, index) => user.userId || `member-${index}`;
@@ -21,7 +23,7 @@ const BalanceBadge = ({ balance }) => (
 const MemberAction = ({ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }) => {
   if (isViewAsMode) return <span className="text-gray-400">—</span>;
   const actions = [];
-  if (canBindEmployee && !user.employeeId && user.userId) {
+  if (canBindEmployee && isEligibleEmployeeBindingTarget(user)) {
     actions.push(
       <button
         key="bind"
@@ -71,9 +73,10 @@ export default function MemberBalanceManagement({
   onOpenEmployeeBindModal
 }) {
   const [identityFilter, setIdentityFilter] = useState(IDENTITY_FILTERS.ALL);
+  const adminMembers = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
   const filteredMembers = useMemo(() => (
-    memberBalances.filter((member) => identityFilterMatches(member, identityFilter))
-  ), [memberBalances, identityFilter]);
+    adminMembers.filter((member) => identityFilterMatches(member, identityFilter))
+  ), [adminMembers, identityFilter]);
   const hasActions = !isViewAsMode && (canTopup || canBindEmployee);
 
   return (
@@ -110,7 +113,7 @@ export default function MemberBalanceManagement({
         </div>
       ) : filteredMembers.length === 0 ? (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-gray-400">
-          {memberBalances.length === 0 ? '目前沒有成員餘額資料' : '目前篩選條件沒有符合的成員'}
+          {adminMembers.length === 0 ? '目前沒有成員餘額資料' : '目前篩選條件沒有符合的成員'}
         </div>
       ) : (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10">
