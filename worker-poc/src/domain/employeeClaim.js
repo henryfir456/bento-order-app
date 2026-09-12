@@ -66,7 +66,7 @@ const readBusinessDependencies = async (database, userId) => {
 
 const readEmployeeGuestEvidence = async (
   database,
-  { ownerUserId, employeeId, now }
+  { ownerUserId, employeeId }
 ) => {
   const row = await database.prepare(`
     SELECT session_id
@@ -75,16 +75,14 @@ const readEmployeeGuestEvidence = async (
       AND auth_mode = 'employee_guest'
       AND status = 'UNVERIFIED_EMPLOYEE'
       AND UPPER(trim(employee_id)) = ?
-      AND revoked_at IS NULL
-      AND expires_at > ?
     LIMIT 1
-  `).bind(ownerUserId, employeeId, now).first();
+  `).bind(ownerUserId, employeeId).first();
   return Boolean(row);
 };
 
 const readClaimState = async (
   database,
-  { survivorUserId, lineUserId, employeeId, now }
+  { survivorUserId, lineUserId, employeeId }
 ) => {
   const [survivor, lineOwner, owners] = await Promise.all([
     getUserById(database, survivorUserId),
@@ -96,8 +94,7 @@ const readClaimState = async (
     ? await Promise.all([
       readEmployeeGuestEvidence(database, {
         ownerUserId: owner.userId,
-        employeeId,
-        now
+        employeeId
       }),
       readBusinessDependencies(database, owner.userId)
     ])
@@ -220,8 +217,6 @@ const ownerReleaseStatement = (database, {
         AND employee_id IS NOT NULL
         AND length(trim(employee_id)) > 0
         AND UPPER(trim(employee_id)) = ?
-        AND revoked_at IS NULL
-        AND expires_at > ?
     )
     AND NOT EXISTS (
       SELECT 1 FROM orders WHERE user_id = ?
@@ -253,7 +248,6 @@ const ownerReleaseStatement = (database, {
   employeeId,
   ownerUserId,
   employeeId,
-  timestamp,
   ownerUserId,
   ownerUserId,
   ownerUserId,
@@ -451,15 +445,13 @@ const classifyTransactionFailure = async (
     error,
     survivorUserId,
     lineUserId,
-    employeeId,
-    now
+    employeeId
   }
 ) => {
   const state = await readClaimState(database, {
     survivorUserId,
     lineUserId,
-    employeeId,
-    now
+    employeeId
   });
   if (
     state.survivor?.active
@@ -515,8 +507,7 @@ export const claimProvisionalEmployee = async (
   const state = await readClaimState(database, {
     survivorUserId: survivorId,
     lineUserId: verifiedLineUserId,
-    employeeId,
-    now: timestamp
+    employeeId
   });
 
   if (!state.survivor || state.lineOwner?.userId !== survivorId) {
@@ -601,8 +592,7 @@ export const claimProvisionalEmployee = async (
       error,
       survivorUserId: survivorId,
       lineUserId: verifiedLineUserId,
-      employeeId,
-      now: timestamp
+      employeeId
     });
   }
 

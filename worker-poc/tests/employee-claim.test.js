@@ -412,6 +412,46 @@ test('missing employee_guest evidence fails closed', async () => {
   assertNoTransferSideEffects(database);
 });
 
+test('historical employee_guest provenance remains claimable when every session is expired', async () => {
+  const database = createClaimFixture({ sessions: false });
+  const expiredAt = '2026-09-11T00:00:00.000Z';
+  insertGuestSession(database, 'guest-expired-owner-1', {
+    userId: PROVISIONAL_ID,
+    expiresAt: expiredAt
+  });
+  insertGuestSession(database, 'guest-expired-owner-2', {
+    userId: PROVISIONAL_ID,
+    expiresAt: expiredAt
+  });
+  insertGuestSession(database, 'guest-expired-loose-1', {
+    userId: null,
+    expiresAt: expiredAt
+  });
+  insertGuestSession(database, 'guest-expired-loose-2', {
+    userId: null,
+    expiresAt: expiredAt
+  });
+
+  const result = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    body: { employeeId: EMPLOYEE_ID }
+  });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.status, 'BOUND');
+  assert.equal(result.body.user.userId, SURVIVOR_ID);
+  assert.equal(result.body.user.employeeId, EMPLOYEE_ID);
+  assert.equal(ownerRow(database).active, 0);
+  assert.equal(ownerRow(database).employee_id, null);
+  assert.equal(database.get(`
+    SELECT COUNT(*) AS count
+    FROM employee_guest_sessions
+    WHERE UPPER(trim(employee_id)) = ?
+      AND revoked_at IS NOT NULL
+  `, EMPLOYEE_ID).count, 0);
+  assert.equal(mergeAuditRows(database).length, 1);
+});
+
 test('true business dependencies block claim while audit references do not', async () => {
   const database = createClaimFixture();
   database.run(`
