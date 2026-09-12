@@ -63,6 +63,7 @@ export const getMe = (identity) => {
       displayName: actor.displayName || ''
     } : provisional ? {
       status: 'UNVERIFIED_EMPLOYEE',
+      verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.UNVERIFIED,
       capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
       employeeId: actor.employeeId || '',
       lineUserId: actor.lineUserId || '',

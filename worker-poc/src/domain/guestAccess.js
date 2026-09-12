@@ -13,6 +13,7 @@ import {
   sameEmployeeId,
   resolveEmployeeVerification
 } from './employeeVerification.js';
+import { claimProvisionalEmployee } from './employeeClaim.js';
 
 const lineIdText = (value) => {
   const lineUserId = typeof value === 'string' ? value.trim() : '';
@@ -371,7 +372,12 @@ export const lineEmployeeBind = async (
 
     const conflictingEmployee = await getUserByEmployeeId(database, employeeId);
     if (conflictingEmployee && conflictingEmployee.userId !== currentLineUser.userId) {
-      throw conflict('EMPLOYEE_ID_ALREADY_BOUND');
+      return claimProvisionalEmployee(database, {
+        survivorUserId: currentLineUser.userId,
+        lineUserId: verifiedLineUserId,
+        employeeId,
+        clock
+      });
     }
 
     const timestamp = resolveClock(clock).toISOString();

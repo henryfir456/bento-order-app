@@ -112,6 +112,49 @@ test('UNVERIFIED User principals receive only central onboarding capabilities', 
   }
 });
 
+test('UNVERIFIED Admin principals cannot retain Admin mutation capabilities', () => {
+  const adminMutations = [
+    ACTIONS.ADMIN_BALANCE,
+    ACTIONS.ADMIN_TOP_UP,
+    ACTIONS.ADMIN_CALENDAR,
+    ACTIONS.ADMIN_ROLE,
+    ACTIONS.ADMIN_ANNOUNCEMENTS,
+    ACTIONS.ADMIN_EMPLOYEE_BIND,
+    ACTIONS.VIEW_AS
+  ];
+  const principal = {
+    actor: {
+      userId: 'unverified-admin',
+      lineUserId: 'line-unverified-admin',
+      employeeId: '139653',
+      role: 'Admin',
+      active: true,
+      registered: true,
+      verificationStatus: 'UNVERIFIED'
+    }
+  };
+  assert.deepEqual(
+    capabilitiesFor('Admin', 'line', 'UNVERIFIED', true, '139653'),
+    [
+      ACTIONS.CAN_BIND_LINE,
+      ACTIONS.CAN_COMPLETE_PROFILE,
+      ACTIONS.CAN_VIEW_SELF_ONBOARDING_STATE
+    ].sort()
+  );
+  for (const action of adminMutations) {
+    assert.equal(
+      can('Admin', action, 'line', 'UNVERIFIED', true, '139653'),
+      false,
+      action
+    );
+    assert.throws(
+      () => assertCan(principal, action),
+      (error) => error.code === 'FORBIDDEN',
+      action
+    );
+  }
+});
+
 test('identity state distinguishes a missing provisional user from an existing UNVERIFIED user', () => {
   assert.equal(identityStateFor({
     userId: null,

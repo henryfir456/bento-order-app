@@ -29,6 +29,14 @@ export const sameEmployeeId = (left, right) => (
   && left.trim().toUpperCase() === right.trim().toUpperCase()
 );
 
+export const digestEmployeeId = async (employeeId) => {
+  const bytes = new TextEncoder().encode(employeeId);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest), (value) => (
+    value.toString(16).padStart(2, '0')
+  )).join('');
+};
+
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
 );

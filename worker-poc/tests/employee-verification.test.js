@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  digestEmployeeId,
   employeeIdText,
   resolveEmployeeVerification,
   VERIFICATION_DECISIONS
@@ -17,6 +18,13 @@ const addRosterRow = (database, {
   INSERT INTO employee_roster (roster_id, employee_id, active, provenance, source_ref)
   VALUES (?, ?, ?, ?, 'employee-import.csv')
 `, rosterId, employeeId, active, provenance);
+
+test('employee ID digest is canonical and reusable by audit flows', async () => {
+  const normalized = await digestEmployeeId(employeeIdText(' 139653 '));
+  const direct = await digestEmployeeId('139653');
+  assert.equal(normalized, direct);
+  assert.match(normalized, /^[0-9a-f]{64}$/);
+});
 
 test('trusted unique active employee records auto-verify', async () => {
   const database = new SqliteD1();

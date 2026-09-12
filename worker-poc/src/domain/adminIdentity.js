@@ -5,6 +5,7 @@ import { conflict, forbidden, notFound } from '../http/errors.js';
 import { prepareStatement, resolveClock, runMutationBatch } from '../db/transactions.js';
 import {
   employeeIdText,
+  digestEmployeeId,
   sameEmployeeId,
   resolveEmployeeVerification,
   VERIFICATION_DECISIONS
@@ -13,14 +14,6 @@ import {
 const statementChanges = (result) => Number(
   result?.meta?.changes ?? result?.changes ?? 0
 );
-
-const digestEmployeeId = async (employeeId) => {
-  const bytes = new TextEncoder().encode(employeeId);
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
-  return [...new Uint8Array(digest)]
-    .map((value) => value.toString(16).padStart(2, '0'))
-    .join('');
-};
 
 const auditInput = ({
   identity,

@@ -32,6 +32,7 @@ test('0003 adds verification state and a backward-compatible provisional session
     'session_id', 'token_hash', 'user_id', 'employee_id', 'auth_mode', 'status',
     'created_at', 'expires_at', 'revoked_at', 'revoked_reason'
   ]);
+  assert.equal(columns(database, 'employee_guest_sessions').get('token_hash').notnull, 1);
   assert.equal(columns(database, 'employee_guest_sessions').get('user_id').notnull, 0);
   assert.equal(columns(database, 'employee_guest_sessions').get('employee_id').notnull, 0);
   assert.equal(columns(database, 'employee_guest_sessions').get('status').dflt_value, "'VERIFIED'");
@@ -71,6 +72,11 @@ test('0003 accepts a provisional session without inventing a user_id', () => {
   assert.equal(row.user_id, null);
   assert.equal(row.employee_id, 'ABC123');
   assert.equal(row.status, 'UNVERIFIED_EMPLOYEE');
+  assert.throws(() => database.prepare(`
+    INSERT INTO employee_guest_sessions (
+      session_id, token_hash, employee_id, status, expires_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run('null-token-session', null, 'ABC123', 'UNVERIFIED_EMPLOYEE', '2099-01-01T00:00:00.000Z'), /NOT NULL/i);
   assert.throws(() => database.prepare(`
     INSERT INTO employee_guest_sessions (
       session_id, token_hash, employee_id, status, expires_at
