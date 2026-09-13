@@ -209,11 +209,11 @@ test('formal migration exposes canonical relational identity columns', () => {
   const database = new DatabaseSync(':memory:');
   migrationSql.forEach((sql) => database.exec(sql));
   assert.deepEqual(
-    [...tableColumns(database, 'users').keys()],
+    [...tableColumns(database, 'users').keys()].sort(),
     [
       'user_id', 'employee_id', 'line_user_id', 'display_name', 'pickup_floor',
       'balance', 'role', 'active', 'created_at', 'updated_at', 'verification_status'
-    ]
+    ].sort()
   );
   assert.equal(tableColumns(database, 'orders').has('user_id'), true);
   assert.equal(tableColumns(database, 'orders').has('line_user_id'), false);

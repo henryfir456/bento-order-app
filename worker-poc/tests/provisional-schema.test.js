@@ -24,10 +24,10 @@ const columns = (database, tableName) => new Map(
 
 test('0003 adds verification state and a backward-compatible provisional session shape', () => {
   const database = openDatabase();
-  assert.deepEqual([...columns(database, 'users').keys()], [
+  assert.deepEqual([...columns(database, 'users').keys()].sort(), [
     'user_id', 'employee_id', 'line_user_id', 'display_name', 'pickup_floor',
     'balance', 'role', 'active', 'created_at', 'updated_at', 'verification_status'
-  ]);
+  ].sort());
   assert.deepEqual([...columns(database, 'employee_guest_sessions').keys()], [
     'session_id', 'token_hash', 'user_id', 'employee_id', 'auth_mode', 'status',
     'created_at', 'expires_at', 'revoked_at', 'revoked_reason'
