@@ -9,6 +9,8 @@ import {
 } from '../db/idempotency.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
 import { deadlineAt, deadlineInfo, isDateOnly } from './deadlines.js';
+import { getUserById } from '../db/users.js';
+import { isProfileComplete } from './profile.js';
 
 const VALID_FLOORS = new Set(['1樓', '9樓']);
 const ORDER_OPERATION = 'CREATE_OR_REPLACE_ORDER';
@@ -142,6 +144,11 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
   if (!VALID_FLOORS.has(pickupFloor)) throw badRequest('INVALID_PICKUP_FLOOR');
   const note = text(input.note);
   if (note.length > 2000) throw badRequest('ORDER_NOTE_TOO_LONG');
+
+  const currentUser = await getUserById(database, actor.userId);
+  if (!currentUser || !isProfileComplete(currentUser)) {
+    throw forbidden('PROFILE_COMPLETION_REQUIRED');
+  }
 
   const setting = await currentSetting(database, targetDate);
   if (!setting || !text(setting.vendor)) throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');

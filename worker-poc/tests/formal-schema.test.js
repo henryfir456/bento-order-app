@@ -225,6 +225,43 @@ test('formal migration exposes canonical relational identity columns', () => {
   );
 });
 
+test('0005 preserves canonical users and relationships while making pickup floor an incomplete-profile field', () => {
+  const database = new DatabaseSync(':memory:');
+  migrationSql.slice(0, 5).forEach((sql) => database.exec(sql));
+  const timestamp = '2026-09-07T01:00:00.000Z';
+  database.prepare(`
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor,
+      balance, role, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('migration-user', 'M0005', null, 'Migration User', '9樓', 12, 'User', timestamp, timestamp);
+  database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor,
+      pickup_floor, total_amount, created_by_user_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('migration-order', 'migration-user', 'Migration User', '2026-09-08', 'Vendor A', '9樓', 0, 'migration-user', timestamp, timestamp);
+
+  database.exec(migrationSql[5]);
+
+  assert.equal(database.prepare(`
+    SELECT employee_id, pickup_floor, balance FROM users WHERE user_id = ?
+  `).get('migration-user').pickup_floor, '9樓');
+  assert.equal(database.prepare(`
+    SELECT user_id FROM orders WHERE order_id = ?
+  `).get('migration-order').user_id, 'migration-user');
+  assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+  assert.equal(tableColumns(database, 'users').get('pickup_floor').notnull, 0);
+
+  database.prepare(`
+    INSERT INTO users (user_id, employee_id, display_name, pickup_floor)
+    VALUES (?, ?, ?, ?)
+  `).run('migration-incomplete', 'M0006', 'Incomplete User', null);
+  assert.throws(() => database.prepare(`
+    UPDATE users SET pickup_floor = '3樓' WHERE user_id = ?
+  `).run('migration-incomplete'), /CHECK|constraint/i);
+});
+
 test('formal migration assigns a committed sequence on ledger insertion', () => {
   const database = openDatabase();
   database.prepare(`

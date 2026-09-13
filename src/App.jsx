@@ -542,8 +542,8 @@ export default function App() {
         ...data.user,
         userId: data.user.userId,
         name: data.user.name || data.user.displayName || '',
-        floor: data.user.defaultFloor || data.user.floor || '',
-        defaultFloor: data.user.defaultFloor || data.user.floor || '',
+        floor: data.user.defaultFloor ?? data.user.floor ?? '',
+        defaultFloor: data.user.defaultFloor ?? data.user.floor ?? '',
         balance: 0,
         role: data.user.role || 'User',
         authMode: data.authMode || 'line',
@@ -560,16 +560,16 @@ export default function App() {
       setViewAsUser(null);
       setLineUserId(data.lineUserId || provisionalUser?.lineUserId || '');
       setRegistrationDisplayName(nextDisplayName);
-      setRegistrationFloor(provisionalUser?.defaultFloor || '1樓');
+      setRegistrationFloor(provisionalUser ? (provisionalUser.defaultFloor ?? '') : '1樓');
       setProvisionalProfile({
         employeeId: nextEmployeeId,
         displayName: nextDisplayName,
-        pickupFloor: provisionalUser?.defaultFloor || '1樓',
+        pickupFloor: provisionalUser ? (provisionalUser.defaultFloor ?? '') : '1樓',
         lineDisplayName: data.displayName || provisionalUser?.name || ''
       });
       setName(nextDisplayName);
       setDefaultFloor(provisionalUser?.defaultFloor || '');
-      setFloor(provisionalUser?.defaultFloor || '1樓');
+      setFloor(provisionalUser ? (provisionalUser.defaultFloor ?? '') : '1樓');
       setUserBalance(0);
       return data;
     }
@@ -1262,11 +1262,13 @@ export default function App() {
     setEmployeeGuestSuccess('');
     setAuthError('');
     try {
-      const response = await apiClient.completeEmployeeGuestOnboarding({
-        guestToken: guestSession.token,
-        displayName,
-        pickupFloor
-      });
+      const response = authUser?.userId && authUser.profileComplete === false
+        ? await apiClient.updatePickupFloor({ displayName, pickupFloor })
+        : await apiClient.completeEmployeeGuestOnboarding({
+          guestToken: guestSession.token,
+          displayName,
+          pickupFloor
+        });
       const data = await response.json();
       if (
         !response.ok
@@ -1742,6 +1744,10 @@ export default function App() {
 
   const handleSubmit = async () => {
     if (loading || orderMutationInFlightRef.current || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    if (authUser?.profileComplete === false) {
+      await showPopup({ icon: 'warning', title: '請先完成基本資料', text: '請先設定有效的領取樓層，再開始訂餐。' });
+      return;
+    }
     if (!(await guardWrite('訂單送出'))) return;
     if (isExpired) {
       await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });

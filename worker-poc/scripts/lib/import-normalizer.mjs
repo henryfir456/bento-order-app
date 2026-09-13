@@ -44,6 +44,7 @@ const employeeIdentity = (row) => {
   const parsed = parseEmployeeId(valueOf(
     row,
     'employee_id',
+    'username',
     'EmployeeID',
     'employeeId',
     '員工編號',
@@ -52,7 +53,8 @@ const employeeIdentity = (row) => {
   ));
   return {
     employeeId: parsed.value,
-    employeeIdIssue: parsed.code
+    employeeIdIssue: parsed.code,
+    employeeIdSource: parsed.value ? 'workbook' : null
   };
 };
 
@@ -86,7 +88,8 @@ const normalizeUsers = (workbook) => rowsFor(workbook, 'Users').map((row, index)
     displayName: asText(valueOf(row, 'display_name', 'DisplayName')).trim(),
     pickupFloor: asNullableText(valueOf(row, 'pickup_floor', 'floor', '樓層')),
     balance: parseInteger(valueOf(row, 'balance', 'Balance')),
-    role: asNullableText(valueOf(row, 'role', 'Role'))
+    role: asNullableText(valueOf(row, 'role', 'Role')),
+    active: parseBoolean(valueOf(row, 'active', 'Active'))
   }, [])
 ));
 
@@ -140,7 +143,7 @@ const normalizeOrders = (workbook) => rowsFor(workbook, 'Orders').map((row, inde
     subtotal: parseInteger(valueOf(row, 'subtotal')),
     createdAt: parseTimestamp(valueOf(row, 'created_at')),
     updatedAt: parseTimestamp(valueOf(row, 'updated_at')),
-    status: (asNullableText(valueOf(row, 'status')) || 'ACTIVE').toUpperCase(),
+    status: asNullableText(valueOf(row, 'status'))?.toUpperCase() || null,
     lineUserId: asNullableText(valueOf(row, 'line_user_id', 'LINE_UserID')),
     balanceAfter: parseInteger(valueOf(row, 'balance_after', 'BalanceAfter')),
     note: asNullableText(valueOf(row, 'note'))

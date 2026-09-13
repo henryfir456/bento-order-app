@@ -10,11 +10,14 @@ import {
   sourceRef
 } from './import-contract.mjs';
 
-const toCanonicalRow = (sheetName, values, sourceRow, headers = []) => {
+const toCanonicalRow = (sheetName, values, sourceRow, headers = [], columnOverrides = {}) => {
   const columns = SHEET_DEFINITIONS[sheetName].columns;
   const source = sourceRef(sheetName, sourceRow);
   if (Array.isArray(values)) {
     const indexes = new Map();
+    for (const [column, index] of Object.entries(columnOverrides)) {
+      indexes.set(column, index);
+    }
     headers.forEach((header, index) => {
       const column = canonicalColumnForHeader(header, columns);
       if (column && !indexes.has(column)) indexes.set(column, index);
@@ -43,6 +46,58 @@ const toCanonicalRow = (sheetName, values, sourceRow, headers = []) => {
   };
 };
 
+const hasCanonicalHeader = (headers, sheetName, column) => (
+  headers.some((header) => canonicalColumnForHeader(header, SHEET_DEFINITIONS[sheetName].columns) === column)
+);
+
+const hasObjectField = (rows, field) => rows.some((row) => (
+  row && typeof row === 'object' && !Array.isArray(row)
+    && Object.prototype.hasOwnProperty.call(row, field)
+));
+
+const knownLegacyOrdersStatusShape = (headers, rows) => {
+  if (headers.length < 15 || hasCanonicalHeader(headers, 'Orders', 'status')) return false;
+  const expectedPrefix = SHEET_DEFINITIONS.Orders.columns.slice(0, 12);
+  const prefixMatches = expectedPrefix.every((column, index) => (
+    canonicalColumnForHeader(headers[index], SHEET_DEFINITIONS.Orders.columns) === column
+  ));
+  if (!prefixMatches || String(headers[12] ?? '').trim() !== '') return false;
+  if (canonicalColumnForHeader(headers[13], SHEET_DEFINITIONS.Orders.columns) !== 'line_user_id') {
+    return false;
+  }
+  if (canonicalColumnForHeader(headers[14], SHEET_DEFINITIONS.Orders.columns) !== 'balance_after') {
+    return false;
+  }
+  const values = rows
+    .filter((row) => Array.isArray(row))
+    .map((row) => row[12])
+    .filter((value) => value !== null && value !== undefined && String(value).trim() !== '')
+    .map((value) => String(value).trim().toUpperCase());
+  return values.length > 0 && values.every((value) => ['ACTIVE', 'CANCELLED'].includes(value));
+};
+
+const addDuplicateHeaderIssues = (sheetName, headers, shapeIssues) => {
+  const columns = SHEET_DEFINITIONS[sheetName].columns;
+  const seen = new Map();
+  headers.forEach((header, index) => {
+    const column = canonicalColumnForHeader(header, columns);
+    if (!column) return;
+    const indexes = seen.get(column) || [];
+    indexes.push(index + 1);
+    seen.set(column, indexes);
+  });
+  for (const [column, indexes] of seen) {
+    if (indexes.length > 1) {
+      shapeIssues.push({
+        code: 'DUPLICATE_CANONICAL_COLUMN',
+        sheet: sheetName,
+        column,
+        sourceColumns: indexes
+      });
+    }
+  }
+};
+
 const canonicalizeSheet = (sheetName, rawSheet, shapeIssues) => {
   const columns = SHEET_DEFINITIONS[sheetName].columns;
   if (rawSheet === null || rawSheet === undefined) {
@@ -65,6 +120,17 @@ const canonicalizeSheet = (sheetName, rawSheet, shapeIssues) => {
         code: 'MISSING_COLUMNS',
         sheet: sheetName,
         expectedColumns: missingColumns,
+        actualColumns: headers.slice()
+      });
+    }
+    addDuplicateHeaderIssues(sheetName, headers, shapeIssues);
+    const objectRows = rawSheet.rows.filter((row) => row && typeof row === 'object' && !Array.isArray(row));
+    if (sheetName === 'Orders' && !hasCanonicalHeader(headers, sheetName, 'status')
+      && !hasObjectField(objectRows, 'status')) {
+      shapeIssues.push({
+        code: 'ORDERS_STATUS_HEADER_AMBIGUOUS',
+        sheet: sheetName,
+        expectedColumns: ['status'],
         actualColumns: headers.slice()
       });
     }
@@ -108,6 +174,25 @@ const canonicalizeSheet = (sheetName, rawSheet, shapeIssues) => {
       actualColumns: rawHeaders.slice()
     });
   }
+  addDuplicateHeaderIssues(sheetName, rawHeaders, shapeIssues);
+  const statusRecognized = sheetName === 'Orders'
+    && knownLegacyOrdersStatusShape(rawHeaders, rawSheet.slice(1));
+  if (statusRecognized) {
+    shapeIssues.push({
+      code: 'ORDERS_STATUS_COLUMN_RECOGNIZED',
+      sheet: sheetName,
+      sourceColumn: 13,
+      statusValues: ['ACTIVE', 'CANCELLED'],
+      signature: 'legacy-orders-v1'
+    });
+  } else if (sheetName === 'Orders' && !hasCanonicalHeader(rawHeaders, sheetName, 'status')) {
+    shapeIssues.push({
+      code: 'ORDERS_STATUS_HEADER_AMBIGUOUS',
+      sheet: sheetName,
+      expectedColumns: ['status'],
+      actualColumns: rawHeaders.slice()
+    });
+  }
   if (sheetName === 'Users' && !rawHeaders.some((header) => (
     canonicalColumnForHeader(header, columns) === 'employee_id'
   ))) {
@@ -122,7 +207,13 @@ const canonicalizeSheet = (sheetName, rawSheet, shapeIssues) => {
   return {
     headers: rawHeaders.slice(),
     rows: rawSheet.slice(1).map((row, index) => (
-      toCanonicalRow(sheetName, row, index + 2, rawHeaders)
+      toCanonicalRow(
+        sheetName,
+        row,
+        index + 2,
+        rawHeaders,
+        statusRecognized ? { status: 12 } : {}
+      )
     )),
     missing: false
   };

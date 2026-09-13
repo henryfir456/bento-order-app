@@ -628,6 +628,76 @@ test('LINE binding is canonical, idempotent, conflict-safe, and revokes every ol
   assert.equal(conflictDatabase.get('SELECT revoked_at FROM employee_guest_sessions WHERE user_id = ?', USER_ID).revoked_at, null);
 });
 
+test('SQL-only imported non-LINE canonical user converges through employee guest proof and authenticated LINE bind', async () => {
+  const database = new SqliteD1();
+  seedUser(database, {
+    userId: 'sql-imported-001234',
+    employeeId: EMPLOYEE_ID,
+    lineUserId: null,
+    displayName: 'Legacy employee 001234',
+    pickupFloor: '1樓',
+    balance: 0,
+    role: 'User',
+    verificationStatus: 'UNVERIFIED'
+  });
+  const lineProfile = profileFetch({
+    token: 'sql-import-line-token',
+    lineUserId: 'line-sql-import-001234',
+    displayName: 'Authenticated employee'
+  });
+
+  const directClaim = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'sql-import-line-token',
+    body: {
+      employeeId: EMPLOYEE_ID,
+      displayName: 'Must not claim directly',
+      pickupFloor: '9樓'
+    }
+  }, { fetchImpl: lineProfile });
+  assert.equal(directClaim.response.status, 409);
+  assert.deepEqual(directClaim.body, { error: 'EMPLOYEE_ID_ALREADY_BOUND' });
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+
+  const firstLogin = await guestLogin(database);
+  const secondLogin = await guestLogin(database);
+  assert.equal(firstLogin.response.status, 200);
+  assert.equal(secondLogin.response.status, 200);
+  assert.equal(firstLogin.body.user.userId, 'sql-imported-001234');
+  assert.equal(secondLogin.body.user.userId, firstLogin.body.user.userId);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+
+  const binding = await call(database, '/api/auth/line-bind', {
+    method: 'POST',
+    token: 'sql-import-line-token',
+    headers: { 'X-Employee-Guest-Session': firstLogin.body.token },
+    body: {
+      displayName: 'Ignored imported display name',
+      pickupFloor: '9樓',
+      lineUserId: 'forged-line-value'
+    }
+  }, { fetchImpl: lineProfile });
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.status, 'BOUND');
+  assert.equal(binding.body.user.userId, 'sql-imported-001234');
+  assert.equal(binding.body.user.lineUserId, 'line-sql-import-001234');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+
+  const replay = await call(database, '/api/auth/line-bind', {
+    method: 'POST',
+    token: 'sql-import-line-token',
+    headers: { 'X-Employee-Guest-Session': firstLogin.body.token },
+    body: { displayName: 'Replay', pickupFloor: '1樓' }
+  }, { fetchImpl: lineProfile });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.body.status, 'ALREADY_BOUND');
+  assert.equal(replay.body.user.userId, 'sql-imported-001234');
+
+  const employeeAfterBind = await guestLogin(database);
+  assert.equal(employeeAfterBind.response.status, 409);
+  assert.deepEqual(employeeAfterBind.body, { error: 'LINE_LOGIN_REQUIRED' });
+});
+
 test('legacy guest-to-LINE binding creates a registered canonical user without roster gating', async () => {
   const database = new SqliteD1();
   const guest = await call(database, '/api/auth/employee-guest', {

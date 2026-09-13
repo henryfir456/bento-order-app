@@ -26,13 +26,14 @@ The formal chain is exactly:
 0002_canonical_identity_rekey.sql  # one-time rebuild of an existing formal DB
 0003_provisional_employee_identity.sql
 0004_employee_roster_verification_source.sql
+0005_nullable_user_pickup_floor.sql # local policy-gate schema for incomplete profiles
 ```
 
-Migrations 0002, 0003, and 0004 are intentionally forward-only when executed as raw
+Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
-chain when reopening an existing local database. A fresh local database still
-applies all five files in order. Migration 0003 defaults existing users to
+chain when reopening an existing local database. A fresh local database applies
+all six files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -41,7 +42,10 @@ duplicate source records remain representable and auto-verification fails
 closed on ambiguity. Canonical `users.employee_id` uniqueness remains the
 exact-text ownership guard, and `users_employee_id_normalized_unique`
 enforces case-insensitive ownership after trim/case normalization. Any
-pre-existing normalized collision must fail migration closed.
+pre-existing normalized collision must fail migration closed. Migration 0005
+is the local policy-gate rebuild that makes `users.pickup_floor` nullable while
+retaining the non-null valid-floor domain and canonical identity indexes. It is
+not a remote approval or import authorization.
 
 ## Recovery procedure
 

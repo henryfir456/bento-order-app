@@ -10,8 +10,9 @@ import {
   IDENTITY_STATES,
   VERIFICATION_STATUSES
 } from '../auth/permissions.js';
+import { VALID_PICKUP_FLOORS } from './profile.js';
 
-export const VALID_PICKUP_FLOORS = Object.freeze(['1樓', '9樓']);
+export { VALID_PICKUP_FLOORS } from './profile.js';
 
 const nowIso = (clock) => {
   const value = clock instanceof Date ? clock : new Date();

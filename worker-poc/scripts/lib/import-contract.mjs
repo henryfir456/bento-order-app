@@ -126,7 +126,7 @@ export const normalizeHeader = (value) => String(value ?? '')
 
 export const HEADER_ALIASES = Object.freeze({
   employee_id: Object.freeze([
-    'employee_id', 'employeeid', 'employee', '員工編號', '工號', '員工代號'
+    'employee_id', 'employeeid', 'employee', 'username', '員工編號', '工號', '員工代號'
   ]),
   line_user_id: Object.freeze([
     'line_user_id', 'lineuserid', 'lineuserid', 'user_id', 'userid',

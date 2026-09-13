@@ -1,4 +1,5 @@
 import { identityStateFor, VERIFICATION_STATUSES } from '../auth/permissions.js';
+import { isProfileComplete } from '../domain/profile.js';
 
 export const toUser = (row) => {
   if (!row) return null;
@@ -11,7 +12,9 @@ export const toUser = (row) => {
       ? null
       : String(row.line_user_id),
     displayName: String(row.display_name || ''),
-    pickupFloor: String(row.pickup_floor || ''),
+    pickupFloor: row.pickup_floor === null || row.pickup_floor === undefined
+      ? null
+      : String(row.pickup_floor),
     balance: Number(row.balance),
     role: String(row.role || 'User'),
     active: Boolean(row.active),
@@ -88,6 +91,7 @@ export const publicUser = (user) => {
     identityState,
     verificationStatus,
     lineUserId: user.lineUserId,
-    displayName: user.displayName
+    displayName: user.displayName,
+    profileComplete: isProfileComplete(user)
   };
 };

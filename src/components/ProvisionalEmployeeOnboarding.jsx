@@ -49,6 +49,7 @@ export default function ProvisionalEmployeeOnboarding({
           disabled={loading}
           className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-base text-gray-800 outline-none transition focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100 disabled:bg-gray-50"
         >
+          <option value="">請選擇樓層</option>
           <option value="1樓">1樓</option>
           <option value="9樓">9樓</option>
         </select>
