@@ -27,6 +27,19 @@ self-contained and must not depend on the AI parent workspace.
 - Report automated and manual verification separately as PASS, FAIL,
   NOT RUN, or NOT VERIFIED.
 
+## Operational Handoff
+
+- Optional advisory handoff: `../agent-handoff/projects/80_bento-order-app/CURRENT.md`.
+- The handoff contains advisory / operational state only; it is not a source
+  of truth or a required dependency for this repository.
+- After reading the handoff, reconcile it with this consumer repository's
+  actual Git state before starting implementation.
+- If the handoff conflicts with code, tests, durable specs, or Git state, the
+  consumer repository's actual state wins. Do not modify this repository to
+  make it match an old handoff.
+- Update the handoff only for a material operational state change or a session
+  handoff. An update is not required for every commit.
+
 ## Bento project contract
 
 - Active production architecture is Cloudflare Worker + D1. The Worker
