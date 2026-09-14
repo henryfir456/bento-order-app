@@ -235,6 +235,7 @@ export default function App() {
   const [authUser, setAuthUser] = useState(null);
   const [, setIdentityState] = useState(null);
   const [viewAsUser, setViewAsUser] = useState(null);
+  const [delegatedOrderUser, setDelegatedOrderUser] = useState(null);
   const [userBalance, setUserBalance] = useState(0);
   const [defaultFloor, setDefaultFloor] = useState('');
   const [authState, setAuthState] = useState(AUTH_STATES.AUTH_LOADING);
@@ -275,6 +276,7 @@ export default function App() {
   const [activeOrderSnapshot, setActiveOrderSnapshot] = useState(null);
   const [hasExistingOrder, setHasExistingOrder] = useState(false);
   const [activeOrderReadOnly, setActiveOrderReadOnly] = useState(false);
+  const [orderPolicy, setOrderPolicy] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
@@ -315,7 +317,13 @@ export default function App() {
   const [memberBalancesLoaded, setMemberBalancesLoaded] = useState(false);
   const memberBalancesRequestRef = useRef(0);
   const adminMemberRows = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
+  const [orderTargetRows, setOrderTargetRows] = useState([]);
+  const [orderTargetsLoading, setOrderTargetsLoading] = useState(false);
+  const [orderTargetsError, setOrderTargetsError] = useState('');
+  const [orderTargetsLoaded, setOrderTargetsLoaded] = useState(false);
+  const orderTargetsRequestRef = useRef(0);
   const [showViewAsModal, setShowViewAsModal] = useState(false);
+  const [viewAsModalMode, setViewAsModalMode] = useState(null);
   const [showFloorModal, setShowFloorModal] = useState(false);
   const [floorDraft, setFloorDraft] = useState('');
   const [floorLoading, setFloorLoading] = useState(false);
@@ -361,6 +369,13 @@ export default function App() {
   const [specialAdminVendorChoice, setSpecialAdminVendorChoice] = useState('蔡老師');
 
   const isExpired = Boolean(deadline?.isExpired || deadline?.expired);
+  const isOrderExpired = orderPolicy ? (!orderPolicy.canMutate && isExpired) : isExpired;
+  const orderPolicyBlocked = Boolean(orderPolicy && !orderPolicy.canMutate);
+  const orderMutationBlocked = orderPolicyBlocked || isOrderExpired;
+  const normalOrderControlsOpen = !isExpired && !activeOrderReadOnly;
+  const orderControlsOpen = orderPolicy
+    ? orderPolicy.canMutate && !activeOrderReadOnly
+    : normalOrderControlsOpen;
 
   const readCurrentCredential = useCallback(() => {
     if (apiClient.transport === 'worker' && authMode === 'employee_guest') {
@@ -375,6 +390,7 @@ export default function App() {
     adminMenuChangesRequestRef.current += 1;
     historyRequestRef.current += 1;
     memberBalancesRequestRef.current += 1;
+    orderTargetsRequestRef.current += 1;
     deferredUiGenerationRef.current += 1;
     deferredUiBootRef.current = '';
     setLineUserId('');
@@ -382,6 +398,7 @@ export default function App() {
     setAuthUser(null);
     setIdentityState(null);
     setViewAsUser(null);
+    setDelegatedOrderUser(null);
     setUserBalance(0);
     setDefaultFloor('');
     setRegistrationDisplayName('');
@@ -406,6 +423,7 @@ export default function App() {
     setActiveOrderSnapshot(null);
     setHasExistingOrder(false);
     setActiveOrderReadOnly(false);
+    setOrderPolicy(null);
     setMessage('');
     setShowOrderConfirmation(false);
     setShowCancelConfirmation(false);
@@ -439,7 +457,12 @@ export default function App() {
     setMemberBalancesLoading(false);
     setMemberBalancesError('');
     setMemberBalancesLoaded(false);
+    setOrderTargetRows([]);
+    setOrderTargetsLoading(false);
+    setOrderTargetsError('');
+    setOrderTargetsLoaded(false);
     setShowViewAsModal(false);
+    setViewAsModalMode(null);
     setShowFloorModal(false);
     setFloorDraft('');
     setFloorError('');
@@ -1189,6 +1212,39 @@ export default function App() {
     }
   };
 
+  const loadOrderTargets = async (force = false) => {
+    if (apiClient.transport !== 'worker' || !authUser?.userId || !canAuth('delegateOrder')) return;
+    if (!force && orderTargetsLoaded) return;
+
+    const requestId = ++orderTargetsRequestRef.current;
+    setOrderTargetsLoading(true);
+    setOrderTargetsError('');
+
+    try {
+      const accessToken = readCurrentCredential();
+      if (!accessToken) {
+        setOrderTargetsError('目前無法驗證身份，請重新登入後再試。');
+        return;
+      }
+      const res = await apiClient.getOrderTargets();
+      const data = await res.json();
+      if (requestId !== orderTargetsRequestRef.current) return;
+
+      if (data.success && Array.isArray(data.targets)) {
+        setOrderTargetRows(data.targets);
+        setOrderTargetsLoaded(true);
+      } else {
+        setOrderTargetsError('目前無法取得可代點餐成員，請稍後再試。');
+      }
+    } catch {
+      if (requestId === orderTargetsRequestRef.current) {
+        setOrderTargetsError('目前無法取得可代點餐成員，請稍後再試。');
+      }
+    } finally {
+      if (requestId === orderTargetsRequestRef.current) setOrderTargetsLoading(false);
+    }
+  };
+
   const fetchUserInfo = async (accessToken) => {
     const requestStartTime = getPerformanceNow();
     try {
@@ -1526,13 +1582,14 @@ export default function App() {
     }
   };
 
-  const fetchUserAllOrders = async (uId, viewAsUserId = null) => {
+  const fetchUserAllOrders = async (uId, viewAsUserId = null, targetUserId = null) => {
     if (!uId) return false;
     const requestStartTime = getPerformanceNow();
     try {
       const res = await apiClient.getOrdersMap({
         userId: uId,
-        viewAsUserId: apiClient.transport === 'worker' ? viewAsUserId : null
+        viewAsUserId: apiClient.transport === 'worker' ? viewAsUserId : null,
+        targetUserId: apiClient.transport === 'worker' ? targetUserId : null
       });
       const data = await res.json();
       if (data.success) {
@@ -1726,12 +1783,14 @@ export default function App() {
     setActiveOrderId('');
     setHasExistingOrder(false);
     setActiveOrderReadOnly(false);
+    setOrderPolicy(null);
 
     try {
       const res = await apiClient.getOrderPage({
         targetDate: dateStr,
         userId: authUserId,
-        viewAsUserId: apiClient.transport === 'worker' ? viewAsUser?.userId : null
+        viewAsUserId: apiClient.transport === 'worker' ? viewAsUser?.userId : null,
+        targetUserId: apiClient.transport === 'worker' ? delegatedOrderUser?.userId : null
       });
       const data = await res.json();
       if (data.success && data.myOrder && Array.isArray(data.myOrder.items)) {
@@ -1746,6 +1805,7 @@ export default function App() {
 
         setSetting(data.setting);
         setDeadline(data.deadline);
+        setOrderPolicy(data.orderPolicy || null);
         setMenu(workerOrderMode ? normalizeWorkerOrderMenu(data.menu) : data.menu);
         setImageLoadErrors({});
         setOrderItems(orderMap);
@@ -1753,8 +1813,17 @@ export default function App() {
           order: data.myOrder,
           selectedDate: dateStr,
           vendor: data.setting?.vendor || '',
-          fallbackFloor: defaultFloor || authUser?.defaultFloor || authUser?.floor || floor
+          fallbackFloor: data.targetUser?.defaultFloor
+            || data.targetUser?.floor
+            || defaultFloor
+            || authUser?.defaultFloor
+            || authUser?.floor
+            || floor
         }));
+        if (delegatedOrderUser && data.targetUser) {
+          setDelegatedOrderUser(prev => prev ? { ...prev, ...data.targetUser } : prev);
+          setFloor(data.targetUser.defaultFloor || data.targetUser.floor || floor);
+        }
         setActiveOrderId(data.myOrder.orderId || '');
         setHasExistingOrder(data.myOrder.items.length > 0);
         setActiveOrderReadOnly(Boolean(data.myOrder.readOnly || data.myOrder.status === 'COMPLETED'));
@@ -1822,7 +1891,7 @@ export default function App() {
       return;
     }
     if (!(await guardWrite('訂單送出'))) return;
-    if (isExpired) {
+    if (orderMutationBlocked) {
       await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
       return;
     }
@@ -1842,7 +1911,7 @@ export default function App() {
     orderMutationInFlightRef.current = true;
     try {
       if (!(await guardWrite('訂單送出'))) return;
-      if (isExpired) {
+      if (orderMutationBlocked) {
         setShowOrderConfirmation(false);
         await showPopup({ icon: 'warning', title: '已截止訂餐', text: '該日期已截止訂餐！' });
         return;
@@ -1857,6 +1926,7 @@ export default function App() {
       const requestKey = workerOrderMutation
         ? getStableClientRequestKey(orderSubmitRequestRef, 'order', {
           targetDate: orderSubmission.targetDate,
+          targetUserId: delegatedOrderUser?.userId || null,
           pickupFloor: orderSubmission.pickupFloor,
           items: orderSubmission.items.map(({ item_id, quantity }) => ({ item_id, quantity })),
           note: orderSubmission.note.trim()
@@ -1871,6 +1941,9 @@ export default function App() {
           target_date: orderSubmission.targetDate,
           items: orderSubmission.items,
           note: orderSubmission.note,
+          ...(workerOrderMutation && delegatedOrderUser?.userId
+            ? { targetUserId: delegatedOrderUser.userId }
+            : {}),
           ...(workerOrderMutation ? { idempotencyKey: requestKey } : {})
         });
         const data = await res.json();
@@ -1879,14 +1952,22 @@ export default function App() {
           setMessage('✅ 下單成功');
           setHasExistingOrder(true);
           if (data.newBalance !== undefined) {
-            setUserBalance(data.newBalance);
+            if (delegatedOrderUser?.userId) {
+              setDelegatedOrderUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
+            } else {
+              setUserBalance(data.newBalance);
+            }
           }
           setActiveOrderId(data.orderId || '');
           clearClientRequestKey(orderSubmitRequestRef);
           clearClientRequestKey(orderCancelRequestRef);
           await Promise.all([
             fetchCalendarEvents(authUserId),
-            fetchUserAllOrders(authUserId)
+            fetchUserAllOrders(
+              delegatedOrderUser?.userId || authUserId,
+              null,
+              delegatedOrderUser?.userId || null
+            )
           ]);
           handleExitToCalendar();
           void showToast({ icon: 'success', title: '下單成功' });
@@ -1914,7 +1995,7 @@ export default function App() {
       || activeOrderReadOnly
     ) return;
     if (!(await guardWrite('取消訂單'))) return;
-    if (isExpired) {
+    if (orderMutationBlocked) {
       await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
       return;
     }
@@ -1935,7 +2016,7 @@ export default function App() {
     orderMutationInFlightRef.current = true;
     try {
       if (!(await guardWrite('取消訂單'))) return;
-      if (isExpired) {
+      if (orderMutationBlocked) {
         setShowCancelConfirmation(false);
         await showPopup({ icon: 'warning', title: '無法取消訂購', text: '已過截止時間，無法取消訂購！' });
         return;
@@ -1946,7 +2027,8 @@ export default function App() {
       const cancelRequestKey = workerOrderMutation
         ? getStableClientRequestKey(orderCancelRequestRef, 'cancel', {
           orderId,
-          targetDate: selectedDate
+          targetDate: selectedDate,
+          targetUserId: delegatedOrderUser?.userId || null
         })
         : null;
 
@@ -1957,6 +2039,9 @@ export default function App() {
           userId: authUserId,
           orderId,
           date: selectedDate,
+          ...(workerOrderMutation && delegatedOrderUser?.userId
+            ? { targetUserId: delegatedOrderUser.userId }
+            : {}),
           ...(workerOrderMutation ? { idempotencyKey: cancelRequestKey } : {})
         });
         const data = await res.json();
@@ -1970,12 +2055,20 @@ export default function App() {
         }
 
         if (data.newBalance !== undefined && data.newBalance !== null) {
-          setUserBalance(data.newBalance);
-          setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
+          if (delegatedOrderUser?.userId) {
+            setDelegatedOrderUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
+          } else {
+            setUserBalance(data.newBalance);
+            setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
+          }
         }
         const [calendarRefreshed, ordersRefreshed] = await Promise.all([
           fetchCalendarEvents(authUserId),
-          fetchUserAllOrders(authUserId)
+          fetchUserAllOrders(
+            delegatedOrderUser?.userId || authUserId,
+            null,
+            delegatedOrderUser?.userId || null
+          )
         ]);
         if (!calendarRefreshed || !ordersRefreshed) {
           setCancelError('取消訂單已完成，但最新資料更新失敗，請稍後重試。');
@@ -2063,16 +2156,21 @@ export default function App() {
     setSpecialAdminVendorChoice(getConfiguredVendor(calendarEvents[today]));
   };
 
-  const handleOpenViewAs = async () => {
-    if (!canAuth('viewAsUser') || viewAsUser) return;
+  const handleOpenViewAs = async (mode = 'view') => {
+    const wantsViewAs = mode === 'view';
+    const allowed = wantsViewAs ? canAuth('viewAsUser') : canAuth('delegateOrder');
+    if (!allowed || viewAsUser || delegatedOrderUser) return;
     setShowViewAsModal(true);
-    await loadMemberBalances();
+    setViewAsModalMode(mode);
+    await (wantsViewAs ? loadMemberBalances() : loadOrderTargets());
   };
 
   const handleSelectViewAs = (user) => {
     if (!user || !canAuth('viewAsUser')) return;
     setViewAsUser(user);
+    setDelegatedOrderUser(null);
     setShowViewAsModal(false);
+    setViewAsModalMode(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
@@ -2095,10 +2193,27 @@ export default function App() {
     }
   };
 
+  const handleSelectDelegatedOrder = (user) => {
+    if (!user || apiClient.transport !== 'worker' || !canAuth('delegateOrder')) return;
+    setDelegatedOrderUser(user);
+    setViewAsUser(null);
+    setShowViewAsModal(false);
+    setViewAsModalMode(null);
+    setAdminManageMode(false);
+    setSelectedAdminDate(null);
+    setSelectedTopupUser(null);
+    setFloor(user.defaultFloor || user.floor || '1樓');
+    setAdminSection('orders');
+    setViewMode('calendar');
+    void fetchCalendarEvents(authUserId);
+    void fetchUserAllOrders(user.userId, null, user.userId);
+  };
+
   const handleExitViewAs = () => {
     if (!viewAsUser) return;
     setViewAsUser(null);
     setShowViewAsModal(false);
+    setViewAsModalMode(null);
     setSelectedTopupUser(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
@@ -2113,6 +2228,19 @@ export default function App() {
     } else {
       setViewMode('calendar');
     }
+  };
+
+  const handleExitDelegatedOrder = () => {
+    if (!delegatedOrderUser) return;
+    setDelegatedOrderUser(null);
+    setShowViewAsModal(false);
+    setViewAsModalMode(null);
+    setSelectedTopupUser(null);
+    setAdminManageMode(false);
+    setSelectedAdminDate(null);
+    handleExitToCalendar();
+    void fetchCalendarEvents(authUserId);
+    void fetchUserAllOrders(authUserId, null, null);
   };
 
   const handleOpenFloorModal = () => {
@@ -2557,6 +2685,7 @@ export default function App() {
   const displayName = effectiveUser?.name || name || registrationDisplayName || authStateLabel;
   const displayFloor = effectiveUser?.defaultFloor || effectiveUser?.floor || defaultFloor;
   const displayBalance = effectiveUser?.balance ?? userBalance;
+  const selectionRows = viewAsModalMode === 'delegate' ? orderTargetRows : adminMemberRows;
   const weekendEvents = renderWeekendEvents();
 
   return (
@@ -2616,17 +2745,33 @@ export default function App() {
           </div>
           <ViewAsBanner
             viewAsUser={isViewAsMode ? viewAsUser : null}
+            delegatedOrderUser={delegatedOrderUser}
+            authUser={authUser}
             displayBalance={displayBalance}
             onExit={handleExitViewAs}
+            onExitDelegated={handleExitDelegatedOrder}
           />
           <div aria-label="功能操作" className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
             {isRegistered && canAuth('viewAsUser') && !isViewAsMode && (
               <button
                 type="button"
-                onClick={handleOpenViewAs}
+                onClick={() => handleOpenViewAs('view')}
                 className="bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold"
               >
                 👁 檢視身分
+              </button>
+            )}
+            {isRegistered
+              && apiClient.transport === 'worker'
+              && canAuth('delegateOrder')
+              && !isViewAsMode
+              && !delegatedOrderUser && (
+              <button
+                type="button"
+                onClick={() => handleOpenViewAs('delegate')}
+                className="bg-sky-800 hover:bg-sky-700 text-sky-100 text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold"
+              >
+                🍱 選擇代點餐
               </button>
             )}
             {isRegistered && can('viewAdminOrderSummary') && (
@@ -2869,7 +3014,8 @@ export default function App() {
           <OrderPage
             selectedDate={selectedDate}
             setting={setting}
-            isExpired={isExpired}
+            isExpired={isOrderExpired}
+            policyBlocked={orderPolicyBlocked}
             readOnly={activeOrderReadOnly}
             isViewAsMode={isViewAsMode}
             floor={floor}
@@ -2969,7 +3115,7 @@ export default function App() {
               </div>
               <div className="text-xl font-bold text-[#2C4A3E]">${totalAmount}</div>
             </div>
-            {!isExpired && !activeOrderReadOnly ? (
+            {orderControlsOpen ? (
               <div className="flex gap-2">
                 {hasExistingOrder && (
                   <button
@@ -3096,39 +3242,49 @@ export default function App() {
         </div>
       )}
 
-      {showViewAsModal && canAuth('viewAsUser') && !isViewAsMode && (
+      {showViewAsModal
+        && (viewAsModalMode === 'view' ? canAuth('viewAsUser') : canAuth('delegateOrder'))
+        && !isViewAsMode
+        && !delegatedOrderUser && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-opacity">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-emerald-100">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
-                <h3 className="font-bold text-base text-[#2C4A3E]">👁 以其他身分檢視</h3>
-                <p className="text-xs text-gray-500 mt-1">只預覽 UI，選取後不會代替對方執行操作。</p>
+                <h3 className="font-bold text-base text-[#2C4A3E]">
+                  {viewAsModalMode === 'view' ? '👁 以其他身分檢視' : '🍱 選擇代點餐對象'}
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  {viewAsModalMode === 'view'
+                    ? '檢視身分僅供預覽；代點餐是獨立且明確的操作模式。'
+                    : '代點餐會以目前登入者身分執行，訂單與餘額歸屬所選成員。'}
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowViewAsModal(false)}
+                onClick={() => {
+                  setShowViewAsModal(false);
+                  setViewAsModalMode(null);
+                }}
                 className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
               >
                 ✕
               </button>
             </div>
 
-            {memberBalancesLoading ? (
+            {(viewAsModalMode === 'view' ? memberBalancesLoading : orderTargetsLoading) ? (
               <p className="text-center text-sm text-emerald-800 animate-pulse py-6">讀取成員列表中...</p>
-            ) : memberBalancesError ? (
+            ) : (viewAsModalMode === 'view' ? memberBalancesError : orderTargetsError) ? (
               <div className="text-center text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">
-                {memberBalancesError}
+                {viewAsModalMode === 'view' ? memberBalancesError : orderTargetsError}
               </div>
-            ) : adminMemberRows.length === 0 ? (
+            ) : selectionRows.length === 0 ? (
               <p className="text-center text-sm text-gray-400 py-6">目前沒有可檢視的成員資料</p>
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                {adminMemberRows.map((user, idx) => (
-                  <button
-                    type="button"
+                {selectionRows.map((user, idx) => (
+                  <div
                     key={user.userId || `view-as-${idx}`}
-                    onClick={() => handleSelectViewAs(user)}
-                    className="w-full text-left rounded-2xl border border-gray-100 bg-gray-50 hover:bg-emerald-50 hover:border-emerald-200 p-3 transition-colors"
+                    className="rounded-2xl border border-gray-100 bg-gray-50 p-3 transition-colors"
                   >
                     <span className="block truncate font-bold text-gray-800">{user.name || '未命名使用者'}</span>
                     <span className="mt-1 flex min-w-0 flex-wrap items-center gap-1 text-xs text-gray-500">
@@ -3137,7 +3293,27 @@ export default function App() {
                       <span className="whitespace-nowrap">· {user.role || 'User'}</span>
                       <IdentityStatusBadges authSource={user.authSource} identityState={user.identityState} />
                     </span>
-                  </button>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {viewAsModalMode === 'view' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectViewAs(user)}
+                          className="rounded-lg bg-emerald-800 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm"
+                        >
+                          👁 檢視
+                        </button>
+                      )}
+                      {viewAsModalMode === 'delegate' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectDelegatedOrder(user)}
+                          className="rounded-lg bg-sky-700 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm"
+                        >
+                          🍱 代點餐
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             )}

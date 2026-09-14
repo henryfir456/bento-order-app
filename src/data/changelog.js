@@ -11,6 +11,24 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.14.0': [
+    {
+      name: '新增',
+      changes: [
+        '新增 Admin／ProxyAdmin 代點餐，並將代點模式與 View-As 維持獨立；View-As 仍為唯讀。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        'Admin 本人點餐與代點餐皆不受一般日期／截止時間限制，可處理其他有效訂餐日期。',
+        'ProxyAdmin 僅限台北當日代點，但可突破一般截止時間；本人點餐仍遵循一般日期／截止時間規則。',
+        '代點訂單 ownership 仍屬於被代點成員；代點扣款與退款仍作用於被代點成員。',
+        'Admin／ProxyAdmin 本人餘額不受代點影響。',
+        'COMPLETED／readOnly／finalized 歷史訂單仍不可修改。'
+      ]
+    }
+  ],
   '0.13.0': [
     {
       name: '新增',

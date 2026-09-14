@@ -219,7 +219,7 @@ test('frontend API errors remain distinguishable by category', async () => {
   );
   assert.equal(
     getApiErrorPresentation(new ApiAuthorizationError('ORDER_FORBIDDEN', 'authz', { operation: 'cancelOrder', status: 403 }), '取消訂單').category,
-    'auth'
+    'authorization'
   );
   assert.equal(
     getApiErrorPresentation(new ApiBackendError('INTERNAL_SERVER_ERROR', 'server', { operation: 'cancelOrder', status: 500 }), '取消訂單').category,

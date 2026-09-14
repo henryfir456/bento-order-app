@@ -1,4 +1,4 @@
-import { ACTIONS, assertCan } from '../auth/permissions.js';
+import { auditStatement } from '../db/audit.js';
 import { badRequest, conflict, forbidden, notFound } from '../http/errors.js';
 import {
   hashRequest,
@@ -8,9 +8,14 @@ import {
   runIdempotentMutation
 } from '../db/idempotency.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
-import { deadlineAt, deadlineInfo, isDateOnly } from './deadlines.js';
-import { getUserById } from '../db/users.js';
-import { isProfileComplete } from './profile.js';
+import { deadlineAt, isDateOnly } from './deadlines.js';
+import {
+  normalizeTargetUserId,
+  getAuthenticatedOrderActor,
+  resolveOrderActorTarget,
+  resolveOrderMutationTiming,
+  resolveOrderPermission
+} from './orderAuthorization.js';
 import {
   projectionItemId,
   resolveEffectiveMenuState
@@ -39,19 +44,6 @@ const parseQuantity = (value) => {
     return Number.isSafeInteger(quantity) ? quantity : null;
   }
   return null;
-};
-
-const actorForMutation = (identity) => {
-  const actor = identity?.actor;
-  assertCan(identity, ACTIONS.WRITE_SELF);
-  if (!actor?.userId) throw forbidden('AUTH_REQUIRED');
-  if (
-    identity?.effectiveSubject?.userId
-    && identity.effectiveSubject.userId !== actor.userId
-  ) {
-    throw forbidden('VIEW_AS_MUTATION_FORBIDDEN');
-  }
-  return actor;
 };
 
 const currentSetting = async (database, orderDate) => database.prepare(`
@@ -152,7 +144,8 @@ const normalizeItems = (rawItems, menuRows) => {
   return normalized;
 };
 
-const assertOrderRequest = async (database, actor, input, clock, { skipDeadline = false } = {}) => {
+const assertOrderRequest = async (database, identity, input, clock) => {
+  const actor = getAuthenticatedOrderActor(identity);
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw badRequest('INVALID_JSON');
   }
@@ -163,16 +156,22 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
   const note = text(input.note);
   if (note.length > 2000) throw badRequest('ORDER_NOTE_TOO_LONG');
 
-  const currentUser = await getUserById(database, actor.userId);
-  if (!currentUser || !isProfileComplete(currentUser)) {
-    throw forbidden('PROFILE_COMPLETION_REQUIRED');
-  }
-
   const setting = await currentSetting(database, targetDate);
   if (!setting || !text(setting.vendor)) throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
   const now = resolveClock(clock);
-  const deadline = deadlineInfo(targetDate, setting.mode, now);
-  if (!skipDeadline && (!deadline || deadline.isExpired)) throw badRequest('DEADLINE_CLOSED');
+  const requestedTargetUserId = normalizeTargetUserId(
+    getInputValue(input, 'targetUserId', 'target_user_id')
+  );
+  const permission = await resolveOrderPermission(database, identity, {
+    targetUserId: requestedTargetUserId,
+    targetDate,
+    mode: setting.mode,
+    now
+  });
+  if (!permission.target || !permission.target.displayName) {
+    throw forbidden('PROFILE_COMPLETION_REQUIRED');
+  }
+  if (!permission.timing.allowed) throw badRequest('DEADLINE_CLOSED');
 
   const menu = await currentMenuRows(database, setting.vendor, targetDate);
   const items = normalizeItems(getInputValue(input, 'items', 'orderItems'), menu.rows);
@@ -182,8 +181,14 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
     FROM orders
     WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
     LIMIT 1
-  `).bind(actor.userId, targetDate).first();
+  `).bind(permission.targetUserId, targetDate).first();
   return {
+    actor,
+    target: permission.target,
+    targetUserId: permission.targetUserId,
+    isDelegated: permission.isDelegated,
+    requestedTargetUserId,
+    permission,
     targetDate,
     pickupFloor,
     note,
@@ -192,7 +197,7 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
     replaceExisting,
     activeOrder,
     now,
-    deadline
+    deadline: permission.timing.deadline
   };
 };
 
@@ -240,7 +245,18 @@ const eventUserValues = (actor) => [
 ];
 
 const buildOrderStatements = (database, context, actor, details) => {
-  const { targetDate, pickupFloor, note, items, replaceExisting, now } = context;
+  const {
+    targetDate,
+    pickupFloor,
+    note,
+    items,
+    replaceExisting,
+    now,
+    target,
+    targetUserId,
+    isDelegated,
+    permission
+  } = context;
   const {
     orderId,
     refundTransactionId,
@@ -251,7 +267,22 @@ const buildOrderStatements = (database, context, actor, details) => {
   const occurredAt = now.toISOString();
   const guardSql = guard.sql;
   const guardParams = guard.params;
-  const metadata = JSON.stringify({ replacementOrderId: orderId });
+  const metadata = JSON.stringify({
+    replacementOrderId: context.activeOrder?.order_id || null,
+    actorUserId: actor.userId,
+    targetUserId
+  });
+  const deadlineA = deadlineAt(targetDate, 'A').toISOString();
+  const deadlineB = deadlineAt(targetDate, 'B').toISOString();
+  const calendarTimingPredicate = permission.timing.cutoffApplies
+    ? `AND (
+        (cs.mode = 'A' AND ? <= ?)
+        OR (cs.mode = 'B' AND ? <= ?)
+      )`
+    : '';
+  const calendarTimingParams = permission.timing.cutoffApplies
+    ? [occurredAt, deadlineA, occurredAt, deadlineB]
+    : [];
   const validityPredicate = `
     EXISTS (
       SELECT 1 FROM users WHERE user_id = ? AND active = 1
@@ -261,10 +292,7 @@ const buildOrderStatements = (database, context, actor, details) => {
       FROM calendar_settings cs
       WHERE cs.order_date = ?
         AND length(trim(cs.vendor)) > 0
-        AND (
-          (cs.mode = 'A' AND ? <= ?)
-          OR (cs.mode = 'B' AND ? <= ?)
-        )
+        ${calendarTimingPredicate}
     )
     AND (SELECT COUNT(*) FROM priced) = ?
     AND (? = 1 OR NOT EXISTS (
@@ -272,18 +300,13 @@ const buildOrderStatements = (database, context, actor, details) => {
       WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
     ))
   `;
-  const deadlineA = deadlineAt(targetDate, 'A').toISOString();
-  const deadlineB = deadlineAt(targetDate, 'B').toISOString();
   const validityParams = [
-    actor.userId,
+    targetUserId,
     targetDate,
-    occurredAt,
-    deadlineA,
-    occurredAt,
-    deadlineB,
+    ...calendarTimingParams,
     items.length,
     replaceExisting ? 1 : 0,
-    actor.userId,
+    targetUserId,
     targetDate
   ];
 
@@ -303,7 +326,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     ), 0),
         updated_at = ?
     WHERE user_id = ? AND ${guardSql}
-  `, [actor.userId, targetDate, occurredAt, actor.userId, ...guardParams]);
+  `, [targetUserId, targetDate, occurredAt, targetUserId, ...guardParams]);
 
   const refundLedger = prepareStatement(database, `
     INSERT INTO balance_ledger (
@@ -324,7 +347,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     refundTransactionId,
     ...eventUserValues(actor),
     occurredAt,
-    actor.userId,
+    targetUserId,
     targetDate,
     ...guardParams
   ]);
@@ -347,7 +370,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     actor.authMode,
     metadata,
     occurredAt,
-    actor.userId,
+    targetUserId,
     targetDate,
     ...guardParams
   ]);
@@ -360,7 +383,7 @@ const buildOrderStatements = (database, context, actor, details) => {
         updated_at = ?
     WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
       AND ${guardSql}
-  `, [actor.userId, actor.authMode, occurredAt, actor.userId, targetDate, ...guardParams]);
+  `, [actor.userId, actor.authMode, occurredAt, targetUserId, targetDate, ...guardParams]);
 
   const debitBalance = prepareStatement(database, `${menuCte(items)}
     UPDATE users
@@ -372,7 +395,7 @@ const buildOrderStatements = (database, context, actor, details) => {
   `, [
     ...menuParams(items),
     occurredAt,
-    actor.userId,
+    targetUserId,
     items.length,
     ...guardParams
   ]);
@@ -392,17 +415,14 @@ const buildOrderStatements = (database, context, actor, details) => {
            'ACTIVE', ?, ?, ?, ?
     FROM calendar_settings cs
     JOIN users u ON u.user_id = ?
-    WHERE cs.order_date = ?
+      WHERE cs.order_date = ?
       AND length(trim(cs.vendor)) > 0
-      AND (
-        (cs.mode = 'A' AND ? <= ?)
-        OR (cs.mode = 'B' AND ? <= ?)
-      )
+      ${calendarTimingPredicate}
       AND ${guardSql}
   `, [
     ...menuParams(items),
     orderId,
-    actor.userId,
+    targetUserId,
     targetDate,
     pickupFloor,
     note,
@@ -413,10 +433,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     occurredAt,
     actor.userId,
     targetDate,
-    occurredAt,
-    deadlineA,
-    occurredAt,
-    deadlineB,
+    ...calendarTimingParams,
     ...guardParams
   ]);
 
@@ -427,7 +444,7 @@ const buildOrderStatements = (database, context, actor, details) => {
       WHERE order_id = ? AND user_id = ? AND status = 'ACTIVE'
     ) THEN status ELSE 'FAILED' END
     WHERE ${guardSql}
-  `, [orderId, actor.userId, ...guardParams]);
+  `, [orderId, targetUserId, ...guardParams]);
 
   const insertItems = prepareStatement(database, `${menuCte(items)}
     INSERT INTO order_items (
@@ -468,7 +485,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     ...eventUserValues(actor),
     occurredAt,
     orderId,
-    actor.userId,
+    targetUserId,
     ...guardParams
   ]);
 
@@ -491,9 +508,26 @@ const buildOrderStatements = (database, context, actor, details) => {
     JSON.stringify({ replaced: Boolean(context.activeOrder) }),
     occurredAt,
     orderId,
-    actor.userId,
+    targetUserId,
     ...guardParams
   ]);
+
+  const orderAudit = isDelegated
+    ? auditStatement(database, {
+      auditId: details.orderAuditId,
+      actorUserId: actor.userId,
+      actorAuthMode: actor.authMode,
+      actorEmployeeIdSnapshot: actor.employeeId,
+      actorLineUserIdSnapshot: actor.lineUserId,
+      targetUserId: target.userId,
+      targetEmployeeIdSnapshot: target.employeeId,
+      targetLineUserIdSnapshot: target.lineUserId,
+      action: context.activeOrder ? 'ORDER_UPDATE' : 'ORDER_CREATE',
+      metadata: { orderId, replacedOrderId: context.activeOrder?.order_id || null },
+      occurredAt,
+      onlyIfPriorMutation: true
+    })
+    : null;
 
   return [
     assertRequest,
@@ -507,16 +541,18 @@ const buildOrderStatements = (database, context, actor, details) => {
     insertItems,
     assertItemsInserted,
     orderLedger,
-    createdHistory
+    createdHistory,
+    ...(orderAudit ? [orderAudit] : [])
   ];
 };
 
 export const createOrReplaceOrder = async (database, identity, input, clock = new Date()) => {
-  const actor = actorForMutation(identity);
   const idempotencyKey = requireIdempotencyKey(input?.idempotencyKey);
-  const context = await assertOrderRequest(database, actor, input, clock, { skipDeadline: true });
+  const context = await assertOrderRequest(database, identity, input, clock);
+  const { actor } = context;
   const requestPayload = {
     targetDate: context.targetDate,
+    targetUserId: context.targetUserId,
     pickupFloor: context.pickupFloor,
     note: context.note,
     replaceExisting: context.replaceExisting,
@@ -530,7 +566,6 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
     requestHash
   });
   if (existingResult) return existingResult;
-  if (!context.deadline || context.deadline.isExpired) throw badRequest('DEADLINE_CLOSED');
   if (!context.replaceExisting && context.activeOrder) throw conflict('ORDER_ALREADY_ACTIVE');
   const orderId = 'ORD-' + randomId('');
   const details = {
@@ -543,7 +578,8 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
     refundTransactionId: randomId('txn'),
     orderTransactionId: randomId('txn'),
     replacementTransitionId: randomId('transition'),
-    createdTransitionId: randomId('transition')
+    createdTransitionId: randomId('transition'),
+    orderAuditId: randomId('audit')
   };
   try {
     return await runIdempotentMutation(database, {
@@ -551,7 +587,7 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
       responseSpec: mutationResponseSpec({
         message: 'ORDER_SAVED',
         orderId,
-        balanceUserId: actor.userId
+        balanceUserId: context.targetUserId
       }),
       buildStatements: (claim) => buildOrderStatements(
         database,
@@ -579,13 +615,18 @@ export const cancelOrder = async (
   identity,
   orderIdInput,
   idempotencyKeyInput,
-  clock = new Date()
+  clock = new Date(),
+  requestedTargetUserId = null
 ) => {
-  const actor = actorForMutation(identity);
+  const actor = getAuthenticatedOrderActor(identity);
   const orderId = text(orderIdInput);
   if (!orderId) throw badRequest('ORDER_ID_REQUIRED');
   const idempotencyKey = requireIdempotencyKey(idempotencyKeyInput);
-  const requestHash = await hashRequest({ orderId });
+  const normalizedTargetUserId = normalizeTargetUserId(requestedTargetUserId);
+  const requestHash = await hashRequest({
+    orderId,
+    targetUserId: normalizedTargetUserId
+  });
   const existingResult = await readExistingIdempotencyResult(database, {
     actorUserId: actor.userId,
     operation: CANCEL_OPERATION,
@@ -593,14 +634,29 @@ export const cancelOrder = async (
     requestHash
   });
   if (existingResult) return existingResult;
+
   const order = await activeOrderForCancellation(database, orderId);
   if (!order) throw notFound('ORDER_NOT_FOUND');
-  if (order.user_id !== actor.userId) throw forbidden('ORDER_FORBIDDEN');
-  if (order.status !== 'ACTIVE') throw conflict('ORDER_ALREADY_CANCELLED');
   if (!order.mode) throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
   const now = resolveClock(clock);
-  const deadline = deadlineInfo(order.order_date, order.mode, now);
-  if (!deadline || deadline.isExpired) throw badRequest('DEADLINE_CLOSED');
+  const actorTarget = await resolveOrderActorTarget(
+    database,
+    identity,
+    normalizedTargetUserId
+  );
+  if (order.user_id !== actorTarget.targetUserId) throw forbidden('ORDER_FORBIDDEN');
+  if (order.status !== 'ACTIVE') throw conflict('ORDER_ALREADY_CANCELLED');
+  const permission = {
+    ...actorTarget,
+    timing: resolveOrderMutationTiming({
+      actor: actorTarget.actor,
+      isDelegated: actorTarget.isDelegated,
+      targetDate: order.order_date,
+      mode: order.mode,
+      now
+    })
+  };
+  if (!permission.timing.allowed) throw badRequest('DEADLINE_CLOSED');
 
   const occurredAt = now.toISOString();
   const refundTransactionId = randomId('txn');
@@ -613,7 +669,8 @@ export const cancelOrder = async (
     occurredAt,
     orderId,
     refundTransactionId,
-    transitionId
+    transitionId,
+    cancelAuditId: randomId('audit')
   };
   try {
     return await runIdempotentMutation(database, {
@@ -621,13 +678,22 @@ export const cancelOrder = async (
       responseSpec: mutationResponseSpec({
         message: 'ORDER_CANCELLED',
         orderId,
-        balanceUserId: actor.userId
+        balanceUserId: permission.targetUserId
       }),
       buildStatements: ({ guard }) => {
         const guardSql = guard.sql;
         const guardParams = guard.params;
         const deadlineA = deadlineAt(order.order_date, 'A').toISOString();
         const deadlineB = deadlineAt(order.order_date, 'B').toISOString();
+        const calendarTimingPredicate = permission.timing.cutoffApplies
+          ? `AND (
+              (cs.mode = 'A' AND ? <= ?)
+              OR (cs.mode = 'B' AND ? <= ?)
+            )`
+          : '';
+        const calendarTimingParams = permission.timing.cutoffApplies
+          ? [occurredAt, deadlineA, occurredAt, deadlineB]
+          : [];
         const validOrder = `
           EXISTS (
             SELECT 1
@@ -640,10 +706,7 @@ export const cancelOrder = async (
                 SELECT 1 FROM balance_ledger bl
                 WHERE bl.type = 'REFUND' AND bl.reference_id = o.order_id
               )
-              AND (
-                (cs.mode = 'A' AND ? <= ?)
-                OR (cs.mode = 'B' AND ? <= ?)
-              )
+              ${calendarTimingPredicate}
           )
         `;
         const assertRequest = prepareStatement(database, `
@@ -652,11 +715,8 @@ export const cancelOrder = async (
           WHERE ${guardSql}
         `, [
           orderId,
-          actor.userId,
-          occurredAt,
-          deadlineA,
-          occurredAt,
-          deadlineB,
+          permission.targetUserId,
+          ...calendarTimingParams,
           ...guardParams
         ]);
         const refundBalance = prepareStatement(database, `
@@ -666,7 +726,13 @@ export const cancelOrder = async (
             WHERE order_id = ? AND user_id = ? AND status = 'ACTIVE'
           ), updated_at = ?
           WHERE user_id = ? AND ${guardSql}
-        `, [orderId, actor.userId, occurredAt, actor.userId, ...guardParams]);
+        `, [
+          orderId,
+          permission.targetUserId,
+          occurredAt,
+          permission.targetUserId,
+          ...guardParams
+        ]);
         const refundLedger = prepareStatement(database, `
           INSERT INTO balance_ledger (
             transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
@@ -687,7 +753,7 @@ export const cancelOrder = async (
           ...eventUserValues(actor),
           occurredAt,
           orderId,
-          actor.userId,
+          permission.targetUserId,
           ...guardParams
         ]);
         const statusHistory = prepareStatement(database, `
@@ -708,7 +774,7 @@ export const cancelOrder = async (
           actor.authMode,
           occurredAt,
           orderId,
-          actor.userId,
+          permission.targetUserId,
           ...guardParams
         ]);
         const cancel = prepareStatement(database, `
@@ -719,7 +785,30 @@ export const cancelOrder = async (
               updated_at = ?
           WHERE order_id = ? AND user_id = ? AND status = 'ACTIVE'
             AND ${guardSql}
-        `, [actor.userId, actor.authMode, occurredAt, orderId, actor.userId, ...guardParams]);
+        `, [
+          actor.userId,
+          actor.authMode,
+          occurredAt,
+          orderId,
+          permission.targetUserId,
+          ...guardParams
+        ]);
+        const orderAudit = permission.isDelegated
+          ? auditStatement(database, {
+            auditId: details.cancelAuditId,
+            actorUserId: actor.userId,
+            actorAuthMode: actor.authMode,
+            actorEmployeeIdSnapshot: actor.employeeId,
+            actorLineUserIdSnapshot: actor.lineUserId,
+            targetUserId: permission.target.userId,
+            targetEmployeeIdSnapshot: permission.target.employeeId,
+            targetLineUserIdSnapshot: permission.target.lineUserId,
+            action: 'ORDER_CANCEL',
+            metadata: { orderId },
+            occurredAt,
+            onlyIfPriorMutation: true
+          })
+          : null;
         const assertCancelled = prepareStatement(database, `
           UPDATE idempotency_keys
           SET status = CASE WHEN EXISTS (
@@ -727,13 +816,14 @@ export const cancelOrder = async (
             WHERE order_id = ? AND user_id = ? AND status = 'CANCELLED'
           ) THEN status ELSE 'FAILED' END
           WHERE ${guardSql}
-        `, [orderId, actor.userId, ...guardParams]);
+        `, [orderId, permission.targetUserId, ...guardParams]);
         return [
           assertRequest,
           refundBalance,
           refundLedger,
           statusHistory,
           cancel,
+          ...(orderAudit ? [orderAudit] : []),
           assertCancelled
         ];
       }

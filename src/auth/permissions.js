@@ -22,6 +22,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     viewAllOrders: true,
     viewOrderStatistics: true,
     manageCalendar: true,
+    delegateOrder: true,
     viewMemberBalances: false,
     topupMember: false,
     manageAnnouncements: false
@@ -44,6 +45,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     bindEmployee: true,
     manageRoles: true,
     viewAsUser: true,
+    delegateOrder: true,
     manageAnnouncements: true
   })
 });

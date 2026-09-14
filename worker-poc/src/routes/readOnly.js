@@ -6,13 +6,18 @@ import {
   getCalendarSetting,
   getLikes
 } from '../domain/calendar.js';
-import { deadlineInfo, isDateOnly } from '../domain/deadlines.js';
+import { deadlineInfo, getTaipeiDate, isDateOnly } from '../domain/deadlines.js';
 import { getCustomerMenu } from '../domain/menu.js';
 import {
   getHistoricalOrdersMap,
   getReadableOrder,
   isHistoricalOrderDate
 } from '../domain/ordersRead.js';
+import {
+  normalizeTargetUserId,
+  orderPolicyResponse,
+  resolveOrderPermission
+} from '../domain/orderAuthorization.js';
 import { notFound, badRequest, forbidden } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { getMe } from '../domain/users.js';
@@ -33,6 +38,14 @@ const requiredBootId = (url) => {
   if (!value) throw badRequest('INVALID_BOOT_ID');
   return value;
 };
+
+const explicitOrderTarget = (url) => normalizeTargetUserId(
+  url.searchParams.get('targetUserId')
+);
+
+const viewAsAndDelegatedTarget = (url, targetUserId) => Boolean(
+  targetUserId && (url.searchParams.get('viewAs') || url.searchParams.get('viewAsUserId'))
+);
 
 export const handleReadOnlyRequest = async (request, env, {
   fetchImpl = globalThis.fetch,
@@ -98,30 +111,68 @@ export const handleReadOnlyRequest = async (request, env, {
   }
 
   if (url.pathname === '/api/orders/map') {
+    const targetUserId = explicitOrderTarget(url);
+    if (viewAsAndDelegatedTarget(url, targetUserId)) {
+      throw forbidden('ORDER_TARGET_MODE_CONFLICT');
+    }
+    const target = targetUserId
+      ? (await resolveOrderPermission(env.DB, identity, {
+        targetUserId,
+        targetDate: getTaipeiDate(now),
+        mode: 'A',
+        now
+      })).target
+      : subject;
     return jsonResponse({
       success: true,
-      ordersMap: await getHistoricalOrdersMap(env.DB, subject.userId, now)
+      ordersMap: await getHistoricalOrdersMap(env.DB, target.userId, now),
+      ...(targetUserId ? { targetUser: publicUser(target) } : {})
     });
   }
 
   if (url.pathname === '/api/order-page') {
     const targetDate = url.searchParams.get('targetDate') || '';
     if (!isDateOnly(targetDate)) throw badRequest('INVALID_DATE');
+    const targetUserId = explicitOrderTarget(url);
+    if (viewAsAndDelegatedTarget(url, targetUserId)) {
+      throw forbidden('ORDER_TARGET_MODE_CONFLICT');
+    }
     const setting = await getCalendarSetting(env.DB, targetDate);
     if (!setting || !setting.vendor) {
       throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
     }
     const menu = await getCustomerMenu(env.DB, { vendor: setting.vendor, targetDate });
-    const myOrder = await getReadableOrder(env.DB, subject.userId, targetDate, {
+    const permission = identity.viewAs
+      ? null
+      : await resolveOrderPermission(env.DB, identity, {
+        targetUserId,
+        targetDate,
+        mode: setting.mode,
+        now,
+        enforceProxyDelegatedDate: false
+      });
+    const orderSubject = permission?.target || subject;
+    const myOrder = await getReadableOrder(env.DB, orderSubject.userId, targetDate, {
       includeCompleted: isHistoricalOrderDate(targetDate, now),
       menuItems: menu
     });
     return jsonResponse({
       success: true,
       setting,
-      deadline: deadlineInfo(targetDate, setting.mode, now),
+      deadline: permission?.timing.deadline || deadlineInfo(targetDate, setting.mode, now),
       menu,
-      myOrder
+      myOrder,
+      targetUser: publicUser(orderSubject),
+      orderPolicy: permission
+        ? orderPolicyResponse(permission)
+        : {
+          actorUserId: identity.authorizationActor.userId,
+          targetUserId: orderSubject.userId,
+          delegated: false,
+          cutoffApplies: false,
+          deadlineBypassed: false,
+          canMutate: false
+        }
     });
   }
 

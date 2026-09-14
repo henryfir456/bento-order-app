@@ -4,6 +4,7 @@ export default function OrderPage({
   selectedDate,
   setting,
   isExpired,
+  policyBlocked,
   readOnly,
   isViewAsMode,
   floor,
@@ -20,6 +21,7 @@ export default function OrderPage({
   message
 }) {
   const controlsDisabled = isExpired || readOnly || isViewAsMode;
+  const policyControlsDisabled = controlsDisabled || policyBlocked;
 
   return (
 <div className="space-y-4">
@@ -53,7 +55,7 @@ export default function OrderPage({
                   <select
                     value={floor}
                     onChange={(e) => onFloorChange(e.target.value)}
-                    disabled={controlsDisabled}
+                    disabled={policyControlsDisabled}
                     className="w-full border rounded-xl px-3 py-2 text-sm bg-white focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                   >
                     <option value="1樓">1樓</option>
@@ -68,7 +70,7 @@ export default function OrderPage({
                     placeholder="備註 (如：不要菇)"
                     value={orderNote}
                     onChange={(e) => onOrderNoteChange(e.target.value)}
-                    disabled={controlsDisabled}
+                    disabled={policyControlsDisabled}
                     className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                   />
                 </div>
@@ -132,8 +134,8 @@ export default function OrderPage({
                             <div className="flex items-center gap-2 shrink-0">
                               <button
                                 onClick={() => onDecreaseItem(item.item_id, qty)}
-                                disabled={controlsDisabled}
-                                className={`w-7 h-7 rounded-full font-bold transition-all ${controlsDisabled
+                                disabled={policyControlsDisabled}
+                                className={`w-7 h-7 rounded-full font-bold transition-all ${policyControlsDisabled
                                   ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                   : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
                                   }`}
@@ -148,8 +150,8 @@ export default function OrderPage({
                               </span>
                               <button
                                 onClick={() => onIncreaseItem(item.item_id, qty)}
-                                disabled={controlsDisabled}
-                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${controlsDisabled
+                                disabled={policyControlsDisabled}
+                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${policyControlsDisabled
                                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                                   : 'bg-[#2C4A3E] hover:bg-emerald-800'
                                   }`}
@@ -169,6 +171,12 @@ export default function OrderPage({
             {isExpired && (
               <div className="text-center text-xs font-bold p-3 rounded-xl bg-slate-100 text-slate-700 border border-slate-300">
                 🔒 訂餐已截止或暫停服務
+              </div>
+            )}
+
+            {policyBlocked && !isExpired && !readOnly && !isViewAsMode && (
+              <div className="text-center text-xs font-bold p-3 rounded-xl bg-sky-50 text-sky-800 border border-sky-200">
+                🔒 ProxyAdmin 代點餐僅限 Asia/Taipei 今日
               </div>
             )}
 

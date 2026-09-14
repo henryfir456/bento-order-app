@@ -300,17 +300,22 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/calendar',
     { query: { viewAs: viewAsUserId } }
   ),
-  getOrdersMap: ({ viewAsUserId } = {}) => workerRequest(
+  getOrdersMap: ({ viewAsUserId, targetUserId } = {}) => workerRequest(
     'getOrdersMap',
     'GET',
     '/api/orders/map',
-    { query: { viewAs: viewAsUserId } }
+    { query: { viewAs: viewAsUserId, targetUserId } }
   ),
-  getOrderPage: ({ targetDate, viewAsUserId } = {}) => workerRequest(
+  getOrderPage: ({ targetDate, viewAsUserId, targetUserId } = {}) => workerRequest(
     'getOrderPage',
     'GET',
     '/api/order-page',
-    { query: { targetDate, viewAs: viewAsUserId } }
+    { query: { targetDate, viewAs: viewAsUserId, targetUserId } }
+  ),
+  getOrderTargets: () => workerRequest(
+    'getOrderTargets',
+    'GET',
+    '/api/orders/targets'
   ),
   updatePickupFloor: ({ displayName, pickupFloor } = {}) => workerRequest(
     'updatePickupFloor',
@@ -392,7 +397,7 @@ const createWorkerOperations = ({ workerRequest }) => ({
     `/api/admin/calendar/${encodeURIComponent(String(dateStr || '').trim())}`,
     { body: { vendor, mode: calendarMode(vendor, mode) } }
   ),
-  submitOrder: ({ pickup_floor, target_date, items, note, idempotencyKey } = {}) => workerRequest(
+  submitOrder: ({ pickup_floor, target_date, items, note, targetUserId, idempotencyKey } = {}) => workerRequest(
     'submitOrder',
     'POST',
     '/api/orders',
@@ -400,6 +405,7 @@ const createWorkerOperations = ({ workerRequest }) => ({
       extraHeaders: { 'Idempotency-Key': String(idempotencyKey || '').trim() },
       body: {
         targetDate: target_date,
+        ...(targetUserId ? { targetUserId } : {}),
         pickupFloor: pickup_floor,
         replaceExisting: true,
         items: Array.isArray(items)
@@ -413,11 +419,14 @@ const createWorkerOperations = ({ workerRequest }) => ({
       }
     }
   ),
-  cancelOrder: ({ orderId, idempotencyKey } = {}) => workerRequest(
+  cancelOrder: ({ orderId, targetUserId, idempotencyKey } = {}) => workerRequest(
     'cancelOrder',
     'POST',
     `/api/orders/${encodeURIComponent(String(orderId || '').trim())}/cancel`,
-    { extraHeaders: { 'Idempotency-Key': String(idempotencyKey || '').trim() } }
+    {
+      extraHeaders: { 'Idempotency-Key': String(idempotencyKey || '').trim() },
+      ...(targetUserId ? { body: { targetUserId } } : {})
+    }
   ),
   topUpBalance: ({ targetUserId, amount, note, idempotencyKey } = {}) => workerRequest(
     'topUpBalance',

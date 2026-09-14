@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-15
+
+### Added
+
+- Added explicit delegated ordering for Admin and ProxyAdmin with server-authoritative target, role, date, and cutoff enforcement.
+- Added target discovery and delegated-order controls while keeping View-As read-only and separate.
+
+### Changed
+
+- Admin self-ordering and delegated ordering bypass ordinary date and cutoff restrictions; ProxyAdmin delegation is limited to today in Asia/Taipei and bypasses the cutoff while self-ordering keeps the normal rules.
+- Delegated orders retain target ownership and target balance debit/refund, leave the actor balance unchanged, and preserve actor/target provenance in existing audit and ledger records.
+- Kept COMPLETED, readOnly, and finalized historical orders immutable for every role.
+
 ## [0.13.0] - 2026-09-11
 
 ### Added

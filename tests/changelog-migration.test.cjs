@@ -139,7 +139,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0', '0.12.1', '0.13.0'].includes(release.version)
+    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0', '0.12.1', '0.13.0', '0.14.0'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -201,6 +201,18 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Made Worker + D1 the only production transport for this feature. GAS remains retired legacy regression evidence and receives no new identity contract.'
   ]);
   assert.deepEqual(identityManagementRelease.commits, []);
+  const delegatedOrderingRelease = parsed.find((release) => release.version === '0.14.0');
+  assert.ok(delegatedOrderingRelease);
+  assert.equal(delegatedOrderingRelease.date, '2026-09-15');
+  assert.deepEqual(delegatedOrderingRelease.categories.map(({ name }) => name), ['Added', 'Changed']);
+  assert.deepEqual(delegatedOrderingRelease.changes, [
+    'Added explicit delegated ordering for Admin and ProxyAdmin with server-authoritative target, role, date, and cutoff enforcement.',
+    'Added target discovery and delegated-order controls while keeping View-As read-only and separate.',
+    'Admin self-ordering and delegated ordering bypass ordinary date and cutoff restrictions; ProxyAdmin delegation is limited to today in Asia/Taipei and bypasses the cutoff while self-ordering keeps the normal rules.',
+    'Delegated orders retain target ownership and target balance debit/refund, leave the actor balance unchanged, and preserve actor/target provenance in existing audit and ledger records.',
+    'Kept COMPLETED, readOnly, and finalized historical orders immutable for every role.'
+  ]);
+  assert.deepEqual(delegatedOrderingRelease.commits, []);
   const finalized = parsed.find((release) => release.version === '0.10.0');
   assert.ok(finalized);
   assert.equal(finalized.date, '2026-09-10');
@@ -275,7 +287,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.13.0', '0.12.1', '0.12.0', '0.11.3', '0.11.2']);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.14.0', '0.13.0', '0.12.1', '0.12.0', '0.11.3']);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);
