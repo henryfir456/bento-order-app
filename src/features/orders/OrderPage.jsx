@@ -1,7 +1,10 @@
+import { formatSignedAmount } from './amountFormat.js';
+
 export default function OrderPage({
   selectedDate,
   setting,
   isExpired,
+  readOnly,
   isViewAsMode,
   floor,
   onFloorChange,
@@ -16,6 +19,8 @@ export default function OrderPage({
   onIncreaseItem,
   message
 }) {
+  const controlsDisabled = isExpired || readOnly || isViewAsMode;
+
   return (
 <div className="space-y-4">
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 flex justify-between items-center">
@@ -24,7 +29,11 @@ export default function OrderPage({
                 <h2 className="text-lg font-bold text-[#2C4A3E]">{selectedDate} ({setting?.vendor})</h2>
               </div>
               <div className="text-right">
-                {isExpired ? (
+                {readOnly ? (
+                  <span className="bg-slate-500 text-white text-xs px-2.5 py-1 rounded-full font-bold">
+                    🧾 歷史訂單 (唯讀)
+                  </span>
+                ) : isExpired ? (
                   <span className="bg-slate-500 text-white text-xs px-2.5 py-1 rounded-full font-bold">
                     🔒 已截止 (唯讀)
                   </span>
@@ -44,7 +53,7 @@ export default function OrderPage({
                   <select
                     value={floor}
                     onChange={(e) => onFloorChange(e.target.value)}
-                    disabled={isExpired || isViewAsMode}
+                    disabled={controlsDisabled}
                     className="w-full border rounded-xl px-3 py-2 text-sm bg-white focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                   >
                     <option value="1樓">1樓</option>
@@ -59,7 +68,7 @@ export default function OrderPage({
                     placeholder="備註 (如：不要菇)"
                     value={orderNote}
                     onChange={(e) => onOrderNoteChange(e.target.value)}
-                    disabled={isExpired || isViewAsMode}
+                    disabled={controlsDisabled}
                     className="w-full border rounded-xl px-3 py-2 text-sm focus:outline-emerald-600 disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed"
                   />
                 </div>
@@ -114,7 +123,7 @@ export default function OrderPage({
                               </div>
                               <div className="text-xs text-emerald-700 font-bold flex items-center gap-1 mt-1">
                                 <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200 shadow-sm">
-                                  ${item.price}
+                                  {formatSignedAmount(item.price)}
                                 </span>
                                 {item.note && <span className="text-gray-400 font-normal bg-gray-50 px-1.5 py-0.5 rounded truncate">({item.note})</span>}
                               </div>
@@ -123,8 +132,8 @@ export default function OrderPage({
                             <div className="flex items-center gap-2 shrink-0">
                               <button
                                 onClick={() => onDecreaseItem(item.item_id, qty)}
-                                disabled={isExpired || isViewAsMode}
-                                className={`w-7 h-7 rounded-full font-bold transition-all ${isExpired || isViewAsMode
+                                disabled={controlsDisabled}
+                                className={`w-7 h-7 rounded-full font-bold transition-all ${controlsDisabled
                                   ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                   : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
                                   }`}
@@ -139,8 +148,8 @@ export default function OrderPage({
                               </span>
                               <button
                                 onClick={() => onIncreaseItem(item.item_id, qty)}
-                                disabled={isExpired || isViewAsMode}
-                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${isExpired || isViewAsMode
+                                disabled={controlsDisabled}
+                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${controlsDisabled
                                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                                   : 'bg-[#2C4A3E] hover:bg-emerald-800'
                                   }`}
@@ -160,6 +169,12 @@ export default function OrderPage({
             {isExpired && (
               <div className="text-center text-xs font-bold p-3 rounded-xl bg-slate-100 text-slate-700 border border-slate-300">
                 🔒 訂餐已截止或暫停服務
+              </div>
+            )}
+
+            {readOnly && (
+              <div className="text-center text-xs font-bold p-3 rounded-xl bg-slate-100 text-slate-700 border border-slate-300">
+                🧾 歷史訂單僅供檢視，無法修改或取消
               </div>
             )}
 

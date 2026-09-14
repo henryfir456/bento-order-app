@@ -1,6 +1,6 @@
 import { unauthorized } from '../http/errors.js';
 import { randomId, resolveClock } from '../db/transactions.js';
-import { toUser } from '../db/users.js';
+import { currentBalanceProjection, toUser } from '../db/users.js';
 
 const DEFAULT_LIFETIME_MS = 8 * 60 * 60 * 1000;
 const GUEST_TOKEN_PREFIX = 'eg_';
@@ -36,7 +36,8 @@ const sessionRow = async (database, token) => {
            egs.employee_id AS session_employee_id, egs.status AS session_status,
            egs.created_at, egs.expires_at, egs.revoked_at, egs.revoked_reason,
            u.employee_id, u.line_user_id, u.display_name, u.pickup_floor,
-           u.balance, u.role, u.active, u.verification_status,
+           ${currentBalanceProjection('u')} AS balance,
+           u.role, u.active, u.verification_status,
            u.created_at AS user_created_at,
            u.updated_at AS user_updated_at
     FROM employee_guest_sessions egs

@@ -3,7 +3,12 @@ import { test } from 'node:test';
 
 import { handleFormalRequest } from '../src/formalWorker.js';
 import { SqliteD1 } from './helpers/formal-db.js';
-import { profileFetch, request, seedUser } from './helpers/formal-fixtures.js';
+import {
+  profileFetch,
+  request,
+  seedLedgerRow,
+  seedUser
+} from './helpers/formal-fixtures.js';
 
 const call = async (database, path, profile) => {
   const response = await handleFormalRequest(
@@ -32,6 +37,21 @@ const seedSummary = () => {
     INSERT INTO order_items (
       order_id, line_no, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal
     ) VALUES ('summary-active', 1, 'A01', 'Bento A', 2, 40, 80)
+  `);
+  database.run(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id, created_auth_mode
+    ) VALUES
+      ('summary-history', 'user-1', 'User One', '2026-09-07', 'Vendor A', '1樓', 40, 'COMPLETED', 'user-1', 'legacy_import'),
+      ('summary-completed-current', 'user-1', 'User One', '2026-09-08', 'Vendor A', '1樓', 50, 'COMPLETED', 'user-1', 'legacy_import')
+  `);
+  database.run(`
+    INSERT INTO order_items (
+      order_id, line_no, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal
+    ) VALUES
+      ('summary-history', 1, 'A02', 'Historical Bento', 1, 40, 40),
+      ('summary-completed-current', 1, 'A03', 'Current Completed Bento', 1, 50, 50)
   `);
   return database;
 };
@@ -101,6 +121,31 @@ test('User, ProxyAdmin, and Admin all read order summaries while only Admin read
   assert.equal(results[2].body.usersSummary.length, 4);
 });
 
+test('historical summaries include completed orders while current summaries remain active-only', async () => {
+  const database = seedSummary();
+  const historical = await call(
+    database,
+    '/api/admin/summary?date=2026-09-07',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(historical.response.status, 200);
+  assert.equal(historical.body.todayOrders.length, 1);
+  assert.equal(historical.body.todayOrders[0].status, 'COMPLETED');
+  assert.equal(historical.body.todayOrders[0].readOnly, true);
+  assert.equal(historical.body.totalItems, 1);
+  assert.equal(historical.body.totalAmount, 40);
+
+  const current = await call(
+    database,
+    '/api/admin/summary?date=2026-09-08',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(current.response.status, 200);
+  assert.equal(current.body.todayOrders.length, 1);
+  assert.equal(current.body.todayOrders[0].order_id, 'summary-active');
+  assert.equal(current.body.totalAmount, 80);
+});
+
 test('member balances are Admin-only, token-derived, and mapped to public member rows', async () => {
   const database = seedSummary();
   const admin = await call(
@@ -139,4 +184,59 @@ test('member balances are Admin-only, token-derived, and mapped to public member
   );
   assert.equal(unauthenticatedResponse.status, 401);
   assert.deepEqual(await unauthenticatedResponse.json(), { error: 'AUTH_REQUIRED' });
+});
+
+test('member balance reads use latest sequenced ledger state with users.balance fallback', async () => {
+  const database = seedSummary();
+  database.run(`UPDATE users SET balance = 37 WHERE user_id = 'user-2'`);
+  seedLedgerRow(database, {
+    transactionId: 'member-history',
+    userId: 'user-1',
+    amount: 125,
+    balanceAfter: 125
+  });
+
+  const admin = await call(
+    database,
+    '/api/admin/members/balances',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  const rows = Object.fromEntries(admin.body.members.map((member) => [member.userId, member.balance]));
+  assert.equal(rows['user-1'], 125);
+  assert.equal(rows['user-2'], 37);
+
+  const viewAs = await call(
+    database,
+    '/api/admin/summary?date=2026-09-08&includeMemberBalances=true&viewAs=user-1',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(viewAs.response.status, 200);
+  assert.equal(
+    viewAs.body.usersSummary.find((member) => member.userId === 'user-1').balance,
+    125
+  );
+});
+
+test('member balance projection is batch-based rather than one ledger query per member', async () => {
+  const database = seedSummary();
+  const queries = [];
+  const countedDatabase = {
+    prepare(sql) {
+      queries.push(sql);
+      return database.prepare(sql);
+    },
+    batch(statements) {
+      return database.batch(statements);
+    }
+  };
+  const response = await handleFormalRequest(
+    request('/api/admin/members/balances', { token: 'admin-token' }),
+    { DB: countedDatabase },
+    {
+      fetchImpl: profileFetch({ token: 'admin-token', lineUserId: 'admin-1' }),
+      now: new Date('2026-09-08T00:00:00.000Z')
+    }
+  );
+  assert.equal(response.status, 200);
+  assert.equal(queries.filter((sql) => /SELECT u\.user_id[\s\S]*FROM users u/i.test(sql)).length, 1);
 });

@@ -2196,6 +2196,19 @@ test('frontend wires monthly balance and selected-date admin summary queries', (
   assert.match(appSource, /openingBalance: data\.openingBalance \?\? 0/);
 });
 
+test('frontend renders completed historical orders as read-only', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const orderSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderPage.jsx'), 'utf8');
+
+  assert.match(appSource, /activeOrderReadOnly/);
+  assert.match(appSource, /readOnly=\{activeOrderReadOnly\}/);
+  assert.match(appSource, /!isExpired && !activeOrderReadOnly/);
+  assert.match(appSource, /data\.myOrder\.readOnly \|\| data\.myOrder\.status === ['"]COMPLETED['"]/);
+  assert.match(orderSource, /controlsDisabled = isExpired \|\| readOnly \|\| isViewAsMode/);
+  assert.match(orderSource, /歷史訂單 \(唯讀\)/);
+  assert.match(orderSource, /無法修改或取消/);
+});
+
 test('auth mode defaults to LIFF and production cannot enable mock mode', async () => {
   const { resolveAuthConfig } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'auth', 'authMode.js')).href);
 

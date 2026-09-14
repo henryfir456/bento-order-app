@@ -27,13 +27,15 @@ The formal chain is exactly:
 0003_provisional_employee_identity.sql
 0004_employee_roster_verification_source.sql
 0005_nullable_user_pickup_floor.sql # local policy-gate schema for incomplete profiles
+0006_historical_order_semantics.sql # completed legacy Orders and signed historical order money
+0007_signed_menu_prices.sql         # signed menu price values with preserved menu-item dependencies
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all six files in order. Migration 0003 defaults existing users to
+all eight files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -46,6 +48,12 @@ pre-existing normalized collision must fail migration closed. Migration 0005
 is the local policy-gate rebuild that makes `users.pickup_floor` nullable while
 retaining the non-null valid-floor domain and canonical identity indexes. It is
 not a remote approval or import authorization.
+Migration 0006 adds the completed historical Order status and narrowly scoped
+legacy-import negative order-item guards. Migration 0007 rebuilds
+`menu_items` and its dependent `order_items` table so menu prices are signed
+integer business values, while preserving the existing order-item guards,
+indexes, defaults, keys, and foreign keys. It does not add a negative-price
+provenance exception: signed menu prices are valid for every menu version.
 
 ## Recovery procedure
 

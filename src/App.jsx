@@ -33,6 +33,7 @@ import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import OrderPage from './features/orders/OrderPage';
+import { getWorkerSelectionKey, normalizeWorkerOrderMenu } from './features/orders/orderSelection';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
 import OrderConfirmationModal from './features/orders/OrderConfirmationModal';
 import {
@@ -222,11 +223,6 @@ const getConfiguredVendor = (event) => {
   return vendor === undefined || vendor === null ? '蔡老師' : vendor;
 };
 
-const normalizeWorkerOrderMenu = (items) => (Array.isArray(items) ? items : []).map(item => ({
-  ...item,
-  item_id: item.menu_item_id || item.item_id
-}));
-
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
   const [calendarEvents, setCalendarEvents] = useState({});
@@ -277,6 +273,7 @@ export default function App() {
   const [orderItems, setOrderItems] = useState({});
   const [activeOrderSnapshot, setActiveOrderSnapshot] = useState(null);
   const [hasExistingOrder, setHasExistingOrder] = useState(false);
+  const [activeOrderReadOnly, setActiveOrderReadOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [showOrderConfirmation, setShowOrderConfirmation] = useState(false);
@@ -401,6 +398,7 @@ export default function App() {
     setOrderItems({});
     setActiveOrderSnapshot(null);
     setHasExistingOrder(false);
+    setActiveOrderReadOnly(false);
     setMessage('');
     setShowOrderConfirmation(false);
     setShowCancelConfirmation(false);
@@ -1655,6 +1653,7 @@ export default function App() {
     setActiveOrderSnapshot(null);
     setActiveOrderId('');
     setHasExistingOrder(false);
+    setActiveOrderReadOnly(false);
 
     try {
       const res = await apiClient.getOrderPage({
@@ -1668,7 +1667,7 @@ export default function App() {
         const orderMap = {};
         data.myOrder.items.forEach(item => {
           const selectionId = workerOrderMode
-            ? item.menu_item_id || item.item_id
+            ? getWorkerSelectionKey(item)
             : item.item_id;
           orderMap[selectionId] = item.quantity;
         });
@@ -1686,6 +1685,7 @@ export default function App() {
         }));
         setActiveOrderId(data.myOrder.orderId || '');
         setHasExistingOrder(data.myOrder.items.length > 0);
+        setActiveOrderReadOnly(Boolean(data.myOrder.readOnly || data.myOrder.status === 'COMPLETED'));
         setOrderNote(data.myOrder.note || '');
         setViewMode('order');
       } else if (!data.success) {
@@ -1744,6 +1744,7 @@ export default function App() {
 
   const handleSubmit = async () => {
     if (loading || orderMutationInFlightRef.current || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    if (activeOrderReadOnly) return;
     if (authUser?.profileComplete === false) {
       await showPopup({ icon: 'warning', title: '請先完成基本資料', text: '請先設定有效的領取樓層，再開始訂餐。' });
       return;
@@ -1762,6 +1763,10 @@ export default function App() {
 
   const handleConfirmSubmit = async () => {
     if (!showOrderConfirmation || loading || orderMutationInFlightRef.current || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    if (activeOrderReadOnly) {
+      setShowOrderConfirmation(false);
+      return;
+    }
     orderMutationInFlightRef.current = true;
     try {
       if (!(await guardWrite('訂單送出'))) return;
@@ -1834,6 +1839,7 @@ export default function App() {
       || authState !== AUTH_STATES.REGISTERED
       || !activeOrderId
       || !authUserId
+      || activeOrderReadOnly
     ) return;
     if (!(await guardWrite('取消訂單'))) return;
     if (isExpired) {
@@ -1852,6 +1858,7 @@ export default function App() {
       || authState !== AUTH_STATES.REGISTERED
       || !activeOrderId
       || !authUserId
+      || activeOrderReadOnly
     ) return;
     orderMutationInFlightRef.current = true;
     try {
@@ -1928,6 +1935,7 @@ export default function App() {
     setOrderNote('');
     setMessage('');
     setHasExistingOrder(false);
+    setActiveOrderReadOnly(false);
     setShowCancelConfirmation(false);
     setCancelError('');
     clearClientRequestKey(orderSubmitRequestRef);
@@ -2773,6 +2781,7 @@ export default function App() {
             selectedDate={selectedDate}
             setting={setting}
             isExpired={isExpired}
+            readOnly={activeOrderReadOnly}
             isViewAsMode={isViewAsMode}
             floor={floor}
             onFloorChange={setFloor}
@@ -2853,11 +2862,11 @@ export default function App() {
           <div className="max-w-xl mx-auto flex justify-between items-center">
             <div>
               <div className="text-xs text-gray-500">
-                已選 <span className="font-bold bg-gray-100 px-1.5 py-0.5 rounded text-gray-800 border">{totalCount}</span> 份便購
+                已選 <span className="font-bold bg-gray-100 px-1.5 py-0.5 rounded text-gray-800 border">{totalCount}</span> 份便當
               </div>
               <div className="text-xl font-bold text-[#2C4A3E]">${totalAmount}</div>
             </div>
-            {!isExpired ? (
+            {!isExpired && !activeOrderReadOnly ? (
               <div className="flex gap-2">
                 {hasExistingOrder && (
                   <button

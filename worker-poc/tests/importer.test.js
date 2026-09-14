@@ -77,6 +77,37 @@ test('validation accepts duplicate and disabled menu rows but quarantines orphan
   assert.equal(validation.accepted.TopupHistory.length, 0);
 });
 
+test('historical completed Orders preserve signed adjustments while live statuses remain non-negative', () => {
+  const normalized = normalizeLegacyWorkbook(makeFormalWorkbook(), {
+    sourceHash: 'historical-order-money',
+    importerVersion: 'test-version'
+  });
+  normalized.Orders = [
+    {
+      ...normalized.Orders[0],
+      orderId: 'completed-negative-order',
+      status: 'COMPLETED',
+      unitPrice: -1,
+      subtotal: -1
+    },
+    {
+      ...normalized.Orders[0],
+      orderId: 'active-negative-order',
+      status: 'ACTIVE',
+      unitPrice: -1,
+      subtotal: -1
+    }
+  ];
+
+  const validation = validateImport(normalized);
+  assert.equal(validation.accepted.Orders.length, 1);
+  assert.equal(validation.accepted.Orders[0].orderId, 'completed-negative-order');
+  assert.equal(validation.accepted.Orders[0].unitPrice, -1);
+  assert.equal(validation.accepted.Orders[0].subtotal, -1);
+  assert.equal(validation.summary.quarantineByReason[REASON_CODES.INVALID_MONEY], 1);
+  assert.equal(validation.summary.quarantineByReason[REASON_CODES.INVALID_ORDER_STATUS] || 0, 0);
+});
+
 test('ledger policy approval is the only switch that can accept ledger-like rows', () => {
   const normalized = normalizeLegacyWorkbook(makeFormalWorkbook(), {
     sourceHash: 'synthetic-source',

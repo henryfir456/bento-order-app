@@ -128,6 +128,86 @@ test('formal monetary columns are INTEGER and negative balances remain valid', (
   assert.equal(user.balance, -125);
 });
 
+test('historical negative order money is scoped to completed legacy imports', () => {
+  const database = openDatabase();
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, pickup_floor)
+    VALUES (?, ?, ?)
+  `).run('order-schema-user', 'Order Schema User', '1樓');
+  const insertOrder = database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor,
+      pickup_floor, total_amount, status, created_by_user_id, created_auth_mode
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  insertOrder.run(
+    'order-schema-live', 'order-schema-user', 'Order Schema User',
+    '2026-09-08', 'Vendor A', '1樓', 1, 'ACTIVE', 'order-schema-user', 'line'
+  );
+  insertOrder.run(
+    'order-schema-cancelled', 'order-schema-user', 'Order Schema User',
+    '2026-09-09', 'Vendor A', '1樓', 1, 'CANCELLED', 'order-schema-user', 'line'
+  );
+  insertOrder.run(
+    'order-schema-historical', 'order-schema-user', 'Order Schema User',
+    '2026-09-10', 'Vendor A', '1樓', 0, 'COMPLETED', 'order-schema-user', 'legacy_import'
+  );
+
+  const insertItem = database.prepare(`
+    INSERT INTO order_items (
+      order_id, line_no, item_name_snapshot, quantity, unit_price, subtotal
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  assert.throws(
+    () => insertItem.run('order-schema-live', 1, 'Live item', 1, -1, -1),
+    /completed legacy import/i
+  );
+  insertItem.run('order-schema-live', 1, 'Live item', 1, 1, 1);
+  assert.throws(
+    () => database.prepare(`
+      UPDATE order_items
+      SET unit_price = -1, subtotal = -1
+      WHERE order_id = ? AND line_no = ?
+    `).run('order-schema-live', 1),
+    /completed legacy import/i
+  );
+  insertItem.run('order-schema-historical', 1, 'Fee waiver', 1, -1, -1);
+  database.prepare(`
+    UPDATE order_items
+    SET unit_price = ?, subtotal = ?
+    WHERE order_id = ? AND line_no = ?
+  `).run(-2, -2, 'order-schema-historical', 1);
+  const historicalItem = database.prepare(`
+    SELECT unit_price, subtotal
+    FROM order_items
+    WHERE order_id = ? AND line_no = ?
+  `).get('order-schema-historical', 1);
+  assert.equal(historicalItem.unit_price, -2);
+  assert.equal(historicalItem.subtotal, -2);
+  assert.throws(
+    () => database.prepare(`
+      UPDATE orders SET status = 'ACTIVE' WHERE order_id = ?
+    `).run('order-schema-historical'),
+    /completed legacy import/i
+  );
+
+  database.prepare(`
+    INSERT INTO order_status_history (
+      transition_id, order_id, from_status, to_status, actor_user_id, reason
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    'transition-schema-completed', 'order-schema-historical', null,
+    'COMPLETED', 'order-schema-user', 'IMPORT_COMPLETED'
+  );
+  assert.deepEqual(
+    database.prepare(`
+      SELECT order_id FROM orders WHERE status = 'ACTIVE' ORDER BY order_id
+    `).all().map((row) => row.order_id),
+    ['order-schema-live']
+  );
+  assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+});
+
 test('duplicate legacy menu IDs remain distinct internal menu items', () => {
   const database = openDatabase();
   database.prepare(`

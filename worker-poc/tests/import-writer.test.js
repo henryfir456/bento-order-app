@@ -46,6 +46,47 @@ test('stage mode writes only validated operational rows and quarantines orphans'
   assert.equal(first.balanceReconciliation.openingBalancePolicyRequiredCount, 2);
 });
 
+test('stage mode preserves signed money on completed legacy Orders', async () => {
+  const database = new SqliteD1();
+  const validation = validationFor();
+  const sourceOrder = validation.accepted.Orders[0];
+  validation.accepted.Orders = [
+    {
+      ...sourceOrder,
+      orderId: 'completed-negative-stage-order',
+      status: 'COMPLETED',
+      legacyItemId: 'revert1',
+      itemName: 'Fee waiver',
+      unitPrice: -1,
+      subtotal: -1
+    },
+    {
+      ...sourceOrder,
+      orderId: 'completed-negative-stage-order',
+      status: 'COMPLETED',
+      legacyItemId: 'legacy-duplicate',
+      itemName: 'Synthetic Bento A',
+      unitPrice: 1,
+      subtotal: 1
+    }
+  ];
+
+  await stageImport(database, validation, {
+    clock: new Date('2026-09-08T00:00:00.000Z')
+  });
+
+  assert.equal(database.get(`
+    SELECT status FROM orders WHERE order_id = ?
+  `, 'completed-negative-stage-order').status, 'COMPLETED');
+  const adjustment = database.get(`
+    SELECT unit_price, subtotal
+    FROM order_items
+    WHERE order_id = ? AND legacy_item_id = ?
+  `, 'completed-negative-stage-order', 'revert1');
+  assert.equal(adjustment.unit_price, -1);
+  assert.equal(adjustment.subtotal, -1);
+});
+
 test('stage mode refuses accepted historical ledger rows without a separate policy implementation', async () => {
   const database = new SqliteD1();
   await assert.rejects(

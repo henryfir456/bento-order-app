@@ -7,7 +7,7 @@ import { resolveLegacyIdentities } from './identity-mapping.mjs';
 
 const VALID_ROLES = new Set(['User', 'ProxyAdmin', 'Admin']);
 const VALID_FLOORS = new Set(['1樓', '9樓']);
-const VALID_ORDER_STATUSES = new Set(['ACTIVE', 'CANCELLED']);
+const VALID_ORDER_STATUSES = new Set(['ACTIVE', 'CANCELLED', 'COMPLETED']);
 const VALID_LEDGER_TYPES = new Set(['TOPUP', 'ORDER', 'REFUND', 'ADJUSTMENT']);
 const ENTITY_NAMES = ['Settings', 'Likes', 'Users', 'Menu', 'Announcements', 'Orders', 'TopupHistory'];
 const IDENTITY_ENTITIES = ['Users', 'Orders', 'Likes', 'TopupHistory'];
@@ -108,6 +108,12 @@ const IDENTITY_FOUNDATION_EVIDENCE = Object.freeze({
 
 const isInteger = (value) => Number.isSafeInteger(value);
 const isNonNegativeInteger = (value) => isInteger(value) && value >= 0;
+const isSignedInteger = isInteger;
+const isHistoricalOrderMoney = (record) => (
+  record.status === 'COMPLETED'
+    ? isInteger(record.unitPrice) && isInteger(record.subtotal)
+    : isNonNegativeInteger(record.unitPrice) && isNonNegativeInteger(record.subtotal)
+);
 const hasText = (value) => Boolean(asText(value).trim());
 
 const sourceOf = (record) => ({
@@ -293,7 +299,7 @@ const validateMenu = (records, accepted, quarantine, warnings) => {
       addIssue(quarantine, 'Menu', record, REASON_CODES.INVALID_MENU_ITEM);
       continue;
     }
-    if (!isNonNegativeInteger(record.price)) {
+    if (!isSignedInteger(record.price)) {
       addIssue(quarantine, 'Menu', record, REASON_CODES.INVALID_MONEY, { field: 'price' });
       continue;
     }
@@ -386,7 +392,7 @@ const validateOrders = (records, accepted, quarantine, validUserIds, exclusions,
       addIssue(quarantine, 'Orders', record, REASON_CODES.INVALID_QUANTITY);
       continue;
     }
-    if (!isNonNegativeInteger(record.unitPrice) || !isNonNegativeInteger(record.subtotal)) {
+    if (!isHistoricalOrderMoney(record)) {
       addIssue(quarantine, 'Orders', record, REASON_CODES.INVALID_MONEY);
       continue;
     }

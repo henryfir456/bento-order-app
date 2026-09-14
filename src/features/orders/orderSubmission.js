@@ -17,7 +17,7 @@ export const buildOrderSubmission = ({
           : {}),
         item_name: menuItem?.item_name || '',
         quantity,
-        unit_price: menuItem?.price || 0
+        unit_price: menuItem?.price ?? 0
       };
     })
     .filter(item => item.quantity > 0);
@@ -28,8 +28,8 @@ export const buildOrderSubmission = ({
     pickupFloor: floor || '',
     items,
     note,
-    totalCount: items.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
-    totalAmount: items.reduce((sum, item) => sum + (Number(item.unit_price || 0) * Number(item.quantity || 0)), 0)
+    totalCount: items.reduce((sum, item) => sum + Number(item.quantity ?? 0), 0),
+    totalAmount: items.reduce((sum, item) => sum + (Number(item.unit_price ?? 0) * Number(item.quantity ?? 0)), 0)
   };
 };
 
@@ -42,8 +42,8 @@ export const buildExistingOrderSubmission = ({
   const items = (Array.isArray(order.items) ? order.items : [])
     .map((item, index) => {
       const itemId = String(item?.menu_item_id || item?.item_id || `order-item-${index}`);
-      const quantity = Number(item?.quantity || 0);
-      const unitPrice = Number(item?.unit_price || 0);
+      const quantity = Number(item?.quantity ?? 0);
+      const unitPrice = Number(item?.unit_price ?? 0);
       const storedSubtotal = Number(item?.subtotal);
       return {
         item_id: itemId,

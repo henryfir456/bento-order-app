@@ -6,6 +6,7 @@ import { SqliteD1 } from './helpers/formal-db.js';
 import {
   profileFetch,
   request,
+  seedLedgerRow,
   seedMenuVersion,
   seedUser
 } from './helpers/formal-fixtures.js';
@@ -35,6 +36,10 @@ const seedReadOnlyDatabase = () => {
     INSERT INTO calendar_settings (order_date, vendor, mode)
     VALUES (?, ?, ?)
   `, '2026-09-08', 'Vendor A', 'A');
+  database.run(`
+    INSERT INTO calendar_settings (order_date, vendor, mode)
+    VALUES (?, ?, ?), (?, ?, ?)
+  `, '2026-09-06', 'Vendor A', 'A', '2026-09-07', 'Vendor A', 'A');
   seedMenuVersion(database, {
     menuVersionId: 'version-1',
     vendor: 'Vendor A',
@@ -87,6 +92,25 @@ const seedReadOnlyDatabase = () => {
   database.run(`
     INSERT INTO orders (
       order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id, created_auth_mode
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'order-user-1-history', 'user-1', 'User One', '2026-09-06', 'Vendor A', '1樓', 80, 'COMPLETED', 'user-1', 'legacy_import');
+  database.run(`
+    INSERT INTO order_items (
+      order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+      quantity, unit_price, subtotal
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'order-user-1-history', 1, 'menu-1', 'legacy-duplicate', 'Enabled A', 1, 80, 80);
+  database.run(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id, created_auth_mode
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'order-user-1-current-completed', 'user-1', 'User One', '2026-09-07', 'Vendor A', '1樓', 80, 'COMPLETED', 'user-1', 'legacy_import');
+  database.run(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
       total_amount, status, created_by_user_id
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -127,6 +151,34 @@ test('GET /api/me returns canonical user and ignores forged userId', async () =>
   assert.equal(body.user.role, 'User');
 });
 
+test('identity and bootstrap expose the latest sequenced ledger balance', async () => {
+  const database = seedReadOnlyDatabase();
+  seedLedgerRow(database, {
+    transactionId: 'user-1-latest-balance',
+    userId: 'user-1',
+    amount: 98,
+    balanceAfter: 88
+  });
+
+  const me = await call(
+    database,
+    '/api/me',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(me.response.status, 200);
+  assert.equal(me.body.user.balance, 88);
+
+  const bootstrap = await call(
+    database,
+    '/api/bootstrap',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(bootstrap.response.status, 200);
+  assert.equal(bootstrap.body.user.balance, 88);
+});
+
 test('GET /api/me returns token-derived identity for an unregistered actor without creating a user', async () => {
   const database = new SqliteD1();
   const { response, body } = await call(
@@ -165,6 +217,50 @@ test('GET /api/order-page exposes enabled menu rows with stable internal keys', 
   ]);
   assert.equal(body.myOrder.orderId, 'order-user-1');
   assert.equal(body.myOrder.items[0].menu_item_id, 'menu-1');
+});
+
+test('historical completed orders are readable while current active workflow stays active-only', async () => {
+  const database = seedReadOnlyDatabase();
+  const bootstrap = await call(
+    database,
+    '/api/bootstrap',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(bootstrap.body.ordersMap['2026-09-06'], true);
+  assert.equal(bootstrap.body.ordersMap['2026-09-07'], undefined);
+  assert.equal(bootstrap.body.ordersMap['2026-09-08'], true);
+
+  const orderMap = await call(
+    database,
+    '/api/orders/map',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(orderMap.response.status, 200);
+  assert.equal(orderMap.body.ordersMap['2026-09-06'], true);
+  assert.equal(orderMap.body.ordersMap['2026-09-07'], undefined);
+
+  const historical = await call(
+    database,
+    '/api/order-page?targetDate=2026-09-06',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(historical.response.status, 200);
+  assert.equal(historical.body.myOrder.orderId, 'order-user-1-history');
+  assert.equal(historical.body.myOrder.status, 'COMPLETED');
+  assert.equal(historical.body.myOrder.readOnly, true);
+
+  const currentCompleted = await call(
+    database,
+    '/api/order-page?targetDate=2026-09-07',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(currentCompleted.response.status, 200);
+  assert.equal(currentCompleted.body.myOrder.orderId, '');
+  assert.equal(currentCompleted.body.myOrder.status, null);
 });
 
 test('bootstrap and deferred responses are actor-scoped and preserve split data', async () => {

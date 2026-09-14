@@ -1,8 +1,9 @@
 import { ACTIONS, assertCan } from '../auth/permissions.js';
 import { appendAuditEvent } from '../db/audit.js';
-import { publicUser } from '../db/users.js';
+import { currentBalanceProjection, publicUser } from '../db/users.js';
 import { badRequest } from '../http/errors.js';
 import { isDateOnly } from './deadlines.js';
+import { isHistoricalOrderDate, orderStatusPredicate } from './ordersRead.js';
 
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
@@ -10,10 +11,11 @@ const rowsFrom = (result) => (
 
 const memberRows = async (database) => {
   const result = await database.prepare(`
-    SELECT user_id, employee_id, line_user_id, display_name, pickup_floor,
-           balance, role, active, verification_status, created_at, updated_at
-    FROM users
-    ORDER BY display_name ASC, user_id ASC
+    SELECT u.user_id, u.employee_id, u.line_user_id, u.display_name, u.pickup_floor,
+           ${currentBalanceProjection('u')} AS balance,
+           u.role, u.active, u.verification_status, u.created_at, u.updated_at
+    FROM users u
+    ORDER BY u.display_name ASC, u.user_id ASC
   `).all();
   return rowsFrom(result).map((row) => publicUser({
     userId: row.user_id,
@@ -38,15 +40,18 @@ export const getAdminSummary = async (
 ) => {
   assertCan(identity, ACTIONS.READ_ADMIN_SUMMARY);
   if (!isDateOnly(targetDate)) throw badRequest('INVALID_DATE');
+  const includeCompleted = isHistoricalOrderDate(targetDate, now);
   const result = await database.prepare(`
     SELECT o.order_id, o.order_date, o.pickup_floor, o.note, o.created_at,
+           o.status,
            u.display_name,
            oi.legacy_item_id, oi.item_name_snapshot, oi.quantity,
            oi.unit_price, oi.subtotal
     FROM orders o
     JOIN users u ON u.user_id = o.user_id
     JOIN order_items oi ON oi.order_id = o.order_id
-    WHERE o.order_date = ? AND o.status = 'ACTIVE'
+    WHERE o.order_date = ?
+      AND ${orderStatusPredicate({ alias: 'o', includeCompleted })}
     ORDER BY o.pickup_floor ASC, o.order_id ASC, oi.line_no ASC
   `).bind(targetDate).all();
   const todayOrders = rowsFrom(result).map((row) => ({
@@ -58,6 +63,8 @@ export const getAdminSummary = async (
     quantity: Number(row.quantity),
     unit_price: Number(row.unit_price),
     subtotal: Number(row.subtotal),
+    status: row.status,
+    readOnly: row.status === 'COMPLETED',
     created_at: row.created_at,
     note: row.note || ''
   }));

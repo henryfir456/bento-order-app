@@ -268,6 +268,23 @@ test('deterministically resolved historical rows preview one canonical target an
   assert.equal(plan.summary.unresolvedHistoricalRows, 0);
 });
 
+test('completed historical Orders reconcile as a supported status', () => {
+  const plan = buildPlan({
+    users: [legacyUser('000001')],
+    d1Users: [canonicalUser('000001', { user_id: 'canonical-completed' })],
+    orders: [legacyOrder('000001', {
+      status: 'COMPLETED',
+      unit_price: -1,
+      subtotal: -1
+    })]
+  });
+  const order = plan.reconciliationRows.find((item) => item.legacySourceRow.sheet === 'Orders');
+
+  assert.equal(order.plannedAction, ACTIONS.MERGE_EXISTING_NONLINE);
+  assert.equal(order.mutationPreview.relationship.targetTable, 'orders');
+  assert.equal(plan.summary.unresolvedHistoricalRows, 0);
+});
+
 test('known Legacy Orders blank column 13 preserves CANCELLED and unknown shapes fail closed', () => {
   const headers = [
     'order_id', 'order_date', 'vendor', 'name', 'pickup_floor', 'item_id',
@@ -283,6 +300,13 @@ test('known Legacy Orders blank column 13 preserves CANCELLED and unknown shapes
   const knownNormalized = normalizeLegacyWorkbook(known, { sourceHash: 'orders-shape' });
   assert.equal(knownNormalized.Orders[0].status, 'CANCELLED');
   assert.ok(known.shapeIssues.some((issue) => issue.code === 'ORDERS_STATUS_COLUMN_RECOGNIZED'));
+
+  const completedKnown = canonicalizeWorkbook({
+    Orders: [headers, [...row.slice(0, 12), 'COMPLETED', 'line-1', 0]]
+  });
+  const completedNormalized = normalizeLegacyWorkbook(completedKnown, { sourceHash: 'orders-completed-shape' });
+  assert.equal(completedNormalized.Orders[0].status, 'COMPLETED');
+  assert.ok(completedKnown.shapeIssues.some((issue) => issue.code === 'ORDERS_STATUS_COLUMN_RECOGNIZED'));
 
   const unknown = canonicalizeWorkbook({
     Orders: [

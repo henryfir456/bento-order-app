@@ -21,10 +21,6 @@ const migrationNames = readdirSync(migrationsDirectory)
   .filter((name) => name.endsWith('.sql'))
   .sort();
 const migrationFiveName = '0005_nullable_user_pickup_floor.sql';
-const migrationChainNames = migrationNames.slice(
-  0,
-  migrationNames.indexOf(migrationFiveName) + 1
-);
 const migrationFiveSource = readFileSync(
   join(migrationsDirectory, migrationFiveName),
   'utf8'
@@ -38,8 +34,19 @@ const wranglerEntrypoint = join(
   'wrangler.js'
 );
 
+const migrationSixName = '0006_historical_order_semantics.sql';
+const migrationSevenName = '0007_signed_menu_prices.sql';
+const migrationSixChainNames = migrationNames.slice(
+  0,
+  migrationNames.indexOf(migrationSixName) + 1
+);
+const migrationSevenChainNames = migrationNames.slice(
+  0,
+  migrationNames.indexOf(migrationSevenName) + 1
+);
+
 const createLocalProject = (migrationCount) => {
-  const root = mkdtempSync(join(tmpdir(), 'bento-0005-local-'));
+  const root = mkdtempSync(join(tmpdir(), 'bento-formal-local-'));
   const migrationTarget = join(root, 'migrations-formal');
   const persistTarget = join(root, 'd1');
   mkdirSync(migrationTarget, { recursive: true });
@@ -49,7 +56,7 @@ const createLocalProject = (migrationCount) => {
     copyFileSync(join(migrationsDirectory, name), join(migrationTarget, name));
   });
 
-  const databaseName = `bento-0005-local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const databaseName = `bento-formal-local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const configPath = join(root, 'wrangler.jsonc');
   writeFileSync(configPath, JSON.stringify({
     name: databaseName,
@@ -134,6 +141,50 @@ const installMigrationFive = (project) => {
     join(migrationsDirectory, migrationFiveName),
     join(project.migrationTarget, migrationFiveName)
   );
+};
+
+const installMigrationSix = (project) => {
+  copyFileSync(
+    join(migrationsDirectory, migrationSixName),
+    join(project.migrationTarget, migrationSixName)
+  );
+};
+
+const installMigrationSeven = (project) => {
+  copyFileSync(
+    join(migrationsDirectory, migrationSevenName),
+    join(project.migrationTarget, migrationSevenName)
+  );
+};
+
+const seedOrderSemanticsData = (project) => {
+  executeSql(project, `
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor,
+      balance, role, active, created_at, updated_at, verification_status
+    ) VALUES ('order-owner', 'ORDER-OWNER', 'line-order-owner', 'Order Owner', '1樓',
+      100, 'User', 1, '2026-09-13T01:00:00.000Z', '2026-09-13T01:00:00.000Z', 'VERIFIED');
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id, created_auth_mode,
+      created_at, updated_at
+    ) VALUES
+      ('upgrade-live', 'order-owner', 'Order Owner', '2026-09-08', 'Vendor A', '1樓',
+       80, 'ACTIVE', 'order-owner', 'line', '2026-09-13T01:00:00.000Z', '2026-09-13T01:00:00.000Z'),
+      ('upgrade-cancelled', 'order-owner', 'Order Owner', '2026-09-09', 'Vendor A', '1樓',
+       80, 'CANCELLED', 'order-owner', 'line', '2026-09-13T01:00:00.000Z', '2026-09-13T01:00:00.000Z');
+    INSERT INTO order_items (
+      order_id, line_no, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal
+    ) VALUES ('upgrade-live', 1, 'item-1', 'Existing item', 1, 80, 80);
+    INSERT INTO order_status_history (
+      transition_id, order_id, from_status, to_status, actor_user_id,
+      actor_auth_mode, reason, occurred_at
+    ) VALUES
+      ('upgrade-transition-active', 'upgrade-live', NULL, 'ACTIVE', 'order-owner',
+       'line', 'ORDER_CREATED', '2026-09-13T01:00:00.000Z'),
+      ('upgrade-transition-cancelled', 'upgrade-cancelled', 'ACTIVE', 'CANCELLED', 'order-owner',
+       'line', 'ORDER_CANCELLED', '2026-09-13T01:00:00.000Z');
+  `);
 };
 
 const seedUpgradeData = (project) => {
@@ -245,13 +296,205 @@ test('0005 uses an in-place nullable pickup-floor migration', () => {
   assert.match(migrationFiveSource, /ALTER TABLE\s+users\s+DROP COLUMN/i);
 });
 
-test('fresh Wrangler local D1 applies 0000 through fixed 0005', () => {
-  const project = createLocalProject(migrationChainNames.length);
+test('fresh Wrangler local D1 applies 0000 through fixed 0007', () => {
+  const project = createLocalProject(migrationSevenChainNames.length);
   try {
     applyMigrations(project);
     const migrationRows = queryRows(project, 'SELECT name FROM d1_migrations ORDER BY id');
-    assert.deepEqual(migrationRows.map((row) => row.name), migrationChainNames);
+    assert.deepEqual(migrationRows.map((row) => row.name), migrationSevenChainNames);
     assert.equal(userColumns(project).find((column) => column.name === 'pickup_floor').notnull, 0);
+    assert.deepEqual(queryRows(project, 'PRAGMA foreign_key_check'), []);
+  } finally {
+    rmSync(project.root, { recursive: true, force: true });
+  }
+});
+
+test('0006 preserves populated Orders data, indexes, and foreign-key integrity', () => {
+  const project = createLocalProject(6);
+  try {
+    applyMigrations(project);
+    seedOrderSemanticsData(project);
+    const preOrders = queryRows(project, `
+      SELECT order_id, user_id, display_name_snapshot, order_date, vendor,
+             pickup_floor, total_amount, status, created_by_user_id, created_auth_mode
+      FROM orders ORDER BY order_id
+    `);
+    const preItems = queryRows(project, `
+      SELECT order_id, line_no, legacy_item_id, item_name_snapshot,
+             quantity, unit_price, subtotal
+      FROM order_items ORDER BY order_id, line_no
+    `);
+    const preHistory = queryRows(project, `
+      SELECT transition_id, order_id, from_status, to_status, actor_user_id,
+             actor_auth_mode, reason
+      FROM order_status_history ORDER BY transition_id
+    `);
+    const normalizeSql = (rows) => rows.map((row) => ({
+      ...row,
+      sql: row.sql?.replaceAll('\r\n', '\n')
+    }));
+    const preIndexes = normalizeSql(queryRows(project, `
+      SELECT name, sql
+      FROM sqlite_master
+      WHERE type = 'index'
+        AND tbl_name IN ('orders', 'order_items', 'order_status_history')
+        AND name NOT LIKE 'sqlite_autoindex%'
+      ORDER BY name
+    `));
+    const preOwnedTriggers = queryRows(project, `
+      SELECT name, sql
+      FROM sqlite_master
+      WHERE type = 'trigger'
+        AND tbl_name IN ('orders', 'order_items', 'order_status_history')
+      ORDER BY name
+    `);
+    assert.deepEqual(preOwnedTriggers, []);
+
+    installMigrationSix(project);
+    applyMigrations(project);
+
+    const migrationRows = queryRows(project, 'SELECT name FROM d1_migrations ORDER BY id');
+    assert.deepEqual(migrationRows.map((row) => row.name), migrationSixChainNames);
+    assert.deepEqual(queryRows(project, `
+      SELECT order_id, user_id, display_name_snapshot, order_date, vendor,
+             pickup_floor, total_amount, status, created_by_user_id, created_auth_mode
+      FROM orders ORDER BY order_id
+    `), preOrders);
+    assert.deepEqual(queryRows(project, `
+      SELECT order_id, line_no, legacy_item_id, item_name_snapshot,
+             quantity, unit_price, subtotal
+      FROM order_items ORDER BY order_id, line_no
+    `), preItems);
+    assert.deepEqual(queryRows(project, `
+      SELECT transition_id, order_id, from_status, to_status, actor_user_id,
+             actor_auth_mode, reason
+      FROM order_status_history ORDER BY transition_id
+    `), preHistory);
+    assert.deepEqual(normalizeSql(queryRows(project, `
+      SELECT name, sql
+      FROM sqlite_master
+      WHERE type = 'index'
+        AND tbl_name IN ('orders', 'order_items', 'order_status_history')
+        AND name NOT LIKE 'sqlite_autoindex%'
+      ORDER BY name
+    `)), preIndexes);
+
+    const schemas = new Map(queryRows(project, `
+      SELECT name, sql
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name IN ('orders', 'order_items', 'order_status_history')
+    `).map((row) => [row.name, row.sql]));
+    assert.match(schemas.get('orders'), /status IN \('ACTIVE', 'CANCELLED', 'COMPLETED'\)/i);
+    assert.match(schemas.get('order_status_history'), /to_status IN \('ACTIVE', 'CANCELLED', 'COMPLETED'\)/i);
+    assert.doesNotMatch(schemas.get('order_items'), /unit_price INTEGER NOT NULL CHECK/i);
+    assert.doesNotMatch(schemas.get('order_items'), /subtotal INTEGER NOT NULL CHECK/i);
+
+    executeSql(project, `
+      INSERT INTO orders (
+        order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+        total_amount, status, created_by_user_id, created_auth_mode
+      ) VALUES ('upgrade-historical', 'order-owner', 'Order Owner', '2026-09-10',
+        '蔡老師', '1樓', 0, 'COMPLETED', 'order-owner', 'legacy_import');
+      INSERT INTO order_items (
+        order_id, line_no, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal
+      ) VALUES ('upgrade-historical', 1, 'revert1', 'Fee waiver', 1, -1, -1);
+    `);
+    assert.deepEqual(queryRows(project, `
+      SELECT unit_price, subtotal
+      FROM order_items WHERE order_id = 'upgrade-historical'
+    `), [{ unit_price: -1, subtotal: -1 }]);
+    executeSqlExpectFailure(project, `
+      INSERT INTO order_items (
+        order_id, line_no, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal
+      ) VALUES ('upgrade-live', 2, 'revert1', 'Fee waiver', 1, -1, -1)
+    `);
+    assert.deepEqual(queryRows(project, 'PRAGMA foreign_key_check'), []);
+  } finally {
+    rmSync(project.root, { recursive: true, force: true });
+  }
+});
+
+test('0007 preserves populated menu/order-item data, dependencies, and triggers', () => {
+  const project = createLocalProject(7);
+  try {
+    applyMigrations(project);
+    executeSql(project, `
+      INSERT INTO users (
+        user_id, employee_id, line_user_id, display_name, pickup_floor,
+        balance, role, active, verification_status
+      ) VALUES ('menu-owner', 'MENU-OWNER', 'line-menu-owner', 'Menu Owner', '1樓', 0, 'User', 1, 'VERIFIED');
+      INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+      VALUES ('menu-version-7', '蔡老師', '2026-09-01');
+      INSERT INTO menu_items (
+        menu_item_id, menu_version_id, legacy_item_id, item_name, price,
+        enabled, source_order
+      ) VALUES ('menu-item-7', 'menu-version-7', 'A95', 'Bento', 95, 1, 1);
+      INSERT INTO orders (
+        order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+        total_amount, status, created_by_user_id, created_auth_mode
+      ) VALUES ('menu-order-7', 'menu-owner', 'Menu Owner', '2026-09-01', '蔡老師', '1樓', 95,
+        'ACTIVE', 'menu-owner', 'line');
+      INSERT INTO order_items (
+        order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+        quantity, unit_price, subtotal
+      ) VALUES ('menu-order-7', 1, 'menu-item-7', 'A95', 'Bento', 1, 95, 95);
+    `);
+    const before = queryRows(project, `
+      SELECT menu_item_id, menu_version_id, legacy_item_id, item_name, price,
+             enabled, source_order
+      FROM menu_items
+    `);
+    const beforeOrderItems = queryRows(project, `
+      SELECT order_id, line_no, menu_item_id, legacy_item_id,
+             item_name_snapshot, quantity, unit_price, subtotal
+      FROM order_items
+    `);
+
+    installMigrationSeven(project);
+    applyMigrations(project);
+
+    const migrationRows = queryRows(project, 'SELECT name FROM d1_migrations ORDER BY id');
+    assert.deepEqual(migrationRows.map((row) => row.name), migrationSevenChainNames);
+    assert.deepEqual(queryRows(project, `
+      SELECT menu_item_id, menu_version_id, legacy_item_id, item_name, price,
+             enabled, source_order
+      FROM menu_items
+    `), before);
+    assert.deepEqual(queryRows(project, `
+      SELECT order_id, line_no, menu_item_id, legacy_item_id,
+             item_name_snapshot, quantity, unit_price, subtotal
+      FROM order_items
+    `), beforeOrderItems);
+
+    const menuSchema = queryRows(project, `
+      SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'menu_items'
+    `)[0].sql;
+    assert.doesNotMatch(menuSchema, /price INTEGER NOT NULL CHECK\s*\(price >= 0\)/i);
+    executeSql(project, `
+      INSERT INTO menu_items (
+        menu_item_id, menu_version_id, legacy_item_id, item_name, price,
+        enabled, source_order
+      ) VALUES ('menu-item-revert1', 'menu-version-7', 'revert1', 'Fee waiver', -1, 1, 2);
+    `);
+    executeSqlExpectFailure(project, `
+      INSERT INTO order_items (
+        order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+        quantity, unit_price, subtotal
+      ) VALUES ('menu-order-7', 2, 'menu-item-revert1', 'revert1', 'Fee waiver', 1, -1, -1)
+    `);
+    assert.deepEqual(queryRows(project, 'PRAGMA foreign_key_list(order_items)'), [
+      { id: 0, seq: 0, table: 'menu_items', from: 'menu_item_id', to: 'menu_item_id', on_update: 'NO ACTION', on_delete: 'NO ACTION', match: 'NONE' },
+      { id: 1, seq: 0, table: 'orders', from: 'order_id', to: 'order_id', on_update: 'NO ACTION', on_delete: 'NO ACTION', match: 'NONE' }
+    ]);
+    assert.deepEqual(queryRows(project, `
+      SELECT name FROM sqlite_master
+      WHERE type = 'trigger' AND tbl_name = 'order_items'
+      ORDER BY name
+    `), [
+      { name: 'order_items_historical_negative_money_guard' },
+      { name: 'order_items_historical_negative_money_update_guard' }
+    ]);
     assert.deepEqual(queryRows(project, 'PRAGMA foreign_key_check'), []);
   } finally {
     rmSync(project.root, { recursive: true, force: true });

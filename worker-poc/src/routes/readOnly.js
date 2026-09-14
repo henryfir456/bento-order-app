@@ -8,7 +8,11 @@ import {
 } from '../domain/calendar.js';
 import { deadlineInfo, isDateOnly } from '../domain/deadlines.js';
 import { getCustomerMenu } from '../domain/menu.js';
-import { getActiveOrder, getActiveOrdersMap } from '../domain/ordersRead.js';
+import {
+  getHistoricalOrdersMap,
+  getReadableOrder,
+  isHistoricalOrderDate
+} from '../domain/ordersRead.js';
 import { notFound, badRequest, forbidden } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { getMe } from '../domain/users.js';
@@ -74,7 +78,7 @@ export const handleReadOnlyRequest = async (request, env, {
         announcements,
         announcement: null
       },
-      ordersMap: await getActiveOrdersMap(env.DB, subject.userId),
+      ordersMap: await getHistoricalOrdersMap(env.DB, subject.userId, now),
       targetDate: url.searchParams.get('targetDate') || null,
       bootId: bootId()
     });
@@ -96,7 +100,7 @@ export const handleReadOnlyRequest = async (request, env, {
   if (url.pathname === '/api/orders/map') {
     return jsonResponse({
       success: true,
-      ordersMap: await getActiveOrdersMap(env.DB, subject.userId)
+      ordersMap: await getHistoricalOrdersMap(env.DB, subject.userId, now)
     });
   }
 
@@ -107,10 +111,11 @@ export const handleReadOnlyRequest = async (request, env, {
     if (!setting || !setting.vendor) {
       throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
     }
-    const [menu, myOrder] = await Promise.all([
-      getCustomerMenu(env.DB, { vendor: setting.vendor, targetDate }),
-      getActiveOrder(env.DB, subject.userId, targetDate)
-    ]);
+    const menu = await getCustomerMenu(env.DB, { vendor: setting.vendor, targetDate });
+    const myOrder = await getReadableOrder(env.DB, subject.userId, targetDate, {
+      includeCompleted: isHistoricalOrderDate(targetDate, now),
+      menuItems: menu
+    });
     return jsonResponse({
       success: true,
       setting,

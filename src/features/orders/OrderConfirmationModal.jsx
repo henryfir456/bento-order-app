@@ -1,6 +1,5 @@
 import Modal from '../../components/Modal';
-
-const formatAmount = amount => `$${Number(amount || 0).toLocaleString('en-US')}`;
+import { formatSignedAmount } from './amountFormat.js';
 
 export default function OrderConfirmationModal({
   open,
@@ -51,8 +50,8 @@ export default function OrderConfirmationModal({
                 <tr key={item.item_id}>
                   <td className="px-3 py-2">{item.item_name || item.item_id}</td>
                   <td className="px-3 py-2 text-right">{item.quantity}</td>
-                  <td className="px-3 py-2 text-right">{formatAmount(item.unit_price)}</td>
-                  <td className="px-3 py-2 text-right">{formatAmount(item.subtotal ?? (item.unit_price * item.quantity))}</td>
+                  <td className="px-3 py-2 text-right">{formatSignedAmount(item.unit_price)}</td>
+                  <td className="px-3 py-2 text-right">{formatSignedAmount(item.subtotal ?? (item.unit_price * item.quantity))}</td>
                 </tr>
               ))}
             </tbody>
@@ -61,7 +60,7 @@ export default function OrderConfirmationModal({
                 <th className="px-3 py-2 text-left">合計</th>
                 <td className="px-3 py-2 text-right">{submission.totalCount}</td>
                 <td className="px-3 py-2 text-right">—</td>
-                <td className="px-3 py-2 text-right">{formatAmount(submission.totalAmount)}</td>
+                <td className="px-3 py-2 text-right">{formatSignedAmount(submission.totalAmount)}</td>
               </tr>
             </tfoot>
           </table>

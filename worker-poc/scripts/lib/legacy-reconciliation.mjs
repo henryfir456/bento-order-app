@@ -25,7 +25,7 @@ const ACTION_VALUES = Object.values(ACTIONS);
 const HISTORICAL_SHEETS = ['Orders', 'Likes', 'TopupHistory'];
 const VALID_ROLES = new Set(['User', 'ProxyAdmin', 'Admin']);
 const VALID_FLOORS = new Set(['1樓', '9樓']);
-const VALID_ORDER_STATUSES = new Set(['ACTIVE', 'CANCELLED']);
+const VALID_ORDER_STATUSES = new Set(['ACTIVE', 'CANCELLED', 'COMPLETED']);
 const ROLE_RANK = Object.freeze({ User: 1, ProxyAdmin: 2, Admin: 3 });
 
 const isPlainObject = (value) => (

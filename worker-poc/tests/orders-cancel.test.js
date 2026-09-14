@@ -168,6 +168,25 @@ test('cancellation is actor-bound and View As cannot redirect it', async () => {
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'REFUND'",).count, 0);
 });
 
+test('completed historical orders cannot be cancelled through the Worker API', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  const created = await create(database, 'cancel-completed-create');
+  database.run(`
+    UPDATE orders
+    SET status = 'COMPLETED', created_auth_mode = 'legacy_import'
+    WHERE order_id = ?
+  `, created.body.orderId);
+
+  const result = await cancel(database, created.body.orderId, 'cancel-completed');
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'ORDER_ALREADY_CANCELLED');
+  assert.equal(database.get(
+    'SELECT status FROM orders WHERE order_id = ?',
+    created.body.orderId
+  ).status, 'COMPLETED');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger WHERE type = \'REFUND\'').count, 0);
+});
+
 test('cancellation after the server deadline leaves order and balance unchanged', async () => {
   const database = seedOrderDatabase({ balance: 100 });
   const created = await create(database, 'cancel-deadline-create');

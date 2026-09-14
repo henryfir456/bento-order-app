@@ -55,6 +55,8 @@ const hasObjectField = (rows, field) => rows.some((row) => (
     && Object.prototype.hasOwnProperty.call(row, field)
 ));
 
+const LEGACY_ORDER_STATUS_VALUES = ['ACTIVE', 'CANCELLED', 'COMPLETED'];
+
 const knownLegacyOrdersStatusShape = (headers, rows) => {
   if (headers.length < 15 || hasCanonicalHeader(headers, 'Orders', 'status')) return false;
   const expectedPrefix = SHEET_DEFINITIONS.Orders.columns.slice(0, 12);
@@ -73,7 +75,7 @@ const knownLegacyOrdersStatusShape = (headers, rows) => {
     .map((row) => row[12])
     .filter((value) => value !== null && value !== undefined && String(value).trim() !== '')
     .map((value) => String(value).trim().toUpperCase());
-  return values.length > 0 && values.every((value) => ['ACTIVE', 'CANCELLED'].includes(value));
+  return values.length > 0 && values.every((value) => LEGACY_ORDER_STATUS_VALUES.includes(value));
 };
 
 const addDuplicateHeaderIssues = (sheetName, headers, shapeIssues) => {
@@ -182,7 +184,7 @@ const canonicalizeSheet = (sheetName, rawSheet, shapeIssues) => {
       code: 'ORDERS_STATUS_COLUMN_RECOGNIZED',
       sheet: sheetName,
       sourceColumn: 13,
-      statusValues: ['ACTIVE', 'CANCELLED'],
+      statusValues: LEGACY_ORDER_STATUS_VALUES.slice(),
       signature: 'legacy-orders-v1'
     });
   } else if (sheetName === 'Orders' && !hasCanonicalHeader(rawHeaders, sheetName, 'status')) {

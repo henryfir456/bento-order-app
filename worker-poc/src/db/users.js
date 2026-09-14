@@ -24,16 +24,28 @@ export const toUser = (row) => {
   };
 };
 
-const USER_COLUMNS = `
-  user_id, employee_id, line_user_id, display_name, pickup_floor,
-  balance, role, active, verification_status, created_at, updated_at
+export const currentBalanceProjection = (alias = 'u') => `COALESCE((
+  SELECT bl.balance_after
+  FROM balance_ledger bl
+  JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+  WHERE bl.user_id = ${alias}.user_id
+  ORDER BY bls.sequence_number DESC
+  LIMIT 1
+), ${alias}.balance)`;
+
+const userColumns = (alias = 'u') => `
+  ${alias}.user_id, ${alias}.employee_id, ${alias}.line_user_id,
+  ${alias}.display_name, ${alias}.pickup_floor,
+  ${currentBalanceProjection(alias)} AS balance,
+  ${alias}.role, ${alias}.active, ${alias}.verification_status,
+  ${alias}.created_at, ${alias}.updated_at
 `;
 
 export const getUserById = async (database, userId) => {
   const row = await database.prepare(`
-    SELECT ${USER_COLUMNS}
-    FROM users
-    WHERE user_id = ?
+    SELECT ${userColumns('u')}
+    FROM users u
+    WHERE u.user_id = ?
     LIMIT 1
   `).bind(userId).first();
   return toUser(row);
@@ -42,9 +54,9 @@ export const getUserById = async (database, userId) => {
 export const getUserByEmployeeId = async (database, employeeId) => {
   const lookupKey = String(employeeId || '').trim().toUpperCase();
   const row = await database.prepare(`
-    SELECT ${USER_COLUMNS}
-    FROM users
-    WHERE UPPER(trim(employee_id)) = ? AND length(trim(employee_id)) > 0
+    SELECT ${userColumns('u')}
+    FROM users u
+    WHERE UPPER(trim(u.employee_id)) = ? AND length(trim(u.employee_id)) > 0
     LIMIT 1
   `).bind(lookupKey).first();
   return toUser(row);
@@ -52,9 +64,9 @@ export const getUserByEmployeeId = async (database, employeeId) => {
 
 export const getUserByLineId = async (database, lineUserId) => {
   const row = await database.prepare(`
-    SELECT ${USER_COLUMNS}
-    FROM users
-    WHERE line_user_id = ?
+    SELECT ${userColumns('u')}
+    FROM users u
+    WHERE u.line_user_id = ?
     LIMIT 1
   `).bind(lineUserId).first();
   return toUser(row);

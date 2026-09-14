@@ -1,3 +1,5 @@
+import { formatSignedAmount } from '../orders/amountFormat.js';
+
 export default function AdminOrderSummary({
   selectedOrderDate,
   onDateChange,
@@ -44,7 +46,7 @@ export default function AdminOrderSummary({
                       </div>
                       <div className="bg-white p-3 rounded-2xl shadow-sm border border-emerald-900/10">
                         <div className="text-xs text-gray-500">總金額</div>
-                        <div className="text-xl font-bold text-[#2C4A3E]">${adminSummary.totalAmount}</div>
+                        <div className="text-xl font-bold text-[#2C4A3E]">{formatSignedAmount(adminSummary.totalAmount)}</div>
                       </div>
                     </div>
 
@@ -94,7 +96,7 @@ export default function AdminOrderSummary({
                                     </div>
                                   </div>
                                   <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">
-                                    ${o.subtotal}
+                                    {formatSignedAmount(o.subtotal)}
                                   </span>
                                 </div>
                               ))}
@@ -108,4 +110,3 @@ export default function AdminOrderSummary({
               </>
   );
 }
-

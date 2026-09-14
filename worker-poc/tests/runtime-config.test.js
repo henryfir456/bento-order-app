@@ -43,7 +43,9 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0002_canonical_identity_rekey.sql',
       '0003_provisional_employee_identity.sql',
       '0004_employee_roster_verification_source.sql',
-      '0005_nullable_user_pickup_floor.sql'
+      '0005_nullable_user_pickup_floor.sql',
+      '0006_historical_order_semantics.sql',
+      '0007_signed_menu_prices.sql'
     ]
   );
 });
