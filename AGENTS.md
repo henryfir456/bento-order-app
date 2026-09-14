@@ -69,6 +69,100 @@ frontend may retain an explicit GAS adapter only as a bounded legacy seam for
 regression evidence; omitted transport configuration defaults to Worker.
 Never recreate a second identity source of truth for transport parity.
 
+## Historical migration continuation governance
+
+Historical migration tasks are execution tasks by default, not rediscovery
+tasks. Do not broaden into root-cause investigation, repository-wide
+analysis, or workflow redesign unless a concrete validation failure requires
+it.
+
+This repository-local policy supplements the declared `ap-safe-preflight` and
+`ap-verification-core` skills. It must not be implemented by editing
+`.agents/skills/**`: those files are upstream-managed agent-platform
+dependencies and future upgrades must be able to sync without overwriting
+this policy.
+
+### Preflight modes
+
+Every historical migration execution must report one of these modes as
+`PREFLIGHT_MODE=FULL` or `PREFLIGHT_MODE=FAST`.
+
+`FULL_PREFLIGHT` is run only when at least one of these conditions is true:
+
+- this is the first migration session on the machine;
+- the machine changed;
+- the repository branch or `HEAD` changed unexpectedly;
+- the schema or migration version changed;
+- the remote D1 target or UUID changed;
+- declared governance or skill paths/versions changed; or
+- `FAST_PREFLIGHT` detects an inconsistency.
+
+Before applying a new schema migration, `FULL_PREFLIGHT` is required once.
+`FULL_PREFLIGHT` may validate the repository root, branch, working tree,
+`AGENTS.md`, `agent.yaml`, declared skills and versions, the remote D1 target
+and UUID, migrations/schema, and relevant repository migration contracts.
+When `FULL` is used even though `FAST` would otherwise be sufficient, report
+the exact escalation reason alongside `PREFLIGHT_MODE=FULL`.
+
+For continuation of an already-approved historical import in the same
+validated environment and session, `FAST_PREFLIGHT` is the default. It must
+check only:
+
+1. the expected repository and branch;
+2. no unexpected working-tree changes;
+3. the exact remote D1 target, including UUID, remains unchanged;
+4. the expected migration/schema version remains unchanged;
+5. current remote overlap/count for the domain being mutated; and
+6. minimal FK, duplicate, and conflict checks relevant to that domain.
+
+`FAST_PREFLIGHT` must explicitly skip repeated `AGENTS.md` validation,
+repeated `agent.yaml` validation, repeated declared-skill/version validation,
+repository-wide documentation scans, completed migration domains, unrelated
+tables/domains, regeneration of an already-approved semantic plan, and broad
+historical-source rediscovery. If a FAST check is inconsistent, stop and
+escalate to `FULL_PREFLIGHT` before continuing.
+
+### Approved-plan continuation
+
+Once a historical domain has an explicitly approved semantic plan, execution
+must use its frozen approved semantic set. Do not regenerate or reinterpret
+the planner before each batch. Differences in provenance or evidence
+serialization do not invalidate the approved semantic set. Only
+mutation-relevant semantic drift may stop execution; drift that changes a
+mutation target, operation, value, identity/ownership, dependency, or
+conflict status requires stopping for review.
+
+### Batch and domain transitions
+
+During a historical import, do not run `FULL_PREFLIGHT` or a repository-wide
+preflight between batches. Use only bounded mutation checks and cumulative
+reconciliation. If a write result is ambiguous, stop and reconcile remote
+state before retrying.
+
+When moving between historical domains, such as Likes -> Orders -> Wallet,
+run `FAST_PREFLIGHT` for the new domain unless a `FULL_PREFLIGHT` escalation
+condition is present. Completed domains and unrelated tables remain outside
+that new-domain FAST scope.
+
+After a new schema migration has been successfully applied and verified,
+subsequent historical data import against that unchanged schema returns to
+`FAST_PREFLIGHT`.
+
+## GAS verification policy
+
+GAS_VERIFICATION_POLICY=NON_BLOCKING_LEGACY
+
+GAS is a retired legacy transport for the current Worker/D1 path. GAS-only
+runtime and business-behavior tests are non-blocking for Worker/D1 schema
+migrations and historical imports. Do not run GAS-only suites as required
+gates unless the task explicitly modifies GAS runtime behavior. Do not
+investigate, baseline, fix, or attribute GAS-only failures unless explicitly
+requested. Parsing `gas/bento_script.sql` for historical migration evidence
+remains in scope and must stay validated.
+
+This policy is repository-local and composes with the declared upstream
+agent-platform skills. Do not modify shared agent-platform skill contents.
+
 ## Verification
 
 The commands and required order are declared in agent.yaml. Project
