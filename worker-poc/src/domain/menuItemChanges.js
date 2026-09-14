@@ -16,6 +16,7 @@ export const SQL_SOURCE_KIND = 'legacy_sql';
 export const GAS_SOURCE_KIND = 'gas_compatibility';
 export const ADMIN_SOURCE_KIND = 'admin';
 export const AP_VARIANT_KEYS = Object.freeze(['ap-variant-1', 'ap-variant-2']);
+const COMPATIBILITY_BASELINE_SOURCE_KIND = 'compatibility_baseline';
 
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
@@ -109,6 +110,122 @@ const resolveRows = (rows, { vendor, targetDate }) => {
   };
 };
 
+const stateRows = (rows) => [...rows].sort((left, right) => (
+  left.display_order - right.display_order
+  || left.item_code.localeCompare(right.item_code)
+  || left.variant_key.localeCompare(right.variant_key)
+  || String(left.menu_item_change_id).localeCompare(String(right.menu_item_change_id))
+));
+
+const normalizeCompatibilityRow = (row, version) => ({
+  menu_item_change_id: `compatibility:${row.menu_item_id}`,
+  effective_date: version.effective_date,
+  vendor: version.vendor,
+  item_code: row.legacy_item_id,
+  variant_key: row.variant_key || '',
+  item_name: row.item_name,
+  price: Number(row.price),
+  enabled: Boolean(row.enabled),
+  image_url: row.image_url || '',
+  note: row.note || '',
+  display_order: Number(row.source_order || 0),
+  source_kind: COMPATIBILITY_BASELINE_SOURCE_KIND,
+  source_batch_id: version.source_batch_id || null,
+  source_table: null,
+  source_row: null,
+  source_record_id: row.menu_item_id,
+  updated_by_user_id: null,
+  created_at: row.created_at,
+  updated_at: row.updated_at,
+  source_read_only: true,
+  menu_item_id: row.menu_item_id,
+  persisted_menu_item_id: row.menu_item_id
+});
+
+const compatibilityVersion = async (database, vendor, targetDate) => {
+  if (vendor === HISTORICAL_MENU_VENDOR && targetDate <= HISTORICAL_MENU_CUTOFF) {
+    const effectiveMonth = `${targetDate.slice(0, 7)}-01`;
+    return database.prepare(`
+      SELECT mv.menu_version_id, mv.vendor, mv.effective_date,
+             ib.importer_version, mv.source_batch_id
+      FROM menu_versions mv
+      JOIN import_batches ib ON ib.batch_id = mv.source_batch_id
+      WHERE mv.vendor = ?
+        AND ib.importer_version = ?
+        AND mv.effective_date <= ?
+      ORDER BY mv.effective_date DESC, mv.menu_version_id DESC
+      LIMIT 1
+    `).bind(vendor, HISTORICAL_MENU_IMPORTER_VERSION, effectiveMonth).first();
+  }
+  return database.prepare(`
+    SELECT menu_version_id, vendor, effective_date, source_batch_id
+    FROM menu_versions
+    WHERE vendor = ? AND effective_date <= ?
+    ORDER BY effective_date DESC, menu_version_id DESC
+    LIMIT 1
+  `).bind(vendor, targetDate).first();
+};
+
+export const getCompatibilityMenuBaseline = async (database, { vendor, targetDate } = {}) => {
+  const normalizedVendor = text(vendor);
+  const normalizedDate = text(targetDate);
+  if (!normalizedVendor || !isDateOnly(normalizedDate)) {
+    throw badRequest('MENU_CHANGE_RESOLUTION_INPUT_INVALID');
+  }
+  const version = await compatibilityVersion(database, normalizedVendor, normalizedDate);
+  if (!version) return { version: null, rows: [] };
+  const result = await database.prepare(`
+    SELECT menu_item_id, legacy_item_id, variant_key, item_name, price,
+           enabled, note, image_url, source_order, created_at, updated_at
+    FROM menu_items
+    WHERE menu_version_id = ?
+    ORDER BY source_order ASC, menu_item_id ASC
+  `).bind(version.menu_version_id).all();
+  return {
+    version,
+    rows: rowsFrom(result).map((row) => normalizeCompatibilityRow(row, version))
+  };
+};
+
+const attachCompatibilityIds = (rows, baselineRows) => rows.map((row) => {
+  const matches = baselineRows.filter((baseline) => (
+    baseline.item_code === row.item_code
+      && baseline.variant_key === row.variant_key
+  ));
+  if (matches.length !== 1) return { ...row, persisted_menu_item_id: null };
+  return {
+    ...row,
+    menu_item_id: matches[0].menu_item_id,
+    persisted_menu_item_id: matches[0].menu_item_id
+  };
+});
+
+export const mergeEffectiveMenuRows = ({ baselineRows = [], changeRows = [] } = {}) => {
+  let merged = [...baselineRows];
+  for (const change of changeRows) {
+    const matchingIndexes = merged.reduce((indexes, row, index) => {
+      if (row.item_code === change.item_code && row.variant_key === change.variant_key) {
+        indexes.push(index);
+      }
+      return indexes;
+    }, []);
+    const persistedMenuItemId = matchingIndexes.length === 1
+      ? merged[matchingIndexes[0]].menu_item_id
+      : null;
+    if (matchingIndexes.length) {
+      merged = merged.filter((row) => (
+        row.item_code !== change.item_code || row.variant_key !== change.variant_key
+      ));
+    }
+    merged.push({
+      ...change,
+      menu_item_id: persistedMenuItemId || change.menu_item_id,
+      persisted_menu_item_id: persistedMenuItemId
+    });
+  }
+  return stateRows(merged);
+};
+
 export const resolveMenuItemChangesFromRows = (rows = [], options = {}) => {
   const vendor = text(options.vendor);
   const targetDate = text(options.targetDate);
@@ -135,6 +252,21 @@ export const resolveMenuItemChanges = async (database, { vendor, targetDate } = 
     vendor: normalizedVendor,
     targetDate: normalizedDate
   });
+};
+
+export const resolveEffectiveMenuState = async (database, { vendor, targetDate } = {}) => {
+  const changes = await resolveMenuItemChanges(database, { vendor, targetDate });
+  const baseline = await getCompatibilityMenuBaseline(database, { vendor, targetDate });
+  const rows = changes.authority === 'sql_historical'
+    ? attachCompatibilityIds(changes.rows, baseline.rows)
+    : mergeEffectiveMenuRows({ baselineRows: baseline.rows, changeRows: changes.rows });
+  return {
+    ...changes,
+    baselineVersion: baseline.version,
+    baselineRows: baseline.rows,
+    changeRows: changes.rows,
+    rows
+  };
 };
 
 const materializerRows = (rows) => rows.filter((row) => row.enabled).map((row, index) => ({
@@ -208,11 +340,11 @@ const materializationStatements = (database, plan, clock) => {
 
 export const prepareMenuVersionMaterialization = async (
   database,
-  { vendor, effectiveDate, clock = new Date(), resolved = null } = {}
+  { vendor, effectiveDate, clock = new Date(), resolved = null, authority = null } = {}
 ) => {
   const resolution = resolved
-    ? { rows: resolved }
-    : await resolveMenuItemChanges(database, { vendor, targetDate: effectiveDate });
+    ? { rows: resolved, authority }
+    : await resolveEffectiveMenuState(database, { vendor, targetDate: effectiveDate });
   const plan = materializationPlan({
     vendor,
     effectiveDate,
@@ -486,19 +618,20 @@ export const createAdminMenuItemChange = async (
     created_at: occurredAt,
     updated_at: occurredAt
   };
-  const currentResolution = await resolveMenuItemChanges(database, {
+  const currentResolution = await resolveEffectiveMenuState(database, {
     vendor: values.vendor,
     targetDate: values.effective_date
   });
-  const prospectiveResolution = resolveMenuItemChangesFromRows(
-    [...currentResolution.rows, proposedChange],
-    { vendor: values.vendor, targetDate: values.effective_date }
-  );
+  const prospectiveRows = mergeEffectiveMenuRows({
+    baselineRows: currentResolution.baselineRows,
+    changeRows: [...currentResolution.changeRows, proposedChange]
+  });
   const projection = await prepareMenuVersionMaterialization(database, {
     vendor: values.vendor,
     effectiveDate: values.effective_date,
     clock,
-    resolved: prospectiveResolution.rows
+    resolved: prospectiveRows,
+    authority: currentResolution.authority
   });
   try {
     await runMutationBatch(database, [insert, audit, ...projection.statements]);
@@ -522,7 +655,7 @@ export const getAdminMenuItemPreview = async (
     identity?.effectiveSubject?.userId
       && identity.effectiveSubject.userId !== identity?.actor?.userId
   )) throw forbidden('VIEW_AS_FORBIDDEN');
-  const resolution = await resolveMenuItemChanges(database, { vendor, targetDate });
+  const resolution = await resolveEffectiveMenuState(database, { vendor, targetDate });
   return {
     success: true,
     authority: resolution.authority,

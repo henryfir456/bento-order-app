@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import { handleFormalRequest } from '../src/formalWorker.js';
 import {
   materializeMenuVersion,
+  projectionVersionId,
+  resolveEffectiveMenuState,
   resolveMenuItemChanges,
   resolveMenuItemChangesFromRows
 } from '../src/domain/menuItemChanges.js';
@@ -55,6 +57,24 @@ const seedChange = (database, {
       source_kind, source_record_id
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
   `, id, date, vendor, code, variant, name, price, enabled, image, order, source, sourceId);
+};
+
+const seedCompatibilityVersion = (database, {
+  id, date = '2026-09-06', vendor = '蔡老師', rows
+}) => {
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES (?, ?, ?)
+  `, id, vendor, date);
+  for (const row of rows) {
+    database.run(`
+      INSERT INTO menu_items (
+        menu_item_id, menu_version_id, legacy_item_id, variant_key, item_name,
+        price, enabled, note, image_url, source_order
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, row.menuItemId, id, row.itemCode, row.variantKey || '', row.itemName,
+    row.price, row.enabled === false ? 0 : 1, row.note || '', row.imageUrl || '', row.sourceOrder);
+  }
 };
 
 test('SQL backfill is exactly 34 facts and reconstructs the five cumulative snapshots', async () => {
@@ -278,6 +298,287 @@ test('Admin menu change API is append-only, Admin-only, View As-safe, and return
   const preview = await call(database, '/api/admin/menu/preview?vendor=%E8%94%A1%E8%80%81%E5%B8%AB&targetDate=2026-09-11');
   assert.equal(preview.response.status, 200);
   assert.equal(preview.body.selectableItems[0].price, -1);
+});
+
+test('post-cutoff Admin overlay preserves unchanged compatibility baseline items', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedCompatibilityVersion(database, {
+    id: 'baseline-live',
+    rows: [
+      { menuItemId: 'baseline-a', itemCode: 'A', itemName: 'A old', price: 10, sourceOrder: 1 },
+      { menuItemId: 'baseline-b', itemCode: 'B', itemName: 'B old', price: 20, sourceOrder: 2 }
+    ]
+  });
+
+  assert.deepEqual(
+    (await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-11' }))
+      .map((item) => item.item_name),
+    ['A old', 'B old']
+  );
+
+  const created = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-11', vendor: '蔡老師', item_code: 'A',
+      item_name: 'A changed', price: -11, enabled: true,
+      image_url: 'https://example.test/a-changed.jpg', note: 'changed', display_order: 1
+    }
+  });
+  assert.equal(created.response.status, 201);
+
+  assert.deepEqual(
+    (await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-11' }))
+      .map((item) => [item.item_name, item.price, item.note, item.image_url]),
+    [['A changed', -11, 'changed', 'https://example.test/a-changed.jpg'], ['B old', 20, '', '']]
+  );
+  const preview = await call(database, '/api/admin/menu/preview?vendor=%E8%94%A1%E8%80%81%E5%B8%AB&targetDate=2026-09-11');
+  assert.equal(preview.response.status, 200);
+  assert.deepEqual(preview.body.items.map((item) => [item.item_code, item.price]), [['A', -11], ['B', 20]]);
+
+  const secondSameDate = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-11', vendor: '蔡老師', item_code: 'B',
+      item_name: 'B changed', price: 22, enabled: true,
+      image_url: '', note: 'same date change', display_order: 2
+    }
+  });
+  assert.equal(secondSameDate.response.status, 201);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM menu_versions WHERE vendor = ? AND effective_date = ?',
+    '蔡老師', '2026-09-11'
+  ).count, 1);
+  assert.deepEqual(
+    (await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-11' }))
+      .map((item) => [item.item_name, item.price]),
+    [['A changed', -11], ['B changed', 22]]
+  );
+
+  const laterB = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-12', vendor: '蔡老師', item_code: 'B',
+      item_name: 'B later', price: 23, enabled: true,
+      image_url: '', note: 'later change', display_order: 2
+    }
+  });
+  assert.equal(laterB.response.status, 201);
+  const addedC = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-12', vendor: '蔡老師', item_code: 'C',
+      item_name: 'C added', price: 30, enabled: true,
+      image_url: 'https://example.test/c.jpg', note: 'new item', display_order: 3
+    }
+  });
+  assert.equal(addedC.response.status, 201);
+  assert.deepEqual({ ...database.get(
+    'SELECT legacy_item_id, item_name, price, variant_key, note, image_url, source_order FROM menu_items WHERE menu_version_id = ? AND legacy_item_id = ?',
+    projectionVersionId('蔡老師', '2026-09-12'), 'C'
+  ) }, {
+    legacy_item_id: 'C', item_name: 'C added', price: 30, variant_key: '',
+    note: 'new item', image_url: 'https://example.test/c.jpg', source_order: 3
+  });
+  assert.deepEqual(
+    (await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-12' }))
+      .map((item) => [item.item_name, item.price]),
+    [['A changed', -11], ['B later', 23], ['C added', 30]]
+  );
+
+  const disabledA = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-13', vendor: '蔡老師', item_code: 'A',
+      item_name: 'A disabled', price: -11, enabled: false,
+      image_url: '', note: 'disabled', display_order: 1
+    }
+  });
+  assert.equal(disabledA.response.status, 201);
+  assert.deepEqual(
+    (await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-13' }))
+      .map((item) => item.legacy_item_id),
+    ['B', 'C']
+  );
+  const resolved = await resolveEffectiveMenuState(database, {
+    vendor: '蔡老師', targetDate: '2026-09-13'
+  });
+  assert.deepEqual(resolved.rows.map((row) => [row.item_code, row.enabled]), [
+    ['A', false], ['B', true], ['C', true]
+  ]);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM menu_items WHERE menu_version_id = ?',
+    'baseline-live'
+  ).count, 2);
+  assert.deepEqual({ ...database.get(
+    'SELECT legacy_item_id, item_name, price FROM menu_items WHERE menu_version_id = ? AND legacy_item_id = ?',
+    'baseline-live', 'A'
+  ) }, { legacy_item_id: 'A', item_name: 'A old', price: 10 });
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM menu_items WHERE menu_version_id = ?',
+    projectionVersionId('蔡老師', '2026-09-11')
+  ).count, 2);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM menu_items WHERE menu_version_id = ? AND legacy_item_id = ?',
+    projectionVersionId('蔡老師', '2026-09-13'), 'A'
+  ).count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_versions').count, 4);
+});
+
+test('post-cutoff overlay keeps compatibility variants distinct when one variant changes', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedCompatibilityVersion(database, {
+    id: 'baseline-ap',
+    rows: [
+      {
+        menuItemId: 'baseline-ap-1', itemCode: 'AP', variantKey: 'ap-variant-1',
+        itemName: 'AP one old', price: 100, sourceOrder: 1
+      },
+      {
+        menuItemId: 'baseline-ap-2', itemCode: 'AP', variantKey: 'ap-variant-2',
+        itemName: 'AP two old', price: 120, sourceOrder: 2
+      }
+    ]
+  });
+
+  const created = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-11', vendor: '蔡老師', item_code: 'AP',
+      variant_key: 'ap-variant-1', item_name: 'AP one changed', price: 101,
+      enabled: true, image_url: 'https://example.test/ap-1.jpg', note: 'variant one',
+      display_order: 1
+    }
+  });
+  assert.equal(created.response.status, 201);
+
+  const menu = await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-11' });
+  assert.deepEqual(menu.map((item) => [item.variant_key, item.item_name, item.price]), [
+    ['ap-variant-1', 'AP one changed', 101],
+    ['ap-variant-2', 'AP two old', 120]
+  ]);
+  assert.equal(menu[0].menu_item_id, menu[0].selection_key);
+  assert.equal(menu[1].menu_item_id, menu[1].selection_key);
+  assert.notEqual(menu[0].menu_item_id, menu[1].menu_item_id);
+  assert.equal(menu[0].menu_item_id.startsWith('menu-change-item_'), true);
+  assert.equal(menu[1].menu_item_id.startsWith('menu-change-item_'), true);
+  assert.deepEqual({ ...database.get(
+    'SELECT legacy_item_id, variant_key, item_name, price FROM menu_items WHERE menu_version_id = ? AND variant_key = ?',
+    projectionVersionId('蔡老師', '2026-09-11'), 'ap-variant-1'
+  ) }, {
+    legacy_item_id: 'AP', variant_key: 'ap-variant-1', item_name: 'AP one changed', price: 101
+  });
+  assert.deepEqual({ ...database.get(
+    'SELECT legacy_item_id, variant_key, item_name, price FROM menu_items WHERE menu_version_id = ? AND variant_key = ?',
+    projectionVersionId('蔡老師', '2026-09-11'), 'ap-variant-2'
+  ) }, {
+    legacy_item_id: 'AP', variant_key: 'ap-variant-2', item_name: 'AP two old', price: 120
+  });
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_items').count, 4);
+});
+
+test('all-disabled post-cutoff projection keeps the established empty-projection rejection', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedCompatibilityVersion(database, {
+    id: 'baseline-only-item',
+    rows: [{ menuItemId: 'baseline-only-a', itemCode: 'A', itemName: 'A old', price: 10, sourceOrder: 1 }]
+  });
+
+  const disabled = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-11', vendor: '蔡老師', item_code: 'A',
+      item_name: 'A disabled', price: 10, enabled: false,
+      image_url: '', note: 'disabled'
+    }
+  });
+  assert.equal(disabled.response.status, 404);
+  assert.deepEqual(disabled.body, { error: 'MENU_CHANGE_PROJECTION_EMPTY' });
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_item_changes').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_items').count, 1);
+});
+
+test('complete post-cutoff overlay is shared by order-page reads and order validation', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedUser(database, { lineUserId: 'overlay-user', balance: 200 });
+  database.run(`
+    INSERT INTO calendar_settings (order_date, vendor, mode)
+    VALUES ('2026-09-11', '蔡老師', 'A')
+  `);
+  seedCompatibilityVersion(database, {
+    id: 'overlay-baseline',
+    rows: [
+      { menuItemId: 'overlay-a', itemCode: 'A', itemName: 'A old', price: 10, sourceOrder: 1 },
+      { menuItemId: 'overlay-b', itemCode: 'B', itemName: 'B old', price: 20, sourceOrder: 2 }
+    ]
+  });
+  const change = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-11', vendor: '蔡老師', item_code: 'A',
+      item_name: 'A changed', price: 11, enabled: true, image_url: '', note: ''
+    }
+  });
+  assert.equal(change.response.status, 201);
+
+  const token = 'overlay-user-token';
+  const pageResponse = await handleFormalRequest(
+    request('/api/order-page?targetDate=2026-09-11', { token }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token, lineUserId: 'overlay-user' }), now: new Date('2026-09-10T00:00:00.000Z') }
+  );
+  assert.equal(pageResponse.status, 200);
+  const page = await pageResponse.json();
+  assert.deepEqual(page.menu.map((item) => [item.legacy_item_id, item.item_name]), [
+    ['A', 'A changed'], ['B', 'B old']
+  ]);
+
+  const orderResponse = await handleFormalRequest(
+    request('/api/orders', {
+      method: 'POST', token,
+      body: {
+        targetDate: '2026-09-11', pickupFloor: '1樓',
+        items: [{ menu_item_id: page.menu[0].menu_item_id, quantity: 1 }], note: ''
+      },
+      headers: { 'Idempotency-Key': 'overlay-order-key' }
+    }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token, lineUserId: 'overlay-user' }), now: new Date('2026-09-10T00:00:00.000Z') }
+  );
+  assert.equal(orderResponse.status, 200);
+  assert.equal(database.get('SELECT total_amount FROM orders WHERE user_id = ?', 'overlay-user').total_amount, 11);
+  assert.equal(database.get('SELECT item_name_snapshot FROM order_items WHERE order_id = ?',
+    (await orderResponse.clone().json()).orderId).item_name_snapshot, 'A changed');
+});
+
+test('pre-cutoff effective state remains SQL-only and historical projections stay immutable', async () => {
+  const database = new SqliteD1();
+  seedChange(database, {
+    id: 'historical-sql-a', date: '2026-09-01', code: 'A', name: 'Historical A',
+    price: 9, source: 'legacy_sql'
+  });
+  seedCompatibilityVersion(database, {
+    id: 'future-baseline', date: '2026-09-11',
+    rows: [{ menuItemId: 'future-b', itemCode: 'B', itemName: 'Future B', price: 20, sourceOrder: 1 }]
+  });
+
+  const resolved = await resolveEffectiveMenuState(database, {
+    vendor: '蔡老師', targetDate: '2026-09-10'
+  });
+  assert.equal(resolved.authority, 'sql_historical');
+  assert.equal(resolved.baselineVersion, null);
+  assert.deepEqual(resolved.rows.map((row) => [row.item_code, row.price]), [['A', 9]]);
+  assert.deepEqual((await getCustomerMenu(database, {
+    vendor: '蔡老師', targetDate: '2026-09-10'
+  })).map((item) => [item.legacy_item_id, item.price]), [['A', 9]]);
+  await assert.rejects(
+    materializeMenuVersion(database, { vendor: '蔡老師', effectiveDate: '2026-09-10', clock: NOW }),
+    (error) => error.code === 'HISTORICAL_MENU_PROJECTION_IMMUTABLE'
+  );
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_versions').count, 1);
 });
 
 test('Admin change and projection are atomic when projection fails', async () => {

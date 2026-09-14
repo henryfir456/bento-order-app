@@ -11,19 +11,14 @@ import { prepareStatement, randomId, resolveClock } from '../db/transactions.js'
 import { deadlineAt, deadlineInfo, isDateOnly } from './deadlines.js';
 import { getUserById } from '../db/users.js';
 import { isProfileComplete } from './profile.js';
-import { getReadMenuVersion } from './menu.js';
 import {
   projectionItemId,
-  resolveMenuItemChanges
+  resolveEffectiveMenuState
 } from './menuItemChanges.js';
 
 const VALID_FLOORS = new Set(['1樓', '9樓']);
 const ORDER_OPERATION = 'CREATE_OR_REPLACE_ORDER';
 const CANCEL_OPERATION = 'CANCEL_ORDER';
-
-const rowsFrom = (result) => (
-  Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
-);
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -67,53 +62,29 @@ const currentSetting = async (database, orderDate) => database.prepare(`
 `).bind(orderDate).first();
 
 const currentMenuRows = async (database, vendor, targetDate) => {
-  const resolution = await resolveMenuItemChanges(database, { vendor, targetDate });
-  if (resolution.rows.length) {
-    const version = await getReadMenuVersion(database, vendor, targetDate);
-    const compatibility = version
-      ? await database.prepare(`
-        SELECT menu_item_id, legacy_item_id, variant_key
-        FROM menu_items
-        WHERE menu_version_id = ?
-      `).bind(version.menu_version_id).all()
-      : { results: [] };
-    const compatibilityRows = rowsFrom(compatibility);
-    return {
-      versionId: version?.menu_version_id || null,
-      rows: resolution.rows.map((change) => {
-        const matches = compatibilityRows.filter((row) => (
-          String(row.legacy_item_id) === change.item_code
-            && String(row.variant_key || '') === change.variant_key
-        ));
-        const persistedMenuItemId = matches.length === 1 ? matches[0].menu_item_id : null;
-        return {
-          menu_item_id: persistedMenuItemId
-            || projectionItemId(vendor, change.effective_date, change.item_code, change.variant_key),
-          persisted_menu_item_id: persistedMenuItemId,
-          legacy_item_id: change.item_code,
-          variant_key: change.variant_key,
-          item_name: change.item_name,
-          price: change.price,
-          enabled: change.enabled ? 1 : 0,
-          note: change.note,
-          image_url: change.image_url,
-          menu_version_id: version?.menu_version_id || null,
-          effective_date: change.effective_date
-        };
-      })
-    };
-  }
-  const version = await getReadMenuVersion(database, vendor, targetDate);
-  if (!version) return { versionId: null, rows: [] };
-  const result = await database.prepare(`
-    SELECT mi.menu_item_id, mi.legacy_item_id, mi.item_name, mi.price,
-           mi.enabled, mi.variant_key, mv.menu_version_id, mv.effective_date
-    FROM menu_items mi
-    JOIN menu_versions mv ON mv.menu_version_id = mi.menu_version_id
-    WHERE mv.menu_version_id = ?
-    ORDER BY mi.source_order ASC, mi.menu_item_id ASC
-  `).bind(version.menu_version_id).all();
-  return { versionId: version.menu_version_id, rows: rowsFrom(result) };
+  const resolution = await resolveEffectiveMenuState(database, { vendor, targetDate });
+  const versionId = resolution.baselineVersion?.menu_version_id || null;
+  return {
+    versionId,
+    rows: resolution.rows.map((change) => {
+      const persistedMenuItemId = change.persisted_menu_item_id || null;
+      return {
+        menu_item_id: persistedMenuItemId
+          || change.menu_item_id
+          || projectionItemId(vendor, change.effective_date, change.item_code, change.variant_key),
+        persisted_menu_item_id: persistedMenuItemId,
+        legacy_item_id: change.item_code,
+        variant_key: change.variant_key,
+        item_name: change.item_name,
+        price: change.price,
+        enabled: change.enabled ? 1 : 0,
+        note: change.note,
+        image_url: change.image_url,
+        menu_version_id: versionId,
+        effective_date: change.effective_date
+      };
+    })
+  };
 };
 
 const normalizeItems = (rawItems, menuRows) => {
