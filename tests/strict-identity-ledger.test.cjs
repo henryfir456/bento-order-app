@@ -2959,19 +2959,30 @@ test('frontend order idempotency keys are stable per action and block duplicate 
     clearClientRequestKey,
     getStableClientRequestKey
   } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'clientRequestKeys.js')).href);
+  const { normalizeWorkerOrderMenu } = await import(
+    pathToFileURL(path.join(__dirname, '..', 'src', 'features', 'orders', 'orderSelection.js')).href
+  );
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const submitRef = { current: null };
+  const workerMenu = normalizeWorkerOrderMenu([
+    { menu_item_id: 'menu-a', item_id: 'legacy-a' },
+    { item_id: 'legacy-b' }
+  ]);
+  assert.deepEqual(workerMenu.map(item => item.item_id), ['menu-a', 'legacy-b']);
   const firstPayload = {
     targetDate: '2026-09-08',
     pickupFloor: '1樓',
-    items: [{ item_id: 'legacy-a', quantity: 1 }],
+    items: workerMenu.map(item => ({ item_id: item.item_id, quantity: 1 })),
     note: ''
   };
   const firstKey = getStableClientRequestKey(submitRef, 'order', firstPayload);
   const retryKey = getStableClientRequestKey(submitRef, 'order', { ...firstPayload });
   const laterKey = getStableClientRequestKey(submitRef, 'order', {
     ...firstPayload,
-    items: [{ item_id: 'legacy-a', quantity: 2 }]
+    items: workerMenu.map((item, index) => ({
+      item_id: item.item_id,
+      quantity: index === 0 ? 2 : 1
+    }))
   });
   assert.equal(retryKey, firstKey);
   assert.notEqual(laterKey, firstKey);
@@ -2981,7 +2992,6 @@ test('frontend order idempotency keys are stable per action and block duplicate 
   assert.match(appSource, /orderMutationInFlightRef\.current/);
   assert.match(appSource, /getStableClientRequestKey/);
   assert.match(appSource, /clearClientRequestKey/);
-  assert.match(appSource, /item_id: item\.menu_item_id \|\| item\.item_id/);
   assert.match(appSource, /idempotencyKey: requestKey/);
   assert.match(appSource, /idempotencyKey: cancelRequestKey/);
 });
