@@ -29,13 +29,14 @@ The formal chain is exactly:
 0005_nullable_user_pickup_floor.sql # local policy-gate schema for incomplete profiles
 0006_historical_order_semantics.sql # completed legacy Orders and signed historical order money
 0007_signed_menu_prices.sql         # signed menu price values with preserved menu-item dependencies
+0008_menu_item_changes.sql           # append-only authoritative menu change history
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all eight files in order. Migration 0003 defaults existing users to
+all nine files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -54,6 +55,11 @@ legacy-import negative order-item guards. Migration 0007 rebuilds
 integer business values, while preserving the existing order-item guards,
 indexes, defaults, keys, and foreign keys. It does not add a negative-price
 provenance exception: signed menu prices are valid for every menu version.
+Migration 0008 adds the append-only `menu_item_changes` source of truth and a
+non-destructive `variant_key` column to compatibility `menu_items`. It does
+not backfill source data, rewrite historical menu snapshots, or add cascade
+relationships into menu, order, ledger, or calendar data. Source backfill is
+performed separately from reviewed SQL/GAS facts.
 
 ## Recovery procedure
 

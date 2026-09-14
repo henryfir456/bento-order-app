@@ -3289,3 +3289,29 @@ test('mock API reuses bootstrap and order-page response contracts', async () => 
   assert.ok(Array.isArray(orderPage.menu));
   assert.ok(Array.isArray(orderPage.myOrder.items));
 });
+
+test('frontend menu change history is Worker-only, Admin-only, append-only, and View As-safe', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const apiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js'), 'utf8');
+  const componentSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'admin', 'MenuItemChangesManagement.jsx'), 'utf8');
+  const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
+
+  assert.match(apiSource, /getAdminMenuChanges:[\s\S]*?workerRequest\(\s*'getAdminMenuChanges',\s*'GET',\s*'\/api\/admin\/menu\/changes'/);
+  assert.match(apiSource, /createAdminMenuChange:[\s\S]*?workerRequest\(\s*'createAdminMenuChange',\s*'POST',\s*'\/api\/admin\/menu\/changes'/);
+  assert.match(apiSource, /getAdminMenuPreview:[\s\S]*?workerRequest\(\s*'getAdminMenuPreview',\s*'GET',\s*'\/api\/admin\/menu\/preview'/);
+  assert.doesNotMatch(apiSource, /updateAdminMenuCatalog|deleteAdminMenuCatalog/);
+  const gasOperations = apiSource.slice(apiSource.indexOf('const createGasOperations'), apiSource.indexOf('const createWorkerOperations'));
+  assert.doesNotMatch(gasOperations, /MenuChange|MenuCatalog/);
+  assert.match(permissionsSource, /Admin:[\s\S]*?manageMenu:\s*true/);
+  assert.match(appSource, /canAuth\('manageMenu'\)[\s\S]*?!isViewAsMode/);
+  assert.match(appSource, /handleAdminSectionChange\('menuChanges'\)/);
+  assert.match(appSource, /MenuItemChangesManagement/);
+  assert.match(componentSource, /菜單品項維護/);
+  assert.match(componentSource, /生效日/);
+  assert.match(componentSource, /圖片/);
+  assert.match(componentSource, /variant_key/);
+  assert.match(componentSource, /預覽/);
+  assert.match(componentSource, /draft/);
+  assert.match(componentSource, /isViewAsMode/);
+  assert.doesNotMatch(componentSource, /onUpdate|onDelete/);
+});

@@ -42,6 +42,7 @@ import {
 } from './features/orders/orderSubmission';
 import AdminOrderSummary from './features/admin/AdminOrderSummary';
 import AnnouncementManagement from './features/admin/AnnouncementManagement';
+import MenuItemChangesManagement from './features/admin/MenuItemChangesManagement';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
 import {
@@ -303,6 +304,11 @@ export default function App() {
   const [adminAnnouncementsError, setAdminAnnouncementsError] = useState('');
   const [adminAnnouncementsLoaded, setAdminAnnouncementsLoaded] = useState(false);
   const adminAnnouncementsRequestRef = useRef(0);
+  const [adminMenuChanges, setAdminMenuChanges] = useState([]);
+  const [adminMenuChangesLoading, setAdminMenuChangesLoading] = useState(false);
+  const [adminMenuChangesError, setAdminMenuChangesError] = useState('');
+  const [adminMenuChangesLoaded, setAdminMenuChangesLoaded] = useState(false);
+  const adminMenuChangesRequestRef = useRef(0);
   const [memberBalances, setMemberBalances] = useState([]);
   const [memberBalancesLoading, setMemberBalancesLoading] = useState(false);
   const [memberBalancesError, setMemberBalancesError] = useState('');
@@ -366,6 +372,7 @@ export default function App() {
   const clearIdentityData = () => {
     adminSummaryRequestRef.current += 1;
     adminAnnouncementsRequestRef.current += 1;
+    adminMenuChangesRequestRef.current += 1;
     historyRequestRef.current += 1;
     memberBalancesRequestRef.current += 1;
     deferredUiGenerationRef.current += 1;
@@ -424,6 +431,10 @@ export default function App() {
     setAdminAnnouncementsLoading(false);
     setAdminAnnouncementsError('');
     setAdminAnnouncementsLoaded(false);
+    setAdminMenuChanges([]);
+    setAdminMenuChangesLoading(false);
+    setAdminMenuChangesError('');
+    setAdminMenuChangesLoaded(false);
     setMemberBalances([]);
     setMemberBalancesLoading(false);
     setMemberBalancesError('');
@@ -1024,6 +1035,67 @@ export default function App() {
   const deleteAdminAnnouncement = async (id) => {
     assertAdminAnnouncementMutationAllowed();
     await apiClient.deleteAdminAnnouncement(id);
+  };
+
+  const canManageAdminMenuChanges = () => (
+    apiClient.transport === 'worker'
+    && authState === AUTH_STATES.REGISTERED
+    && Boolean(authUser?.userId)
+    && !viewAsUser
+    && hasPermission(authUser?.role, 'manageMenu', authMode, true)
+  );
+
+  const loadAdminMenuChanges = async (force = false) => {
+    if (!canManageAdminMenuChanges()) return;
+    if (!force && adminMenuChangesLoaded) return;
+
+    const requestId = ++adminMenuChangesRequestRef.current;
+    setAdminMenuChangesLoading(true);
+    setAdminMenuChangesError('');
+
+    try {
+      const accessToken = readCurrentCredential();
+      if (!accessToken) {
+        setAdminMenuChangesError('目前無法驗證身份，請重新登入後再試。');
+        return;
+      }
+      const res = await apiClient.getAdminMenuChanges();
+      const data = await res.json();
+      if (requestId !== adminMenuChangesRequestRef.current) return;
+
+      if (!Array.isArray(data.changes)) {
+        setAdminMenuChangesError('目前無法取得菜單歷程，請稍後再試。');
+        return;
+      }
+      setAdminMenuChanges(data.changes);
+      setAdminMenuChangesLoaded(true);
+    } catch (error) {
+      if (requestId === adminMenuChangesRequestRef.current) {
+        setAdminMenuChangesError(error?.code
+          ? `目前無法取得菜單歷程（${error.code}），請稍後再試。`
+          : '目前無法取得菜單歷程，請稍後再試。');
+      }
+    } finally {
+      if (requestId === adminMenuChangesRequestRef.current) setAdminMenuChangesLoading(false);
+    }
+  };
+
+  const assertAdminMenuChangesMutationAllowed = () => {
+    if (!canManageAdminMenuChanges()) {
+      throw new Error('菜單品項維護僅限已註冊的 Admin 使用。');
+    }
+  };
+
+  const createAdminMenuChange = async (payload) => {
+    assertAdminMenuChangesMutationAllowed();
+    await apiClient.createAdminMenuChange(payload);
+  };
+
+  const previewAdminMenu = async ({ vendor, targetDate }) => {
+    assertAdminMenuChangesMutationAllowed();
+    const res = await apiClient.getAdminMenuPreview({ vendor, targetDate });
+    const data = await res.json();
+    return data;
   };
 
   const loadAdminSummary = async (targetDate, viewAsUserId = null, shouldShowView) => {
@@ -1970,6 +2042,14 @@ export default function App() {
       setAdminSection('announcements');
       setViewMode('admin');
       void loadAdminAnnouncements(true);
+      return;
+    }
+
+    if (section === 'menuChanges') {
+      if (!canManageAdminMenuChanges() || isViewAsMode) return;
+      setAdminSection('menuChanges');
+      setViewMode('admin');
+      void loadAdminMenuChanges(true);
     }
   };
 
@@ -2576,6 +2656,15 @@ export default function App() {
                 📢 公告管理
               </button>
             )}
+            {isRegistered && apiClient.transport === 'worker' && canAuth('manageMenu') && !isViewAsMode && (
+              <button
+                type="button"
+                onClick={() => handleAdminSectionChange('menuChanges')}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'menuChanges' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
+              >
+                🧾 菜單品項維護
+              </button>
+            )}
             {isRegistered && can('manageCalendar') && (
               <button
                 type="button"
@@ -2837,6 +2926,20 @@ export default function App() {
                 onCreate={createAdminAnnouncement}
                 onUpdate={updateAdminAnnouncement}
                 onDelete={deleteAdminAnnouncement}
+              />
+            )}
+            {adminSection === 'menuChanges'
+              && apiClient.transport === 'worker'
+              && canAuth('manageMenu')
+              && !isViewAsMode && (
+              <MenuItemChangesManagement
+                changes={adminMenuChanges}
+                loading={adminMenuChangesLoading}
+                error={adminMenuChangesError}
+                isViewAsMode={isViewAsMode}
+                onRefresh={() => loadAdminMenuChanges(true)}
+                onCreate={createAdminMenuChange}
+                onPreview={previewAdminMenu}
               />
             )}
           </div>

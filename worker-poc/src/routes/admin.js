@@ -6,6 +6,11 @@ import {
   getAdminAnnouncements,
   updateAnnouncement
 } from '../domain/announcements.js';
+import {
+  createAdminMenuItemChange,
+  getAdminMenuItemPreview,
+  listAdminMenuItemChanges
+} from '../domain/menuItemChanges.js';
 import { badRequest } from '../http/errors.js';
 import { emptyResponse, jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
@@ -58,11 +63,19 @@ export const handleAdminRoute = async (request, env, {
   const isAnnouncementDelete = request.method === 'DELETE' && announcementId !== null;
   const isAnnouncementRoute = isAnnouncementList || isAnnouncementCreate
     || isAnnouncementUpdate || isAnnouncementDelete || isAnnouncementMissingId;
+  const isMenuChangeList = request.method === 'GET'
+    && url.pathname === '/api/admin/menu/changes';
+  const isMenuChangeCreate = request.method === 'POST'
+    && url.pathname === '/api/admin/menu/changes';
+  const isMenuPreview = request.method === 'GET'
+    && url.pathname === '/api/admin/menu/preview';
+  const isMenuRoute = isMenuChangeList || isMenuChangeCreate || isMenuPreview;
   if (!isSummary && !isMembers && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
-    && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId) return null;
+    && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId
+    && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: !isAnnouncementRoute && !isEmployeeBinding,
+    allowViewAs: !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding,
     now
   });
   if (isAnnouncementMissingId) throw badRequest('ANNOUNCEMENT_ID_REQUIRED');
@@ -105,6 +118,31 @@ export const handleAdminRoute = async (request, env, {
   if (isAnnouncementDelete) {
     await deleteAnnouncement(env.DB, identity, announcementId, now);
     return emptyResponse();
+  }
+  if (isMenuChangeList) {
+    return jsonResponse(await listAdminMenuItemChanges(env.DB, identity, {
+      vendor: url.searchParams.get('vendor') || '',
+      itemCode: url.searchParams.get('itemCode') || url.searchParams.get('item_code') || '',
+      variantKey: url.searchParams.get('variantKey') || url.searchParams.get('variant_key') || '',
+      query: url.searchParams.get('q') || url.searchParams.get('query') || '',
+      fromDate: url.searchParams.get('fromDate') || url.searchParams.get('from_date') || '',
+      toDate: url.searchParams.get('toDate') || url.searchParams.get('to_date') || '',
+      month: url.searchParams.get('month') || ''
+    }));
+  }
+  if (isMenuChangeCreate) {
+    return jsonResponse(await createAdminMenuItemChange(
+      env.DB,
+      identity,
+      await readJson(request),
+      now
+    ), 201);
+  }
+  if (isMenuPreview) {
+    return jsonResponse(await getAdminMenuItemPreview(env.DB, identity, {
+      vendor: url.searchParams.get('vendor') || '',
+      targetDate: url.searchParams.get('targetDate') || url.searchParams.get('date') || ''
+    }));
   }
   if (isMembers) return jsonResponse(await getMemberBalances(env.DB, identity, now));
   return jsonResponse(await getAdminSummary(

@@ -352,6 +352,24 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'DELETE',
     `/api/admin/announcements/${encodeURIComponent(String(id || '').trim())}`
   ),
+  getAdminMenuChanges: ({ vendor, itemCode, variantKey, query, fromDate, toDate, month } = {}) => workerRequest(
+    'getAdminMenuChanges',
+    'GET',
+    '/api/admin/menu/changes',
+    { query: { vendor, itemCode, variantKey, q: query, fromDate, toDate, month } }
+  ),
+  createAdminMenuChange: (payload = {}) => workerRequest(
+    'createAdminMenuChange',
+    'POST',
+    '/api/admin/menu/changes',
+    { body: payload }
+  ),
+  getAdminMenuPreview: ({ vendor, targetDate } = {}) => workerRequest(
+    'getAdminMenuPreview',
+    'GET',
+    '/api/admin/menu/preview',
+    { query: { vendor, targetDate } }
+  ),
   getMemberBalances: () => workerRequest(
     'getMemberBalances',
     'GET',

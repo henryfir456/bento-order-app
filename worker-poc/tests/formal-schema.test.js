@@ -55,7 +55,8 @@ test('formal migration creates every source-of-truth table', () => {
     'import_quarantine',
     'opening_balance_snapshots',
     'employee_guest_sessions',
-    'employee_roster'
+    'employee_roster',
+    'menu_item_changes'
   ];
 
   const actual = tableNames(database);
@@ -77,7 +78,10 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_idempotency_actor_operation',
     'idx_import_quarantine_batch_state',
     'idx_employee_roster_employee_id',
-    'users_employee_id_normalized_unique'
+    'users_employee_id_normalized_unique',
+    'idx_menu_item_changes_effective',
+    'idx_menu_item_changes_identity',
+    'idx_menu_items_version_identity'
   ];
   const actual = new Set(rows(database, `
     SELECT name
@@ -85,6 +89,54 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     WHERE type = 'index'
   `).map((row) => row.name));
   for (const indexName of expected) assert.equal(actual.has(indexName), true, indexName);
+});
+
+test('menu item changes are append-only metadata with exact identity and signed prices', () => {
+  const database = openDatabase();
+  const columns = tableColumns(database, 'menu_item_changes');
+  for (const column of [
+    'menu_item_change_id',
+    'effective_date',
+    'vendor',
+    'item_code',
+    'variant_key',
+    'item_name',
+    'price',
+    'enabled',
+    'image_url',
+    'note',
+    'display_order',
+    'source_kind',
+    'source_batch_id',
+    'source_table',
+    'source_row',
+    'source_record_id',
+    'created_at',
+    'updated_at',
+    'updated_by_user_id'
+  ]) assert.equal(columns.has(column), true, column);
+  assert.equal(columns.get('price').type, 'INTEGER');
+  assert.equal(columns.get('variant_key').dflt_value, "''");
+  database.prepare(`
+    INSERT INTO menu_item_changes (
+      menu_item_change_id, effective_date, vendor, item_code, variant_key,
+      item_name, price, source_kind
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('change-schema-row', '2026-09-11', '蔡老師', 'AP', 'ap-variant-1', 'AP one', -1, 'admin');
+  assert.throws(() => database.prepare(`
+    INSERT INTO menu_item_changes (
+      menu_item_change_id, effective_date, vendor, item_code, variant_key,
+      item_name, price, source_kind
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('change-schema-duplicate', '2026-09-11', '蔡老師', 'AP', 'ap-variant-1', 'AP two', 2, 'admin'), /UNIQUE|constraint/i);
+  assert.throws(() => database.prepare(`
+    UPDATE menu_item_changes SET note = 'changed' WHERE menu_item_change_id = ?
+  `).run('change-schema-row'), /append-only/i);
+  assert.throws(() => database.prepare(`
+    DELETE FROM menu_item_changes WHERE menu_item_change_id = ?
+  `).run('change-schema-row'), /append-only/i);
+  assert.equal(tableColumns(database, 'menu_items').has('variant_key'), true);
+  assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
 });
 
 test('normalized employee ownership rejects case-variant canonical duplicates', () => {

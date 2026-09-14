@@ -11,6 +11,7 @@ import { prepareStatement, randomId, resolveClock } from '../db/transactions.js'
 import { deadlineAt, deadlineInfo, isDateOnly } from './deadlines.js';
 import { getUserById } from '../db/users.js';
 import { isProfileComplete } from './profile.js';
+import { getReadMenuVersion } from './menu.js';
 
 const VALID_FLOORS = new Set(['1樓', '9樓']);
 const ORDER_OPERATION = 'CREATE_OR_REPLACE_ORDER';
@@ -62,20 +63,17 @@ const currentSetting = async (database, orderDate) => database.prepare(`
 `).bind(orderDate).first();
 
 const currentMenuRows = async (database, vendor, targetDate) => {
+  const version = await getReadMenuVersion(database, vendor, targetDate);
+  if (!version) return { versionId: null, rows: [] };
   const result = await database.prepare(`
     SELECT mi.menu_item_id, mi.legacy_item_id, mi.item_name, mi.price,
-           mi.enabled, mv.menu_version_id, mv.effective_date
+           mi.enabled, mi.variant_key, mv.menu_version_id, mv.effective_date
     FROM menu_items mi
     JOIN menu_versions mv ON mv.menu_version_id = mi.menu_version_id
-    WHERE mv.vendor = ?
-      AND mv.effective_date = (
-        SELECT MAX(mv2.effective_date)
-        FROM menu_versions mv2
-        WHERE mv2.vendor = ? AND mv2.effective_date <= ?
-      )
+    WHERE mv.menu_version_id = ?
     ORDER BY mi.source_order ASC, mi.menu_item_id ASC
-  `).bind(vendor, vendor, targetDate).all();
-  return rowsFrom(result);
+  `).bind(version.menu_version_id).all();
+  return { versionId: version.menu_version_id, rows: rowsFrom(result) };
 };
 
 const normalizeItems = (rawItems, menuRows) => {
@@ -156,8 +154,8 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
   const deadline = deadlineInfo(targetDate, setting.mode, now);
   if (!skipDeadline && (!deadline || deadline.isExpired)) throw badRequest('DEADLINE_CLOSED');
 
-  const menuRows = await currentMenuRows(database, setting.vendor, targetDate);
-  const items = normalizeItems(getInputValue(input, 'items', 'orderItems'), menuRows);
+  const menu = await currentMenuRows(database, setting.vendor, targetDate);
+  const items = normalizeItems(getInputValue(input, 'items', 'orderItems'), menu.rows);
   const replaceExisting = input.replaceExisting !== false && input.replace_existing !== false;
   const activeOrder = await database.prepare(`
     SELECT order_id, total_amount
@@ -170,6 +168,7 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
     pickupFloor,
     note,
     setting,
+    menuVersionId: menu.versionId,
     items,
     replaceExisting,
     activeOrder,
@@ -187,11 +186,7 @@ const menuCte = (items) => `
   latest AS (
     SELECT mv.menu_version_id
     FROM menu_versions mv
-    WHERE mv.vendor = (
-      SELECT vendor FROM calendar_settings WHERE order_date = ? LIMIT 1
-    )
-      AND mv.effective_date <= ?
-    ORDER BY mv.effective_date DESC, mv.menu_version_id DESC
+    WHERE mv.menu_version_id = ?
     LIMIT 1
   ),
   priced AS (
@@ -204,10 +199,9 @@ const menuCte = (items) => `
   )
 `;
 
-const menuParams = (items, targetDate) => [
+const menuParams = (items, menuVersionId) => [
   ...items.flatMap((item, index) => [index + 1, item.menuItemId, item.quantity]),
-  targetDate,
-  targetDate
+  menuVersionId
 ];
 
 const mapTransactionFailure = (error) => {
@@ -233,7 +227,7 @@ const eventUserValues = (actor) => [
 ];
 
 const buildOrderStatements = (database, context, actor, details) => {
-  const { targetDate, pickupFloor, note, items, replaceExisting, now } = context;
+  const { targetDate, pickupFloor, note, items, replaceExisting, now, menuVersionId } = context;
   const {
     orderId,
     refundTransactionId,
@@ -284,7 +278,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     UPDATE idempotency_keys
     SET status = CASE WHEN (${validityPredicate}) THEN status ELSE 'FAILED' END
     WHERE ${guardSql}
-  `, [...menuParams(items, targetDate), ...validityParams, ...guardParams]);
+  `, [...menuParams(items, menuVersionId), ...validityParams, ...guardParams]);
 
   const refundBalance = prepareStatement(database, `
     UPDATE users
@@ -363,7 +357,7 @@ const buildOrderStatements = (database, context, actor, details) => {
       AND (SELECT COUNT(*) FROM priced) = ?
       AND ${guardSql}
   `, [
-    ...menuParams(items, targetDate),
+    ...menuParams(items, menuVersionId),
     occurredAt,
     actor.userId,
     items.length,
@@ -393,7 +387,7 @@ const buildOrderStatements = (database, context, actor, details) => {
       )
       AND ${guardSql}
   `, [
-    ...menuParams(items, targetDate),
+    ...menuParams(items, menuVersionId),
     orderId,
     actor.userId,
     targetDate,
@@ -431,7 +425,7 @@ const buildOrderStatements = (database, context, actor, details) => {
            p.quantity, p.price, p.quantity * p.price
     FROM priced p
     WHERE ${guardSql}
-  `, [...menuParams(items, targetDate), orderId, ...guardParams]);
+  `, [...menuParams(items, menuVersionId), orderId, ...guardParams]);
 
   const assertItemsInserted = prepareStatement(database, `
     UPDATE idempotency_keys
