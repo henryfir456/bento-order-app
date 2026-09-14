@@ -5,11 +5,13 @@ import {
   stableId
 } from './import-contract.mjs';
 import { buildHistoricalMenuSnapshots } from './historical-menu-reconstruction.mjs';
+import { AP_VARIANT_KEYS as DOMAIN_AP_VARIANT_KEYS } from '../../src/domain/menuItemChanges.js';
+import { isDateOnly } from '../../src/domain/deadlines.js';
 import { prepareStatement, resolveClock, runMutationBatch } from '../../src/db/transactions.js';
 
 export const SQL_CHANGE_SOURCE_KIND = 'legacy_sql';
 export const GAS_CHANGE_SOURCE_KIND = 'gas_compatibility';
-export const AP_VARIANT_KEYS = Object.freeze(['ap-variant-1', 'ap-variant-2']);
+export const AP_VARIANT_KEYS = DOMAIN_AP_VARIANT_KEYS;
 
 const text = (value) => asText(value).trim();
 
@@ -206,7 +208,7 @@ export const buildGasCompatibilityChanges = ({
     const itemCode = text(row.item_code ?? row.itemCode);
     const effectiveDate = gasRowDate(row);
     const sourceRecordId = sourceIdFor(row);
-    if (!vendor || !itemCode || !effectiveDate || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+    if (!vendor || !itemCode || !effectiveDate || !isDateOnly(effectiveDate)) {
       throw new ImportContractError('GAS_MENU_CHANGE_INVALID', 'GAS compatibility row is incomplete.', { row });
     }
     if (!sourceRecordId) {
@@ -218,7 +220,14 @@ export const buildGasCompatibilityChanges = ({
     if (itemCode.toUpperCase() === 'AP' && !variantKey) {
       throw new ImportContractError('GAS_AP_VARIANT_MAPPING_REQUIRED', 'AP requires an explicit resolved source identity.');
     }
-    const price = Number(row.price);
+    const rawPrice = row.price;
+    if (rawPrice === null || rawPrice === undefined
+      || (typeof rawPrice === 'string' && !rawPrice.trim())) {
+      throw new ImportContractError('GAS_MENU_CHANGE_PRICE_INVALID', 'GAS compatibility price is missing.', { row });
+    }
+    const price = typeof rawPrice === 'number'
+      ? rawPrice
+      : (typeof rawPrice === 'string' ? Number(rawPrice.trim()) : NaN);
     if (!Number.isSafeInteger(price)) {
       throw new ImportContractError('GAS_MENU_CHANGE_PRICE_INVALID', 'GAS compatibility price must be a safe integer.');
     }
@@ -306,6 +315,48 @@ const storedValue = (row, field) => (
   field === 'enabled' ? Number(row[field]) : (row[field] ?? null)
 );
 
+const persistedPrice = (row) => {
+  const rawPrice = row?.price;
+  if (rawPrice === null || rawPrice === undefined
+    || (typeof rawPrice === 'string' && !rawPrice.trim())) {
+    throw new ImportContractError('MENU_CHANGE_PRICE_INVALID', 'Menu item change price is missing.', { row });
+  }
+  const price = typeof rawPrice === 'number'
+    ? rawPrice
+    : (typeof rawPrice === 'string' ? Number(rawPrice.trim()) : NaN);
+  if (!Number.isSafeInteger(price)) {
+    throw new ImportContractError('MENU_CHANGE_PRICE_INVALID', 'Menu item change price must be a safe integer.', { row });
+  }
+  return price;
+};
+
+const validatePersistedRow = (row) => {
+  const effectiveDate = text(row?.effective_date ?? row?.effectiveDate);
+  if (!isDateOnly(effectiveDate)) {
+    throw new ImportContractError(
+      'MENU_CHANGE_EFFECTIVE_DATE_INVALID',
+      'Menu item change effective_date must be a valid calendar date.',
+      { row }
+    );
+  }
+  const itemCode = text(row?.item_code ?? row?.itemCode);
+  const variantKey = text(row?.variant_key ?? row?.variantKey);
+  if (itemCode.toUpperCase() === 'AP' && !AP_VARIANT_KEYS.includes(variantKey)) {
+    throw new ImportContractError(
+      'MENU_CHANGE_VARIANT_KEY_REQUIRED',
+      'Ambiguous AP menu item changes require a canonical variant_key.',
+      { row }
+    );
+  }
+  return {
+    ...row,
+    effective_date: effectiveDate,
+    item_code: itemCode,
+    variant_key: variantKey,
+    price: persistedPrice(row)
+  };
+};
+
 const backfillEquivalent = (existing, row) => storedFields.every((field) => (
   storedValue(existing, field) === storedValue(row, field)
 ));
@@ -315,11 +366,12 @@ export const backfillMenuItemChanges = async (
   rows = [],
   { clock = new Date() } = {}
 ) => {
-  assertNoCollisions(rows);
+  const validatedRows = rows.map(validatePersistedRow);
+  assertNoCollisions(validatedRows);
   const insertRows = [];
   let alreadyEquivalent = 0;
   const conflicts = [];
-  for (const row of rows) {
+  for (const row of validatedRows) {
     const existing = await database.prepare(`
       SELECT menu_item_change_id, effective_date, vendor, item_code, variant_key,
              item_name, price, enabled, image_url, note, display_order,

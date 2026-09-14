@@ -12,6 +12,10 @@ import { deadlineAt, deadlineInfo, isDateOnly } from './deadlines.js';
 import { getUserById } from '../db/users.js';
 import { isProfileComplete } from './profile.js';
 import { getReadMenuVersion } from './menu.js';
+import {
+  projectionItemId,
+  resolveMenuItemChanges
+} from './menuItemChanges.js';
 
 const VALID_FLOORS = new Set(['1樓', '9樓']);
 const ORDER_OPERATION = 'CREATE_OR_REPLACE_ORDER';
@@ -63,6 +67,42 @@ const currentSetting = async (database, orderDate) => database.prepare(`
 `).bind(orderDate).first();
 
 const currentMenuRows = async (database, vendor, targetDate) => {
+  const resolution = await resolveMenuItemChanges(database, { vendor, targetDate });
+  if (resolution.rows.length) {
+    const version = await getReadMenuVersion(database, vendor, targetDate);
+    const compatibility = version
+      ? await database.prepare(`
+        SELECT menu_item_id, legacy_item_id, variant_key
+        FROM menu_items
+        WHERE menu_version_id = ?
+      `).bind(version.menu_version_id).all()
+      : { results: [] };
+    const compatibilityRows = rowsFrom(compatibility);
+    return {
+      versionId: version?.menu_version_id || null,
+      rows: resolution.rows.map((change) => {
+        const matches = compatibilityRows.filter((row) => (
+          String(row.legacy_item_id) === change.item_code
+            && String(row.variant_key || '') === change.variant_key
+        ));
+        const persistedMenuItemId = matches.length === 1 ? matches[0].menu_item_id : null;
+        return {
+          menu_item_id: persistedMenuItemId
+            || projectionItemId(vendor, change.effective_date, change.item_code, change.variant_key),
+          persisted_menu_item_id: persistedMenuItemId,
+          legacy_item_id: change.item_code,
+          variant_key: change.variant_key,
+          item_name: change.item_name,
+          price: change.price,
+          enabled: change.enabled ? 1 : 0,
+          note: change.note,
+          image_url: change.image_url,
+          menu_version_id: version?.menu_version_id || null,
+          effective_date: change.effective_date
+        };
+      })
+    };
+  }
   const version = await getReadMenuVersion(database, vendor, targetDate);
   if (!version) return { versionId: null, rows: [] };
   const result = await database.prepare(`
@@ -119,7 +159,16 @@ const normalizeItems = (rawItems, menuRows) => {
     const key = String(menuItem.menu_item_id);
     const existingIndex = indexByInternalId.get(key);
     if (existingIndex === undefined) {
-      normalized.push({ menuItemId: key, quantity });
+      normalized.push({
+        menuItemId: key,
+        persistedMenuItemId: Object.hasOwn(menuItem, 'persisted_menu_item_id')
+          ? menuItem.persisted_menu_item_id
+          : menuItem.menu_item_id,
+        legacyItemId: String(menuItem.legacy_item_id),
+        itemName: menuItem.item_name,
+        price: Number(menuItem.price),
+        quantity
+      });
       indexByInternalId.set(key, normalized.length - 1);
     } else {
       const mergedQuantity = normalized[existingIndex].quantity + quantity;
@@ -168,7 +217,6 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
     pickupFloor,
     note,
     setting,
-    menuVersionId: menu.versionId,
     items,
     replaceExisting,
     activeOrder,
@@ -177,32 +225,26 @@ const assertOrderRequest = async (database, actor, input, clock, { skipDeadline 
   };
 };
 
-const requestedValues = (items) => items.map(() => '(?, ?, ?)').join(', ');
-
 const menuCte = (items) => `
-  WITH requested(line_no, menu_item_id, quantity) AS (
-    VALUES ${requestedValues(items)}
-  ),
-  latest AS (
-    SELECT mv.menu_version_id
-    FROM menu_versions mv
-    WHERE mv.menu_version_id = ?
-    LIMIT 1
+  WITH requested(line_no, menu_item_id, legacy_item_id, item_name, price, quantity, enabled) AS (
+    VALUES ${items.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}
   ),
   priced AS (
-    SELECT r.line_no, r.menu_item_id, r.quantity,
-           mi.legacy_item_id, mi.item_name, mi.price
-    FROM requested r
-    JOIN menu_items mi ON mi.menu_item_id = r.menu_item_id
-    JOIN latest l ON l.menu_version_id = mi.menu_version_id
-    WHERE mi.enabled = 1
+    SELECT line_no, menu_item_id, legacy_item_id, item_name, price, quantity
+    FROM requested
+    WHERE enabled = 1
   )
 `;
 
-const menuParams = (items, menuVersionId) => [
-  ...items.flatMap((item, index) => [index + 1, item.menuItemId, item.quantity]),
-  menuVersionId
-];
+const menuParams = (items) => items.flatMap((item, index) => [
+  index + 1,
+  item.persistedMenuItemId ?? null,
+  item.legacyItemId,
+  item.itemName,
+  item.price,
+  item.quantity,
+  1
+]);
 
 const mapTransactionFailure = (error) => {
   if (error?.code !== 'TRANSACTION_FAILED') throw error;
@@ -227,7 +269,7 @@ const eventUserValues = (actor) => [
 ];
 
 const buildOrderStatements = (database, context, actor, details) => {
-  const { targetDate, pickupFloor, note, items, replaceExisting, now, menuVersionId } = context;
+  const { targetDate, pickupFloor, note, items, replaceExisting, now } = context;
   const {
     orderId,
     refundTransactionId,
@@ -278,7 +320,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     UPDATE idempotency_keys
     SET status = CASE WHEN (${validityPredicate}) THEN status ELSE 'FAILED' END
     WHERE ${guardSql}
-  `, [...menuParams(items, menuVersionId), ...validityParams, ...guardParams]);
+  `, [...menuParams(items), ...validityParams, ...guardParams]);
 
   const refundBalance = prepareStatement(database, `
     UPDATE users
@@ -357,7 +399,7 @@ const buildOrderStatements = (database, context, actor, details) => {
       AND (SELECT COUNT(*) FROM priced) = ?
       AND ${guardSql}
   `, [
-    ...menuParams(items, menuVersionId),
+    ...menuParams(items),
     occurredAt,
     actor.userId,
     items.length,
@@ -387,7 +429,7 @@ const buildOrderStatements = (database, context, actor, details) => {
       )
       AND ${guardSql}
   `, [
-    ...menuParams(items, menuVersionId),
+    ...menuParams(items),
     orderId,
     actor.userId,
     targetDate,
@@ -425,7 +467,7 @@ const buildOrderStatements = (database, context, actor, details) => {
            p.quantity, p.price, p.quantity * p.price
     FROM priced p
     WHERE ${guardSql}
-  `, [...menuParams(items, menuVersionId), orderId, ...guardParams]);
+  `, [...menuParams(items), orderId, ...guardParams]);
 
   const assertItemsInserted = prepareStatement(database, `
     UPDATE idempotency_keys
@@ -507,7 +549,7 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
     pickupFloor: context.pickupFloor,
     note: context.note,
     replaceExisting: context.replaceExisting,
-    items: context.items
+    items: context.items.map(({ menuItemId, quantity }) => ({ menuItemId, quantity }))
   };
   const requestHash = await hashRequest(requestPayload);
   const existingResult = await readExistingIdempotencyResult(database, {

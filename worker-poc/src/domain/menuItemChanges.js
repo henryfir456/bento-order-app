@@ -15,6 +15,7 @@ export const HISTORICAL_MENU_IMPORTER_VERSION = 'legacy-sql-menu';
 export const SQL_SOURCE_KIND = 'legacy_sql';
 export const GAS_SOURCE_KIND = 'gas_compatibility';
 export const ADMIN_SOURCE_KIND = 'admin';
+export const AP_VARIANT_KEYS = Object.freeze(['ap-variant-1', 'ap-variant-2']);
 
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
@@ -159,30 +160,7 @@ export const materializationPlan = ({ vendor, effectiveDate, resolved } = {}) =>
   };
 };
 
-export const materializeMenuVersion = async (
-  database,
-  { vendor, effectiveDate, clock = new Date(), resolved = null } = {}
-) => {
-  const resolution = resolved
-    ? { rows: resolved }
-    : await resolveMenuItemChanges(database, { vendor, targetDate: effectiveDate });
-  const plan = materializationPlan({
-    vendor,
-    effectiveDate,
-    resolved: resolution.rows
-  });
-  const existing = await database.prepare(`
-    SELECT menu_version_id, source_batch_id
-    FROM menu_versions
-    WHERE vendor = ? AND effective_date = ?
-    LIMIT 1
-  `).bind(plan.vendor, plan.effectiveDate).first();
-  if (existing && existing.menu_version_id !== plan.menuVersionId) {
-    if (existing.source_batch_id) throw conflict('MENU_VERSION_IMMUTABLE');
-    plan.menuVersionId = existing.menu_version_id;
-  }
-  if (!plan.rows.length) throw notFound('MENU_CHANGE_PROJECTION_EMPTY');
-
+const materializationStatements = (database, plan, clock) => {
   const occurredAt = resolveClock(clock).toISOString();
   const statements = [
     prepareStatement(database, `
@@ -225,15 +203,52 @@ export const materializeMenuVersion = async (
     occurredAt,
     occurredAt
   ])));
-  await runMutationBatch(database, statements);
+  return statements;
+};
+
+export const prepareMenuVersionMaterialization = async (
+  database,
+  { vendor, effectiveDate, clock = new Date(), resolved = null } = {}
+) => {
+  const resolution = resolved
+    ? { rows: resolved }
+    : await resolveMenuItemChanges(database, { vendor, targetDate: effectiveDate });
+  const plan = materializationPlan({
+    vendor,
+    effectiveDate,
+    resolved: resolution.rows
+  });
+  const existing = await database.prepare(`
+    SELECT menu_version_id, source_batch_id
+    FROM menu_versions
+    WHERE vendor = ? AND effective_date = ?
+    LIMIT 1
+  `).bind(plan.vendor, plan.effectiveDate).first();
+  if (existing && existing.menu_version_id !== plan.menuVersionId) {
+    if (existing.source_batch_id) throw conflict('MENU_VERSION_IMMUTABLE');
+    plan.menuVersionId = existing.menu_version_id;
+  }
+  if (!plan.rows.length) throw notFound('MENU_CHANGE_PROJECTION_EMPTY');
   return {
-    success: true,
-    authority: resolution.authority || 'live_with_admin_overrides',
-    menuVersionId: plan.menuVersionId,
-    effectiveDate: plan.effectiveDate,
-    projectedItemCount: plan.rows.length,
-    resolvedItemCount: resolution.rows.length
+    statements: materializationStatements(database, plan, clock),
+    result: {
+      success: true,
+      authority: resolution.authority || 'live_with_admin_overrides',
+      menuVersionId: plan.menuVersionId,
+      effectiveDate: plan.effectiveDate,
+      projectedItemCount: plan.rows.length,
+      resolvedItemCount: resolution.rows.length
+    }
   };
+};
+
+export const materializeMenuVersion = async (
+  database,
+  options = {}
+) => {
+  const prepared = await prepareMenuVersionMaterialization(database, options);
+  await runMutationBatch(database, prepared.statements);
+  return prepared.result;
 };
 
 const validExternalUrl = (value) => {
@@ -266,6 +281,34 @@ const optionalText = (value, code, maxLength = 2000) => {
   return normalized;
 };
 
+const knownVariantKeysFor = (vendor, itemCode) => (
+  vendor === HISTORICAL_MENU_VENDOR && itemCode.toUpperCase() === 'AP'
+    ? AP_VARIANT_KEYS
+    : []
+);
+
+const assertVariantIdentity = async (database, values) => {
+  const knownVariantKeys = knownVariantKeysFor(values.vendor, values.item_code);
+  if (knownVariantKeys.length && !values.variant_key) {
+    throw badRequest('MENU_CHANGE_VARIANT_KEY_REQUIRED');
+  }
+  if (knownVariantKeys.length && !knownVariantKeys.includes(values.variant_key)) {
+    throw badRequest('MENU_CHANGE_VARIANT_KEY_INVALID');
+  }
+  const result = await database.prepare(`
+    SELECT variant_key
+    FROM menu_item_changes
+    WHERE vendor = ? AND item_code = ? AND effective_date = ?
+  `).bind(values.vendor, values.item_code, values.effective_date).all();
+  const existing = rowsFrom(result);
+  if (!values.variant_key && existing.some((row) => text(row.variant_key))) {
+    throw badRequest('MENU_CHANGE_VARIANT_KEY_REQUIRED');
+  }
+  if (values.variant_key && existing.some((row) => !text(row.variant_key))) {
+    throw badRequest('MENU_CHANGE_VARIANT_KEY_REQUIRED');
+  }
+};
+
 const createInput = (input) => {
   const allowed = new Set([
     'effective_date', 'effectiveDate', 'vendor', 'item_code', 'itemCode',
@@ -281,7 +324,14 @@ const createInput = (input) => {
   if (effectiveDate <= HISTORICAL_MENU_CUTOFF) {
     throw badRequest('MENU_CHANGE_EFFECTIVE_DATE_BEFORE_CUTOFF');
   }
-  const price = typeof input.price === 'number' ? input.price : Number(text(input.price));
+  const rawPrice = input.price;
+  if (rawPrice === undefined || rawPrice === null
+    || (typeof rawPrice === 'string' && !rawPrice.trim())) {
+    throw badRequest('MENU_CHANGE_PRICE_INVALID');
+  }
+  const price = typeof rawPrice === 'number'
+    ? rawPrice
+    : (typeof rawPrice === 'string' ? Number(rawPrice.trim()) : NaN);
   if (!Number.isSafeInteger(price)) throw badRequest('MENU_CHANGE_PRICE_INVALID');
   if (input.enabled !== undefined && typeof input.enabled !== 'boolean') {
     throw badRequest('MENU_CHANGE_ENABLED_INVALID');
@@ -386,6 +436,7 @@ export const createAdminMenuItemChange = async (
     throw forbidden('VIEW_AS_MUTATION_FORBIDDEN');
   }
   const values = createInput(input);
+  await assertVariantIdentity(database, values);
   const changeId = randomId('menu-change');
   const occurredAt = resolveClock(clock).toISOString();
   const insert = prepareStatement(database, `
@@ -415,21 +466,47 @@ export const createAdminMenuItemChange = async (
     },
     occurredAt
   });
+  const proposedChange = {
+    menu_item_change_id: changeId,
+    effective_date: values.effective_date,
+    vendor: values.vendor,
+    item_code: values.item_code,
+    variant_key: values.variant_key,
+    item_name: values.item_name,
+    price: values.price,
+    enabled: values.enabled,
+    image_url: values.image_url,
+    note: values.note,
+    display_order: values.display_order,
+    source_kind: ADMIN_SOURCE_KIND,
+    source_batch_id: null,
+    source_table: 'admin_menu_item_changes',
+    source_record_id: changeId,
+    updated_by_user_id: identity.actor.userId,
+    created_at: occurredAt,
+    updated_at: occurredAt
+  };
+  const currentResolution = await resolveMenuItemChanges(database, {
+    vendor: values.vendor,
+    targetDate: values.effective_date
+  });
+  const prospectiveResolution = resolveMenuItemChangesFromRows(
+    [...currentResolution.rows, proposedChange],
+    { vendor: values.vendor, targetDate: values.effective_date }
+  );
+  const projection = await prepareMenuVersionMaterialization(database, {
+    vendor: values.vendor,
+    effectiveDate: values.effective_date,
+    clock,
+    resolved: prospectiveResolution.rows
+  });
   try {
-    await runMutationBatch(database, [insert, audit]);
+    await runMutationBatch(database, [insert, audit, ...projection.statements]);
   } catch (error) {
     if (uniqueChangeError(error)) throw conflict('MENU_CHANGE_DUPLICATE');
     throw error;
   }
 
-  // The append is the only persisted change mutation. Projection refresh is
-  // deliberately derived from the now-authoritative rows and never updates
-  // the change row itself.
-  await materializeMenuVersion(database, {
-    vendor: values.vendor,
-    effectiveDate: values.effective_date,
-    clock
-  });
   const row = await database.prepare(`${changeSelect} WHERE menu_item_change_id = ?`)
     .bind(changeId).first();
   return { success: true, change: normalizedChange(row) };

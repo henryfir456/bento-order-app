@@ -185,6 +185,62 @@ test('reviewed backfill writer inserts source rows once and never updates an exi
   assert.equal(database.get('SELECT price FROM menu_item_changes WHERE menu_item_change_id = ?', 'imported-change').price, 75);
 });
 
+test('direct backfill writer validates persisted dates, prices, and ambiguous variants', async () => {
+  const invalidRows = [
+    {
+      code: 'INVALID-DATE', date: '2026-02-30', price: 80,
+      expected: 'MENU_CHANGE_EFFECTIVE_DATE_INVALID'
+    },
+    {
+      code: 'MISSING-PRICE', date: '2026-09-11', price: undefined,
+      expected: 'MENU_CHANGE_PRICE_INVALID'
+    },
+    {
+      code: 'FRACTIONAL-PRICE', date: '2026-09-12', price: 80.5,
+      expected: 'MENU_CHANGE_PRICE_INVALID'
+    },
+    {
+      code: 'AP', date: '2026-09-13', price: 110, variant: '',
+      expected: 'MENU_CHANGE_VARIANT_KEY_REQUIRED'
+    }
+  ];
+  for (const [index, invalid] of invalidRows.entries()) {
+    const database = new SqliteD1();
+    const row = {
+      menu_item_change_id: `invalid-direct-${index}`,
+      effective_date: invalid.date,
+      vendor: '蔡老師',
+      item_code: invalid.code,
+      variant_key: invalid.variant || '',
+      item_name: invalid.code,
+      price: invalid.price,
+      enabled: 1,
+      image_url: '',
+      note: '',
+      display_order: 1,
+      source_kind: 'gas_compatibility',
+      source_batch_id: null,
+      source_table: 'Menu',
+      source_row: index + 1,
+      source_record_id: `invalid-direct-source-${index}`
+    };
+    await assert.rejects(
+      backfillMenuItemChanges(database, [row]),
+      (error) => error.code === invalid.expected
+    );
+    assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_item_changes').count, 0);
+  }
+
+  const database = new SqliteD1();
+  assert.deepEqual(await backfillMenuItemChanges(database, [{
+    menu_item_change_id: 'valid-direct-ap', effective_date: '2026-09-14',
+    vendor: '蔡老師', item_code: 'AP', variant_key: 'ap-variant-1',
+    item_name: 'AP one', price: -1, enabled: 1, image_url: '', note: '',
+    display_order: 1, source_kind: 'gas_compatibility', source_batch_id: null,
+    source_table: 'Menu', source_row: 1, source_record_id: 'valid-direct-ap-source'
+  }]), { inserted: 1, alreadyEquivalent: 0, conflicts: [] });
+});
+
 test('Admin menu change API is append-only, Admin-only, View As-safe, and returns duplicate 409', async () => {
   const database = new SqliteD1();
   seedUsers(database);
@@ -224,6 +280,102 @@ test('Admin menu change API is append-only, Admin-only, View As-safe, and return
   assert.equal(preview.body.selectableItems[0].price, -1);
 });
 
+test('Admin change and projection are atomic when projection fails', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  database.exec(`
+    CREATE TRIGGER fail_menu_projection
+    BEFORE INSERT ON menu_items
+    BEGIN
+      SELECT RAISE(ABORT, 'forced projection failure');
+    END;
+  `);
+  const result = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-12', vendor: '蔡老師', item_code: 'E',
+      item_name: 'E lunch', price: 80, enabled: true,
+      image_url: 'https://example.test/e.jpg', note: ''
+    }
+  });
+  assert.equal(result.response.status, 500);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_item_changes').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM admin_audit_log').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_versions').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_items').count, 0);
+});
+
+test('Admin requires an explicit variant for the known ambiguous AP identity', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  const invalid = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-12', vendor: '蔡老師', item_code: 'AP',
+      item_name: 'ambiguous AP', price: 110, enabled: true,
+      image_url: 'https://example.test/ap.jpg', note: ''
+    }
+  });
+  assert.equal(invalid.response.status, 400);
+  assert.deepEqual(invalid.body, { error: 'MENU_CHANGE_VARIANT_KEY_REQUIRED' });
+
+  const valid = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-12', vendor: '蔡老師', item_code: 'AP',
+      variant_key: 'ap-variant-1', item_name: 'AP one', price: 110, enabled: true,
+      image_url: 'https://example.test/ap.jpg', note: ''
+    }
+  });
+  assert.equal(valid.response.status, 201);
+  assert.equal(valid.body.change.variant_key, 'ap-variant-1');
+});
+
+test('Admin rejects missing or invalid prices and impossible dates without coercion', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  for (const [index, price] of [undefined, '', '  ', null, 'NaN'].entries()) {
+    const body = {
+      effective_date: `2026-09-${String(12 + index).padStart(2, '0')}`,
+      vendor: '蔡老師', item_code: `PRICE-${index}`, item_name: 'price test',
+      enabled: true, image_url: '', note: ''
+    };
+    if (price !== undefined) body.price = price;
+    const response = await call(database, '/api/admin/menu/changes', {
+      method: 'POST', body
+    });
+    assert.equal(response.response.status, 400);
+    assert.deepEqual(response.body, { error: 'MENU_CHANGE_PRICE_INVALID' });
+  }
+  const invalidDate = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-02-30', vendor: '蔡老師', item_code: 'DATE',
+      item_name: 'date test', price: 0, enabled: true, image_url: '', note: ''
+    }
+  });
+  assert.equal(invalidDate.response.status, 400);
+  assert.deepEqual(invalidDate.body, { error: 'MENU_CHANGE_EFFECTIVE_DATE_INVALID' });
+
+  const zero = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-20', vendor: '蔡老師', item_code: 'ZERO',
+      item_name: 'zero price test', price: 0, enabled: true, image_url: '', note: ''
+    }
+  });
+  assert.equal(zero.response.status, 201);
+});
+
+test('GAS backfill rejects impossible calendar dates', () => {
+  assert.throws(() => buildGasCompatibilityChanges({
+    rows: [{
+      vendor: '蔡老師', effective_date: '2026-02-30', item_code: 'E',
+      item_name: 'E', price: 80, enabled: true, source_record_id: 'gas-invalid-date'
+    }]
+  }), (error) => error.code === 'GAS_MENU_CHANGE_INVALID');
+});
+
 test('customer menu and order validation consume the materialized state from the same resolver', async () => {
   const database = new SqliteD1();
   seedUser(database, { lineUserId: 'resolver-admin', role: 'Admin', balance: 0 });
@@ -257,4 +409,46 @@ test('customer menu and order validation consume the materialized state from the
   );
   assert.equal(orderResponse.status, 200);
   assert.equal(database.get('SELECT total_amount FROM orders WHERE user_id = ?', 'resolver-user').total_amount, 80);
+});
+
+test('order validation re-resolves backdated post-cutoff changes instead of trusting an older snapshot', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'backdated-user', role: 'User', balance: 200 });
+  database.run(`
+    INSERT INTO calendar_settings (order_date, vendor, mode)
+    VALUES ('2026-09-14', '蔡老師', 'A')
+  `);
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES ('live-20260914', '蔡老師', '2026-09-14')
+  `);
+  database.run(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, item_name, price,
+      enabled, source_order
+    ) VALUES ('live-b', 'live-20260914', 'B', 'Old B', 90, 1, 1)
+  `);
+  seedChange(database, {
+    id: 'backdated-disable-b', date: '2026-09-12', code: 'B',
+    name: 'B disabled', price: 90, enabled: 0, source: 'admin', sourceId: 'backdated-disable-b'
+  });
+  const response = await handleFormalRequest(
+    request('/api/orders', {
+      method: 'POST',
+      token: 'backdated-user-token',
+      body: {
+        targetDate: '2026-09-14', pickupFloor: '1樓',
+        items: [{ menu_item_id: 'live-b', quantity: 1 }], note: ''
+      },
+      headers: { 'Idempotency-Key': 'backdated-order-key' }
+    }),
+    { DB: database },
+    {
+      fetchImpl: profileFetch({ token: 'backdated-user-token', lineUserId: 'backdated-user' }),
+      now: new Date('2026-09-13T00:00:00.000Z')
+    }
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'MENU_ITEM_DISABLED' });
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM orders').count, 0);
 });

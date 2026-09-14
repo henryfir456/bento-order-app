@@ -20,6 +20,20 @@
 - Existing menu snapshots, Orders, order_items, ledger, and calendar data remain untouched.
 - Signed prices are valid and preserved.
 
+## Accepted operational concurrency risks
+
+For the current operational profile, the following low-probability races are
+accepted as non-blocking and intentionally deferred:
+
+1. Concurrent Admin POSTs can plan a compatibility projection from stale
+   `menu_item_changes` history, so the later projection may require a manual
+   reconciliation.
+2. An order mutation can race with a concurrent backdated Admin menu change
+   between authoritative validation and the final order batch.
+
+No locks, revision columns, compare-and-swap logic, new schema, or transaction
+framework is introduced for these risks in this phase.
+
 ---
 
 ### Task 1: Replace catalog schema with append-only change schema
