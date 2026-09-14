@@ -1,4 +1,5 @@
 import { deadlineInfo, getTaipeiDate, isDateOnly } from './deadlines.js';
+import { normalizeMenuVendor } from './menuVendors.js';
 
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
@@ -15,7 +16,7 @@ export const getCalendarSetting = async (database, orderDate) => {
     LIMIT 1
   `).bind(orderDate).first();
   return row
-    ? { order_date: row.order_date, vendor: row.vendor || '', mode: effectiveMode(row) }
+    ? { order_date: row.order_date, vendor: normalizeMenuVendor(row.vendor), mode: effectiveMode(row) }
     : null;
 };
 
@@ -59,7 +60,7 @@ export const getCalendarEvents = async (
     const likeState = likesByDate[row.order_date] || { count: 0, users: new Set() };
     events[row.order_date] = {
       order_date: row.order_date,
-      vendor: row.vendor || '',
+      vendor: normalizeMenuVendor(row.vendor),
       mode,
       deadline: deadlineInfo(row.order_date, mode, now)?.deadline || null,
       isExpired: Boolean(deadlineInfo(row.order_date, mode, now)?.isExpired),

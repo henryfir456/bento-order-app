@@ -8,9 +8,20 @@ import {
 } from '../db/transactions.js';
 import { badRequest, conflict, forbidden, notFound } from '../http/errors.js';
 import { isDateOnly } from './deadlines.js';
+import {
+  CANONICAL_HE_SHI_VENDOR,
+  HISTORICAL_SQL_VENDOR,
+  canonicalMenuRowVendor,
+  compatibilityVendorCandidates,
+  historicalMenuRowVendorCandidates,
+  isHistoricalMenuVendor,
+  normalizeMenuItemName,
+  normalizeMenuVendor
+} from './menuVendors.js';
 
 export const HISTORICAL_MENU_CUTOFF = '2026-09-10';
-export const HISTORICAL_MENU_VENDOR = '蔡老師';
+export const HISTORICAL_MENU_VENDOR = HISTORICAL_SQL_VENDOR;
+export const HE_SHI_MENU_VENDOR = CANONICAL_HE_SHI_VENDOR;
 export const HISTORICAL_MENU_IMPORTER_VERSION = 'legacy-sql-menu';
 export const SQL_SOURCE_KIND = 'legacy_sql';
 export const GAS_SOURCE_KIND = 'gas_compatibility';
@@ -45,10 +56,12 @@ export const projectionItemId = (vendor, effectiveDate, itemCode, variantKey = '
   `menu-change-item_${projectionHash(`${vendor}|${effectiveDate}|${itemCode}|${variantKey}`)}`
 );
 
-const normalizedChange = (row) => ({
+const normalizedChange = (row) => {
+  const vendor = canonicalMenuRowVendor({ vendor: row.vendor, itemCode: row.item_code });
+  return {
   menu_item_change_id: row.menu_item_change_id,
   effective_date: row.effective_date,
-  vendor: row.vendor,
+  vendor,
   item_code: row.item_code,
   variant_key: row.variant_key || '',
   item_name: row.item_name,
@@ -66,11 +79,12 @@ const normalizedChange = (row) => ({
   created_at: row.created_at,
   updated_at: row.updated_at,
   source_read_only: row.source_kind !== ADMIN_SOURCE_KIND,
-  menu_item_id: projectionItemId(row.vendor, row.effective_date, row.item_code, row.variant_key || '')
-});
+  menu_item_id: projectionItemId(vendor, row.effective_date, row.item_code, row.variant_key || '')
+  };
+};
 
 const sourceKindsFor = (vendor, targetDate) => {
-  if (vendor === HISTORICAL_MENU_VENDOR && targetDate <= HISTORICAL_MENU_CUTOFF) {
+  if (isHistoricalMenuVendor(vendor) && targetDate <= HISTORICAL_MENU_CUTOFF) {
     return {
       authority: 'sql_historical',
       sourceKinds: [SQL_SOURCE_KIND]
@@ -83,12 +97,13 @@ const sourceKindsFor = (vendor, targetDate) => {
 };
 
 const resolveRows = (rows, { vendor, targetDate }) => {
-  const { authority, sourceKinds } = sourceKindsFor(vendor, targetDate);
+  const normalizedVendor = normalizeMenuVendor(vendor);
+  const { authority, sourceKinds } = sourceKindsFor(normalizedVendor, targetDate);
   const selected = new Map();
   for (const rawRow of rows) {
-    if (text(rawRow.vendor) !== vendor || text(rawRow.effective_date) > targetDate) continue;
-    if (!sourceKinds.includes(rawRow.source_kind)) continue;
     const row = normalizedChange(rawRow);
+    if (row.vendor !== normalizedVendor || text(rawRow.effective_date) > targetDate) continue;
+    if (!sourceKinds.includes(rawRow.source_kind)) continue;
     const key = identityKey(row.vendor, row.item_code, row.variant_key);
     const previous = selected.get(key);
     if (!previous
@@ -120,7 +135,7 @@ const stateRows = (rows) => [...rows].sort((left, right) => (
 const normalizeCompatibilityRow = (row, version) => ({
   menu_item_change_id: `compatibility:${row.menu_item_id}`,
   effective_date: version.effective_date,
-  vendor: version.vendor,
+  vendor: canonicalMenuRowVendor({ vendor: version.vendor, itemCode: row.legacy_item_id }),
   item_code: row.legacy_item_id,
   variant_key: row.variant_key || '',
   item_name: row.item_name,
@@ -143,31 +158,34 @@ const normalizeCompatibilityRow = (row, version) => ({
 });
 
 const compatibilityVersion = async (database, vendor, targetDate) => {
-  if (vendor === HISTORICAL_MENU_VENDOR && targetDate <= HISTORICAL_MENU_CUTOFF) {
+  const normalizedVendor = normalizeMenuVendor(vendor);
+  const vendors = compatibilityVendorCandidates(normalizedVendor);
+  const placeholders = vendors.map(() => '?').join(', ');
+  if (isHistoricalMenuVendor(normalizedVendor) && targetDate <= HISTORICAL_MENU_CUTOFF) {
     const effectiveMonth = `${targetDate.slice(0, 7)}-01`;
     return database.prepare(`
       SELECT mv.menu_version_id, mv.vendor, mv.effective_date,
              ib.importer_version, mv.source_batch_id
       FROM menu_versions mv
       JOIN import_batches ib ON ib.batch_id = mv.source_batch_id
-      WHERE mv.vendor = ?
+      WHERE mv.vendor IN (${placeholders})
         AND ib.importer_version = ?
         AND mv.effective_date <= ?
       ORDER BY mv.effective_date DESC, mv.menu_version_id DESC
       LIMIT 1
-    `).bind(vendor, HISTORICAL_MENU_IMPORTER_VERSION, effectiveMonth).first();
+    `).bind(...vendors, HISTORICAL_MENU_IMPORTER_VERSION, effectiveMonth).first();
   }
   return database.prepare(`
     SELECT menu_version_id, vendor, effective_date, source_batch_id
     FROM menu_versions
-    WHERE vendor = ? AND effective_date <= ?
+    WHERE vendor IN (${placeholders}) AND effective_date <= ?
     ORDER BY effective_date DESC, menu_version_id DESC
     LIMIT 1
-  `).bind(vendor, targetDate).first();
+  `).bind(...vendors, targetDate).first();
 };
 
 export const getCompatibilityMenuBaseline = async (database, { vendor, targetDate } = {}) => {
-  const normalizedVendor = text(vendor);
+  const normalizedVendor = normalizeMenuVendor(vendor);
   const normalizedDate = text(targetDate);
   if (!normalizedVendor || !isDateOnly(normalizedDate)) {
     throw badRequest('MENU_CHANGE_RESOLUTION_INPUT_INVALID');
@@ -227,31 +245,95 @@ export const mergeEffectiveMenuRows = ({ baselineRows = [], changeRows = [] } = 
 };
 
 export const resolveMenuItemChangesFromRows = (rows = [], options = {}) => {
-  const vendor = text(options.vendor);
+  const vendor = normalizeMenuVendor(options.vendor);
   const targetDate = text(options.targetDate);
   if (!vendor || !isDateOnly(targetDate)) throw badRequest('MENU_CHANGE_RESOLUTION_INPUT_INVALID');
   return resolveRows(rows, { vendor, targetDate });
 };
 
 export const resolveMenuItemChanges = async (database, { vendor, targetDate } = {}) => {
-  const normalizedVendor = text(vendor);
+  const normalizedVendor = normalizeMenuVendor(vendor);
   const normalizedDate = text(targetDate);
   if (!normalizedVendor || !isDateOnly(normalizedDate)) {
     throw badRequest('MENU_CHANGE_RESOLUTION_INPUT_INVALID');
   }
+  const vendors = historicalMenuRowVendorCandidates(normalizedVendor);
+  const placeholders = vendors.map(() => '?').join(', ');
   const result = await database.prepare(`
     SELECT menu_item_change_id, effective_date, vendor, item_code, variant_key,
            item_name, price, enabled, image_url, note, display_order,
            source_kind, source_batch_id, source_table, source_row,
            source_record_id, updated_by_user_id, created_at, updated_at
     FROM menu_item_changes
-    WHERE vendor = ? AND effective_date <= ?
+    WHERE vendor IN (${placeholders}) AND effective_date <= ?
     ORDER BY effective_date DESC, menu_item_change_id DESC
-  `).bind(normalizedVendor, normalizedDate).all();
+  `).bind(...vendors, normalizedDate).all();
   return resolveRows(rowsFrom(result), {
     vendor: normalizedVendor,
     targetDate: normalizedDate
   });
+};
+
+const getLatestCompatibilityImageRows = async (database) => {
+  const result = await database.prepare(`
+    SELECT mv.menu_version_id, mv.vendor AS version_vendor,
+           mv.effective_date AS version_effective_date,
+           mi.menu_item_id, mi.legacy_item_id, mi.variant_key, mi.item_name,
+           mi.price, mi.enabled, mi.note, mi.image_url, mi.source_order,
+           mi.created_at, mi.updated_at
+    FROM menu_versions mv
+    JOIN menu_items mi ON mi.menu_version_id = mv.menu_version_id
+    WHERE mv.source_batch_id IS NULL
+    ORDER BY mv.effective_date DESC, mv.menu_version_id DESC,
+             mi.source_order ASC, mi.menu_item_id ASC
+  `).all();
+  const selectedVersionByVendor = new Map();
+  const rows = [];
+  for (const rawRow of rowsFrom(result)) {
+    const canonicalVersionVendor = normalizeMenuVendor(rawRow.version_vendor);
+    if (!selectedVersionByVendor.has(canonicalVersionVendor)) {
+      selectedVersionByVendor.set(canonicalVersionVendor, rawRow.menu_version_id);
+    }
+    if (selectedVersionByVendor.get(canonicalVersionVendor) !== rawRow.menu_version_id) continue;
+    rows.push(normalizeCompatibilityRow(rawRow, {
+      vendor: rawRow.version_vendor,
+      effective_date: rawRow.version_effective_date,
+      source_batch_id: null
+    }));
+  }
+  return rows;
+};
+
+const addToIndex = (index, key, row) => {
+  const matches = index.get(key) || [];
+  matches.push(row);
+  index.set(key, matches);
+};
+
+const historicalDisplayImage = (row, currentRows) => {
+  const normalizedName = normalizeMenuItemName(row.item_name);
+  if (!normalizedName) return '';
+  const byVendorAndName = new Map();
+  const byName = new Map();
+  for (const currentRow of currentRows) {
+    const currentName = normalizeMenuItemName(currentRow.item_name);
+    if (!currentName) continue;
+    addToIndex(byVendorAndName, `${normalizeMenuVendor(currentRow.vendor)}\u0000${currentName}`, currentRow);
+    addToIndex(byName, currentName, currentRow);
+  }
+  const scopedMatches = byVendorAndName.get(`${normalizeMenuVendor(row.vendor)}\u0000${normalizedName}`) || [];
+  if (scopedMatches.length === 1) return scopedMatches[0].image_url || '';
+  if (scopedMatches.length > 1) return '';
+  const nameMatches = byName.get(normalizedName) || [];
+  return nameMatches.length === 1 ? nameMatches[0].image_url || '' : '';
+};
+
+const applyHistoricalImageFallback = async (database, rows) => {
+  const currentRows = await getLatestCompatibilityImageRows(database);
+  return rows.map((row) => ({
+    ...row,
+    display_image_url: row.image_url || historicalDisplayImage(row, currentRows)
+  }));
 };
 
 export const resolveEffectiveMenuState = async (database, { vendor, targetDate } = {}) => {
@@ -260,12 +342,15 @@ export const resolveEffectiveMenuState = async (database, { vendor, targetDate }
   const rows = changes.authority === 'sql_historical'
     ? attachCompatibilityIds(changes.rows, baseline.rows)
     : mergeEffectiveMenuRows({ baselineRows: baseline.rows, changeRows: changes.rows });
+  const displayRows = changes.authority === 'sql_historical'
+    ? await applyHistoricalImageFallback(database, rows)
+    : rows;
   return {
     ...changes,
     baselineVersion: baseline.version,
     baselineRows: baseline.rows,
     changeRows: changes.rows,
-    rows
+    rows: displayRows
   };
 };
 
@@ -275,7 +360,7 @@ const materializerRows = (rows) => rows.filter((row) => row.enabled).map((row, i
 }));
 
 export const materializationPlan = ({ vendor, effectiveDate, resolved } = {}) => {
-  const normalizedVendor = text(vendor);
+  const normalizedVendor = normalizeMenuVendor(vendor);
   const normalizedDate = text(effectiveDate);
   if (!normalizedVendor || !isDateOnly(normalizedDate)) {
     throw badRequest('MENU_CHANGE_MATERIALIZATION_INPUT_INVALID');
@@ -473,10 +558,12 @@ const createInput = (input) => {
   if (!Number.isSafeInteger(displayOrder) || displayOrder < 0) {
     throw badRequest('MENU_CHANGE_DISPLAY_ORDER_INVALID');
   }
+  const vendor = requiredText(input.vendor, 'MENU_CHANGE_VENDOR_REQUIRED');
+  const itemCode = requiredText(input.item_code ?? input.itemCode, 'MENU_CHANGE_ITEM_CODE_REQUIRED');
   return {
     effective_date: effectiveDate,
-    vendor: requiredText(input.vendor, 'MENU_CHANGE_VENDOR_REQUIRED'),
-    item_code: requiredText(input.item_code ?? input.itemCode, 'MENU_CHANGE_ITEM_CODE_REQUIRED'),
+    vendor: canonicalMenuRowVendor({ vendor, itemCode }),
+    item_code: itemCode,
     variant_key: optionalText(input.variant_key ?? input.variantKey, 'MENU_CHANGE_VARIANT_KEY_INVALID', 200),
     item_name: requiredText(input.item_name ?? input.itemName, 'MENU_CHANGE_ITEM_NAME_REQUIRED'),
     price,

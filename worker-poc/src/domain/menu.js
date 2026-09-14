@@ -5,6 +5,12 @@ import {
   HISTORICAL_MENU_VENDOR,
   resolveEffectiveMenuState
 } from './menuItemChanges.js';
+import {
+  compatibilityVendorCandidates,
+  historicalMenuRowVendorCandidates,
+  isHistoricalMenuVendor,
+  normalizeMenuVendor
+} from './menuVendors.js';
 
 export {
   HISTORICAL_MENU_CUTOFF,
@@ -15,42 +21,49 @@ export {
 export const HISTORICAL_MENU_ITEM_CODE_ALIASES = Object.freeze({ R: 'FR' });
 
 export const getLatestMenuVersion = async (database, vendor, targetDate) => {
-  if (!vendor || !isDateOnly(targetDate)) return null;
+  const normalizedVendor = normalizeMenuVendor(vendor);
+  if (!normalizedVendor || !isDateOnly(targetDate)) return null;
+  const vendors = compatibilityVendorCandidates(normalizedVendor);
+  const placeholders = vendors.map(() => '?').join(', ');
   return database.prepare(`
     SELECT menu_version_id, vendor, effective_date, source_batch_id
     FROM menu_versions
-    WHERE vendor = ? AND effective_date <= ?
+    WHERE vendor IN (${placeholders}) AND effective_date <= ?
     ORDER BY effective_date DESC, menu_version_id DESC
     LIMIT 1
-  `).bind(vendor, targetDate).first();
+  `).bind(...vendors, targetDate).first();
 };
 
 export const getHistoricalSqlMenuVersion = async (database, vendor, targetDate) => {
+  const normalizedVendor = normalizeMenuVendor(vendor);
   if (
-    vendor !== HISTORICAL_MENU_VENDOR
+    !isHistoricalMenuVendor(normalizedVendor)
     || !isDateOnly(targetDate)
     || targetDate > HISTORICAL_MENU_CUTOFF
   ) return null;
+  const vendors = historicalMenuRowVendorCandidates(normalizedVendor);
+  const placeholders = vendors.map(() => '?').join(', ');
   const effectiveMonth = `${targetDate.slice(0, 7)}-01`;
   return database.prepare(`
     SELECT mv.menu_version_id, mv.vendor, mv.effective_date,
            ib.importer_version, mv.source_batch_id
     FROM menu_versions mv
     JOIN import_batches ib ON ib.batch_id = mv.source_batch_id
-    WHERE mv.vendor = ?
+    WHERE mv.vendor IN (${placeholders})
       AND ib.importer_version = ?
       AND mv.effective_date <= ?
     ORDER BY mv.effective_date DESC, mv.menu_version_id DESC
     LIMIT 1
-  `).bind(vendor, HISTORICAL_MENU_IMPORTER_VERSION, effectiveMonth).first();
+  `).bind(...vendors, HISTORICAL_MENU_IMPORTER_VERSION, effectiveMonth).first();
 };
 
 export const getReadMenuVersion = async (database, vendor, targetDate) => {
-  if (!vendor || !isDateOnly(targetDate)) return null;
-  if (targetDate <= HISTORICAL_MENU_CUTOFF && vendor === HISTORICAL_MENU_VENDOR) {
-    return getHistoricalSqlMenuVersion(database, vendor, targetDate);
+  const normalizedVendor = normalizeMenuVendor(vendor);
+  if (!normalizedVendor || !isDateOnly(targetDate)) return null;
+  if (targetDate <= HISTORICAL_MENU_CUTOFF && isHistoricalMenuVendor(normalizedVendor)) {
+    return getHistoricalSqlMenuVersion(database, normalizedVendor, targetDate);
   }
-  return getLatestMenuVersion(database, vendor, targetDate);
+  return getLatestMenuVersion(database, normalizedVendor, targetDate);
 };
 
 const menuItemFromResolvedChange = (change, compatibilityRows, isHistorical) => {
@@ -70,7 +83,7 @@ const menuItemFromResolvedChange = (change, compatibilityRows, isHistorical) => 
     price: change.price,
     enabled: change.enabled,
     note: change.note,
-    image_url: change.image_url
+    image_url: change.display_image_url || change.image_url
   };
 };
 
@@ -84,7 +97,7 @@ const menuItemFromCompatibilityBaseline = (row, isHistorical) => ({
   price: row.price,
   enabled: row.enabled,
   note: row.note,
-  image_url: row.image_url
+  image_url: row.display_image_url || row.image_url
 });
 
 const menuFromChanges = (resolution) => {

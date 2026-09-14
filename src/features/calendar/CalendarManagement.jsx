@@ -58,7 +58,6 @@ export default function CalendarManagement({
               >
                 <option value="蔡老師">蔡老師</option>
                 <option value="禾拾">禾拾</option>
-                <option value="合十">合十</option>
                 <option value="">不開團</option>
               </select>
             </div>

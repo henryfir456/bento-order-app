@@ -3,6 +3,7 @@ import { auditStatement } from '../db/audit.js';
 import { prepareStatement, runMutationBatch, resolveClock, randomId } from '../db/transactions.js';
 import { getCalendarSetting } from '../domain/calendar.js';
 import { isDateOnly } from '../domain/deadlines.js';
+import { normalizeMenuVendor } from '../domain/menuVendors.js';
 import { badRequest } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
@@ -89,7 +90,7 @@ export const toggleLike = async (database, identity, orderDate, clock = new Date
 export const setCalendarSetting = async (database, identity, orderDate, input, clock = new Date()) => {
   assertCan(identity, ACTIONS.ADMIN_CALENDAR);
   if (!isDateOnly(orderDate)) throw badRequest('INVALID_DATE');
-  const vendor = text(input?.vendor);
+  const vendor = normalizeMenuVendor(input?.vendor);
   const mode = text(input?.mode).toUpperCase();
   if (!['A', 'B'].includes(mode)) throw badRequest('CALENDAR_MODE_REQUIRED');
   if (vendor.length > 200) throw badRequest('CALENDAR_VENDOR_TOO_LONG');

@@ -4,12 +4,15 @@ import { test } from 'node:test';
 import { handleFormalRequest } from '../src/formalWorker.js';
 import {
   materializeMenuVersion,
+  materializationPlan,
   projectionVersionId,
   resolveEffectiveMenuState,
   resolveMenuItemChanges,
   resolveMenuItemChangesFromRows
 } from '../src/domain/menuItemChanges.js';
 import { getCustomerMenu } from '../src/domain/menu.js';
+import { getCalendarSetting } from '../src/domain/calendar.js';
+import { setCalendarSetting } from '../src/routes/calendar.js';
 import {
   buildGasCompatibilityChanges,
   buildGasApVariantMapping,
@@ -86,7 +89,9 @@ test('SQL backfill is exactly 34 facts and reconstructs the five cumulative snap
   assert.equal(new Set(backfill.rows.map((row) => [row.vendor, row.item_code, row.variant_key, row.effective_date].join('|'))).size, 34);
 
   const counts = ['2023-04-01', '2025-02-01', '2026-07-01', '2026-08-01', '2026-09-01']
-    .map((targetDate) => resolveMenuItemChangesFromRows(backfill.rows, { vendor: '蔡老師', targetDate }).rows.length);
+    .map((targetDate) => ['蔡老師', '禾拾'].reduce((count, vendor) => (
+      count + resolveMenuItemChangesFromRows(backfill.rows, { vendor, targetDate }).rows.length
+    ), 0));
   assert.deepEqual(counts, [15, 15, 17, 20, 21]);
   assert.equal(resolveMenuItemChangesFromRows(backfill.rows, { vendor: '蔡老師', targetDate: '2026-08-10' })
     .rows.find((row) => row.item_code === 'revert1').price, -1);
@@ -145,7 +150,7 @@ test('resolver honors SQL authority through cutoff and Admin supersedes GAS only
   assert.deepEqual(live.rows.map((row) => [row.item_code, row.price]), [['A', -1], ['B', 80]]);
 });
 
-test('change history carries images without name-only fallback and legacy live images remain unchanged', async () => {
+test('historical image fallback leaves unmatched rows empty and legacy live images remain unchanged', async () => {
   const database = new SqliteD1();
   database.run(`
     INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
@@ -161,11 +166,176 @@ test('change history carries images without name-only fallback and legacy live i
   assert.equal(liveMenu[0].image_url, 'https://live.example/e.jpg');
 
   seedChange(database, { id: 'history-no-image', date: '2026-09-01', code: 'H1', name: 'History H1', price: 125, source: 'legacy_sql' });
-  const noImage = await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-10' });
+  const noImage = await getCustomerMenu(database, { vendor: '禾拾', targetDate: '2026-09-10' });
   assert.equal(noImage[0].image_url, '');
   seedChange(database, { id: 'history-image', date: '2026-09-02', code: 'H1', name: 'History H1 updated', price: 130, image: 'https://history.example/h1.jpg', source: 'legacy_sql' });
-  const withImage = await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-10' });
+  const withImage = await getCustomerMenu(database, { vendor: '禾拾', targetDate: '2026-09-10' });
   assert.equal(withImage[0].image_url, 'https://history.example/h1.jpg');
+});
+
+test('historical H1-H4 rows canonicalize to 禾拾 and 合十 resolves as its alias', () => {
+  const rows = ['H1', 'H2', 'H3', 'H4'].map((code, index) => ({
+    menu_item_change_id: `historical-${code}`,
+    effective_date: '2026-09-01',
+    vendor: '蔡老師',
+    item_code: code,
+    variant_key: '',
+    item_name: `historical ${code}`,
+    price: 100 + index,
+    enabled: 1,
+    image_url: '',
+    note: '',
+    display_order: index + 1,
+    source_kind: 'legacy_sql'
+  }));
+
+  const canonical = resolveMenuItemChangesFromRows(rows, {
+    vendor: '禾拾',
+    targetDate: '2026-09-10'
+  });
+  assert.deepEqual(canonical.rows.map((row) => [row.item_code, row.vendor]), [
+    ['H1', '禾拾'], ['H2', '禾拾'], ['H3', '禾拾'], ['H4', '禾拾']
+  ]);
+
+  const alias = resolveMenuItemChangesFromRows(rows, {
+    vendor: '合十',
+    targetDate: '2026-09-10'
+  });
+  assert.deepEqual(alias.rows.map((row) => row.item_code), ['H1', 'H2', 'H3', 'H4']);
+});
+
+test('legacy 合十 calendar settings read and write as canonical 禾拾', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'vendor-admin', role: 'Admin' });
+  database.run(`
+    INSERT INTO calendar_settings (order_date, vendor, mode)
+    VALUES ('2026-09-11', '合十', 'B')
+  `);
+
+  assert.equal((await getCalendarSetting(database, '2026-09-11')).vendor, '禾拾');
+
+  const identity = {
+    actor: {
+      userId: 'vendor-admin', lineUserId: 'vendor-admin', employeeId: 'employee-vendor-admin',
+      role: 'Admin', authMode: 'line', active: true
+    },
+    effectiveSubject: { userId: 'vendor-admin' }
+  };
+  await setCalendarSetting(database, identity, '2026-09-12', {
+    vendor: '合十', mode: 'B'
+  });
+  assert.equal(database.get(
+    'SELECT vendor FROM calendar_settings WHERE order_date = ?', '2026-09-12'
+  ).vendor, '禾拾');
+});
+
+test('Admin menu changes persist one canonical vendor identity for 合十 and historical H codes', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  const created = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-11', vendor: '合十', item_code: 'H1',
+      item_name: '蕃茄鷹豆泥', price: 125, enabled: true,
+      image_url: '', note: '', display_order: 1
+    }
+  });
+  assert.equal(created.response.status, 201);
+  assert.equal(created.body.change.vendor, '禾拾');
+  assert.equal(database.get(
+    'SELECT vendor FROM menu_item_changes WHERE menu_item_change_id = ?',
+    created.body.change.menu_item_change_id
+  ).vendor, '禾拾');
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM menu_item_changes WHERE vendor = '合十'"
+  ).count, 0);
+  assert.equal(materializationPlan({
+    vendor: '合十', effectiveDate: '2026-09-12', resolved: [{ enabled: true }]
+  }).vendor, '禾拾');
+});
+
+test('historical image fallback is display-only, name-based across differing codes, and prefers history images', async () => {
+  const database = new SqliteD1();
+  seedCompatibilityVersion(database, {
+    id: 'current-he-shi-images', date: '2026-09-12', vendor: '禾拾', rows: [
+      {
+        menuItemId: 'current-lunch-h1', itemCode: 'CURRENT-H1', itemName: '蕃茄鷹豆泥',
+        price: 140, imageUrl: 'https://current.example/h1.jpg', sourceOrder: 1
+      },
+      {
+        menuItemId: 'current-lunch-h2', itemCode: 'CURRENT-H2', itemName: '紅麴腐乳板豆腐',
+        price: 140, imageUrl: 'https://current.example/h2.jpg', sourceOrder: 2
+      }
+    ]
+  });
+  seedCompatibilityVersion(database, {
+    id: 'current-other-vendor-images', date: '2026-09-12', vendor: 'Other Vendor', rows: [
+      {
+        menuItemId: 'current-other-h1', itemCode: 'OTHER-H1', itemName: '蕃茄鷹豆泥',
+        price: 140, imageUrl: 'https://other.example/h1.jpg', sourceOrder: 1
+      }
+    ]
+  });
+  database.run(`
+    INSERT INTO import_batches (batch_id, source_hash, importer_version, status)
+    VALUES ('legacy-image-source', 'legacy-image-hash', 'legacy-sql-menu', 'REVIEWED')
+  `);
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date, source_batch_id)
+    VALUES ('excluded-legacy-image-version', '禾拾', '2026-09-13', 'legacy-image-source')
+  `);
+  database.run(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, item_name, price,
+      enabled, image_url, source_order
+    ) VALUES ('excluded-legacy-image', 'excluded-legacy-image-version', 'LEGACY-H1', '蕃茄鷹豆泥', 140, 1, 'https://legacy.example/h1.jpg', 1)
+  `);
+  seedChange(database, {
+    id: 'historical-h1-no-image', date: '2026-09-01', code: 'H1',
+    name: '  蕃茄鷹豆泥  ', price: 100, source: 'legacy_sql'
+  });
+  seedChange(database, {
+    id: 'historical-h2-image', date: '2026-09-01', code: 'H2',
+    name: '紅麴腐乳板豆腐', price: 100, image: 'https://history.example/h2.jpg', source: 'legacy_sql', order: 2
+  });
+
+  const resolution = await resolveEffectiveMenuState(database, {
+    vendor: '禾拾', targetDate: '2026-09-10'
+  });
+  assert.equal(resolution.rows.find((row) => row.item_code === 'H1').image_url, '');
+  assert.equal(resolution.rows.find((row) => row.item_code === 'H1').display_image_url, 'https://current.example/h1.jpg');
+  assert.equal(resolution.rows.find((row) => row.item_code === 'H2').image_url, 'https://history.example/h2.jpg');
+  assert.equal(resolution.rows.find((row) => row.item_code === 'H2').display_image_url, 'https://history.example/h2.jpg');
+
+  const menu = await getCustomerMenu(database, { vendor: '合十', targetDate: '2026-09-10' });
+  assert.deepEqual(menu.map((item) => [item.legacy_item_id, item.image_url]), [
+    ['H1', 'https://current.example/h1.jpg'],
+    ['H2', 'https://history.example/h2.jpg']
+  ]);
+  assert.equal(database.get(
+    'SELECT image_url FROM menu_item_changes WHERE menu_item_change_id = ?', 'historical-h1-no-image'
+  ).image_url, '');
+});
+
+test('historical image fallback refuses ambiguous name-only matches', async () => {
+  const database = new SqliteD1();
+  seedCompatibilityVersion(database, {
+    id: 'ambiguous-vendor-one', date: '2026-09-12', vendor: 'Vendor One', rows: [
+      { menuItemId: 'ambiguous-one', itemCode: 'ONE', itemName: '同名餐點', price: 1, imageUrl: 'https://one.example/item.jpg', sourceOrder: 1 }
+    ]
+  });
+  seedCompatibilityVersion(database, {
+    id: 'ambiguous-vendor-two', date: '2026-09-12', vendor: 'Vendor Two', rows: [
+      { menuItemId: 'ambiguous-two', itemCode: 'TWO', itemName: '同名餐點', price: 1, imageUrl: 'https://two.example/item.jpg', sourceOrder: 1 }
+    ]
+  });
+  seedChange(database, {
+    id: 'historical-ambiguous', date: '2026-09-01', code: 'E',
+    name: '同名餐點', price: 75, source: 'legacy_sql'
+  });
+
+  const menu = await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-10' });
+  assert.equal(menu[0].image_url, '');
 });
 
 test('materializer is deterministic, preserves signed/image/variant state, and excludes disabled rows', async () => {
