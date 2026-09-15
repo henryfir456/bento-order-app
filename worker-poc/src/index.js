@@ -14,25 +14,18 @@ import {
   normalizeUser,
   resolveMode
 } from './contract.js';
-
-const CORS_HEADERS = {
-  'Access-Control-Allow-Headers': 'Content-Type',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Origin': '*'
-};
+import { applyCorsPolicy } from './http/response.js';
 
 const jsonResponse = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), {
   status,
   headers: {
-    ...CORS_HEADERS,
     'Content-Type': 'application/json; charset=utf-8',
     ...headers
   }
 });
 
 const emptyResponse = (status = 204) => new Response(null, {
-  status,
-  headers: CORS_HEADERS
+  status
 });
 
 const asRows = (result) => {
@@ -446,7 +439,7 @@ const buildOrderPageResponse = async (database, url, now) => {
   });
 };
 
-export async function handleRequest(request, env, options = {}) {
+const handleRequestWithoutCors = async (request, env, options = {}) => {
   if (request.method === 'OPTIONS') return emptyResponse();
   if (request.method !== 'GET') {
     return jsonResponse({ error: 'METHOD_NOT_ALLOWED' }, 405);
@@ -513,6 +506,16 @@ export async function handleRequest(request, env, options = {}) {
   } catch {
     return jsonResponse({ error: 'INTERNAL_SERVER_ERROR' }, 500);
   }
+};
+
+export async function handleRequest(request, env, options = {}) {
+  let response;
+  try {
+    response = await handleRequestWithoutCors(request, env, options);
+  } catch {
+    response = jsonResponse({ error: 'INTERNAL_SERVER_ERROR' }, 500);
+  }
+  return applyCorsPolicy(response, request, env);
 }
 
 export default {

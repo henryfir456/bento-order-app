@@ -6,6 +6,11 @@ import {
   CORS_HEADERS,
   PRODUCTION_FRONTEND_ORIGIN
 } from '../src/http/response.js';
+import {
+  CORS_SMOKE_ALLOWED_ORIGINS,
+  CORS_SMOKE_REJECTED_ORIGIN,
+  runCorsSmoke
+} from '../scripts/remote-cors-smoke.mjs';
 import { SqliteD1 } from './helpers/formal-db.js';
 import { profileFetch, seedUser } from './helpers/formal-fixtures.js';
 
@@ -47,7 +52,7 @@ const callFormal = async (
     headers = {},
     body,
     database = new SqliteD1(),
-    env = remoteTestEnv(),
+    env = {},
     fetchImpl = profileFetch()
   } = {}
 ) => {
@@ -104,11 +109,19 @@ test('remote-test CORS retains the Netlify origin', async () => {
   assertCorsAllowed(response, PRODUCTION_FRONTEND_ORIGIN);
 });
 
-test('localhost is rejected without local CORS config', async () => {
+test('localhost is allowed without CORS runtime configuration', async () => {
   const response = await callMe('http://localhost:5173');
 
   assert.equal(response.status, 200);
-  assertCorsDenied(response);
+  assertCorsAllowed(response, 'http://localhost:5173');
+});
+
+test('127.0.0.1 is allowed without CORS runtime configuration', async () => {
+  const origin = 'http://127.0.0.1:5173';
+  const response = await callMe(origin);
+
+  assert.equal(response.status, 200);
+  assertCorsAllowed(response, origin);
 });
 
 test('Pinggy is rejected without remote-test CORS mode', async () => {
@@ -201,7 +214,7 @@ test('localhost is allowed in explicit local and remote-test modes', async () =>
   }
 });
 
-test('127.0.0.1 is allowed only when explicitly configured', async () => {
+test('127.0.0.1 remains allowed when explicitly configured', async () => {
   const origin = 'http://127.0.0.1:5173';
   const response = await callMe(origin, localEnv(origin));
 
@@ -248,13 +261,13 @@ test('arbitrary origins remain rejected in local mode', async () => {
   assertCorsDenied(response);
 });
 
-test('local allowlist is ignored unless CORS_MODE is local', async () => {
+test('localhost remains allowed even when CORS_MODE is omitted', async () => {
   const response = await callMe('http://localhost:5173', {
     DEV_ALLOWED_ORIGINS: 'http://localhost:5173'
   });
 
   assert.equal(response.status, 200);
-  assertCorsDenied(response);
+  assertCorsAllowed(response, 'http://localhost:5173');
 });
 
 test('unsafe and malformed local entries are ignored', async () => {
@@ -279,6 +292,33 @@ test('OPTIONS preserves the production CORS preflight contract without local con
 
   assert.equal(response.status, 204);
   assertCorsAllowed(response, PRODUCTION_FRONTEND_ORIGIN);
+});
+
+test('OPTIONS allows both stable localhost origins without CORS runtime configuration', async () => {
+  for (const origin of ['http://localhost:5173', 'http://127.0.0.1:5173']) {
+    const response = await handleFormalRequest(request('/api/me', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'GET',
+        'Access-Control-Request-Headers': 'Authorization'
+      }
+    }), {});
+
+    assert.equal(response.status, 204);
+    assertCorsAllowed(response, origin);
+  }
+});
+
+test('unauthenticated GET /api/me keeps CORS for both stable localhost origins', async () => {
+  for (const origin of ['http://localhost:5173', 'http://127.0.0.1:5173']) {
+    const response = await handleFormalRequest(request('/api/me', {
+      headers: { Origin: origin }
+    }), {});
+
+    assert.equal(response.status, 401);
+    assertCorsAllowed(response, origin);
+  }
 });
 
 test('OPTIONS preserves the CORS preflight contract in local mode', async () => {
@@ -410,6 +450,89 @@ test('error responses use the same CORS policy', async () => {
 
   assert.equal(remoteTest.status, 401);
   assertCorsAllowed(remoteTest, remoteTestPinggyOrigin);
+});
+
+test('uncaught runtime errors keep CORS for an allowed origin', async () => {
+  const response = await handleFormalRequest(request('/api/me', {
+    headers: {
+      Origin: 'http://localhost:5173',
+      Authorization: 'Bearer test-token'
+    }
+  }), {
+    DB: {
+      prepare() {
+        throw new Error('synthetic runtime failure');
+      }
+    }
+  }, {
+    fetchImpl: profileFetch({ token: 'test-token', lineUserId: 'test-user' })
+  });
+
+  assert.equal(response.status, 500);
+  assertCorsAllowed(response, 'http://localhost:5173');
+});
+
+test('read-only CORS smoke requires preflight and actual unauthenticated ACAO', async () => {
+  const calls = [];
+  const result = await runCorsSmoke({
+    baseUrl: 'https://worker.test',
+    fetchImpl: async (url, init = {}) => {
+      const origin = init.headers?.Origin;
+      calls.push([url, init.method || 'GET', origin]);
+      const isPreflight = init.method === 'OPTIONS';
+      const headers = origin && CORS_SMOKE_ALLOWED_ORIGINS.includes(origin)
+        ? {
+          'Access-Control-Allow-Origin': origin,
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': 'Authorization',
+          Vary: 'Origin'
+        }
+        : { Vary: 'Origin' };
+      return new Response(
+        isPreflight ? null : JSON.stringify({ error: 'AUTH_REQUIRED' }),
+        { status: isPreflight ? 204 : 401, headers }
+      );
+    }
+  });
+
+  assert.equal(result.preflight, 'PASS');
+  assert.equal(result.actualUnauthenticated, 'PASS');
+  assert.deepEqual(calls.map(([, method, origin]) => [method, origin]), [
+    ['OPTIONS', CORS_SMOKE_ALLOWED_ORIGINS[0]],
+    ['GET', CORS_SMOKE_ALLOWED_ORIGINS[0]],
+    ['OPTIONS', CORS_SMOKE_ALLOWED_ORIGINS[1]],
+    ['GET', CORS_SMOKE_ALLOWED_ORIGINS[1]],
+    ['GET', CORS_SMOKE_REJECTED_ORIGIN]
+  ]);
+});
+
+test('read-only CORS smoke fails when actual 401 loses ACAO', async () => {
+  let actual = false;
+  await assert.rejects(
+    runCorsSmoke({
+      baseUrl: 'https://worker.test',
+      fetchImpl: async (_url, init = {}) => {
+        if (init.method === 'OPTIONS') {
+          return new Response(null, {
+            status: 204,
+            headers: {
+              'Access-Control-Allow-Origin': init.headers.Origin,
+              'Access-Control-Allow-Methods': 'GET, OPTIONS',
+              'Access-Control-Allow-Headers': 'Authorization',
+              Vary: 'Origin'
+            }
+          });
+        }
+        actual = true;
+        return new Response(JSON.stringify({ error: 'AUTH_REQUIRED' }), {
+          status: 401,
+          headers: { Vary: 'Origin' }
+        });
+      }
+    }),
+    /GET http:\/\/localhost:5173 ACAO/
+  );
+  assert.equal(actual, true);
 });
 
 test('success and 400/401/403/404/409 responses retain the allowed CORS boundary', async () => {

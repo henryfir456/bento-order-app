@@ -1,10 +1,10 @@
 export const PRODUCTION_FRONTEND_ORIGIN = 'https://stirring-pony-3571ac.netlify.app';
 export const LOCAL_DEVELOPMENT_ORIGIN = 'http://localhost:5173';
+export const LOOPBACK_DEVELOPMENT_ORIGIN = 'http://127.0.0.1:5173';
 
 export const CORS_HEADERS = Object.freeze({
   'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, X-Employee-Guest-Session',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS, PATCH, POST, PUT, DELETE',
-  'Access-Control-Allow-Origin': PRODUCTION_FRONTEND_ORIGIN
+  'Access-Control-Allow-Methods': 'GET, OPTIONS, PATCH, POST, PUT, DELETE'
 });
 
 const isLocalCorsMode = (env) => (
@@ -39,10 +39,12 @@ const normalizeExactOrigin = (value) => {
 };
 
 const resolveAllowedOrigins = (env = {}) => {
-  const allowedOrigins = new Set([PRODUCTION_FRONTEND_ORIGIN]);
+  const allowedOrigins = new Set([
+    PRODUCTION_FRONTEND_ORIGIN,
+    LOCAL_DEVELOPMENT_ORIGIN,
+    LOOPBACK_DEVELOPMENT_ORIGIN
+  ]);
   if (!isExplicitDevOrTestCorsMode(env)) return allowedOrigins;
-
-  allowedOrigins.add(LOCAL_DEVELOPMENT_ORIGIN);
 
   String(env.DEV_ALLOWED_ORIGINS || '')
     .split(',')
@@ -68,20 +70,27 @@ const isDynamicPinggyOrigin = (origin) => {
     && PINGGY_REMOTE_TEST_HOST_PATTERN.test(parsed.hostname);
 };
 
-const isOriginAllowed = (origin, env) => (
-  resolveAllowedOrigins(env).has(origin)
-  || (isRemoteTestCorsMode(env) && isDynamicPinggyOrigin(origin))
-);
+export const isAllowedOrigin = (origin, env = {}) => {
+  const normalizedOrigin = normalizeExactOrigin(origin);
+  return Boolean(
+    normalizedOrigin
+    && (
+      resolveAllowedOrigins(env).has(normalizedOrigin)
+      || (isRemoteTestCorsMode(env) && isDynamicPinggyOrigin(normalizedOrigin))
+    )
+  );
+};
 
 export const applyCorsPolicy = (response, request, env = {}) => {
   const headers = new Headers(response.headers);
-  const origin = request?.headers.get('Origin');
-  if (!isOriginAllowed(origin, env)) {
+  const origin = normalizeExactOrigin(request?.headers.get('Origin'));
+  if (!isAllowedOrigin(origin, env)) {
     headers.delete('Access-Control-Allow-Origin');
     headers.delete('Access-Control-Allow-Headers');
     headers.delete('Access-Control-Allow-Methods');
   } else {
     headers.set('Access-Control-Allow-Origin', origin);
+    Object.entries(CORS_HEADERS).forEach(([header, value]) => headers.set(header, value));
   }
   headers.set('Vary', 'Origin');
   return new Response(response.body, {
@@ -96,7 +105,6 @@ export const jsonResponse = (body, status = 200, headers = {}) => new Response(
   {
     status,
     headers: {
-      ...CORS_HEADERS,
       'Content-Type': 'application/json; charset=utf-8',
       ...headers
     }
@@ -104,6 +112,5 @@ export const jsonResponse = (body, status = 200, headers = {}) => new Response(
 );
 
 export const emptyResponse = (status = 204) => new Response(null, {
-  status,
-  headers: CORS_HEADERS
+  status
 });

@@ -10,33 +10,55 @@ import { HttpError, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
 
 export const handleFormalRequest = async (request, env, options = {}) => {
-  const corsResponse = (response) => applyCorsPolicy(response, request, env);
-  if (request.method === 'OPTIONS') return corsResponse(emptyResponse());
+  let response;
   try {
-    const authResponse = await handleAuthRoute(request, env, options);
-    if (authResponse) return corsResponse(authResponse);
-    const meResponse = await handleMeRoute(request, env, options);
-    if (meResponse) return corsResponse(meResponse);
-    const orderResponse = await handleOrderRoute(request, env, options);
-    if (orderResponse) return corsResponse(orderResponse);
-    const calendarResponse = await handleCalendarRoute(request, env, options);
-    if (calendarResponse) return corsResponse(calendarResponse);
-    const roleResponse = await handleRoleRoute(request, env, options);
-    if (roleResponse) return corsResponse(roleResponse);
-    const adminResponse = await handleAdminRoute(request, env, options);
-    if (adminResponse) return corsResponse(adminResponse);
-    const balanceResponse = await handleBalanceRoute(request, env, options);
-    if (balanceResponse) return corsResponse(balanceResponse);
-    const readResponse = await handleReadOnlyRequest(request, env, options);
-    if (readResponse) return corsResponse(readResponse);
-    return corsResponse(jsonResponse({ error: 'NOT_FOUND' }, 404));
+    if (request.method === 'OPTIONS') {
+      response = emptyResponse();
+    } else {
+      const authResponse = await handleAuthRoute(request, env, options);
+      if (authResponse) response = authResponse;
+      if (!response) {
+        const meResponse = await handleMeRoute(request, env, options);
+        if (meResponse) response = meResponse;
+      }
+      if (!response) {
+        const orderResponse = await handleOrderRoute(request, env, options);
+        if (orderResponse) response = orderResponse;
+      }
+      if (!response) {
+        const calendarResponse = await handleCalendarRoute(request, env, options);
+        if (calendarResponse) response = calendarResponse;
+      }
+      if (!response) {
+        const roleResponse = await handleRoleRoute(request, env, options);
+        if (roleResponse) response = roleResponse;
+      }
+      if (!response) {
+        const adminResponse = await handleAdminRoute(request, env, options);
+        if (adminResponse) response = adminResponse;
+      }
+      if (!response) {
+        const balanceResponse = await handleBalanceRoute(request, env, options);
+        if (balanceResponse) response = balanceResponse;
+      }
+      if (!response) {
+        const readResponse = await handleReadOnlyRequest(request, env, options);
+        if (readResponse) response = readResponse;
+      }
+      if (!response) response = jsonResponse({ error: 'NOT_FOUND' }, 404);
+    }
   } catch (error) {
     const publicError = toPublicError(error);
     if (!(error instanceof HttpError) && options.onInternalError) {
-      options.onInternalError(error);
+      try {
+        options.onInternalError(error);
+      } catch {
+        // Logging must not bypass the global response decorator.
+      }
     }
-    return corsResponse(jsonResponse(publicError.body, publicError.status));
+    response = jsonResponse(publicError.body, publicError.status);
   }
+  return applyCorsPolicy(response, request, env);
 };
 
 export default {
