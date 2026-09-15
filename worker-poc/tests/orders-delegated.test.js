@@ -124,23 +124,23 @@ test('delegated ordering rejects inactive and historical provisional targets', a
     verificationStatus: 'UNVERIFIED'
   });
   seedUser(database, {
-    userId: 'active-provisional',
-    displayName: 'Active Provisional',
-    pickupFloor: '1樓',
+    userId: 'active-incomplete-provisional',
+    displayName: 'Active Incomplete Provisional',
+    pickupFloor: null,
     lineUserId: null,
     employeeId: 'provisional-001',
     active: 1,
     verificationStatus: 'UNVERIFIED'
   });
   seedProvisionalGuestEvidence(database, {
-    userId: 'active-provisional',
+    userId: 'active-incomplete-provisional',
     employeeId: 'provisional-001'
   });
 
   for (const [targetUserId, key] of [
     ['inactive-target', 'inactive-target'],
     ['historical-provisional', 'historical-provisional'],
-    ['active-provisional', 'active-provisional']
+    ['active-incomplete-provisional', 'active-incomplete-provisional']
   ]) {
     const result = await create(
       database,
@@ -170,6 +170,13 @@ test('delegated target discovery is role-gated and returns only eligible targets
     employeeId: 'employee-only-001'
   });
   seedUser(database, {
+    userId: 'missing-employee-id-target',
+    displayName: 'Missing Employee ID Target',
+    pickupFloor: '1樓',
+    lineUserId: null,
+    employeeId: null
+  });
+  seedUser(database, {
     userId: 'admin-non-line-target',
     displayName: 'Admin No LINE',
     pickupFloor: '1樓',
@@ -177,6 +184,10 @@ test('delegated target discovery is role-gated and returns only eligible targets
     employeeId: 'admin-non-line-001',
     role: 'Admin',
     verificationStatus: 'UNVERIFIED'
+  });
+  seedProvisionalGuestEvidence(database, {
+    userId: 'admin-non-line-target',
+    employeeId: 'admin-non-line-001'
   });
   seedUser(database, {
     userId: 'proxy-non-line-target',
@@ -186,17 +197,33 @@ test('delegated target discovery is role-gated and returns only eligible targets
     employeeId: 'proxy-non-line-001',
     role: 'ProxyAdmin'
   });
+  seedProvisionalGuestEvidence(database, {
+    userId: 'proxy-non-line-target',
+    employeeId: 'proxy-non-line-001'
+  });
   seedUser(database, {
-    userId: 'active-provisional-target',
-    displayName: 'Active Provisional Target',
+    userId: 'active-historical-canonical-target',
+    displayName: 'Active Historical Canonical Target',
     pickupFloor: '1樓',
     lineUserId: null,
     employeeId: 'provisional-target-001',
     verificationStatus: 'UNVERIFIED'
   });
   seedProvisionalGuestEvidence(database, {
-    userId: 'active-provisional-target',
+    userId: 'active-historical-canonical-target',
     employeeId: 'provisional-target-001'
+  });
+  seedUser(database, {
+    userId: 'active-incomplete-provisional-target',
+    displayName: 'Active Incomplete Provisional Target',
+    pickupFloor: null,
+    lineUserId: null,
+    employeeId: 'incomplete-provisional-target-001',
+    verificationStatus: 'UNVERIFIED'
+  });
+  seedProvisionalGuestEvidence(database, {
+    userId: 'active-incomplete-provisional-target',
+    employeeId: 'incomplete-provisional-target-001'
   });
   seedUser(database, {
     userId: 'bound-survivor-with-history',
@@ -235,6 +262,7 @@ test('delegated target discovery is role-gated and returns only eligible targets
   const adminBody = await adminResponse.json();
   assert.equal(adminResponse.status, 200);
   assert.deepEqual(adminBody.targets.map((target) => target.userId), [
+    'active-historical-canonical-target',
     'admin-non-line-target',
     'bound-survivor-with-history',
     'employee-only-target',
@@ -270,9 +298,12 @@ test('delegated target discovery is role-gated and returns only eligible targets
   const adminNonLineTarget = adminBody.targets.find((target) => target.userId === 'admin-non-line-target');
   assert.equal(adminNonLineTarget.verificationStatus, 'UNVERIFIED');
   assert.equal(adminNonLineTarget.identityState, 'VERIFIED');
+  assert.equal(adminBody.targets.find((target) => target.userId === 'proxy-non-line-target').lineUserId, null);
   assert.equal(adminBody.targets.some((target) => target.userId === 'inactive-non-line-target'), false);
   assert.equal(adminBody.targets.some((target) => target.userId === 'historical-provisional-target'), false);
-  assert.equal(adminBody.targets.some((target) => target.userId === 'active-provisional-target'), false);
+  assert.equal(adminBody.targets.some((target) => target.userId === 'missing-employee-id-target'), false);
+  assert.equal(adminBody.targets.some((target) => target.userId === 'active-historical-canonical-target'), true);
+  assert.equal(adminBody.targets.some((target) => target.userId === 'active-incomplete-provisional-target'), false);
 
   const userResponse = await handleFormalRequest(
     request('/api/orders/targets', { token: 'user-token' }),
@@ -282,6 +313,135 @@ test('delegated target discovery is role-gated and returns only eligible targets
   const userBody = await userResponse.json();
   assert.equal(userResponse.status, 403);
   assert.equal(userBody.error, 'FORBIDDEN');
+});
+
+test('delegated discovery, create, read, and cancel share no-LINE historical canonical eligibility', async () => {
+  const database = delegatedDatabase({ targetBalance: 100, actorBalance: 500 });
+  seedUser(database, {
+    userId: 'no-line-historical-canonical',
+    displayName: 'No LINE Historical Canonical',
+    pickupFloor: '1樓',
+    lineUserId: null,
+    employeeId: 'historical-canonical-001',
+    verificationStatus: 'UNVERIFIED',
+    balance: 100
+  });
+  seedProvisionalGuestEvidence(database, {
+    userId: 'no-line-historical-canonical',
+    employeeId: 'historical-canonical-001'
+  });
+
+  const targetsResponse = await handleFormalRequest(
+    request('/api/orders/targets', { token: 'admin-token' }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token: 'admin-token', lineUserId: 'admin-1' }), now: ORDER_NOW }
+  );
+  const targetsBody = await targetsResponse.json();
+  assert.equal(targetsResponse.status, 200);
+  assert.equal(targetsBody.targets.some((target) => target.userId === 'no-line-historical-canonical'), true);
+
+  const created = await create(
+    database,
+    orderBody(TODAY, { targetUserId: 'no-line-historical-canonical' }),
+    'no-line-historical-create',
+    profileFor('admin-1', 'admin-token')
+  );
+  assert.equal(created.response.status, 200);
+
+  const readResponse = await handleFormalRequest(
+    request(`/api/order-page?targetDate=${TODAY}&targetUserId=no-line-historical-canonical`, {
+      token: 'admin-token'
+    }),
+    { DB: database },
+    {
+      fetchImpl: profileFetch({ token: 'admin-token', lineUserId: 'admin-1' }),
+      now: ORDER_NOW
+    }
+  );
+  const readBody = await readResponse.json();
+  assert.equal(readResponse.status, 200);
+  assert.equal(readBody.targetUser.userId, 'no-line-historical-canonical');
+  assert.equal(readBody.myOrder.orderId, created.body.orderId);
+
+  const cancelled = await cancel(
+    database,
+    created.body.orderId,
+    'no-line-historical-cancel',
+    profileFor('admin-1', 'admin-token'),
+    { targetUserId: 'no-line-historical-canonical' }
+  );
+  assert.equal(cancelled.response.status, 200);
+  assert.equal(cancelled.body.newBalance, 100);
+  assert.equal(database.get(
+    "SELECT balance FROM users WHERE user_id = 'no-line-historical-canonical'"
+  ).balance, 100);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'admin-1'").balance, 500);
+});
+
+test('delegated operations accept no-LINE Admin and ProxyAdmin targets with historical provenance', async () => {
+  for (const role of ['Admin', 'ProxyAdmin']) {
+    const database = delegatedDatabase({ targetBalance: 100, actorBalance: 500 });
+    const targetUserId = `no-line-${role.toLowerCase()}-historical-target`;
+    const employeeId = `${role.toLowerCase()}-historical-001`;
+    seedUser(database, {
+      userId: targetUserId,
+      displayName: `No LINE ${role} Historical Target`,
+      pickupFloor: '1樓',
+      lineUserId: null,
+      employeeId,
+      role,
+      verificationStatus: 'UNVERIFIED',
+      balance: 100
+    });
+    seedProvisionalGuestEvidence(database, { userId: targetUserId, employeeId });
+
+    const targetsResponse = await handleFormalRequest(
+      request('/api/orders/targets', { token: 'admin-token' }),
+      { DB: database },
+      { fetchImpl: profileFetch({ token: 'admin-token', lineUserId: 'admin-1' }), now: ORDER_NOW }
+    );
+    const targetsBody = await targetsResponse.json();
+    const target = targetsBody.targets.find((row) => row.userId === targetUserId);
+    assert.equal(targetsResponse.status, 200);
+    assert.equal(target.role, role);
+    assert.equal(target.lineUserId, null);
+    assert.equal(target.authSource, 'EMPLOYEE');
+
+    const created = await create(
+      database,
+      orderBody(TODAY, { targetUserId }),
+      `${targetUserId}-create`,
+      profileFor('admin-1', 'admin-token')
+    );
+    assert.equal(created.response.status, 200);
+
+    const readResponse = await handleFormalRequest(
+      request(`/api/order-page?targetDate=${TODAY}&targetUserId=${targetUserId}`, {
+        token: 'admin-token'
+      }),
+      { DB: database },
+      {
+        fetchImpl: profileFetch({ token: 'admin-token', lineUserId: 'admin-1' }),
+        now: ORDER_NOW
+      }
+    );
+    const readBody = await readResponse.json();
+    assert.equal(readResponse.status, 200);
+    assert.equal(readBody.targetUser.userId, targetUserId);
+    assert.equal(readBody.myOrder.orderId, created.body.orderId);
+
+    const cancelled = await cancel(
+      database,
+      created.body.orderId,
+      `${targetUserId}-cancel`,
+      profileFor('admin-1', 'admin-token'),
+      { targetUserId }
+    );
+    assert.equal(cancelled.response.status, 200);
+    assert.equal(cancelled.body.newBalance, 100);
+    assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', targetUserId).balance, 100);
+    assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'admin-1'").balance, 500);
+  }
 });
 
 test('Admin can delegate an order to an active canonical no-LINE User', async () => {

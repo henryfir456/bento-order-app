@@ -5,7 +5,6 @@ import {
 import { currentBalanceProjection, publicUser, toUser } from '../db/users.js';
 import { forbidden, badRequest } from '../http/errors.js';
 import { deadlineInfo, getTaipeiDate } from './deadlines.js';
-import { matchingEmployeeGuestEvidencePredicate } from './employeeGuestEvidence.js';
 import { isProfileComplete } from './profile.js';
 
 const DELEGATED_ROLES = new Set(['ProxyAdmin', 'Admin']);
@@ -19,45 +18,25 @@ export const normalizeTargetUserId = (value) => {
 
 const hasEmployeeId = (value) => String(value ?? '').trim().length > 0;
 
-// Keep canonical/provisional identity separate from nullable LINE binding:
-// only an unbound row with historical provisional guest-session evidence is
-// excluded here. A bound canonical survivor remains eligible even if its
-// historical guest sessions are retained for audit/provenance.
-export const isEligibleOrderTarget = (user, { hasProvisionalGuestEvidence = false } = {}) => Boolean(
+// Keep canonical identity separate from nullable LINE binding: a canonical
+// member does not need a LINE binding to be an order target. Historical guest
+// sessions are audit/provenance only and never override current eligibility.
+export const isEligibleOrderTarget = (user) => Boolean(
   user?.userId
   && user.active === true
   && hasEmployeeId(user.employeeId)
-  && !hasProvisionalGuestEvidence
   && isProfileComplete(user)
 );
-
-const provisionalGuestEvidence = (alias = 'u') => `
-  ${alias}.line_user_id IS NULL
-  AND EXISTS (
-    SELECT 1
-    FROM employee_guest_sessions egs
-    WHERE ${matchingEmployeeGuestEvidencePredicate({
-      sessionAlias: 'egs',
-      ownerUserIdExpression: `${alias}.user_id`,
-      ownerEmployeeIdExpression: `${alias}.employee_id`
-    })}
-  )
-`;
 
 const orderTargetColumns = (alias = 'u') => `
   ${alias}.user_id, ${alias}.employee_id, ${alias}.line_user_id,
   ${alias}.display_name, ${alias}.pickup_floor,
   ${currentBalanceProjection(alias)} AS balance,
   ${alias}.role, ${alias}.active, ${alias}.verification_status,
-  ${alias}.created_at, ${alias}.updated_at,
-  CASE WHEN ${provisionalGuestEvidence(alias)} THEN 1 ELSE 0 END
-    AS has_provisional_guest_evidence
+  ${alias}.created_at, ${alias}.updated_at
 `;
 
-const orderTargetRecord = (row) => ({
-  user: toUser(row),
-  hasProvisionalGuestEvidence: Boolean(row?.has_provisional_guest_evidence)
-});
+const orderTargetRecord = (row) => ({ user: toUser(row) });
 
 const getOrderTargetById = async (database, userId) => {
   const row = await database.prepare(`
@@ -103,7 +82,7 @@ export const resolveOrderActorTarget = async (
 
   const targetRecord = await getOrderTargetById(database, targetUserId);
   const target = targetRecord.user;
-  if (!isEligibleOrderTarget(target, targetRecord)) {
+  if (!isEligibleOrderTarget(target)) {
     throw forbidden(targetUserId === actor.userId
       ? 'PROFILE_COMPLETION_REQUIRED'
       : 'ORDER_TARGET_INELIGIBLE');
@@ -189,7 +168,7 @@ export const getEligibleOrderTargets = async (database, identity) => {
   `).all();
   return rowsFrom(result)
     .map(orderTargetRecord)
-    .filter((record) => isEligibleOrderTarget(record.user, record))
+    .filter((record) => isEligibleOrderTarget(record.user))
     .filter((record) => record.user.userId !== actor.userId)
     .map((record) => publicUser(record.user, { authMode: 'canonical' }));
 };
