@@ -21,6 +21,10 @@ import {
   backfillMenuItemChanges
 } from '../scripts/lib/menu-item-change-backfill.mjs';
 import { readLegacySqlDump } from '../scripts/lib/legacy-sql-adapter.mjs';
+import {
+  buildHistoricalImageFallbackIndex,
+  resolveHistoricalImageDisplayUrl
+} from '../src/domain/menuImageFallback.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 import { profileFetch, request, seedUser } from './helpers/formal-fixtures.js';
 
@@ -63,12 +67,18 @@ const seedChange = (database, {
 };
 
 const seedCompatibilityVersion = (database, {
-  id, date = '2026-09-06', vendor = '蔡老師', rows
+  id, date = '2026-09-06', vendor = '蔡老師', sourceBatchId = null, rows
 }) => {
+  if (sourceBatchId) {
+    database.run(`
+      INSERT INTO import_batches (batch_id, source_hash, importer_version, status)
+      VALUES (?, ?, 'current-menu-test', 'REVIEWED')
+    `, sourceBatchId, `${sourceBatchId}-hash`);
+  }
   database.run(`
-    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
-    VALUES (?, ?, ?)
-  `, id, vendor, date);
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date, source_batch_id)
+    VALUES (?, ?, ?, ?)
+  `, id, vendor, date, sourceBatchId);
   for (const row of rows) {
     database.run(`
       INSERT INTO menu_items (
@@ -173,6 +183,61 @@ test('historical image fallback leaves unmatched rows empty and legacy live imag
   assert.equal(withImage[0].image_url, 'https://history.example/h1.jpg');
 });
 
+test('historical image fallback follows approved aliases, preserves explicit images, and skips protected names', () => {
+  const currentImageIndex = buildHistoricalImageFallbackIndex([
+    { item_name: '  風味餐  ', image_url: 'https://current.example/e.jpg' },
+    { item_name: '風味便當', image_url: 'https://current.example/a.jpg' },
+    { item_name: '風味會議', image_url: 'https://current.example/a110.jpg' },
+    { item_name: '小而美', image_url: 'https://current.example/s.jpg' },
+    { item_name: '特餐', image_url: 'https://current.example/c.jpg' },
+    { item_name: '會議', image_url: 'https://current.example/c105.jpg' },
+    { item_name: '番茄鷹豆泥', image_url: 'https://current.example/tomato.jpg' },
+    { item_name: '紅麴豆腐', image_url: 'https://current.example/red-tofu.jpg' },
+    { item_name: '醬燒板豆腐', image_url: 'https://current.example/soy-tofu.jpg' },
+    { item_name: '蒜香辣泡菜', image_url: 'https://current.example/kimchi.jpg' },
+    { item_name: '水煮低醣健康餐', image_url: 'https://current.example/b.jpg' },
+    { item_name: '免費加飯', image_url: 'https://current.example/free-rice.jpg' },
+    { item_name: '手續費減免', image_url: 'https://current.example/fee.jpg' },
+    { item_name: '1元', image_url: 'https://current.example/one-dollar.jpg' }
+  ]);
+  const displayImage = (itemName, itemCode = 'E') => resolveHistoricalImageDisplayUrl({
+    item_name: itemName,
+    item_code: itemCode,
+    image_url: ''
+  }, currentImageIndex);
+
+  assert.equal(resolveHistoricalImageDisplayUrl({
+    item_name: 'E.風味餐', image_url: 'https://history.example/e.jpg'
+  }, currentImageIndex), 'https://history.example/e.jpg');
+  assert.equal(displayImage(' E.風味餐 ', 'E_plus'), 'https://current.example/e.jpg');
+  assert.equal(displayImage('Ａ.風味便當', 'A95_plus'), 'https://current.example/a.jpg');
+  assert.equal(displayImage('風味會議便當', 'A120_plus'), 'https://current.example/a110.jpg');
+  assert.equal(displayImage('S.小而美便當', 'S_half'), 'https://current.example/s.jpg');
+  assert.equal(displayImage('C.每日特餐', 'C95_half'), 'https://current.example/c.jpg');
+  assert.equal(displayImage('會議便當', 'C120_half'), 'https://current.example/c105.jpg');
+  assert.equal(displayImage('蕃茄鷹豆泥', 'H1'), 'https://current.example/tomato.jpg');
+  assert.equal(displayImage('紅麴腐乳板豆腐', 'H2'), 'https://current.example/red-tofu.jpg');
+  assert.equal(displayImage('醬燒板豆腐', 'H3'), 'https://current.example/soy-tofu.jpg');
+  assert.equal(displayImage('蒜香辣泡菜', 'H4'), 'https://current.example/kimchi.jpg');
+  assert.equal(displayImage('B.水煮低醣健康餐', 'B'), '');
+  assert.equal(displayImage('免費加飯', 'FR'), '');
+  assert.equal(displayImage('手續費減免', 'revert1'), '');
+  assert.equal(displayImage('1元', 'FR1'), '');
+  assert.equal(displayImage('E風味餐', 'unlisted-near-match'), '');
+});
+
+test('historical image fallback fails closed for normalized current-name collisions', () => {
+  const currentImageIndex = buildHistoricalImageFallbackIndex([
+    { vendor: 'Vendor A', item_name: '風味餐', image_url: 'https://current.example/e.jpg' },
+    { vendor: 'Vendor B', item_name: '  風味餐  ', image_url: '' },
+    { vendor: 'Vendor C', item_name: '風味餐', image_url: 'https://current.example/e.jpg' }
+  ]);
+
+  assert.equal(resolveHistoricalImageDisplayUrl({
+    item_name: 'E.風味餐', image_url: ''
+  }, currentImageIndex), '');
+});
+
 test('historical H1-H4 rows canonicalize to 禾拾 and 合十 resolves as its alias', () => {
   const rows = ['H1', 'H2', 'H3', 'H4'].map((code, index) => ({
     menu_item_change_id: `historical-${code}`,
@@ -254,22 +319,22 @@ test('Admin menu changes persist one canonical vendor identity for 合十 and hi
   }).vendor, '禾拾');
 });
 
-test('historical image fallback is display-only, name-based across differing codes, and prefers history images', async () => {
+test('historical image fallback is display-only, uses approved aliases across differing codes, and prefers history images', async () => {
   const database = new SqliteD1();
   seedCompatibilityVersion(database, {
-    id: 'current-he-shi-images', date: '2026-09-12', vendor: '禾拾', rows: [
+    id: 'current-he-shi-images', date: '2026-09-12', vendor: '禾拾', sourceBatchId: 'current-he-shi-batch', rows: [
       {
-        menuItemId: 'current-lunch-h1', itemCode: 'CURRENT-H1', itemName: '蕃茄鷹豆泥',
+        menuItemId: 'current-lunch-h1', itemCode: 'CURRENT-H1', itemName: '番茄鷹豆泥',
         price: 140, imageUrl: 'https://current.example/h1.jpg', sourceOrder: 1
       },
       {
-        menuItemId: 'current-lunch-h2', itemCode: 'CURRENT-H2', itemName: '紅麴腐乳板豆腐',
+        menuItemId: 'current-lunch-h2', itemCode: 'CURRENT-H2', itemName: '紅麴豆腐',
         price: 140, imageUrl: 'https://current.example/h2.jpg', sourceOrder: 2
       }
     ]
   });
   seedCompatibilityVersion(database, {
-    id: 'current-other-vendor-images', date: '2026-09-12', vendor: 'Other Vendor', rows: [
+    id: 'current-other-vendor-images', date: '2026-09-12', vendor: 'Other Vendor', sourceBatchId: 'current-other-vendor-batch', rows: [
       {
         menuItemId: 'current-other-h1', itemCode: 'OTHER-H1', itemName: '蕃茄鷹豆泥',
         price: 140, imageUrl: 'https://other.example/h1.jpg', sourceOrder: 1
@@ -314,6 +379,68 @@ test('historical image fallback is display-only, name-based across differing cod
   ]);
   assert.equal(database.get(
     'SELECT image_url FROM menu_item_changes WHERE menu_item_change_id = ?', 'historical-h1-no-image'
+  ).image_url, '');
+});
+
+test('GET /api/order-page uses a non-null current version as the historical image catalog', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  database.run(`
+    INSERT INTO calendar_settings (order_date, vendor, mode)
+    VALUES ('2026-09-01', '蔡老師', 'A')
+  `);
+  seedCompatibilityVersion(database, {
+    id: 'current-cai-images', date: '2026-09-02', vendor: '蔡老師', sourceBatchId: 'current-cai-batch', rows: [
+      {
+        menuItemId: 'current-flavor-meeting', itemCode: 'CURRENT-A110', itemName: '風味會議',
+        price: 140, imageUrl: 'https://current.example/flavor-meeting.jpg', sourceOrder: 1
+      }
+    ]
+  });
+  seedChange(database, {
+    id: 'historical-flavor-meeting', date: '2023-04-01', code: 'A120',
+    name: '風味會議便當', price: 120, source: 'legacy_sql'
+  });
+
+  const result = await call(database, '/api/order-page?targetDate=2026-09-01');
+  assert.equal(result.response.status, 200);
+  assert.equal(
+    result.body.menu.find((item) => item.item_name === '風味會議便當').image_url,
+    'https://current.example/flavor-meeting.jpg'
+  );
+  assert.equal(database.get(
+    'SELECT image_url FROM menu_item_changes WHERE menu_item_change_id = ?', 'historical-flavor-meeting'
+  ).image_url, '');
+});
+
+test('Admin menu changes expose fallback images without rewriting historical image_url', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedCompatibilityVersion(database, {
+    id: 'admin-current-images', date: '2026-09-02', vendor: '蔡老師', sourceBatchId: 'admin-current-batch', rows: [
+      {
+        menuItemId: 'admin-current-flavor-meeting', itemCode: 'CURRENT-A110', itemName: '風味會議',
+        price: 140, imageUrl: 'https://current.example/admin-flavor-meeting.jpg', sourceOrder: 1
+      }
+    ]
+  });
+  seedChange(database, {
+    id: 'admin-historical-flavor-meeting', date: '2023-04-01', code: 'A120',
+    name: '風味會議便當', price: 120, source: 'legacy_sql'
+  });
+  seedChange(database, {
+    id: 'admin-historical-explicit', date: '2023-04-01', code: 'E',
+    name: 'E.風味餐', price: 100, image: 'https://history.example/explicit.jpg', source: 'legacy_sql', order: 2
+  });
+
+  const result = await call(database, '/api/admin/menu/changes');
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.changes.find((row) => row.item_code === 'A120').image_url,
+    'https://current.example/admin-flavor-meeting.jpg');
+  assert.equal(result.body.changes.find((row) => row.item_code === 'E').image_url,
+    'https://history.example/explicit.jpg');
+  assert.equal(database.get(
+    'SELECT image_url FROM menu_item_changes WHERE menu_item_change_id = ?', 'admin-historical-flavor-meeting'
   ).image_url, '');
 });
 

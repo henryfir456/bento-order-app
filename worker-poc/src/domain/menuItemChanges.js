@@ -15,9 +15,12 @@ import {
   compatibilityVendorCandidates,
   historicalMenuRowVendorCandidates,
   isHistoricalMenuVendor,
-  normalizeMenuItemName,
   normalizeMenuVendor
 } from './menuVendors.js';
+import {
+  buildHistoricalImageFallbackIndex,
+  resolveHistoricalImageDisplayUrl
+} from './menuImageFallback.js';
 
 export const HISTORICAL_MENU_CUTOFF = '2026-09-10';
 export const HISTORICAL_MENU_VENDOR = HISTORICAL_SQL_VENDOR;
@@ -274,19 +277,21 @@ export const resolveMenuItemChanges = async (database, { vendor, targetDate } = 
   });
 };
 
-const getLatestCompatibilityImageRows = async (database) => {
+const getLatestCurrentMenuImageRows = async (database) => {
   const result = await database.prepare(`
     SELECT mv.menu_version_id, mv.vendor AS version_vendor,
            mv.effective_date AS version_effective_date,
+           mv.source_batch_id AS version_source_batch_id,
            mi.menu_item_id, mi.legacy_item_id, mi.variant_key, mi.item_name,
            mi.price, mi.enabled, mi.note, mi.image_url, mi.source_order,
            mi.created_at, mi.updated_at
     FROM menu_versions mv
     JOIN menu_items mi ON mi.menu_version_id = mv.menu_version_id
-    WHERE mv.source_batch_id IS NULL
+    LEFT JOIN import_batches ib ON ib.batch_id = mv.source_batch_id
+    WHERE ib.importer_version IS NULL OR ib.importer_version <> ?
     ORDER BY mv.effective_date DESC, mv.menu_version_id DESC,
              mi.source_order ASC, mi.menu_item_id ASC
-  `).all();
+  `).bind(HISTORICAL_MENU_IMPORTER_VERSION).all();
   const selectedVersionByVendor = new Map();
   const rows = [];
   for (const rawRow of rowsFrom(result)) {
@@ -298,43 +303,22 @@ const getLatestCompatibilityImageRows = async (database) => {
     rows.push(normalizeCompatibilityRow(rawRow, {
       vendor: rawRow.version_vendor,
       effective_date: rawRow.version_effective_date,
-      source_batch_id: null
+      source_batch_id: rawRow.version_source_batch_id || null
     }));
   }
   return rows;
 };
 
-const addToIndex = (index, key, row) => {
-  const matches = index.get(key) || [];
-  matches.push(row);
-  index.set(key, matches);
-};
-
-const historicalDisplayImage = (row, currentRows) => {
-  const normalizedName = normalizeMenuItemName(row.item_name);
-  if (!normalizedName) return '';
-  const byVendorAndName = new Map();
-  const byName = new Map();
-  for (const currentRow of currentRows) {
-    const currentName = normalizeMenuItemName(currentRow.item_name);
-    if (!currentName) continue;
-    addToIndex(byVendorAndName, `${normalizeMenuVendor(currentRow.vendor)}\u0000${currentName}`, currentRow);
-    addToIndex(byName, currentName, currentRow);
-  }
-  const scopedMatches = byVendorAndName.get(`${normalizeMenuVendor(row.vendor)}\u0000${normalizedName}`) || [];
-  if (scopedMatches.length === 1) return scopedMatches[0].image_url || '';
-  if (scopedMatches.length > 1) return '';
-  const nameMatches = byName.get(normalizedName) || [];
-  return nameMatches.length === 1 ? nameMatches[0].image_url || '' : '';
-};
-
-const applyHistoricalImageFallback = async (database, rows) => {
-  const currentRows = await getLatestCompatibilityImageRows(database);
+const projectDisplayImageRows = async (database, rows) => {
+  const currentRows = await getLatestCurrentMenuImageRows(database);
+  const currentImageIndex = buildHistoricalImageFallbackIndex(currentRows);
   return rows.map((row) => ({
     ...row,
-    display_image_url: row.image_url || historicalDisplayImage(row, currentRows)
+    display_image_url: resolveHistoricalImageDisplayUrl(row, currentImageIndex)
   }));
 };
+
+const applyHistoricalImageFallback = (database, rows) => projectDisplayImageRows(database, rows);
 
 export const resolveEffectiveMenuState = async (database, { vendor, targetDate } = {}) => {
   const changes = await resolveMenuItemChanges(database, { vendor, targetDate });
@@ -631,9 +615,16 @@ export const listAdminMenuItemChanges = async (database, identity, filters = {})
     ORDER BY effective_date DESC, vendor ASC, item_code ASC, variant_key ASC,
              display_order ASC, menu_item_change_id ASC
   `).bind(...filter.bindings).all();
+  const projectedRows = await projectDisplayImageRows(
+    database,
+    rowsFrom(result).map(normalizedChange)
+  );
   return {
     success: true,
-    changes: rowsFrom(result).map(normalizedChange)
+    changes: projectedRows.map((row) => ({
+      ...row,
+      image_url: row.display_image_url || row.image_url
+    }))
   };
 };
 
