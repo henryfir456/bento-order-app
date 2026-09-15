@@ -1,5 +1,11 @@
 import { conflict, forbidden } from '../http/errors.js';
-import { getUserById, getUserByLineId, publicUser, toUser } from '../db/users.js';
+import {
+  currentBalanceProjection,
+  getUserById,
+  getUserByLineId,
+  publicUser,
+  toUser
+} from '../db/users.js';
 import { digestEmployeeId, employeeIdText } from './employeeVerification.js';
 import { matchingEmployeeGuestEvidencePredicate } from './employeeGuestEvidence.js';
 import {
@@ -51,11 +57,12 @@ const readCanonicalOwners = async (database, employeeId) => {
   const result = await database.prepare(`
     SELECT
       user_id, employee_id, line_user_id, display_name, pickup_floor,
-      balance, role, active, verification_status, created_at, updated_at
-    FROM users
-    WHERE UPPER(trim(employee_id)) = ?
-      AND length(trim(employee_id)) > 0
-    ORDER BY user_id ASC
+      ${currentBalanceProjection('u')} AS balance,
+      role, active, verification_status, created_at, updated_at
+    FROM users u
+    WHERE UPPER(trim(u.employee_id)) = ?
+      AND length(trim(u.employee_id)) > 0
+    ORDER BY u.user_id ASC
   `).bind(employeeId).all();
   return rowsFrom(result).map(toUser);
 };

@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { appendAuditEvent } from '../src/db/audit.js';
-import { appendLedgerEntry } from '../src/db/ledgerQueries.js';
-import { seedUser } from './helpers/formal-fixtures.js';
+import { appendLedgerEntry, getLatestLedgerRow } from '../src/db/ledgerQueries.js';
+import { getCurrentBalance } from '../src/db/users.js';
+import { seedLedgerRow, seedUser } from './helpers/formal-fixtures.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 
 const NOW = '2026-09-07T09:00:00.000Z';
@@ -16,6 +17,41 @@ const seedOrder = (database, orderId = 'order-ledger') => {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)
   `, orderId, 'user-1', 'User One', '2026-09-08', 'Vendor A', '1樓', 30, 'user-1');
 };
+
+test('current balance explicitly falls back to the users mirror when no sequenced ledger exists', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', balance: 37 });
+
+  assert.equal(await getCurrentBalance(database, 'user-1'), 37);
+});
+
+test('financial mutation starts from the authoritative ledger balance, not a stale users mirror', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', balance: -100 });
+  seedLedgerRow(database, {
+    transactionId: 'txn-authoritative-opening',
+    userId: 'user-1',
+    amount: 1115,
+    balanceAfter: 1015,
+    referenceId: 'opening-authoritative'
+  });
+  seedOrder(database, 'order-authoritative');
+
+  const entry = await appendLedgerEntry(database, {
+    transactionId: 'txn-authoritative-order',
+    userId: 'user-1',
+    amount: -100,
+    balanceAfter: 915,
+    type: 'ORDER',
+    referenceId: 'order-authoritative',
+    occurredAt: NOW
+  });
+
+  assert.equal(await getCurrentBalance(database, 'user-1'), 915);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 915);
+  assert.equal(entry.balance_after, 915);
+  assert.equal((await getLatestLedgerRow(database, 'user-1')).balance_after, 915);
+});
 
 test('ledger appends integer order/refund rows and conserves the user snapshot', async () => {
   const database = new SqliteD1();

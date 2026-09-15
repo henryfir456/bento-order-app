@@ -2731,7 +2731,7 @@ export default function App() {
                 {displayFloor}
               </button>
             ))}
-            {isRegistered && !isViewAsMode && can('viewOwnBalance') && (
+            {isRegistered && !isViewAsMode && !delegatedOrderUser && can('viewOwnBalance') && (
               <button
                 type="button"
                 onClick={fetchBalanceHistory}

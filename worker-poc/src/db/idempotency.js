@@ -1,5 +1,6 @@
 import { badRequest, conflict } from '../http/errors.js';
 import { prepareStatement, randomId, runMutationBatch } from './transactions.js';
+import { currentBalanceProjection } from './users.js';
 
 const MAX_KEY_LENGTH = 200;
 
@@ -140,7 +141,7 @@ export const mutationResponseSpec = ({
     'success', json('true'),
     'message', ?,
     'orderId', ?,
-    'newBalance', (SELECT balance FROM users WHERE user_id = ?)
+    'newBalance', (SELECT ${currentBalanceProjection('u')} FROM users u WHERE u.user_id = ?)
   )`,
   params: [message, orderId, balanceUserId]
 });
@@ -157,7 +158,7 @@ export const balanceMutationResponseSpec = ({
     'message', ?,
     'targetUserId', ?,
     'transactionId', ?,
-    'newBalance', (SELECT balance FROM users WHERE user_id = ?)
+    'newBalance', (SELECT ${currentBalanceProjection('u')} FROM users u WHERE u.user_id = ?)
   )`,
   params: [message, targetUserId, transactionId, balanceUserId]
 });

@@ -7,6 +7,7 @@ import {
   requireIdempotencyKey,
   runIdempotentMutation
 } from '../db/idempotency.js';
+import { ledgerMutationStatements } from '../db/ledgerQueries.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
 import { deadlineAt, isDateOnly } from './deadlines.js';
 import {
@@ -235,15 +236,6 @@ const mapTransactionFailure = (error) => {
   throw conflict('MUTATION_CONFLICT');
 };
 
-const eventUserValues = (actor) => [
-  actor.userId,
-  actor.employeeId,
-  actor.lineUserId,
-  actor.displayName,
-  actor.authMode,
-  actor.authMode
-];
-
 const buildOrderStatements = (database, context, actor, details) => {
   const {
     targetDate,
@@ -316,41 +308,30 @@ const buildOrderStatements = (database, context, actor, details) => {
     WHERE ${guardSql}
   `, [...menuParams(items), ...validityParams, ...guardParams]);
 
-  const refundBalance = prepareStatement(database, `
-    UPDATE users
-    SET balance = balance + COALESCE((
-      SELECT o.total_amount
-      FROM orders o
-      WHERE o.user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
-      LIMIT 1
-    ), 0),
-        updated_at = ?
-    WHERE user_id = ? AND ${guardSql}
-  `, [targetUserId, targetDate, occurredAt, targetUserId, ...guardParams]);
-
-  const refundLedger = prepareStatement(database, `
-    INSERT INTO balance_ledger (
-      transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
-      display_name_snapshot, amount, balance_after, type, reference_id,
-      operator_user_id, operator_employee_id_snapshot,
-      operator_line_user_id_snapshot, operator_display_name_snapshot,
-      operator_auth_mode, auth_mode, note, occurred_at
-    )
-    SELECT ?, o.user_id, u.employee_id, u.line_user_id, u.display_name,
-           o.total_amount, u.balance, 'REFUND', o.order_id,
-           ?, ?, ?, ?, ?, ?, 'ORDER_REPLACED', ?
-    FROM orders o
-    JOIN users u ON u.user_id = o.user_id
-    WHERE o.user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
-      AND ${guardSql}
-  `, [
-    refundTransactionId,
-    ...eventUserValues(actor),
-    occurredAt,
-    targetUserId,
-    targetDate,
-    ...guardParams
-  ]);
+  const replacementRefund = ledgerMutationStatements(database, {
+    transactionId: refundTransactionId,
+    userId: targetUserId,
+    employeeIdSnapshot: target.employeeId,
+    lineUserIdSnapshot: target.lineUserId,
+    displayNameSnapshot: target.displayName,
+    // The amount is selected from the active order inside the batch.  Zero
+    // only makes the entry shape valid when there is no order to replace.
+    amount: context.activeOrder ? Number(context.activeOrder.total_amount) : 0,
+    type: 'REFUND',
+    referenceId: context.activeOrder?.order_id || 'ORDER_REPLACEMENT',
+    operatorUserId: actor.userId,
+    operatorEmployeeIdSnapshot: actor.employeeId,
+    operatorLineUserIdSnapshot: actor.lineUserId,
+    operatorDisplayNameSnapshot: actor.displayName,
+    operatorAuthMode: actor.authMode,
+    authMode: actor.authMode,
+    note: 'ORDER_REPLACED',
+    occurredAt
+  }, {
+    guard,
+    dynamicBalanceAfter: true,
+    dynamicOrder: { orderDate: targetDate }
+  }).statements;
 
   const replacementHistory = prepareStatement(database, `
     INSERT INTO order_status_history (
@@ -385,20 +366,13 @@ const buildOrderStatements = (database, context, actor, details) => {
       AND ${guardSql}
   `, [actor.userId, actor.authMode, occurredAt, targetUserId, targetDate, ...guardParams]);
 
-  const debitBalance = prepareStatement(database, `${menuCte(items)}
-    UPDATE users
-    SET balance = balance - (SELECT SUM(quantity * price) FROM priced),
-        updated_at = ?
-    WHERE user_id = ?
-      AND (SELECT COUNT(*) FROM priced) = ?
-      AND ${guardSql}
-  `, [
-    ...menuParams(items),
-    occurredAt,
-    targetUserId,
-    items.length,
-    ...guardParams
-  ]);
+  const totalAmount = items.reduce(
+    (sum, item) => sum + (item.quantity * item.price),
+    0
+  );
+  if (!Number.isSafeInteger(totalAmount) || totalAmount < 0) {
+    throw badRequest('ORDER_AMOUNT_INVALID');
+  }
 
   const insertOrder = prepareStatement(database, `${menuCte(items)}
     INSERT INTO orders (
@@ -465,29 +439,24 @@ const buildOrderStatements = (database, context, actor, details) => {
     WHERE ${guardSql}
   `, [orderId, items.length, ...guardParams]);
 
-  const orderLedger = prepareStatement(database, `
-    INSERT INTO balance_ledger (
-      transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
-      display_name_snapshot, amount, balance_after, type, reference_id,
-      operator_user_id, operator_employee_id_snapshot,
-      operator_line_user_id_snapshot, operator_display_name_snapshot,
-      operator_auth_mode, auth_mode, note, occurred_at
-    )
-    SELECT ?, o.user_id, u.employee_id, u.line_user_id, u.display_name,
-           -o.total_amount, u.balance, 'ORDER', o.order_id,
-           ?, ?, ?, ?, ?, ?, 'ORDER_CREATED', ?
-    FROM orders o
-    JOIN users u ON u.user_id = o.user_id
-    WHERE o.order_id = ? AND o.user_id = ? AND o.status = 'ACTIVE'
-      AND ${guardSql}
-  `, [
-    details.orderTransactionId,
-    ...eventUserValues(actor),
-    occurredAt,
-    orderId,
-    targetUserId,
-    ...guardParams
-  ]);
+  const orderDebit = ledgerMutationStatements(database, {
+    transactionId: details.orderTransactionId,
+    userId: targetUserId,
+    employeeIdSnapshot: target.employeeId,
+    lineUserIdSnapshot: target.lineUserId,
+    displayNameSnapshot: target.displayName,
+    amount: -totalAmount,
+    type: 'ORDER',
+    referenceId: orderId,
+    operatorUserId: actor.userId,
+    operatorEmployeeIdSnapshot: actor.employeeId,
+    operatorLineUserIdSnapshot: actor.lineUserId,
+    operatorDisplayNameSnapshot: actor.displayName,
+    operatorAuthMode: actor.authMode,
+    authMode: actor.authMode,
+    note: 'ORDER_CREATED',
+    occurredAt
+  }, { guard, dynamicBalanceAfter: true }).statements;
 
   const createdHistory = prepareStatement(database, `
     INSERT INTO order_status_history (
@@ -531,16 +500,14 @@ const buildOrderStatements = (database, context, actor, details) => {
 
   return [
     assertRequest,
-    refundBalance,
-    refundLedger,
+    ...replacementRefund,
     replacementHistory,
     cancelPrevious,
-    debitBalance,
     insertOrder,
     assertOrderInserted,
+    ...orderDebit,
     insertItems,
     assertItemsInserted,
-    orderLedger,
     createdHistory,
     ...(orderAudit ? [orderAudit] : [])
   ];
@@ -719,43 +686,24 @@ export const cancelOrder = async (
           ...calendarTimingParams,
           ...guardParams
         ]);
-        const refundBalance = prepareStatement(database, `
-          UPDATE users
-          SET balance = balance + (
-            SELECT total_amount FROM orders
-            WHERE order_id = ? AND user_id = ? AND status = 'ACTIVE'
-          ), updated_at = ?
-          WHERE user_id = ? AND ${guardSql}
-        `, [
-          orderId,
-          permission.targetUserId,
-          occurredAt,
-          permission.targetUserId,
-          ...guardParams
-        ]);
-        const refundLedger = prepareStatement(database, `
-          INSERT INTO balance_ledger (
-            transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
-            display_name_snapshot, amount, balance_after, type, reference_id,
-            operator_user_id, operator_employee_id_snapshot,
-            operator_line_user_id_snapshot, operator_display_name_snapshot,
-            operator_auth_mode, auth_mode, note, occurred_at
-          )
-          SELECT ?, o.user_id, u.employee_id, u.line_user_id, u.display_name,
-                 o.total_amount, u.balance, 'REFUND', o.order_id,
-                 ?, ?, ?, ?, ?, ?, 'ORDER_CANCELLED', ?
-          FROM orders o
-          JOIN users u ON u.user_id = o.user_id
-          WHERE o.order_id = ? AND o.user_id = ? AND o.status = 'ACTIVE'
-            AND ${guardSql}
-        `, [
-          refundTransactionId,
-          ...eventUserValues(actor),
-          occurredAt,
-          orderId,
-          permission.targetUserId,
-          ...guardParams
-        ]);
+        const refundLedger = ledgerMutationStatements(database, {
+          transactionId: refundTransactionId,
+          userId: permission.targetUserId,
+          employeeIdSnapshot: permission.target.employeeId,
+          lineUserIdSnapshot: permission.target.lineUserId,
+          displayNameSnapshot: permission.target.displayName,
+          amount: Number(order.total_amount),
+          type: 'REFUND',
+          referenceId: orderId,
+          operatorUserId: actor.userId,
+          operatorEmployeeIdSnapshot: actor.employeeId,
+          operatorLineUserIdSnapshot: actor.lineUserId,
+          operatorDisplayNameSnapshot: actor.displayName,
+          operatorAuthMode: actor.authMode,
+          authMode: actor.authMode,
+          note: 'ORDER_CANCELLED',
+          occurredAt
+        }, { guard, dynamicBalanceAfter: true }).statements;
         const statusHistory = prepareStatement(database, `
           INSERT INTO order_status_history (
             transition_id, order_id, from_status, to_status, actor_user_id,
@@ -819,8 +767,7 @@ export const cancelOrder = async (
         `, [orderId, permission.targetUserId, ...guardParams]);
         return [
           assertRequest,
-          refundBalance,
-          refundLedger,
+          ...refundLedger,
           statusHistory,
           cancel,
           ...(orderAudit ? [orderAudit] : []),

@@ -119,6 +119,20 @@ test('cancellation refunds the stored total and appends one status and ledger tr
     WHERE type = 'REFUND'
   `).amount, 80);
   assert.equal(database.get(`
+    SELECT amount, balance_after
+    FROM balance_ledger
+    WHERE type = 'REFUND'
+  `).balance_after, 100);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 100);
+  assert.equal(database.get(`
+    SELECT bl.balance_after
+    FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+    WHERE bl.user_id = 'user-1'
+    ORDER BY bls.sequence_number DESC
+    LIMIT 1
+  `).balance_after, 100);
+  assert.equal(database.get(`
     SELECT COUNT(*) AS count
     FROM order_status_history
     WHERE order_id = ? AND from_status = 'ACTIVE' AND to_status = 'CANCELLED'

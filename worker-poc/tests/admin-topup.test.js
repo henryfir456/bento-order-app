@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { handleFormalRequest } from '../src/formalWorker.js';
 import { SqliteD1 } from './helpers/formal-db.js';
-import { profileFetch, request, seedUser } from './helpers/formal-fixtures.js';
+import { profileFetch, request, seedLedgerRow, seedUser } from './helpers/formal-fixtures.js';
 
 const call = async (database, path, options = {}, profile = {}) => {
   const response = await handleFormalRequest(
@@ -47,6 +47,31 @@ test('admin top-up atomically updates balance, ledger, audit, and idempotency', 
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'TOPUP'").count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'BALANCE_TOP_UP'").count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM idempotency_keys WHERE status = 'COMPLETED'").count, 1);
+});
+
+test('top-up starts from the authoritative ledger balance when users.balance is stale', async () => {
+  const database = seedDatabase();
+  seedLedgerRow(database, {
+    transactionId: 'txn-top-up-authoritative-opening',
+    userId: 'user-1',
+    amount: 915,
+    balanceAfter: 1015,
+    referenceId: 'opening-top-up-authoritative'
+  });
+
+  const result = await admin(database, 'top-up-authoritative', { amount: 25 });
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.newBalance, 1040);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 1040);
+  assert.equal(database.get(`
+    SELECT bl.balance_after
+    FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+    WHERE bl.user_id = 'user-1'
+    ORDER BY bls.sequence_number DESC
+    LIMIT 1
+  `).balance_after, 1040);
 });
 
 test('top-up rejects changed idempotency payloads, non-admins, invalid amounts, and View As writes', async () => {

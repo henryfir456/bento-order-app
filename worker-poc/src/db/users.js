@@ -33,6 +33,16 @@ export const currentBalanceProjection = (alias = 'u') => `COALESCE((
   LIMIT 1
 ), ${alias}.balance)`;
 
+export const getCurrentBalance = async (database, userId) => {
+  const row = await database.prepare(`
+    SELECT ${currentBalanceProjection('u')} AS balance
+    FROM users u
+    WHERE u.user_id = ?
+    LIMIT 1
+  `).bind(userId).first();
+  return row ? Number(row.balance) : null;
+};
+
 const userColumns = (alias = 'u') => `
   ${alias}.user_id, ${alias}.employee_id, ${alias}.line_user_id,
   ${alias}.display_name, ${alias}.pickup_floor,

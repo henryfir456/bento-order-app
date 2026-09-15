@@ -1,5 +1,6 @@
 import { badRequest, conflict } from '../http/errors.js';
 import { prepareStatement, runMutationBatch } from './transactions.js';
+import { currentBalanceProjection } from './users.js';
 
 export const LEDGER_TYPES = Object.freeze(['TOPUP', 'ORDER', 'REFUND', 'ADJUSTMENT']);
 const AUTH_MODES = new Set(['line', 'employee_guest', 'legacy_import']);
@@ -107,7 +108,7 @@ export const validateLedgerEntry = (input) => {
 export const ledgerMutationStatements = (
   database,
   input,
-  { guard, dynamicBalanceAfter = false } = {}
+  { guard, dynamicBalanceAfter = false, dynamicOrder = null } = {}
 ) => {
   const entry = validateLedgerEntry({
     ...input,
@@ -115,20 +116,50 @@ export const ledgerMutationStatements = (
   });
   const guardSql = guard?.sql || '1 = 1';
   const guardParams = guard?.params || [];
-  const reference = referenceRule(entry);
-  const update = prepareStatement(database, `
-    UPDATE users
-    SET balance = CASE
-          WHEN ${dynamicBalanceAfter ? `(${reference.sql})` : `balance + ? = ? AND (${reference.sql})`}
-          THEN balance + ?
-          ELSE NULL
-        END,
-        updated_at = ?
-    WHERE user_id = ? AND ${guardSql}
-  `, dynamicBalanceAfter
+  const dynamicOrderDate = text(dynamicOrder?.orderDate);
+  if (dynamicOrder && !dynamicOrderDate) {
+    throw badRequest('LEDGER_ORDER_DATE_REQUIRED');
+  }
+  const dynamicOrderParams = dynamicOrder
+    ? [entry.userId, dynamicOrderDate]
+    : [];
+  const dynamicOrderExists = dynamicOrder
+    ? `EXISTS (
+        SELECT 1 FROM orders o
+        WHERE o.user_id = ?
+          AND o.order_date = ?
+          AND o.status = 'ACTIVE'
+      )`
+    : null;
+  const dynamicOrderAmount = dynamicOrder
+    ? `(SELECT o.total_amount
+        FROM orders o
+        WHERE o.user_id = ?
+          AND o.order_date = ?
+          AND o.status = 'ACTIVE'
+        LIMIT 1)`
+    : null;
+  const dynamicOrderReference = dynamicOrder
+    ? `(SELECT o.order_id
+        FROM orders o
+        WHERE o.user_id = ?
+          AND o.order_date = ?
+          AND o.status = 'ACTIVE'
+        LIMIT 1)`
+    : null;
+  const reference = dynamicOrder
+    ? { sql: dynamicOrderExists, params: dynamicOrderParams }
+    : referenceRule(entry);
+  const authoritativeBalance = currentBalanceProjection('target');
+  const updateCondition = dynamicBalanceAfter
+    ? `(${reference.sql})`
+    : `(${authoritativeBalance} + ? = ? AND (${reference.sql}))`;
+  const updateAmount = dynamicOrder ? dynamicOrderAmount : '?';
+  const updateElse = dynamicOrder ? 'target.balance' : 'NULL';
+  const updateParams = dynamicBalanceAfter
     ? [
       ...reference.params,
-      entry.amount,
+      ...(dynamicOrder ? dynamicOrderParams : [entry.amount]),
       entry.occurredAt,
       entry.userId,
       ...guardParams
@@ -137,11 +168,21 @@ export const ledgerMutationStatements = (
       entry.amount,
       entry.balanceAfter,
       ...reference.params,
-      entry.amount,
+      ...(dynamicOrder ? dynamicOrderParams : [entry.amount]),
       entry.occurredAt,
       entry.userId,
       ...guardParams
-    ]);
+    ];
+  const update = prepareStatement(database, `
+    UPDATE users AS target
+    SET balance = CASE
+          WHEN ${updateCondition}
+          THEN ${authoritativeBalance} + ${updateAmount}
+          ELSE ${updateElse}
+        END,
+        updated_at = ?
+    WHERE target.user_id = ? AND ${guardSql}
+  `, updateParams);
 
   const insert = prepareStatement(database, `
     INSERT INTO balance_ledger (
@@ -151,10 +192,16 @@ export const ledgerMutationStatements = (
       operator_line_user_id_snapshot, operator_display_name_snapshot,
       operator_auth_mode, auth_mode, note, occurred_at, source_batch_id
     )
-    SELECT ?, ?, ?, ?, ?, ?, ${dynamicBalanceAfter ? 'balance' : '?'}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-    FROM users
-    WHERE user_id = ?
-      ${dynamicBalanceAfter ? '' : 'AND balance = ?'}
+    SELECT ?, ?, ?, ?, ?,
+      ${dynamicOrder ? dynamicOrderAmount : '?'},
+      ${dynamicBalanceAfter ? 'target.balance' : '?'},
+      ?,
+      ${dynamicOrder ? dynamicOrderReference : '?'},
+      ?, ?, ?, ?, ?, ?, ?, ?, ?
+    FROM users AS target
+    WHERE target.user_id = ?
+      ${dynamicOrder ? `AND ${dynamicOrderAmount} IS NOT NULL` : ''}
+      ${dynamicBalanceAfter || dynamicOrder ? '' : 'AND target.balance = ?'}
       AND ${guardSql}
   `, [
     entry.transactionId,
@@ -162,10 +209,10 @@ export const ledgerMutationStatements = (
     entry.employeeIdSnapshot,
     entry.lineUserIdSnapshot,
     entry.displayNameSnapshot,
-    entry.amount,
-    ...(dynamicBalanceAfter ? [] : [entry.balanceAfter]),
+    ...(dynamicOrder ? dynamicOrderParams : [entry.amount]),
+    ...(dynamicBalanceAfter || dynamicOrder ? [] : [entry.balanceAfter]),
     entry.type,
-    entry.referenceId,
+    ...(dynamicOrder ? dynamicOrderParams : [entry.referenceId]),
     entry.operatorUserId,
     entry.operatorEmployeeIdSnapshot,
     entry.operatorLineUserIdSnapshot,
@@ -176,7 +223,8 @@ export const ledgerMutationStatements = (
     entry.occurredAt,
     entry.sourceBatchId,
     entry.userId,
-    ...(dynamicBalanceAfter ? [] : [entry.balanceAfter]),
+    ...(dynamicBalanceAfter || dynamicOrder ? [] : [entry.balanceAfter]),
+    ...(dynamicOrder ? dynamicOrderParams : []),
     ...guardParams
   ]);
 

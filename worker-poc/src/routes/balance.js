@@ -126,7 +126,9 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
           lineUserIdSnapshot: target.lineUserId,
           displayNameSnapshot: target.displayName,
           amount,
-          balanceAfter: target.balance + amount,
+          // Dynamic balance mutations resolve their opening balance from the
+          // sequence-backed projection inside the atomic batch.
+          balanceAfter: 0,
           type: 'TOPUP',
           referenceId: auditId,
           operatorUserId: actor.userId,

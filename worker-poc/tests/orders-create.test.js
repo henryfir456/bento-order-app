@@ -8,6 +8,7 @@ import {
   seedOrderDatabase,
   userProfile
 } from './helpers/order-fixtures.js';
+import { seedLedgerRow } from './helpers/formal-fixtures.js';
 
 const create = (database, body, key, profile = userProfile()) => callOrderRoute(
   database,
@@ -86,6 +87,35 @@ test('order creation uses server menu prices and preserves negative balances', a
     reference_id: ledger.reference_id
   }, { amount: -190, balance_after: -90, type: 'ORDER', reference_id: order.order_id });
   assert.equal(database.get('SELECT COUNT(*) AS count FROM order_status_history').count, 1);
+});
+
+test('normal order debit keeps users, authoritative ledger, and response balance aligned', async () => {
+  const database = seedOrderDatabase({ balance: -100 });
+  seedLedgerRow(database, {
+    transactionId: 'txn-order-authoritative-opening',
+    userId: 'user-1',
+    amount: 1115,
+    balanceAfter: 1015,
+    referenceId: 'opening-order-authoritative'
+  });
+
+  const result = await create(database, {
+    targetDate: ORDER_DATE,
+    pickupFloor: '1樓',
+    items: [{ menu_item_id: 'menu-a', quantity: 1 }]
+  }, 'order-authoritative');
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.newBalance, 935);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 935);
+  assert.equal(database.get(`
+    SELECT bl.balance_after
+    FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+    WHERE bl.user_id = 'user-1'
+    ORDER BY bls.sequence_number DESC
+    LIMIT 1
+  `).balance_after, 935);
 });
 
 test('duplicate legacy item IDs remain selectable by distinct internal keys', async () => {

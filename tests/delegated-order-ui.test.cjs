@@ -21,7 +21,9 @@ test('frontend keeps View-As read-only and exposes explicit delegated ordering m
   assert.match(app, /targetUserId/);
   assert.match(app, /setViewAsUser\(null\)/);
   assert.match(app, /isViewAsMode/);
+  assert.match(app, /!isViewAsMode && !delegatedOrderUser && can\('viewOwnBalance'\)/);
   assert.match(banner, /代替/);
+  assert.match(banner, /目標餘額：\{formatBalanceAmount\(delegatedOrderUser\.balance\)\}/);
   assert.match(banner, /返回 Admin|結束代點/);
   assert.match(orderPage, /isViewAsMode/);
   assert.match(api, /getOrderTargets/);
