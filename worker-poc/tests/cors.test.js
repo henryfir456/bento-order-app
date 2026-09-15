@@ -8,6 +8,7 @@ import {
 } from '../src/http/response.js';
 import {
   CORS_SMOKE_ALLOWED_ORIGINS,
+  CORS_SMOKE_PINGGY_ORIGIN,
   CORS_SMOKE_REJECTED_ORIGIN,
   runCorsSmoke
 } from '../scripts/remote-cors-smoke.mjs';
@@ -124,11 +125,42 @@ test('127.0.0.1 is allowed without CORS runtime configuration', async () => {
   assertCorsAllowed(response, origin);
 });
 
-test('Pinggy is rejected without remote-test CORS mode', async () => {
-  const response = await callMe(remoteTestPinggyOrigin);
+test('dynamic Pinggy origins are allowed without remote-test CORS mode', async () => {
+  for (const origin of [
+    remoteTestPinggyOrigin,
+    'https://generated-session-123.run.pinggy-free.link',
+    'https://another-generated-session-456.run.pinggy-free.link',
+    'https://fwmud-2001-b400-e253-5bd1-40d1-f2d3-c356-1708.run.pinggy-free.link'
+  ]) {
+    const response = await callMe(origin);
 
-  assert.equal(response.status, 200);
-  assertCorsDenied(response);
+    assert.equal(response.status, 200);
+    assertCorsAllowed(response, origin);
+  }
+});
+
+test('dynamic Pinggy OPTIONS is allowed without remote-test CORS mode', async () => {
+  const response = await handleFormalRequest(request('/api/me', {
+    method: 'OPTIONS',
+    headers: {
+      Origin: remoteTestPinggyOrigin,
+      'Access-Control-Request-Method': 'GET',
+      'Access-Control-Request-Headers': 'Authorization'
+    }
+  }), {});
+
+  assert.equal(response.status, 204);
+  assertCorsAllowed(response, remoteTestPinggyOrigin);
+});
+
+test('dynamic Pinggy unauthenticated GET /api/me keeps CORS without remote-test mode', async () => {
+  const response = await handleFormalRequest(request('/api/me', {
+    headers: { Origin: remoteTestPinggyOrigin }
+  }), {});
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: 'AUTH_REQUIRED' });
+  assertCorsAllowed(response, remoteTestPinggyOrigin);
 });
 
 test('remote-test CORS allows a dynamic Pinggy subdomain without exact configuration', async () => {
@@ -180,8 +212,33 @@ test('remote-test CORS rejects nonconforming Pinggy origins', async () => {
   }
 });
 
+test('invalid Pinggy origins remain rejected without remote-test CORS mode', async () => {
+  for (const origin of [
+    'http://generated-session.run.pinggy-free.link',
+    'https://generated-session.run.pinggy.example',
+    'https://generated-session.run.pinggy-free.link/path',
+    'https://generated-session.run.pinggy-free.link:443',
+    'https://generated-session.run.pinggy-free.link:80',
+    'https://generated-session.run.pinggy-free.link:8443',
+    'https://generated.session.run.pinggy-free.link',
+    'https://*.run.pinggy-free.link'
+  ]) {
+    const response = await callMe(origin);
+
+    assert.equal(response.status, 200, origin);
+    assertCorsDenied(response);
+  }
+});
+
 test('remote-test CORS rejects arbitrary origins', async () => {
   const response = await callMe('https://arbitrary.example', remoteTestEnv());
+
+  assert.equal(response.status, 200);
+  assertCorsDenied(response);
+});
+
+test('unknown arbitrary origin is rejected without remote-test CORS mode', async () => {
+  const response = await callMe('https://arbitrary.example');
 
   assert.equal(response.status, 200);
   assertCorsDenied(response);
@@ -230,20 +287,22 @@ test('the exact configured Pinggy frontend origin is allowed', async () => {
   assertCorsAllowed(response, origin);
 });
 
-test('a different Pinggy origin is rejected', async () => {
+test('a different valid Pinggy origin remains allowed', async () => {
   const configuredOrigin = 'https://bento-local-123.run.pinggy-free.link';
+  const origin = 'https://different-local-123.run.pinggy-free.link';
   const response = await callMe(
-    'https://different-local-123.run.pinggy-free.link',
+    origin,
     localEnv(configuredOrigin)
   );
 
   assert.equal(response.status, 200);
-  assertCorsDenied(response);
+  assertCorsAllowed(response, origin);
 });
 
-test('wildcard Pinggy configuration does not grant access', async () => {
+test('wildcard Pinggy configuration does not grant access to malformed hosts', async () => {
+  const origin = 'https://bento.local-123.run.pinggy-free.link';
   const response = await callMe(
-    'https://bento-local-123.run.pinggy-free.link',
+    origin,
     localEnv('https://*.run.pinggy-free.link')
   );
 
@@ -497,42 +556,46 @@ test('read-only CORS smoke requires preflight and actual unauthenticated ACAO', 
 
   assert.equal(result.preflight, 'PASS');
   assert.equal(result.actualUnauthenticated, 'PASS');
+  assert.equal(CORS_SMOKE_ALLOWED_ORIGINS.includes(CORS_SMOKE_PINGGY_ORIGIN), true);
   assert.deepEqual(calls.map(([, method, origin]) => [method, origin]), [
-    ['OPTIONS', CORS_SMOKE_ALLOWED_ORIGINS[0]],
-    ['GET', CORS_SMOKE_ALLOWED_ORIGINS[0]],
-    ['OPTIONS', CORS_SMOKE_ALLOWED_ORIGINS[1]],
-    ['GET', CORS_SMOKE_ALLOWED_ORIGINS[1]],
+    ...CORS_SMOKE_ALLOWED_ORIGINS.flatMap((origin) => [['OPTIONS', origin], ['GET', origin]]),
     ['GET', CORS_SMOKE_REJECTED_ORIGIN]
   ]);
 });
 
 test('read-only CORS smoke fails when actual 401 loses ACAO', async () => {
-  let actual = false;
+  let pinggyActual = false;
   await assert.rejects(
     runCorsSmoke({
       baseUrl: 'https://worker.test',
       fetchImpl: async (_url, init = {}) => {
+        const origin = init.headers.Origin;
         if (init.method === 'OPTIONS') {
           return new Response(null, {
             status: 204,
             headers: {
-              'Access-Control-Allow-Origin': init.headers.Origin,
+              'Access-Control-Allow-Origin': origin,
               'Access-Control-Allow-Methods': 'GET, OPTIONS',
               'Access-Control-Allow-Headers': 'Authorization',
               Vary: 'Origin'
             }
           });
         }
-        actual = true;
+        if (origin === CORS_SMOKE_PINGGY_ORIGIN) pinggyActual = true;
         return new Response(JSON.stringify({ error: 'AUTH_REQUIRED' }), {
           status: 401,
-          headers: { Vary: 'Origin' }
+          headers: origin === CORS_SMOKE_PINGGY_ORIGIN
+            ? { Vary: 'Origin' }
+            : {
+              'Access-Control-Allow-Origin': origin,
+              Vary: 'Origin'
+            }
         });
       }
     }),
-    /GET http:\/\/localhost:5173 ACAO/
+    /GET https:\/\/cors-smoke-session\.run\.pinggy-free\.link ACAO/
   );
-  assert.equal(actual, true);
+  assert.equal(pinggyActual, true);
 });
 
 test('success and 400/401/403/404/409 responses retain the allowed CORS boundary', async () => {

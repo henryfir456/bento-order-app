@@ -66,6 +66,7 @@ const isDynamicPinggyOrigin = (origin) => {
   }
 
   return parsed.protocol === 'https:'
+    && parsed.port === ''
     && parsed.origin === origin
     && PINGGY_REMOTE_TEST_HOST_PATTERN.test(parsed.hostname);
 };
@@ -76,7 +77,7 @@ export const isAllowedOrigin = (origin, env = {}) => {
     normalizedOrigin
     && (
       resolveAllowedOrigins(env).has(normalizedOrigin)
-      || (isRemoteTestCorsMode(env) && isDynamicPinggyOrigin(normalizedOrigin))
+      || isDynamicPinggyOrigin(normalizedOrigin)
     )
   );
 };

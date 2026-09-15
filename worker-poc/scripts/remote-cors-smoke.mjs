@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 export const CORS_SMOKE_ALLOWED_ORIGINS = Object.freeze([
   'http://localhost:5173',
-  'http://127.0.0.1:5173'
+  'http://127.0.0.1:5173',
+  'https://cors-smoke-session.run.pinggy-free.link'
 ]);
 export const CORS_SMOKE_REJECTED_ORIGIN = 'https://cors-smoke.invalid';
+export const CORS_SMOKE_PINGGY_ORIGIN = CORS_SMOKE_ALLOWED_ORIGINS[2];
 
 const responseOrigin = (response) => response.headers.get('Access-Control-Allow-Origin');
 
@@ -25,14 +27,23 @@ const endpointFor = (baseUrl) => {
   return new URL('/api/me', url).href;
 };
 
-export const runCorsSmoke = async ({ baseUrl, fetchImpl = globalThis.fetch } = {}) => {
+export const runCorsSmoke = async ({
+  baseUrl,
+  pinggyOrigin = CORS_SMOKE_PINGGY_ORIGIN,
+  fetchImpl = globalThis.fetch
+} = {}) => {
   if (!String(baseUrl || '').trim()) {
     throw new Error('BENTO_WORKER_BASE_URL is required.');
   }
   if (typeof fetchImpl !== 'function') throw new Error('fetch is unavailable.');
 
   const endpoint = endpointFor(baseUrl);
-  for (const origin of CORS_SMOKE_ALLOWED_ORIGINS) {
+  const allowedOrigins = [
+    CORS_SMOKE_ALLOWED_ORIGINS[0],
+    CORS_SMOKE_ALLOWED_ORIGINS[1],
+    pinggyOrigin
+  ];
+  for (const origin of allowedOrigins) {
     const preflight = await fetchImpl(endpoint, {
       method: 'OPTIONS',
       headers: {
@@ -64,7 +75,8 @@ export const runCorsSmoke = async ({ baseUrl, fetchImpl = globalThis.fetch } = {
 
   return {
     endpoint,
-    allowedOrigins: [...CORS_SMOKE_ALLOWED_ORIGINS],
+    allowedOrigins,
+    pinggyOrigin,
     rejectedOrigin: CORS_SMOKE_REJECTED_ORIGIN,
     preflight: 'PASS',
     actualUnauthenticated: 'PASS'
@@ -73,7 +85,8 @@ export const runCorsSmoke = async ({ baseUrl, fetchImpl = globalThis.fetch } = {
 
 const main = async () => {
   const result = await runCorsSmoke({
-    baseUrl: process.env.BENTO_WORKER_BASE_URL || process.argv[2]
+    baseUrl: process.env.BENTO_WORKER_BASE_URL || process.argv[2],
+    pinggyOrigin: process.env.BENTO_PINGGY_ORIGIN || process.argv[3] || CORS_SMOKE_PINGGY_ORIGIN
   });
   console.log(JSON.stringify({ CORS_SMOKE: 'PASS', ...result }));
 };
