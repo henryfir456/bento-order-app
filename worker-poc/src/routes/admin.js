@@ -9,7 +9,8 @@ import {
 import {
   createAdminMenuItemChange,
   getAdminMenuItemPreview,
-  listAdminMenuItemChanges
+  listAdminMenuItemChanges,
+  listAdminMenuVendors
 } from '../domain/menuItemChanges.js';
 import { badRequest } from '../http/errors.js';
 import { emptyResponse, jsonResponse } from '../http/response.js';
@@ -69,10 +70,12 @@ export const handleAdminRoute = async (request, env, {
     && url.pathname === '/api/admin/menu/changes';
   const isMenuPreview = request.method === 'GET'
     && url.pathname === '/api/admin/menu/preview';
-  const isMenuRoute = isMenuChangeList || isMenuChangeCreate || isMenuPreview;
+  const isMenuVendorList = request.method === 'GET'
+    && url.pathname === '/api/admin/menu/vendors';
+  const isMenuRoute = isMenuChangeList || isMenuChangeCreate || isMenuPreview || isMenuVendorList;
   if (!isSummary && !isMembers && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
     && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId
-    && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview) return null;
+    && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview && !isMenuVendorList) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
     allowViewAs: !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding,
@@ -143,6 +146,9 @@ export const handleAdminRoute = async (request, env, {
       vendor: url.searchParams.get('vendor') || '',
       targetDate: url.searchParams.get('targetDate') || url.searchParams.get('date') || ''
     }));
+  }
+  if (isMenuVendorList) {
+    return jsonResponse(await listAdminMenuVendors(env.DB, identity));
   }
   if (isMembers) return jsonResponse(await getMemberBalances(env.DB, identity, now));
   return jsonResponse(await getAdminSummary(

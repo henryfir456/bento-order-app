@@ -2022,9 +2022,9 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.14.1');
-  assert.equal(packageLock.version, '0.14.1');
-  assert.equal(packageLock.packages[''].version, '0.14.1');
+  assert.equal(packageJson.version, '0.14.2');
+  assert.equal(packageLock.version, '0.14.2');
+  assert.equal(packageLock.packages[''].version, '0.14.2');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
   assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);
@@ -3334,6 +3334,7 @@ test('frontend menu change history is Worker-only, Admin-only, append-only, and 
   assert.match(apiSource, /getAdminMenuChanges:[\s\S]*?workerRequest\(\s*'getAdminMenuChanges',\s*'GET',\s*'\/api\/admin\/menu\/changes'/);
   assert.match(apiSource, /createAdminMenuChange:[\s\S]*?workerRequest\(\s*'createAdminMenuChange',\s*'POST',\s*'\/api\/admin\/menu\/changes'/);
   assert.match(apiSource, /getAdminMenuPreview:[\s\S]*?workerRequest\(\s*'getAdminMenuPreview',\s*'GET',\s*'\/api\/admin\/menu\/preview'/);
+  assert.match(apiSource, /getAdminMenuVendors:[\s\S]*?workerRequest\(\s*'getAdminMenuVendors',\s*'GET',\s*'\/api\/admin\/menu\/vendors'/);
   assert.doesNotMatch(apiSource, /updateAdminMenuCatalog|deleteAdminMenuCatalog/);
   const gasOperations = apiSource.slice(apiSource.indexOf('const createGasOperations'), apiSource.indexOf('const createWorkerOperations'));
   assert.doesNotMatch(gasOperations, /MenuChange|MenuCatalog/);
@@ -3345,7 +3346,12 @@ test('frontend menu change history is Worker-only, Admin-only, append-only, and 
   assert.match(componentSource, /生效日/);
   assert.match(componentSource, /圖片/);
   assert.match(componentSource, /variant_key/);
-  assert.match(componentSource, /預覽/);
+  assert.match(componentSource, /目前菜單/);
+  assert.match(componentSource, /變更歷程/);
+  assert.match(componentSource, /vendorOptions/);
+  assert.match(componentSource, /全部供應商/);
+  assert.match(componentSource, /sm:hidden/);
+  assert.doesNotMatch(componentSource, /<th[^>]*>供應商<\/th>/);
   assert.match(componentSource, /draft/);
   assert.match(componentSource, /isViewAsMode/);
   assert.doesNotMatch(componentSource, /onUpdate|onDelete/);

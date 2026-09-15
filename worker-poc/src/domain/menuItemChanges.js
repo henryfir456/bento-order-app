@@ -10,6 +10,7 @@ import { badRequest, conflict, forbidden, notFound } from '../http/errors.js';
 import { isDateOnly } from './deadlines.js';
 import {
   CANONICAL_HE_SHI_VENDOR,
+  CANONICAL_MENU_VENDORS,
   HISTORICAL_SQL_VENDOR,
   canonicalMenuRowVendor,
   compatibilityVendorCandidates,
@@ -625,6 +626,18 @@ export const listAdminMenuItemChanges = async (database, identity, filters = {})
       ...row,
       image_url: row.display_image_url || row.image_url
     }))
+  };
+};
+
+export const listAdminMenuVendors = async (database, identity) => {
+  assertCan(identity, ACTIONS.ADMIN_MENU_CHANGES);
+  if (identity?.viewAs || (
+    identity?.effectiveSubject?.userId
+      && identity.effectiveSubject.userId !== identity?.actor?.userId
+  )) throw forbidden('VIEW_AS_FORBIDDEN');
+  return {
+    success: true,
+    vendors: [...CANONICAL_MENU_VENDORS]
   };
 };
 

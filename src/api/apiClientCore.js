@@ -375,6 +375,11 @@ const createWorkerOperations = ({ workerRequest }) => ({
     '/api/admin/menu/preview',
     { query: { vendor, targetDate } }
   ),
+  getAdminMenuVendors: () => workerRequest(
+    'getAdminMenuVendors',
+    'GET',
+    '/api/admin/menu/vendors'
+  ),
   getMemberBalances: () => workerRequest(
     'getMemberBalances',
     'GET',

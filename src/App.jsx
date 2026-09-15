@@ -312,6 +312,7 @@ export default function App() {
   const [adminAnnouncementsLoaded, setAdminAnnouncementsLoaded] = useState(false);
   const adminAnnouncementsRequestRef = useRef(0);
   const [adminMenuChanges, setAdminMenuChanges] = useState([]);
+  const [adminMenuVendors, setAdminMenuVendors] = useState([]);
   const [adminMenuChangesLoading, setAdminMenuChangesLoading] = useState(false);
   const [adminMenuChangesError, setAdminMenuChangesError] = useState('');
   const [adminMenuChangesLoaded, setAdminMenuChangesLoaded] = useState(false);
@@ -455,6 +456,7 @@ export default function App() {
     setAdminAnnouncementsError('');
     setAdminAnnouncementsLoaded(false);
     setAdminMenuChanges([]);
+    setAdminMenuVendors([]);
     setAdminMenuChangesLoading(false);
     setAdminMenuChangesError('');
     setAdminMenuChangesLoaded(false);
@@ -1087,21 +1089,28 @@ export default function App() {
         setAdminMenuChangesError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await apiClient.getAdminMenuChanges();
-      const data = await res.json();
+      const [changesResponse, vendorsResponse] = await Promise.all([
+        apiClient.getAdminMenuChanges(),
+        apiClient.getAdminMenuVendors()
+      ]);
+      const [data, vendorsData] = await Promise.all([
+        changesResponse.json(),
+        vendorsResponse.json()
+      ]);
       if (requestId !== adminMenuChangesRequestRef.current) return;
 
-      if (!Array.isArray(data.changes)) {
-        setAdminMenuChangesError('目前無法取得菜單歷程，請稍後再試。');
+      if (!Array.isArray(data.changes) || !Array.isArray(vendorsData.vendors)) {
+        setAdminMenuChangesError('目前無法取得菜單維護資料，請稍後再試。');
         return;
       }
       setAdminMenuChanges(data.changes);
+      setAdminMenuVendors(vendorsData.vendors);
       setAdminMenuChangesLoaded(true);
     } catch (error) {
       if (requestId === adminMenuChangesRequestRef.current) {
         setAdminMenuChangesError(error?.code
-          ? `目前無法取得菜單歷程（${error.code}），請稍後再試。`
-          : '目前無法取得菜單歷程，請稍後再試。');
+          ? `目前無法取得菜單維護資料（${error.code}），請稍後再試。`
+          : '目前無法取得菜單維護資料，請稍後再試。');
       }
     } finally {
       if (requestId === adminMenuChangesRequestRef.current) setAdminMenuChangesLoading(false);
@@ -3102,6 +3111,7 @@ export default function App() {
               && !isViewAsMode && (
               <MenuItemChangesManagement
                 changes={adminMenuChanges}
+                vendorOptions={adminMenuVendors}
                 loading={adminMenuChangesLoading}
                 error={adminMenuChangesError}
                 isViewAsMode={isViewAsMode}

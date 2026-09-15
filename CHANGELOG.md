@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-09-15
+
+### Added
+
+- Added separate Admin current-menu and append-only change-history views, with the current menu using the same effective-date canonical resolver as customer ordering.
+- Added Worker-backed canonical vendor options for menu maintenance filters and entries.
+
+### Changed
+
+- Removed the redundant vendor column from the menu change-history view because vendor is selected above the table.
+- Reworked menu maintenance tables into responsive desktop tables and mobile compact cards to avoid unnecessary horizontal scrolling.
+
+### Fixed
+
+- Fixed imported baseline menu items, including `咖哩鷹豆泥`, being absent from the primary Admin maintenance view even though they were available to customers.
+
 ## [0.14.1] - 2026-09-15
 
 ### Changed

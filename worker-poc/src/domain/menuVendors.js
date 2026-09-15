@@ -1,6 +1,10 @@
 export const HISTORICAL_SQL_VENDOR = '蔡老師';
 export const CANONICAL_HE_SHI_VENDOR = '禾拾';
 export const LEGACY_HE_SHI_VENDOR = '合十';
+export const CANONICAL_MENU_VENDORS = Object.freeze([
+  HISTORICAL_SQL_VENDOR,
+  CANONICAL_HE_SHI_VENDOR
+]);
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
 

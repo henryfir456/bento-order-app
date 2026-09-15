@@ -597,6 +597,72 @@ test('Admin menu change API is append-only, Admin-only, View As-safe, and return
   assert.equal(preview.body.selectableItems[0].price, -1);
 });
 
+test('Admin menu vendor options come from the canonical Worker source', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+
+  const admin = await call(database, '/api/admin/menu/vendors');
+  assert.equal(admin.response.status, 200);
+  assert.deepEqual(admin.body, { success: true, vendors: ['蔡老師', '禾拾'] });
+
+  const user = await call(database, '/api/admin/menu/vendors', { role: 'User' });
+  assert.equal(user.response.status, 403);
+  assert.deepEqual(user.body, { error: 'FORBIDDEN' });
+
+  const viewAs = await call(database, '/api/admin/menu/vendors?viewAs=changes-user');
+  assert.equal(viewAs.response.status, 403);
+  assert.deepEqual(viewAs.body, { error: 'VIEW_AS_FORBIDDEN' });
+});
+
+test('Admin current-menu projection and customer ordering share the effective menu resolver', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedCompatibilityVersion(database, {
+    id: 'current-menu-parity',
+    date: '2026-09-01',
+    vendor: '蔡老師',
+    rows: [
+      { menuItemId: 'parity-a', itemCode: 'A', itemName: 'A baseline', price: 80, sourceOrder: 1 },
+      { menuItemId: 'parity-disabled', itemCode: 'D', itemName: 'D disabled', price: 90, enabled: false, sourceOrder: 2 }
+    ]
+  });
+  seedChange(database, {
+    id: 'parity-a-change', date: '2026-09-11', code: 'A', name: 'A changed', price: 85,
+    source: 'admin', order: 1
+  });
+  seedChange(database, {
+    id: 'parity-future', date: '2026-09-13', code: 'A', name: 'A future', price: 95,
+    source: 'admin', order: 1
+  });
+
+  const targetDate = '2026-09-12';
+  const customerMenu = await getCustomerMenu(database, { vendor: '蔡老師', targetDate });
+  const preview = await call(database, `/api/admin/menu/preview?vendor=%E8%94%A1%E8%80%81%E5%B8%AB&targetDate=${targetDate}`);
+  assert.equal(preview.response.status, 200);
+  assert.deepEqual(
+    preview.body.items.filter((item) => item.enabled).map((item) => [item.item_code, item.variant_key, item.item_name, item.price]),
+    customerMenu.map((item) => [item.legacy_item_id, item.variant_key, item.item_name, item.price])
+  );
+  assert.equal(preview.body.items.find((item) => item.item_code === 'D').enabled, false);
+  const changed = preview.body.items.find((item) => item.item_code === 'A');
+  assert.deepEqual({
+    id: changed.menu_item_change_id,
+    date: changed.effective_date,
+    name: changed.item_name,
+    price: changed.price,
+    source: changed.source_kind,
+    persistedMenuItemId: changed.persisted_menu_item_id
+  }, {
+    id: 'parity-a-change',
+    date: '2026-09-11',
+    name: 'A changed',
+    price: 85,
+    source: 'admin',
+    persistedMenuItemId: 'parity-a'
+  });
+  assert.equal(preview.body.items.some((item) => item.item_name === 'A future'), false);
+});
+
 test('post-cutoff Admin overlay preserves unchanged compatibility baseline items', async () => {
   const database = new SqliteD1();
   seedUsers(database);

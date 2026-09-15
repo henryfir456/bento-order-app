@@ -11,6 +11,28 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.14.2': [
+    {
+      name: '新增',
+      changes: [
+        '菜單品項維護新增「目前菜單」與「變更歷程」分頁；目前菜單沿用正式點餐頁的生效日 canonical resolver。',
+        '供應商選項改由 Worker 提供的 canonical vendor source 載入。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        '變更歷程移除重複的供應商欄位，改由上方供應商篩選決定。',
+        '菜單維護表格改為桌面表格與手機 compact cards，減少不必要的橫向捲動。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '修正匯入的目前有效品項（包含咖哩鷹豆泥）雖可供使用者點餐，卻未出現在 Admin 菜單維護主畫面的問題。'
+      ]
+    }
+  ],
   '0.14.1': [
     {
       name: '變更',
