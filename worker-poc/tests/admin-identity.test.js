@@ -202,8 +202,8 @@ test('member projection is server-authoritative for source and identity state', 
   const guest = result.body.members.find((user) => user.userId === 'guest-1');
   assert.equal(target.authSource, 'LINE');
   assert.equal(target.identityState, 'EMPLOYEE_BIND_REQUIRED');
-  assert.equal(guest.authSource, 'EMPLOYEE_GUEST');
-  assert.equal(guest.identityState, 'PENDING_VERIFICATION');
+  assert.equal(guest.authSource, 'EMPLOYEE');
+  assert.equal(guest.identityState, 'VERIFIED');
   assert.equal(guest.verificationStatus, 'UNVERIFIED');
 });
 

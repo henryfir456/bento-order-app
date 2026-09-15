@@ -26,10 +26,10 @@ test('frontend keeps View-As read-only and exposes explicit delegated ordering m
   assert.match(orderPage, /isViewAsMode/);
   assert.match(api, /getOrderTargets/);
   assert.match(api, /targetUserId/);
-  assert.equal(packageJson.version, '0.14.0');
-  assert.equal(packageLock.version, '0.14.0');
-  assert.equal(packageLock.packages[''].version, '0.14.0');
-  assert.match(changelog, /## \[0\.14\.0\] - 2026-09-15/);
+  assert.equal(packageJson.version, '0.14.1');
+  assert.equal(packageLock.version, '0.14.1');
+  assert.equal(packageLock.packages[''].version, '0.14.1');
+  assert.match(changelog, /## \[0\.14\.1\] - 2026-09-15/);
   assert.match(app, /v\{APP_VERSION\}/);
   for (const change of [
     '新增 Admin／ProxyAdmin 代點餐',
@@ -42,5 +42,12 @@ test('frontend keeps View-As read-only and exposes explicit delegated ordering m
     'COMPLETED／readOnly／finalized 歷史訂單仍不可修改'
   ]) {
     assert.ok(localizedChangelog.includes(change), `missing v0.14.0 UI changelog text: ${change}`);
+  }
+  for (const change of [
+    '代點餐支援未綁定 LINE 的有效會員',
+    '個人交易明細顯示中文點餐狀態、用餐日期、店家與品項',
+    '修正點餐與取消後畫面餘額未即時更新'
+  ]) {
+    assert.ok(localizedChangelog.includes(change), `missing v0.14.1 UI changelog text: ${change}`);
   }
 });

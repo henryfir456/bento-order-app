@@ -135,6 +135,30 @@ test('delegated target discovery is role-gated and returns only eligible targets
     lineUserId: null,
     employeeId: 'incomplete-001'
   });
+  seedUser(database, {
+    userId: 'employee-only-target',
+    displayName: 'Employee Only Target',
+    pickupFloor: '9樓',
+    lineUserId: null,
+    employeeId: 'employee-only-001'
+  });
+  seedUser(database, {
+    userId: 'inactive-non-line-target',
+    displayName: 'Inactive Non-Line Target',
+    pickupFloor: '1樓',
+    lineUserId: null,
+    employeeId: 'inactive-001',
+    active: 0
+  });
+  seedUser(database, {
+    userId: 'historical-provisional-target',
+    displayName: 'Historical Provisional Target',
+    pickupFloor: '1樓',
+    lineUserId: null,
+    employeeId: null,
+    active: 0,
+    verificationStatus: 'UNVERIFIED'
+  });
 
   const adminResponse = await handleFormalRequest(
     request('/api/orders/targets', { token: 'admin-token' }),
@@ -143,7 +167,19 @@ test('delegated target discovery is role-gated and returns only eligible targets
   );
   const adminBody = await adminResponse.json();
   assert.equal(adminResponse.status, 200);
-  assert.deepEqual(adminBody.targets.map((target) => target.userId), ['proxy-1', 'user-1', 'user-2']);
+  assert.deepEqual(adminBody.targets.map((target) => target.userId), [
+    'employee-only-target',
+    'proxy-1',
+    'user-1',
+    'user-2'
+  ]);
+  const employeeOnlyTarget = adminBody.targets.find((target) => target.userId === 'employee-only-target');
+  assert.equal(employeeOnlyTarget.lineUserId, null);
+  assert.equal(employeeOnlyTarget.employeeId, 'employee-only-001');
+  assert.equal(employeeOnlyTarget.authSource, 'EMPLOYEE');
+  assert.equal(employeeOnlyTarget.identityState, 'VERIFIED');
+  assert.equal(adminBody.targets.some((target) => target.userId === 'inactive-non-line-target'), false);
+  assert.equal(adminBody.targets.some((target) => target.userId === 'historical-provisional-target'), false);
 
   const userResponse = await handleFormalRequest(
     request('/api/orders/targets', { token: 'user-token' }),
@@ -275,7 +311,9 @@ test('delegated create and replacement preserve target ownership and target-only
   );
 
   assert.equal(first.response.status, 200);
+  assert.equal(first.body.newBalance, 20);
   assert.equal(replacement.response.status, 200);
+  assert.equal(replacement.body.newBalance, 70);
   assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-2'").balance, 70);
   assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'admin-1'").balance, 500);
   const orders = database.database.prepare(`

@@ -112,6 +112,16 @@ test('cancel confirmation sends one idempotent request, refreshes, then shows su
   assert.match(handler, /handleExitToCalendar\(\)/);
 });
 
+test('order confirmation applies authoritative balance to self and target-only state to proxy orders', () => {
+  const handler = extractHandler(appSource, 'handleConfirmSubmit');
+  assert.match(handler, /if \(delegatedOrderUser\?\.userId\) \{[\s\S]*setDelegatedOrderUser\([\s\S]*data\.newBalance[\s\S]*\} else \{[\s\S]*setUserBalance\(data\.newBalance\);[\s\S]*setAuthUser\(prev => prev \? \{ \.\.\.prev, balance: data\.newBalance \} : prev\)/);
+});
+
+test('cancel confirmation keeps authoritative balance scoped to the actual owner', () => {
+  const handler = extractHandler(appSource, 'handleConfirmCancel');
+  assert.match(handler, /if \(delegatedOrderUser\?\.userId\) \{[\s\S]*setDelegatedOrderUser\([\s\S]*data\.newBalance[\s\S]*\} else \{[\s\S]*setUserBalance\(data\.newBalance\);[\s\S]*setAuthUser\(prev => prev \? \{ \.\.\.prev, balance: data\.newBalance \} : prev\)/);
+});
+
 test('cancel confirmation is wired as a second stateful modal and keeps failure in place', () => {
   assert.match(appSource, /showCancelConfirmation/);
   assert.match(appSource, /<OrderConfirmationModal[\s\S]*showCancelConfirmation/);

@@ -73,6 +73,11 @@ const requireAuthoritativeIdentityState = (data) => {
   return identityState;
 };
 
+const formatLedgerOrderDate = (value) => {
+  const match = String(value || '').match(/^\d{4}-(\d{2})-(\d{2})$/);
+  return match ? `${Number(match[1])}/${Number(match[2])}` : String(value || '');
+};
+
 const logAuthDiagnostic = (message) => {
   if (import.meta.env.DEV) {
     console.info(`[AUTH] ${message}`);
@@ -1951,11 +1956,12 @@ export default function App() {
           setShowOrderConfirmation(false);
           setMessage('✅ 下單成功');
           setHasExistingOrder(true);
-          if (data.newBalance !== undefined) {
+          if (data.newBalance !== undefined && data.newBalance !== null) {
             if (delegatedOrderUser?.userId) {
               setDelegatedOrderUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
             } else {
               setUserBalance(data.newBalance);
+              setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
             }
           }
           setActiveOrderId(data.orderId || '');
@@ -2181,7 +2187,15 @@ export default function App() {
     if (hasPermission(
       user.role,
       'viewAdminOrderSummary',
-      user.authMode || (user.authSource === 'EMPLOYEE_GUEST' ? 'employee_guest' : 'line'),
+      user.authMode || (
+        user.authSource === 'EMPLOYEE_GUEST'
+          ? 'employee_guest'
+          : user.authSource === 'LINE'
+            ? 'line'
+            : user.authSource === 'EMPLOYEE' || user.authSource === 'NON_LINE'
+              ? 'canonical'
+              : 'line'
+      ),
       user.authSource !== 'LINE' || Boolean(String(user.employeeId || '').trim())
     )) {
       setAdminSection('orders');
@@ -3219,6 +3233,16 @@ export default function App() {
                   <div key={idx} className="bg-gray-50/80 p-3.5 rounded-2xl flex justify-between items-center text-xs border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <div>
                       <div className="font-bold text-gray-700 text-sm mb-1">{item.description || item.note || item.type || '交易異動'}</div>
+                      {item.order && (
+                        <div className="space-y-0.5 text-[11px] text-gray-600">
+                          <div>{formatLedgerOrderDate(item.order.orderDate)} {item.order.vendorName}</div>
+                          {item.order.items.map((orderItem, itemIndex) => (
+                            <div key={`${orderItem.name}-${itemIndex}`}>
+                              {orderItem.name} × {orderItem.quantity}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       <div className="text-[10px] text-gray-400">{item.occurredAt || item.timestamp}</div>
                     </div>
                     <div className="text-right">

@@ -72,24 +72,33 @@ export const getUserByLineId = async (database, lineUserId) => {
   return toUser(row);
 };
 
-export const publicUser = (user) => {
+export const publicUser = (user, { authMode: projectedAuthMode = null, provisional = false } = {}) => {
   if (!user) return null;
   const hasEmployeeId = Boolean(String(user.employeeId || '').trim());
   const verificationStatus = user.verificationStatus || VERIFICATION_STATUSES.VERIFIED;
-  const authMode = String(user.lineUserId || '').trim()
-    ? 'line'
-    : 'employee_guest';
+  const hasLineBinding = Boolean(String(user.lineUserId || '').trim());
+  const authMode = projectedAuthMode || user.authMode || (hasLineBinding ? 'line' : 'canonical');
+  const isEmployeeGuest = authMode === 'employee_guest';
+  // A canonical member without a LINE binding is still a canonical member.
+  // `employee_guest` belongs to the authenticated session principal and must
+  // not be inferred from a nullable users.line_user_id projection.
   const identityState = identityStateFor({
     userId: user.userId,
     employeeId: user.employeeId,
     authMode,
-    registered: authMode === 'line' && user.active && hasEmployeeId,
-    provisional: authMode === 'employee_guest'
-      && verificationStatus === VERIFICATION_STATUSES.UNVERIFIED,
+    registered: !isEmployeeGuest && user.active && hasEmployeeId,
+    provisional: isEmployeeGuest && (provisional
+      || verificationStatus === VERIFICATION_STATUSES.UNVERIFIED),
     verificationStatus,
     active: user.active
   });
-  const authSource = authMode === 'line' ? 'LINE' : 'EMPLOYEE_GUEST';
+  const authSource = isEmployeeGuest
+    ? 'EMPLOYEE_GUEST'
+    : hasLineBinding
+      ? 'LINE'
+      : hasEmployeeId
+        ? 'EMPLOYEE'
+        : 'NON_LINE';
   return {
     userId: user.userId,
     employeeId: user.employeeId,

@@ -219,6 +219,8 @@ test('guest restore reconciles an existing unverified canonical user without att
   assert.equal(profileUpdate.body.identityState, 'PENDING_VERIFICATION');
   assert.equal(profileUpdate.body.user.userId, 'reconciled-user-139653');
   assert.equal(profileUpdate.body.user.lineUserId, null);
+  assert.equal(profileUpdate.body.user.authSource, 'EMPLOYEE_GUEST');
+  assert.equal(profileUpdate.body.user.identityState, 'PENDING_VERIFICATION');
   assert.equal(profileUpdate.body.user.verificationStatus, 'UNVERIFIED');
   assert.equal(profileUpdate.body.user.name, 'Reconciled profile');
   assert.equal(profileUpdate.body.user.floor, '9樓');

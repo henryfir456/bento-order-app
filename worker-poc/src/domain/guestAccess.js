@@ -110,7 +110,10 @@ export const employeeGuestLogin = async (
       user.active,
       user.employeeId
     ),
-    user: publicUser(user)
+    user: publicUser(user, {
+      authMode: 'employee_guest',
+      provisional: status === 'UNVERIFIED_EMPLOYEE'
+    })
   };
 };
 
@@ -138,7 +141,10 @@ const provisionalGuestResult = (user, session) => {
     user.employeeId
   ),
   employeeId: user.employeeId,
-  user: publicUser(user)
+  user: publicUser(user, {
+    authMode: 'employee_guest',
+    provisional: !verified
+  })
   };
 };
 

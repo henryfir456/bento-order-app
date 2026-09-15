@@ -77,6 +77,63 @@ test('balance history filters by UTC month and preserves business-date context',
   assert.equal(result.transactions[1].businessDate, '2026-09-08');
 });
 
+test('order ledger history projects Chinese labels and historical order item snapshots', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', balance: 100 });
+  seedOrder(database);
+  database.run(`
+    INSERT INTO order_items (
+      order_id, line_no, legacy_item_id, item_name_snapshot,
+      quantity, unit_price, subtotal
+    ) VALUES
+      ('history-order', 1, 'legacy-a', '小而美舊名', 1, 10, 10),
+      ('history-order', 2, 'legacy-b', '紫米飯', 2, 10, 20)
+  `);
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES ('current-menu', 'Vendor A', '2026-09-09')
+  `);
+  database.run(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, item_name, price,
+      enabled, note, image_url, source_order
+    ) VALUES ('current-menu-a', 'current-menu', 'legacy-a', '小而美新名', 10, 1, '', '', 1)
+  `);
+  await appendLedgerEntry(database, {
+    transactionId: 'history-created-tx',
+    userId: 'user-1',
+    amount: -30,
+    balanceAfter: 70,
+    type: 'ORDER',
+    referenceId: 'history-order',
+    note: 'ORDER_CREATED',
+    occurredAt: '2026-09-08T01:00:00.000Z'
+  });
+  await appendLedgerEntry(database, {
+    transactionId: 'history-cancelled-tx',
+    userId: 'user-1',
+    amount: 30,
+    balanceAfter: 100,
+    type: 'REFUND',
+    referenceId: 'history-order',
+    note: 'ORDER_CANCELLED',
+    occurredAt: '2026-09-08T02:00:00.000Z'
+  });
+
+  const result = await getBalanceHistory(database, 'user-1', '2026-09');
+  assert.deepEqual(result.transactions.map((row) => row.description), ['取消點餐', '點餐']);
+  assert.deepEqual(result.transactions[0].order, {
+    orderDate: '2026-09-08',
+    vendorName: 'Vendor A',
+    items: [
+      { name: '小而美舊名', quantity: 1 },
+      { name: '紫米飯', quantity: 2 }
+    ]
+  });
+  assert.deepEqual(result.transactions[1].order, result.transactions[0].order);
+  assert.equal(result.transactions[0].order.items[0].name, '小而美舊名');
+});
+
 test('history returns an explicit policy boundary for an imported balance without ledger evidence', async () => {
   const database = new SqliteD1();
   seedUser(database, { lineUserId: 'user-1', balance: 100 });

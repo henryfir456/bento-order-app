@@ -1,6 +1,7 @@
 import { conflict, badRequest } from '../http/errors.js';
 import {
   appendLedgerEntry,
+  getHistoricalOrderDetails,
   getLatestLedgerRow,
   getLedgerRows
 } from '../db/ledgerQueries.js';
@@ -23,7 +24,15 @@ const openingBalanceSnapshot = (database, userId) => database.prepare(`
   LIMIT 1
 `).bind(userId).first();
 
-const descriptionFor = (row) => row.note || row.type || 'BALANCE_CHANGE';
+const TRANSACTION_DESCRIPTIONS = Object.freeze({
+  ORDER_CREATED: '點餐',
+  ORDER_CANCELLED: '取消點餐'
+});
+
+const descriptionFor = (row) => TRANSACTION_DESCRIPTIONS[row.note]
+  || row.note
+  || row.type
+  || 'BALANCE_CHANGE';
 
 export const isApprovedOpeningBalancePolicy = (policy) => Boolean(
   policy?.approved === true
@@ -62,6 +71,9 @@ export const getBalanceHistory = async (database, userId, monthInput) => {
   ));
   const prior = await getLatestLedgerRow(database, userId, month.start);
   const closing = await getLatestLedgerRow(database, userId, month.end);
+  const orderDetails = await getHistoricalOrderDetails(database, allRows
+    .filter((row) => row.type === 'ORDER' || row.type === 'REFUND')
+    .map((row) => row.reference_id));
   const first = monthRows[0];
   const openingBalance = prior
     ? Number(prior.balance_after)
@@ -87,6 +99,9 @@ export const getBalanceHistory = async (database, userId, monthInput) => {
     occurredAt: row.occurred_at,
     timestamp: row.occurred_at.slice(0, 16),
     businessDate: row.order_date || null,
+    order: (row.type === 'ORDER' || row.type === 'REFUND')
+      ? orderDetails.get(row.reference_id) || null
+      : null,
     amount: Number(row.amount),
     changeAmount: Number(row.amount),
     balanceAfter: Number(row.balance_after),

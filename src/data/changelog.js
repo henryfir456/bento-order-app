@@ -11,6 +11,16 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.14.1': [
+    {
+      name: '變更',
+      changes: [
+        '代點餐支援未綁定 LINE 的有效會員',
+        '個人交易明細顯示中文點餐狀態、用餐日期、店家與品項',
+        '修正點餐與取消後畫面餘額未即時更新'
+      ]
+    }
+  ],
   '0.14.0': [
     {
       name: '新增',

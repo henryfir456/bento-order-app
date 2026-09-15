@@ -157,6 +157,9 @@ export const updatePickupFloor = async (
         identity.actor.requiresEmployeeBinding
       )
     }),
-    user: publicUser(user)
+    user: publicUser(user, {
+      authMode: identity.actor.authMode,
+      provisional: identity.actor.provisional
+    })
   };
 };

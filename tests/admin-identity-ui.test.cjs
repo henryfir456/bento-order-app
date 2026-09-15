@@ -19,6 +19,10 @@ test('identity badges render source and registration state without review semant
     getIdentityBadges({ authSource: 'EMPLOYEE_GUEST', identityState: 'PENDING_VERIFICATION' }).map((badge) => badge.label),
     ['非 LINE', '員工訪客']
   );
+  assert.deepEqual(
+    getIdentityBadges({ authSource: 'EMPLOYEE', identityState: 'VERIFIED' }).map((badge) => badge.label),
+    ['員編', '已註冊']
+  );
   assert.equal(identityFilterMatches({ identityState: 'EMPLOYEE_BIND_REQUIRED' }, 'EMPLOYEE_BIND_REQUIRED'), true);
   assert.equal(identityFilterOptions.some((option) => option.value === 'PENDING_VERIFICATION'), false);
   assert.deepEqual(identityFilterOptions.map((option) => option.label), ['全部', '待綁員編', '已註冊']);
@@ -59,6 +63,9 @@ test('Admin identity UI uses Worker binding and never writes verification state 
   assert.match(app, /requireAuthoritativeIdentityState/);
   assert.doesNotMatch(app, /identityState \|\| IDENTITY_STATES\./);
   assert.match(app, /await fetchUserInfo\(readCurrentCredential\(\)\)/);
+  assert.match(app, /setOrderTargetRows\(data\.targets\)/);
+  assert.match(app, /const selectionRows = viewAsModalMode === 'delegate' \? orderTargetRows : adminMemberRows;/);
+  assert.doesNotMatch(app, /data\.targets\.filter\([\s\S]*lineUserId/);
   assert.match(app, /setMemberBalancesLoaded\(false\);[\s\S]*?loadMemberBalances\(true\)/);
   assert.match(member, /登入來源/);
   assert.match(member, /註冊狀態/);

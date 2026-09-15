@@ -9,6 +9,8 @@ export const IDENTITY_FILTERS = Object.freeze({
 
 const SOURCE_LABELS = Object.freeze({
   LINE: 'LINE',
+  EMPLOYEE: '員編',
+  NON_LINE: '未綁 LINE',
   EMPLOYEE_GUEST: '非 LINE'
 });
 
@@ -22,6 +24,10 @@ const hasEmployeeId = (value) => String(value ?? '').trim().length > 0;
 
 const isEmployeeGuestMember = (member) => (
   member?.authMode === 'employee_guest' || member?.authSource === 'EMPLOYEE_GUEST'
+);
+
+const isNonLineCanonicalMember = (member) => (
+  member?.authSource === 'EMPLOYEE' || member?.authSource === 'NON_LINE'
 );
 
 const isLineMember = (member) => (
@@ -38,7 +44,9 @@ const isProvisionalEmployeeGuest = (member) => (
 );
 
 export const isHistoricalProvisionalMember = (member) => (
-  member?.active === false && isEmployeeGuestMember(member)
+  member?.active === false && (
+    isEmployeeGuestMember(member) || isNonLineCanonicalMember(member)
+  )
 );
 
 export const isActiveProvisionalEmployeeGuest = (member) => (
@@ -69,7 +77,13 @@ export const getIdentityBadges = ({ authSource, identityState } = {}) => ([
     key: 'authSource',
     value: authSource,
     label: SOURCE_LABELS[authSource] || '登入來源待確認',
-    tone: authSource === 'LINE' ? 'line' : authSource === 'EMPLOYEE_GUEST' ? 'guest' : 'unknown'
+    tone: authSource === 'LINE'
+      ? 'line'
+      : authSource === 'EMPLOYEE_GUEST'
+        ? 'guest'
+        : authSource === 'EMPLOYEE' || authSource === 'NON_LINE'
+          ? 'employee'
+          : 'unknown'
   },
   {
     key: 'identityState',

@@ -241,6 +241,41 @@ export const getLedgerRows = async (database, userId, { from, to } = {}) => {
   return Array.isArray(result) ? result : (result?.results || []);
 };
 
+export const getHistoricalOrderDetails = async (database, orderIds = []) => {
+  const ids = [...new Set(orderIds.map((orderId) => String(orderId || '').trim()).filter(Boolean))];
+  const details = new Map();
+  const chunkSize = 50;
+  for (let index = 0; index < ids.length; index += chunkSize) {
+    const chunk = ids.slice(index, index + chunkSize);
+    const placeholders = chunk.map(() => '?').join(', ');
+    const result = await database.prepare(`
+      SELECT o.order_id, o.order_date, o.vendor,
+             oi.line_no, oi.item_name_snapshot, oi.quantity
+      FROM orders o
+      LEFT JOIN order_items oi ON oi.order_id = o.order_id
+      WHERE o.order_id IN (${placeholders})
+      ORDER BY o.order_id, oi.line_no
+    `).bind(...chunk).all();
+    const rows = Array.isArray(result) ? result : (result?.results || []);
+    for (const row of rows) {
+      if (!details.has(row.order_id)) {
+        details.set(row.order_id, {
+          orderDate: row.order_date || null,
+          vendorName: row.vendor || '',
+          items: []
+        });
+      }
+      if (row.item_name_snapshot !== null && row.item_name_snapshot !== undefined) {
+        details.get(row.order_id).items.push({
+          name: String(row.item_name_snapshot),
+          quantity: Number(row.quantity)
+        });
+      }
+    }
+  }
+  return details;
+};
+
 export const getLatestLedgerRow = async (database, userId, before = null) => (
   database.prepare(`
     SELECT bl.transaction_id, bl.user_id, bl.employee_id_snapshot,

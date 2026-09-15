@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-09-15
+
+### Changed
+
+- Added delegated-order support for valid active canonical members without a LINE binding.
+- Added Chinese personal transaction labels and historical order date, vendor, item, and quantity details.
+- Fixed stale header balances after creating or cancelling an order.
+
 ## [0.14.0] - 2026-09-15
 
 ### Added

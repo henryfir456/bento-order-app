@@ -1966,13 +1966,21 @@ test('admin identity list hides inactive employee guests and only exposes eligib
     employeeId: '139654',
     identityState: 'VERIFIED'
   };
+  const inactiveCanonical = {
+    userId: 'canonical-inactive',
+    authSource: 'EMPLOYEE',
+    active: false,
+    employeeId: '139655',
+    identityState: 'UNREGISTERED'
+  };
 
   const projected = getAdminMemberRows([
     canonical,
     unboundLine,
     activeProvisional,
     inactiveProvisional,
-    inactiveLine
+    inactiveLine,
+    inactiveCanonical
   ]);
   assert.deepEqual(projected.map(({ userId }) => userId), [
     'line-canonical',
@@ -2007,9 +2015,9 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.14.0');
-  assert.equal(packageLock.version, '0.14.0');
-  assert.equal(packageLock.packages[''].version, '0.14.0');
+  assert.equal(packageJson.version, '0.14.1');
+  assert.equal(packageLock.version, '0.14.1');
+  assert.equal(packageLock.packages[''].version, '0.14.1');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
   assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);
