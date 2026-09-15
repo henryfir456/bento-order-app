@@ -4,6 +4,13 @@ const path = require('node:path');
 const { test } = require('node:test');
 
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+const extractHandler = (source, name) => {
+  const start = source.indexOf(`const ${name} = async () => {`);
+  assert.notEqual(start, -1, `missing ${name}`);
+  const end = source.indexOf('\n  };', start);
+  assert.notEqual(end, -1, `unterminated ${name}`);
+  return source.slice(start, end + '\n  };'.length);
+};
 
 test('frontend keeps View-As read-only and exposes explicit delegated ordering mode', () => {
   const app = read('src/App.jsx');
@@ -52,4 +59,89 @@ test('frontend keeps View-As read-only and exposes explicit delegated ordering m
   ]) {
     assert.ok(localizedChangelog.includes(change), `missing v0.14.1 UI changelog text: ${change}`);
   }
+});
+
+test('delegated order invalidates the cached member balance without patching the list', () => {
+  const app = read('src/App.jsx');
+  const handler = extractHandler(app, 'handleConfirmSubmit');
+
+  assert.match(handler, /const isDelegatedOrder = Boolean\(delegatedOrderUser\?\.userId\);/);
+  assert.match(handler, /if \(isDelegatedOrder\) \{[\s\S]*setDelegatedOrderUser\([\s\S]*data\.newBalance/);
+  assert.match(handler, /if \(isDelegatedOrder\) setMemberBalancesLoaded\(false\);/);
+  assert.doesNotMatch(handler, /setMemberBalances\(prev =>/);
+  assert.match(handler, /setDelegatedOrderUser\([\s\S]*data\.newBalance[\s\S]*\);[\s\S]*setMemberBalancesLoaded\(false\)/);
+});
+
+test('delegated cancel/refund invalidates the cached member balance and normal orders do not', () => {
+  const app = read('src/App.jsx');
+  const submitHandler = extractHandler(app, 'handleConfirmSubmit');
+  const cancelHandler = extractHandler(app, 'handleConfirmCancel');
+
+  assert.match(cancelHandler, /const isDelegatedOrder = Boolean\(delegatedOrderUser\?\.userId\);/);
+  assert.match(cancelHandler, /if \(isDelegatedOrder\) \{[\s\S]*setDelegatedOrderUser\([\s\S]*data\.newBalance/);
+  assert.match(cancelHandler, /if \(isDelegatedOrder\) setMemberBalancesLoaded\(false\);/);
+  assert.doesNotMatch(cancelHandler, /setMemberBalances\(prev =>/);
+
+  const submitBalanceBranch = submitHandler.slice(
+    submitHandler.indexOf('if (isDelegatedOrder) {'),
+    submitHandler.indexOf('if (isDelegatedOrder) setMemberBalancesLoaded')
+  );
+  const cancelBalanceBranch = cancelHandler.slice(
+    cancelHandler.indexOf('if (isDelegatedOrder) {'),
+    cancelHandler.indexOf('if (isDelegatedOrder) setMemberBalancesLoaded')
+  );
+  const submitNormalBranch = submitBalanceBranch.slice(submitBalanceBranch.indexOf('} else {'));
+  const cancelNormalBranch = cancelBalanceBranch.slice(cancelBalanceBranch.indexOf('} else {'));
+  assert.doesNotMatch(submitNormalBranch, /setMemberBalancesLoaded\(false\)/);
+  assert.doesNotMatch(cancelNormalBranch, /setMemberBalancesLoaded\(false\)/);
+});
+
+test('delegated balance cache regression: stale zero is invalidated, then balances entry reloads authoritative -100', () => {
+  const app = read('src/App.jsx');
+  const banner = read('src/components/ViewAsBanner.jsx');
+  const balances = read('src/features/balances/MemberBalanceManagement.jsx');
+  const submitHandler = extractHandler(app, 'handleConfirmSubmit');
+  const balancesLoader = app.slice(app.indexOf('const loadMemberBalances = async'));
+  const sectionHandler = app.slice(app.indexOf('const handleAdminSectionChange ='));
+
+  const state = {
+    memberBalances: [{ name: 'C_KW', userId: 'target-c-kw', balance: 0 }],
+    memberBalancesLoaded: true,
+    delegatedOrderUser: { name: 'C_KW', userId: 'target-c-kw', balance: 0 },
+    network: []
+  };
+  const delegatedResponse = { success: true, newBalance: -100 };
+
+  assert.equal(state.memberBalances[0].balance, 0);
+  assert.match(submitHandler, /setDelegatedOrderUser\([\s\S]*data\.newBalance/);
+  assert.match(submitHandler, /setMemberBalancesLoaded\(false\)/);
+  state.delegatedOrderUser.balance = delegatedResponse.newBalance;
+  state.memberBalancesLoaded = false;
+
+  assert.match(banner, /目標餘額：\{formatBalanceAmount\(delegatedOrderUser\.balance\)\}/);
+  assert.equal(state.delegatedOrderUser.balance, -100, 'banner source receives response.newBalance immediately');
+  assert.match(sectionHandler, /if \(section === ['"]balances['"]\)[\s\S]*loadMemberBalances\(\)/);
+  assert.match(balancesLoader, /if \(!force && memberBalancesLoaded\) return;/);
+  assert.match(balancesLoader, /apiClient\.getMemberBalances\(\)/);
+  assert.match(balancesLoader, /setMemberBalances\(data\.members \|\| data\.users \|\| \[\]\)/);
+
+  let fetchCount = 0;
+  const enterBalances = () => {
+    if (state.memberBalancesLoaded) return;
+    fetchCount += 1;
+    state.memberBalances = [{ name: 'C_KW', userId: 'target-c-kw', balance: -100 }];
+    state.memberBalancesLoaded = true;
+  };
+  enterBalances();
+  assert.equal(fetchCount, 1);
+  assert.equal(state.memberBalances[0].balance, -100);
+  assert.match(balances, /memberBalances/);
+  assert.match(balances, /user\.balance/);
+});
+
+test('admin top-up keeps its existing invalidation and immediate authoritative refetch', () => {
+  const app = read('src/App.jsx');
+  const topupHandler = extractHandler(app, 'handleTopupSubmit');
+
+  assert.match(topupHandler, /setMemberBalancesLoaded\(false\);[\s\S]*await loadMemberBalances\(true\)/);
 });

@@ -1965,14 +1965,16 @@ export default function App() {
           setShowOrderConfirmation(false);
           setMessage('✅ 下單成功');
           setHasExistingOrder(true);
+          const isDelegatedOrder = Boolean(delegatedOrderUser?.userId);
           if (data.newBalance !== undefined && data.newBalance !== null) {
-            if (delegatedOrderUser?.userId) {
+            if (isDelegatedOrder) {
               setDelegatedOrderUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
             } else {
               setUserBalance(data.newBalance);
               setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
             }
           }
+          if (isDelegatedOrder) setMemberBalancesLoaded(false);
           setActiveOrderId(data.orderId || '');
           clearClientRequestKey(orderSubmitRequestRef);
           clearClientRequestKey(orderCancelRequestRef);
@@ -2069,14 +2071,16 @@ export default function App() {
           return;
         }
 
+        const isDelegatedOrder = Boolean(delegatedOrderUser?.userId);
         if (data.newBalance !== undefined && data.newBalance !== null) {
-          if (delegatedOrderUser?.userId) {
+          if (isDelegatedOrder) {
             setDelegatedOrderUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
           } else {
             setUserBalance(data.newBalance);
             setAuthUser(prev => prev ? { ...prev, balance: data.newBalance } : prev);
           }
         }
+        if (isDelegatedOrder) setMemberBalancesLoaded(false);
         const [calendarRefreshed, ordersRefreshed] = await Promise.all([
           fetchCalendarEvents(authUserId),
           fetchUserAllOrders(
