@@ -2426,6 +2426,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     adminUserId: 'forged-admin',
     targetUserId: 'member-1',
     amount: 25,
+    topupMethod: 'CASH',
     note: 'cash',
     idempotencyKey: 'top-up-1'
   });
@@ -2537,7 +2538,7 @@ test('API transport boundary isolates Worker, GAS, and mock modes with typed gap
     ['/api/me/balance/history', 'GET', 'Bearer line-token', null],
     ['/api/admin/members/balances', 'GET', 'Bearer line-token', null],
     ['/api/admin/calendar/2026-09-10', 'PUT', 'Bearer line-token', JSON.stringify({ vendor: '禾拾', mode: 'B' })],
-    ['/api/admin/balances/top-up', 'POST', 'Bearer line-token', JSON.stringify({ targetUserId: 'member-1', amount: 25, note: 'cash' })],
+    ['/api/admin/balances/top-up', 'POST', 'Bearer line-token', JSON.stringify({ targetUserId: 'member-1', amount: 25, topupMethod: 'CASH', note: 'cash' })],
     ['/api/admin/summary', 'GET', 'Bearer line-token', null],
     ['/api/admin/summary', 'GET', 'Bearer line-token', null]
   ]);

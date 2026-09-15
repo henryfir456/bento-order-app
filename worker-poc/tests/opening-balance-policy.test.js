@@ -77,7 +77,7 @@ test('negative imported snapshot remains policy-bound after a top-up to zero', a
   await topUpBalance(
     database,
     { actor, authorizationActor: actor, effectiveSubject: actor },
-    { targetUserId: 'user-1', amount: 50, idempotencyKey: 'snapshot-negative-topup' },
+    { targetUserId: 'user-1', amount: 50, topupMethod: 'CASH', idempotencyKey: 'snapshot-negative-topup' },
     new Date('2026-09-08T00:00:00.000Z')
   );
 

@@ -29,7 +29,7 @@ const admin = (database, key, body = {}) => call(
     method: 'POST',
     token: 'admin-token',
     headers: { 'Idempotency-Key': key },
-    body: { targetUserId: 'user-1', amount: 25, note: 'cash', ...body }
+    body: { targetUserId: 'user-1', amount: 25, topupMethod: 'CASH', note: 'cash', ...body }
   },
   { token: 'admin-token', lineUserId: 'admin-1', displayName: 'Admin' }
 );
@@ -47,6 +47,53 @@ test('admin top-up atomically updates balance, ledger, audit, and idempotency', 
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'TOPUP'").count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'BALANCE_TOP_UP'").count, 1);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM idempotency_keys WHERE status = 'COMPLETED'").count, 1);
+  assert.equal(database.get("SELECT topup_method FROM balance_ledger WHERE type = 'TOPUP'").topup_method, 'CASH');
+  assert.deepEqual(JSON.parse(database.get("SELECT metadata_json FROM admin_audit_log WHERE action = 'BALANCE_TOP_UP'").metadata_json), {
+    amount: 25,
+    topupMethod: 'CASH',
+    note: 'cash',
+    transactionId: first.body.transactionId
+  });
+});
+
+test('admin top-up accepts all five methods and persists each structured value', async () => {
+  const database = seedDatabase();
+  const methods = ['TAIWAN_PAY', 'LINE_PAY_MONEY', 'BANK_TRANSFER', 'CASH', 'IPASS_MONEY'];
+
+  for (const [index, topupMethod] of methods.entries()) {
+    const result = await admin(database, `top-up-method-${index}`, {
+      amount: 1,
+      topupMethod,
+      note: `method-${index}`
+    });
+    assert.equal(result.response.status, 200);
+  }
+
+  const ledgerRows = await database.prepare(`
+    SELECT topup_method FROM balance_ledger
+    WHERE type = 'TOPUP'
+    ORDER BY rowid ASC
+  `).all();
+  assert.deepEqual(ledgerRows.results.map((row) => row.topup_method), methods);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 105);
+});
+
+test('admin top-up requires an allowlisted method and never falls back to CASH', async () => {
+  const database = seedDatabase();
+  const missing = await call(database, '/api/admin/balances/top-up', {
+    method: 'POST',
+    token: 'admin-token',
+    headers: { 'Idempotency-Key': 'top-up-method-missing' },
+    body: { targetUserId: 'user-1', amount: 25, note: 'cash' }
+  }, { token: 'admin-token', lineUserId: 'admin-1', displayName: 'Admin' });
+  const unknown = await admin(database, 'top-up-method-unknown', { topupMethod: 'CRYPTO' });
+
+  assert.equal(missing.response.status, 400);
+  assert.equal(missing.body.error, 'TOP_UP_METHOD_REQUIRED');
+  assert.equal(unknown.response.status, 400);
+  assert.equal(unknown.body.error, 'TOP_UP_METHOD_INVALID');
+  assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'TOPUP'").count, 0);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 100);
 });
 
 test('top-up starts from the authoritative ledger balance when users.balance is stale', async () => {
@@ -72,6 +119,7 @@ test('top-up starts from the authoritative ledger balance when users.balance is 
     ORDER BY bls.sequence_number DESC
     LIMIT 1
   `).balance_after, 1040);
+  assert.equal(database.get("SELECT topup_method FROM balance_ledger WHERE transaction_id != 'txn-top-up-authoritative-opening'").topup_method, 'CASH');
 });
 
 test('top-up rejects changed idempotency payloads, non-admins, invalid amounts, and View As writes', async () => {

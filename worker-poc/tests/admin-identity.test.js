@@ -243,7 +243,7 @@ test('registered LINE Admin with legacy UNVERIFIED status reaches every privileg
   const topUp = await adminCall('/api/admin/balances/top-up', {
     method: 'POST',
     headers: { 'Idempotency-Key': 'unverified-admin-top-up' },
-    body: { targetUserId: 'target-1', amount: 10, note: 'legacy-status' }
+    body: { targetUserId: 'target-1', amount: 10, topupMethod: 'CASH', note: 'legacy-status' }
   }, profile);
   assert.equal(topUp.response.status, 200);
 

@@ -45,6 +45,7 @@ import AnnouncementManagement from './features/admin/AnnouncementManagement';
 import MenuItemChangesManagement from './features/admin/MenuItemChangesManagement';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
+import { formatTransactionDescription, TOPUP_METHOD_OPTIONS } from './features/balances/topupMethods';
 import {
   getAdminMemberRows,
   isEligibleEmployeeBindingTarget
@@ -359,6 +360,7 @@ export default function App() {
   const historyRequestRef = useRef(0);
   const [selectedTopupUser, setSelectedTopupUser] = useState(null);
   const [topupAmount, setTopupAmount] = useState('');
+  const [topupMethod, setTopupMethod] = useState('');
   const [topupNote, setTopupNote] = useState('現金收款');
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupIdempotencyKey, setTopupIdempotencyKey] = useState('');
@@ -2332,6 +2334,7 @@ export default function App() {
   const handleOpenTopupModal = (user) => {
     setSelectedTopupUser(user);
     setTopupAmount('');
+    setTopupMethod('');
     setTopupNote('現金收款');
     setTopupIdempotencyKey(createClientRequestKey('topup'));
   };
@@ -2343,6 +2346,14 @@ export default function App() {
     const amountText = String(topupAmount).trim();
     const amount = Number(amountText);
     const workerTopUp = apiClient.transport === 'worker';
+    if (!topupMethod) {
+      await showPopup({
+        icon: 'warning',
+        title: '儲值方式必填',
+        text: '請選擇儲值方式後再確認。'
+      });
+      return;
+    }
     const validAmount = workerTopUp
       ? Number.isSafeInteger(amount) && amount > 0
       : Number.isFinite(amount) && amount > 0;
@@ -2363,6 +2374,7 @@ export default function App() {
         adminUserId: authUserId,
         targetUserId: selectedTopupUser.userId,
         amount,
+        topupMethod,
         note: topupNote.trim(),
         idempotencyKey: requestKey
       });
@@ -3254,7 +3266,7 @@ export default function App() {
                 historyList.map((item, idx) => (
                   <div key={idx} className="bg-gray-50/80 p-3.5 rounded-2xl flex justify-between items-center text-xs border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
                     <div>
-                      <div className="font-bold text-gray-700 text-sm mb-1">{item.description || item.note || item.type || '交易異動'}</div>
+                      <div className="font-bold text-gray-700 text-sm mb-1">{formatTransactionDescription(item)}</div>
                       {item.order && (
                         <div className="space-y-0.5 text-[11px] text-gray-600">
                           <div>{formatLedgerOrderDate(item.order.orderDate)} {item.order.vendorName}</div>
@@ -3464,6 +3476,23 @@ export default function App() {
                 />
               </div>
               <div>
+                <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="topup-method">儲值方式</label>
+                <select
+                  id="topup-method"
+                  required
+                  aria-required="true"
+                  value={topupMethod}
+                  onChange={(e) => setTopupMethod(e.target.value)}
+                  disabled={topupLoading}
+                  className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm disabled:bg-gray-100"
+                >
+                  <option value="">請選擇儲值方式</option>
+                  {TOPUP_METHOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
                 <label className="block text-gray-600 font-bold mb-2 text-sm" htmlFor="topup-note">備註</label>
                 <input
                   id="topup-note"
@@ -3488,7 +3517,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={handleTopupSubmit}
-                disabled={topupLoading}
+                disabled={topupLoading || !topupMethod}
                 className="w-1/2 bg-[#2C4A3E] text-white py-3 rounded-2xl text-sm font-bold hover:bg-emerald-800 disabled:bg-gray-300 transition active:scale-95 shadow-md"
               >
                 {topupLoading ? '處理中...' : '確認儲值'}

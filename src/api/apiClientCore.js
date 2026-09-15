@@ -433,13 +433,13 @@ const createWorkerOperations = ({ workerRequest }) => ({
       ...(targetUserId ? { body: { targetUserId } } : {})
     }
   ),
-  topUpBalance: ({ targetUserId, amount, note, idempotencyKey } = {}) => workerRequest(
+  topUpBalance: ({ targetUserId, amount, topupMethod, note, idempotencyKey } = {}) => workerRequest(
     'topUpBalance',
     'POST',
     '/api/admin/balances/top-up',
     {
       extraHeaders: { 'Idempotency-Key': String(idempotencyKey || '').trim() },
-      body: { targetUserId, amount, note }
+      body: { targetUserId, amount, topupMethod, note }
     }
   )
 });

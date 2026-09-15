@@ -10,6 +10,7 @@ import { auditStatement } from '../db/audit.js';
 import { ledgerMutationStatements } from '../db/ledgerQueries.js';
 import { randomId, resolveClock } from '../db/transactions.js';
 import { getBalanceHistory } from '../domain/ledger.js';
+import { requireTopupMethod } from '../domain/topupMethods.js';
 import { badRequest, conflict, notFound } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
@@ -63,9 +64,10 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
     || input?.targetLineUserId
   );
   const amount = positiveInteger(input?.amount);
-  const note = text(input?.note) || 'Admin manual top-up';
+  const note = text(input?.note);
   if (!targetUserInput) throw badRequest('TOP_UP_TARGET_REQUIRED');
   if (amount === null) throw badRequest('TOP_UP_AMOUNT_INVALID');
+  const topupMethod = requireTopupMethod(input?.topupMethod);
   if (note.length > 2000) throw badRequest('TOP_UP_NOTE_TOO_LONG');
   const idempotency = requireIdempotencyKey(input?.idempotencyKey);
   const target = input?.targetEmployeeId
@@ -75,7 +77,7 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
       : await getUserById(database, targetUserInput);
   if (!target) throw notFound('TOP_UP_TARGET_NOT_FOUND');
   const targetUserId = target.userId;
-  const requestHash = await hashRequest({ targetUserId, amount, note });
+  const requestHash = await hashRequest({ targetUserId, amount, topupMethod, note });
   const existing = await readExistingIdempotencyResult(database, {
     actorUserId: actor.userId,
     operation: TOP_UP_OPERATION,
@@ -116,7 +118,7 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
           targetEmployeeIdSnapshot: target.employeeId,
           targetLineUserIdSnapshot: target.lineUserId,
           action: 'BALANCE_TOP_UP',
-          metadata: { amount, note, transactionId },
+          metadata: { amount, topupMethod, note, transactionId },
           occurredAt: now
         });
         const ledger = ledgerMutationStatements(database, {
@@ -130,6 +132,7 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
           // sequence-backed projection inside the atomic batch.
           balanceAfter: 0,
           type: 'TOPUP',
+          topupMethod,
           referenceId: auditId,
           operatorUserId: actor.userId,
           operatorEmployeeIdSnapshot: actor.employeeId,

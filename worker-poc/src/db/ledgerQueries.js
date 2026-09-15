@@ -1,11 +1,20 @@
 import { badRequest, conflict } from '../http/errors.js';
 import { prepareStatement, runMutationBatch } from './transactions.js';
 import { currentBalanceProjection } from './users.js';
+import { isAllowedTopupMethod } from '../domain/topupMethods.js';
 
 export const LEDGER_TYPES = Object.freeze(['TOPUP', 'ORDER', 'REFUND', 'ADJUSTMENT']);
 const AUTH_MODES = new Set(['line', 'employee_guest', 'legacy_import']);
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const optionalTopupMethod = (value) => {
+  if (value === null || value === undefined) return null;
+  const method = text(value);
+  if (!method) return null;
+  if (!isAllowedTopupMethod(method)) throw badRequest('LEDGER_TOPUP_METHOD_INVALID');
+  return method;
+};
 
 const timestamp = (value) => {
   const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
@@ -70,6 +79,7 @@ export const validateLedgerEntry = (input) => {
     amount: input?.amount,
     balanceAfter: input?.balanceAfter,
     type: text(input?.type).toUpperCase(),
+    topupMethod: optionalTopupMethod(input?.topupMethod),
     referenceId: text(input?.referenceId),
     operatorUserId: text(input?.operatorUserId) || null,
     operatorEmployeeIdSnapshot: text(input?.operatorEmployeeIdSnapshot) || null,
@@ -90,6 +100,9 @@ export const validateLedgerEntry = (input) => {
     throw badRequest('LEDGER_BALANCE_INTEGER_REQUIRED');
   }
   if (!LEDGER_TYPES.includes(entry.type)) throw badRequest('LEDGER_TYPE_INVALID');
+  if (entry.topupMethod !== null && entry.type !== 'TOPUP') {
+    throw badRequest('LEDGER_TOPUP_METHOD_INVALID');
+  }
   if (!AUTH_MODES.has(entry.authMode)) throw badRequest('LEDGER_AUTH_MODE_INVALID');
   if (entry.operatorAuthMode !== null && !AUTH_MODES.has(entry.operatorAuthMode)) {
     throw badRequest('LEDGER_OPERATOR_AUTH_MODE_INVALID');
@@ -187,7 +200,7 @@ export const ledgerMutationStatements = (
   const insert = prepareStatement(database, `
     INSERT INTO balance_ledger (
       transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
-      display_name_snapshot, amount, balance_after, type, reference_id,
+      display_name_snapshot, amount, balance_after, type, topup_method, reference_id,
       operator_user_id, operator_employee_id_snapshot,
       operator_line_user_id_snapshot, operator_display_name_snapshot,
       operator_auth_mode, auth_mode, note, occurred_at, source_batch_id
@@ -195,6 +208,7 @@ export const ledgerMutationStatements = (
     SELECT ?, ?, ?, ?, ?,
       ${dynamicOrder ? dynamicOrderAmount : '?'},
       ${dynamicBalanceAfter ? 'target.balance' : '?'},
+      ?,
       ?,
       ${dynamicOrder ? dynamicOrderReference : '?'},
       ?, ?, ?, ?, ?, ?, ?, ?, ?
@@ -212,6 +226,7 @@ export const ledgerMutationStatements = (
     ...(dynamicOrder ? dynamicOrderParams : [entry.amount]),
     ...(dynamicBalanceAfter || dynamicOrder ? [] : [entry.balanceAfter]),
     entry.type,
+    entry.topupMethod,
     ...(dynamicOrder ? dynamicOrderParams : [entry.referenceId]),
     entry.operatorUserId,
     entry.operatorEmployeeIdSnapshot,
@@ -261,7 +276,7 @@ export const appendLedgerEntry = async (database, input) => {
   }
   return database.prepare(`
     SELECT transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
-           display_name_snapshot, amount, balance_after, type, reference_id,
+           display_name_snapshot, amount, balance_after, type, topup_method, reference_id,
            operator_user_id, operator_employee_id_snapshot,
            operator_line_user_id_snapshot, operator_display_name_snapshot,
            operator_auth_mode, auth_mode, note, occurred_at, source_batch_id
@@ -275,7 +290,7 @@ export const getLedgerRows = async (database, userId, { from, to } = {}) => {
   const result = await database.prepare(`
     SELECT bl.transaction_id, bl.user_id, bl.employee_id_snapshot,
            bl.line_user_id_snapshot, bl.display_name_snapshot, bl.amount,
-           bl.balance_after, bl.type, bl.operator_user_id, bl.note,
+           bl.balance_after, bl.type, bl.topup_method, bl.operator_user_id, bl.note,
            bl.reference_id, bl.occurred_at, bl.source_batch_id, o.order_date
     FROM balance_ledger bl
     JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
@@ -328,7 +343,7 @@ export const getLatestLedgerRow = async (database, userId, before = null) => (
   database.prepare(`
     SELECT bl.transaction_id, bl.user_id, bl.employee_id_snapshot,
            bl.line_user_id_snapshot, bl.display_name_snapshot, bl.amount,
-           bl.balance_after, bl.type, bl.reference_id, bl.operator_user_id,
+           bl.balance_after, bl.type, bl.reference_id, bl.topup_method, bl.operator_user_id,
            bl.note, bl.occurred_at, bl.source_batch_id
     FROM balance_ledger bl
     JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id

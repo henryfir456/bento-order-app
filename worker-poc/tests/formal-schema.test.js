@@ -180,6 +180,40 @@ test('formal monetary columns are INTEGER and negative balances remain valid', (
   assert.equal(user.balance, -125);
 });
 
+test('balance ledger stores a nullable structured top-up method without changing historical rows', () => {
+  const database = openDatabase();
+  const columns = tableColumns(database, 'balance_ledger');
+  assert.equal(columns.get('topup_method').type, 'TEXT');
+  assert.equal(columns.get('topup_method').notnull, 0);
+
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, pickup_floor)
+    VALUES (?, ?, ?)
+  `).run('topup-schema-user', 'Topup Schema User', '1樓');
+  database.prepare(`
+    INSERT INTO balance_ledger (
+      transaction_id, user_id, amount, balance_after, type, auth_mode
+    ) VALUES (?, ?, ?, ?, 'TOPUP', 'legacy_import')
+  `).run('topup-schema-legacy', 'topup-schema-user', 1, 1);
+  database.prepare(`
+    INSERT INTO balance_ledger (
+      transaction_id, user_id, amount, balance_after, type, topup_method, auth_mode
+    ) VALUES (?, ?, ?, ?, 'TOPUP', ?, 'line')
+  `).run('topup-schema-new', 'topup-schema-user', 1, 2, 'CASH');
+
+  assert.equal(database.prepare(`
+    SELECT topup_method FROM balance_ledger WHERE transaction_id = 'topup-schema-legacy'
+  `).get().topup_method, null);
+  assert.equal(database.prepare(`
+    SELECT topup_method FROM balance_ledger WHERE transaction_id = 'topup-schema-new'
+  `).get().topup_method, 'CASH');
+  assert.throws(() => database.prepare(`
+    INSERT INTO balance_ledger (
+      transaction_id, user_id, amount, balance_after, type, topup_method, auth_mode
+    ) VALUES (?, ?, ?, ?, 'TOPUP', ?, 'line')
+  `).run('topup-schema-invalid', 'topup-schema-user', 1, 3, 'CRYPTO'), /CHECK|constraint/i);
+});
+
 test('historical negative order money is scoped to completed legacy imports', () => {
   const database = openDatabase();
   database.prepare(`

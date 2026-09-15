@@ -30,13 +30,14 @@ The formal chain is exactly:
 0006_historical_order_semantics.sql # completed legacy Orders and signed historical order money
 0007_signed_menu_prices.sql         # signed menu price values with preserved menu-item dependencies
 0008_menu_item_changes.sql           # append-only authoritative menu change history
+0009_topup_method.sql                # nullable structured payment method for new top-ups
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all nine files in order. Migration 0003 defaults existing users to
+all ten files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -60,6 +61,9 @@ non-destructive `variant_key` column to compatibility `menu_items`. It does
 not backfill source data, rewrite historical menu snapshots, or add cascade
 relationships into menu, order, ledger, or calendar data. Source backfill is
 performed separately from reviewed SQL/GAS facts.
+Migration 0009 adds nullable `balance_ledger.topup_method` for structured
+payment-method provenance on new Admin top-ups. It does not backfill existing
+ledger rows; historical NULL values remain NULL and are not inferred.
 
 ## Recovery procedure
 

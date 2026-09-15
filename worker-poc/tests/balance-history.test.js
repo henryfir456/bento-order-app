@@ -44,6 +44,7 @@ test('balance history filters by UTC month and preserves business-date context',
     type: 'TOPUP',
     referenceId: 'history-audit',
     operatorUserId: 'user-1',
+    note: 'legacy cash',
     occurredAt: '2026-09-10T00:00:00.000Z'
   });
   await appendAuditEvent(database, {
@@ -74,7 +75,39 @@ test('balance history filters by UTC month and preserves business-date context',
     'history-topup-tx',
     'history-order-tx'
   ]);
+  assert.equal(result.transactions[0].topupMethod, null);
+  assert.equal(result.transactions[0].note, 'legacy cash');
+  assert.equal(result.transactions[0].description, 'legacy cash');
   assert.equal(result.transactions[1].businessDate, '2026-09-08');
+});
+
+test('balance history projects top-up method from the ledger, not audit metadata', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', balance: 0 });
+  await appendAuditEvent(database, {
+    auditId: 'topup-method-audit',
+    actorUserId: 'user-1',
+    targetUserId: 'user-1',
+    action: 'BALANCE_TOP_UP',
+    metadata: { amount: 10, topupMethod: 'BANK_TRANSFER' },
+    occurredAt: '2026-09-10T00:00:00.000Z'
+  });
+  await appendLedgerEntry(database, {
+    transactionId: 'topup-method-ledger',
+    userId: 'user-1',
+    amount: 10,
+    balanceAfter: 10,
+    type: 'TOPUP',
+    topupMethod: 'CASH',
+    referenceId: 'topup-method-audit',
+    operatorUserId: 'user-1',
+    note: '現金收款',
+    occurredAt: '2026-09-10T00:00:00.000Z'
+  });
+
+  const result = await getBalanceHistory(database, 'user-1', '2026-09');
+  assert.equal(result.transactions[0].topupMethod, 'CASH');
+  assert.equal(result.transactions[0].note, '現金收款');
 });
 
 test('order ledger history projects Chinese labels and historical order item snapshots', async () => {

@@ -96,6 +96,7 @@ export const getBalanceHistory = async (database, userId, monthInput) => {
     referenceId: row.reference_id || '',
     description: descriptionFor(row),
     note: row.note || '',
+    topupMethod: row.topup_method || null,
     occurredAt: row.occurred_at,
     timestamp: row.occurred_at.slice(0, 16),
     businessDate: row.order_date || null,
