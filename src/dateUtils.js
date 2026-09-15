@@ -1,20 +1,32 @@
 const TAIPEI_TIMEZONE = 'Asia/Taipei';
 
-const getTaipeiDateParts = (date = new Date()) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
+const getTaipeiParts = (date = new Date(), includeTime = false) => {
+  const options = {
     timeZone: TAIPEI_TIMEZONE,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
+  };
+  if (includeTime) {
+    options.hour = '2-digit';
+    options.minute = '2-digit';
+    options.second = '2-digit';
+    options.hourCycle = 'h23';
+  }
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    ...options
   }).formatToParts(date);
 
   return parts.reduce((result, part) => {
-    if (part.type === 'year' || part.type === 'month' || part.type === 'day') {
+    if (['year', 'month', 'day', 'hour', 'minute', 'second'].includes(part.type)) {
       result[part.type] = Number(part.value);
     }
     return result;
   }, {});
 };
+
+const getTaipeiDateParts = (date = new Date()) => getTaipeiParts(date);
 
 export const getTaipeiYearMonth = (date = new Date()) => {
   const { year, month } = getTaipeiDateParts(date);
@@ -24,6 +36,16 @@ export const getTaipeiYearMonth = (date = new Date()) => {
 export const formatDateInput = (date = new Date()) => {
   const { year, month, day } = getTaipeiDateParts(date);
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+};
+
+export const formatDateTime = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  const { year, month, day, hour, minute, second } = getTaipeiParts(date, true);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:${String(second).padStart(2, '0')}`;
 };
 
 export const shiftYearMonth = (year, month, offset) => {

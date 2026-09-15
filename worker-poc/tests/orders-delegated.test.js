@@ -80,6 +80,19 @@ const cancel = (
 
 const profileFor = (lineUserId, token = `${lineUserId}-token`) => userProfile(lineUserId, token);
 
+const seedProvisionalGuestEvidence = (database, {
+  userId,
+  employeeId,
+  sessionId = `${userId}-guest-session`
+}) => {
+  database.run(`
+    INSERT INTO employee_guest_sessions (
+      session_id, token_hash, user_id, employee_id, auth_mode, status,
+      expires_at
+    ) VALUES (?, ?, ?, ?, 'employee_guest', 'UNVERIFIED_EMPLOYEE', ?)
+  `, sessionId, `${sessionId}-hash`, userId, employeeId, '2099-01-01T00:00:00.000Z');
+};
+
 test('User cannot delegate by forging targetUserId', async () => {
   const database = delegatedDatabase();
   const result = await create(
@@ -110,10 +123,24 @@ test('delegated ordering rejects inactive and historical provisional targets', a
     employeeId: null,
     verificationStatus: 'UNVERIFIED'
   });
+  seedUser(database, {
+    userId: 'active-provisional',
+    displayName: 'Active Provisional',
+    pickupFloor: '1樓',
+    lineUserId: null,
+    employeeId: 'provisional-001',
+    active: 1,
+    verificationStatus: 'UNVERIFIED'
+  });
+  seedProvisionalGuestEvidence(database, {
+    userId: 'active-provisional',
+    employeeId: 'provisional-001'
+  });
 
   for (const [targetUserId, key] of [
     ['inactive-target', 'inactive-target'],
-    ['historical-provisional', 'historical-provisional']
+    ['historical-provisional', 'historical-provisional'],
+    ['active-provisional', 'active-provisional']
   ]) {
     const result = await create(
       database,
@@ -143,6 +170,46 @@ test('delegated target discovery is role-gated and returns only eligible targets
     employeeId: 'employee-only-001'
   });
   seedUser(database, {
+    userId: 'admin-non-line-target',
+    displayName: 'Admin No LINE',
+    pickupFloor: '1樓',
+    lineUserId: null,
+    employeeId: 'admin-non-line-001',
+    role: 'Admin',
+    verificationStatus: 'UNVERIFIED'
+  });
+  seedUser(database, {
+    userId: 'proxy-non-line-target',
+    displayName: 'ProxyAdmin No LINE',
+    pickupFloor: '9樓',
+    lineUserId: null,
+    employeeId: 'proxy-non-line-001',
+    role: 'ProxyAdmin'
+  });
+  seedUser(database, {
+    userId: 'active-provisional-target',
+    displayName: 'Active Provisional Target',
+    pickupFloor: '1樓',
+    lineUserId: null,
+    employeeId: 'provisional-target-001',
+    verificationStatus: 'UNVERIFIED'
+  });
+  seedProvisionalGuestEvidence(database, {
+    userId: 'active-provisional-target',
+    employeeId: 'provisional-target-001'
+  });
+  seedUser(database, {
+    userId: 'bound-survivor-with-history',
+    displayName: 'Bound Survivor With History',
+    pickupFloor: '1樓',
+    lineUserId: 'bound-survivor-line',
+    employeeId: 'bound-survivor-001'
+  });
+  seedProvisionalGuestEvidence(database, {
+    userId: 'bound-survivor-with-history',
+    employeeId: 'bound-survivor-001'
+  });
+  seedUser(database, {
     userId: 'inactive-non-line-target',
     displayName: 'Inactive Non-Line Target',
     pickupFloor: '1樓',
@@ -168,18 +235,44 @@ test('delegated target discovery is role-gated and returns only eligible targets
   const adminBody = await adminResponse.json();
   assert.equal(adminResponse.status, 200);
   assert.deepEqual(adminBody.targets.map((target) => target.userId), [
+    'admin-non-line-target',
+    'bound-survivor-with-history',
     'employee-only-target',
     'proxy-1',
+    'proxy-non-line-target',
     'user-1',
     'user-2'
   ]);
+  for (const [userId, role] of [
+    ['admin-non-line-target', 'Admin'],
+    ['proxy-non-line-target', 'ProxyAdmin']
+  ]) {
+    const target = adminBody.targets.find((row) => row.userId === userId);
+    assert.deepEqual({
+      role: target.role,
+      lineUserId: target.lineUserId,
+      employeeId: target.employeeId,
+      authSource: target.authSource,
+      identityState: target.identityState
+    }, {
+      role,
+      lineUserId: null,
+      employeeId: role === 'Admin' ? 'admin-non-line-001' : 'proxy-non-line-001',
+      authSource: 'EMPLOYEE',
+      identityState: 'VERIFIED'
+    });
+  }
   const employeeOnlyTarget = adminBody.targets.find((target) => target.userId === 'employee-only-target');
   assert.equal(employeeOnlyTarget.lineUserId, null);
   assert.equal(employeeOnlyTarget.employeeId, 'employee-only-001');
   assert.equal(employeeOnlyTarget.authSource, 'EMPLOYEE');
   assert.equal(employeeOnlyTarget.identityState, 'VERIFIED');
+  const adminNonLineTarget = adminBody.targets.find((target) => target.userId === 'admin-non-line-target');
+  assert.equal(adminNonLineTarget.verificationStatus, 'UNVERIFIED');
+  assert.equal(adminNonLineTarget.identityState, 'VERIFIED');
   assert.equal(adminBody.targets.some((target) => target.userId === 'inactive-non-line-target'), false);
   assert.equal(adminBody.targets.some((target) => target.userId === 'historical-provisional-target'), false);
+  assert.equal(adminBody.targets.some((target) => target.userId === 'active-provisional-target'), false);
 
   const userResponse = await handleFormalRequest(
     request('/api/orders/targets', { token: 'user-token' }),
@@ -189,6 +282,31 @@ test('delegated target discovery is role-gated and returns only eligible targets
   const userBody = await userResponse.json();
   assert.equal(userResponse.status, 403);
   assert.equal(userBody.error, 'FORBIDDEN');
+});
+
+test('Admin can delegate an order to an active canonical no-LINE User', async () => {
+  const database = delegatedDatabase({ targetBalance: 100, actorBalance: 500 });
+  seedUser(database, {
+    userId: 'no-line-mutation-target',
+    displayName: 'No LINE Mutation Target',
+    pickupFloor: '1樓',
+    lineUserId: null,
+    employeeId: 'no-line-mutation-001',
+    balance: 100
+  });
+
+  const result = await create(
+    database,
+    orderBody(TODAY, { targetUserId: 'no-line-mutation-target' }),
+    'no-line-mutation',
+    profileFor('admin-1', 'admin-token')
+  );
+
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.newBalance, 20);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'no-line-mutation-target'").balance, 20);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'admin-1'").balance, 500);
+  assert.equal(database.get("SELECT created_by_user_id FROM orders WHERE order_id = ?", result.body.orderId).created_by_user_id, 'admin-1');
 });
 
 test('User self-order remains subject to the ordinary cutoff', async () => {

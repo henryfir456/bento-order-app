@@ -2,9 +2,10 @@ import {
   ACTIONS,
   assertCan
 } from '../auth/permissions.js';
-import { currentBalanceProjection, getUserById, publicUser, toUser } from '../db/users.js';
+import { currentBalanceProjection, publicUser, toUser } from '../db/users.js';
 import { forbidden, badRequest } from '../http/errors.js';
 import { deadlineInfo, getTaipeiDate } from './deadlines.js';
+import { matchingEmployeeGuestEvidencePredicate } from './employeeGuestEvidence.js';
 import { isProfileComplete } from './profile.js';
 
 const DELEGATED_ROLES = new Set(['ProxyAdmin', 'Admin']);
@@ -16,11 +17,57 @@ export const normalizeTargetUserId = (value) => {
   return targetUserId || null;
 };
 
-export const isEligibleOrderTarget = (user) => Boolean(
+const hasEmployeeId = (value) => String(value ?? '').trim().length > 0;
+
+// Keep canonical/provisional identity separate from nullable LINE binding:
+// only an unbound row with historical provisional guest-session evidence is
+// excluded here. A bound canonical survivor remains eligible even if its
+// historical guest sessions are retained for audit/provenance.
+export const isEligibleOrderTarget = (user, { hasProvisionalGuestEvidence = false } = {}) => Boolean(
   user?.userId
   && user.active === true
+  && hasEmployeeId(user.employeeId)
+  && !hasProvisionalGuestEvidence
   && isProfileComplete(user)
 );
+
+const provisionalGuestEvidence = (alias = 'u') => `
+  ${alias}.line_user_id IS NULL
+  AND EXISTS (
+    SELECT 1
+    FROM employee_guest_sessions egs
+    WHERE ${matchingEmployeeGuestEvidencePredicate({
+      sessionAlias: 'egs',
+      ownerUserIdExpression: `${alias}.user_id`,
+      ownerEmployeeIdExpression: `${alias}.employee_id`
+    })}
+  )
+`;
+
+const orderTargetColumns = (alias = 'u') => `
+  ${alias}.user_id, ${alias}.employee_id, ${alias}.line_user_id,
+  ${alias}.display_name, ${alias}.pickup_floor,
+  ${currentBalanceProjection(alias)} AS balance,
+  ${alias}.role, ${alias}.active, ${alias}.verification_status,
+  ${alias}.created_at, ${alias}.updated_at,
+  CASE WHEN ${provisionalGuestEvidence(alias)} THEN 1 ELSE 0 END
+    AS has_provisional_guest_evidence
+`;
+
+const orderTargetRecord = (row) => ({
+  user: toUser(row),
+  hasProvisionalGuestEvidence: Boolean(row?.has_provisional_guest_evidence)
+});
+
+const getOrderTargetById = async (database, userId) => {
+  const row = await database.prepare(`
+    SELECT ${orderTargetColumns('u')}
+    FROM users u
+    WHERE u.user_id = ?
+    LIMIT 1
+  `).bind(userId).first();
+  return orderTargetRecord(row);
+};
 
 const authenticatedActor = (identity) => {
   assertCan(identity, ACTIONS.WRITE_SELF);
@@ -54,8 +101,9 @@ export const resolveOrderActorTarget = async (
     assertCan(identity, ACTIONS.DELEGATE_ORDER);
   }
 
-  const target = await getUserById(database, targetUserId);
-  if (!isEligibleOrderTarget(target)) {
+  const targetRecord = await getOrderTargetById(database, targetUserId);
+  const target = targetRecord.user;
+  if (!isEligibleOrderTarget(target, targetRecord)) {
     throw forbidden(targetUserId === actor.userId
       ? 'PROFILE_COMPLETION_REQUIRED'
       : 'ORDER_TARGET_INELIGIBLE');
@@ -134,18 +182,16 @@ export const getEligibleOrderTargets = async (database, identity) => {
   const actor = authenticatedActor(identity);
   assertCan(identity, ACTIONS.DELEGATE_ORDER);
   const result = await database.prepare(`
-    SELECT u.user_id, u.employee_id, u.line_user_id, u.display_name,
-           u.pickup_floor, ${currentBalanceProjection('u')} AS balance,
-           u.role, u.active, u.verification_status, u.created_at, u.updated_at
+    SELECT ${orderTargetColumns('u')}
     FROM users u
     WHERE u.active = 1
     ORDER BY u.display_name ASC, u.user_id ASC
   `).all();
   return rowsFrom(result)
-    .map(toUser)
-    .filter(isEligibleOrderTarget)
-    .filter((target) => target.userId !== actor.userId)
-    .map(publicUser);
+    .map(orderTargetRecord)
+    .filter((record) => isEligibleOrderTarget(record.user, record))
+    .filter((record) => record.user.userId !== actor.userId)
+    .map((record) => publicUser(record.user, { authMode: 'canonical' }));
 };
 
 export { DELEGATED_ROLES };

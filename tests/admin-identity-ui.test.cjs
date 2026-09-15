@@ -65,7 +65,10 @@ test('Admin identity UI uses Worker binding and never writes verification state 
   assert.match(app, /await fetchUserInfo\(readCurrentCredential\(\)\)/);
   assert.match(app, /setOrderTargetRows\(data\.targets\)/);
   assert.match(app, /const selectionRows = viewAsModalMode === 'delegate' \? orderTargetRows : adminMemberRows;/);
+  assert.match(app, /selectionRows\.map\(\(user, idx\) =>/);
+  assert.doesNotMatch(app, /selectionRows\.filter\(/);
   assert.doesNotMatch(app, /data\.targets\.filter\([\s\S]*lineUserId/);
+  assert.match(app, /formatDateTime\(item\.occurredAt \|\| item\.timestamp\)/);
   assert.match(app, /setMemberBalancesLoaded\(false\);[\s\S]*?loadMemberBalances\(true\)/);
   assert.match(member, /登入來源/);
   assert.match(member, /註冊狀態/);

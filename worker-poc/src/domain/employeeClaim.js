@@ -1,6 +1,7 @@
 import { conflict, forbidden } from '../http/errors.js';
 import { getUserById, getUserByLineId, publicUser, toUser } from '../db/users.js';
 import { digestEmployeeId, employeeIdText } from './employeeVerification.js';
+import { matchingEmployeeGuestEvidencePredicate } from './employeeGuestEvidence.js';
 import {
   prepareStatement,
   randomId,
@@ -78,12 +79,7 @@ const readEmployeeGuestEvidence = async (
   const row = await database.prepare(`
     SELECT session_id
     FROM employee_guest_sessions
-    WHERE user_id = ?
-      AND auth_mode = 'employee_guest'
-      AND status = 'UNVERIFIED_EMPLOYEE'
-      AND employee_id IS NOT NULL
-      AND length(trim(employee_id)) > 0
-      AND UPPER(trim(employee_id)) = ?
+    WHERE ${matchingEmployeeGuestEvidencePredicate()}
     LIMIT 1
   `).bind(ownerUserId, employeeId).first();
   return Boolean(row);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
-import { formatDateInput, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
+import { formatDateInput, formatDateTime, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
 import { apiClient, guestSessionStore } from './api/apiClient';
 import { getApiErrorPresentation } from './api/apiErrors';
 import {
@@ -3243,7 +3243,7 @@ export default function App() {
                           ))}
                         </div>
                       )}
-                      <div className="text-[10px] text-gray-400">{item.occurredAt || item.timestamp}</div>
+                      <div className="text-[10px] text-gray-400">{formatDateTime(item.occurredAt || item.timestamp)}</div>
                     </div>
                     <div className="text-right">
                       <div className={`font-bold text-xs px-2 py-1 rounded-lg inline-block ${(item.amount ?? item.changeAmount) >= 0 ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-rose-100 text-rose-600 border border-rose-200'}`}>

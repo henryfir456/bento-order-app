@@ -2174,6 +2174,15 @@ test('month navigation crosses calendar year boundaries', async () => {
   assert.equal(utils.formatDateInput(new Date('2026-09-30T16:30:00Z')), '2026-10-01');
 });
 
+test('transaction timestamps render in Taipei local time', async () => {
+  const utils = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'dateUtils.js')).href);
+
+  assert.equal(
+    utils.formatDateTime('2026-09-14T09:43:16.000Z'),
+    '2026-09-14 17:43:16'
+  );
+});
+
 test('weekday-only calendar offset skips leading weekend dates', async () => {
   const utils = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'dateUtils.js')).href);
 
