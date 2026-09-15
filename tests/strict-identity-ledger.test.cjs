@@ -1004,6 +1004,13 @@ test('calendar page data includes the effective announcement without another fro
   assert.match(gasCalendarSource, /Transitional compatibility/);
   assert.match(calendarSource, /w-full min-w-0 bg-white/);
   assert.match(calendarSource, /grid grid-cols-5/);
+  const calendarDaysSource = appSource.match(/const renderCalendarDays = \(\) => \{[\s\S]*?const renderWeekendEvents = \(\) => \{/)
+    ?.[0];
+  assert.ok(calendarDaysSource);
+  assert.match(calendarDaysSource, /flex min-w-0 items-center justify-between gap-1/);
+  assert.match(calendarDaysSource, /min-w-0 truncate text-xs font-bold text-gray-700/);
+  assert.match(calendarDaysSource, /shrink-0 whitespace-nowrap text-\[11px\] font-medium text-gray-500/);
+  assert.match(calendarDaysSource, /🍱\{event\.totalQuantity \?\? 0\}/);
   assert.match(appSource, /w-full max-w-xl min-w-0 mx-auto flex-1 p-4/);
   assert.doesNotMatch(appSource, /bg-amber-50 border-amber-200 text-amber-900/);
   assert.doesNotMatch(appSource, /bg-amber-100 text-amber-800/);

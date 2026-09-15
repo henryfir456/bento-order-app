@@ -2516,8 +2516,16 @@ export default function App() {
 
           <div className="my-auto">
             {hasVendor ? (
-              <div className="text-xs truncate font-bold text-gray-700">
-                {event.vendor}
+              <div className="flex min-w-0 items-center justify-between gap-1">
+                <span className="min-w-0 truncate text-xs font-bold text-gray-700">
+                  {event.vendor}
+                </span>
+                <span
+                  className="shrink-0 whitespace-nowrap text-[11px] font-medium text-gray-500"
+                  aria-label={`便當總數 ${event.totalQuantity ?? 0}`}
+                >
+                  🍱{event.totalQuantity ?? 0}
+                </span>
               </div>
             ) : (
               <div className="text-[10px] text-gray-400 font-normal">未開團</div>

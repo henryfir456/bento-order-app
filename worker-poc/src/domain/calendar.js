@@ -94,6 +94,14 @@ export const getCalendarEvents = async (
     FROM calendar_settings
     ORDER BY order_date ASC
   `).all();
+  const orderQuantitiesResult = await database.prepare(`
+    SELECT o.order_date, SUM(oi.quantity) AS total_quantity
+    FROM orders o
+    JOIN order_items oi ON oi.order_id = o.order_id
+    WHERE o.status <> 'CANCELLED'
+    GROUP BY o.order_date
+    ORDER BY o.order_date ASC
+  `).all();
   const events = {};
   const likesResult = includeLikes
     ? await database.prepare(`
@@ -103,6 +111,10 @@ export const getCalendarEvents = async (
     `).all()
     : { results: [] };
   const likeRows = rowsFrom(likesResult);
+  const orderQuantitiesByDate = rowsFrom(orderQuantitiesResult).reduce((totals, row) => {
+    totals[row.order_date] = Number(row.total_quantity || 0);
+    return totals;
+  }, {});
   const likesByDate = likeRows.reduce((result, row) => {
     const current = result[row.order_date] || { count: 0, users: new Set() };
     current.count += 1;
@@ -123,6 +135,7 @@ export const getCalendarEvents = async (
       deadline: deadlineInfo(row.order_date, mode, now)?.deadline || null,
       isExpired: Boolean(deadlineInfo(row.order_date, mode, now)?.isExpired),
       lunarLabel: null,
+      totalQuantity: orderQuantitiesByDate[row.order_date] || 0,
       ...(includeLikes ? {
         likeCount: likeState.count,
         isUserLiked: likeState.users.has(userId),
@@ -141,6 +154,7 @@ export const getCalendarEvents = async (
         deadline: fallback?.deadline || null,
         isExpired: Boolean(fallback?.isExpired),
         lunarLabel: null,
+        totalQuantity: orderQuantitiesByDate[date] || 0,
         likeCount: likeState.count,
         isUserLiked: likeState.users.has(userId),
         ...(includeSource ? { vendorSource: 'LIKE_DEFAULT' } : {})

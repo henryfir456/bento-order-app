@@ -263,6 +263,64 @@ test('historical completed orders are readable while current active workflow sta
   assert.equal(currentCompleted.body.myOrder.status, null);
 });
 
+test('calendar events aggregate non-cancelled order item quantities across all users', async () => {
+  const database = seedReadOnlyDatabase();
+  database.run(`
+    INSERT INTO order_items (
+      order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+      quantity, unit_price, subtotal
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'order-user-2', 1, 'menu-2', 'legacy-duplicate', 'Enabled B', 2, 90, 180);
+  database.run(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'order-user-2-cancelled', 'user-2', 'User Two', '2026-09-08', 'Vendor A', '9樓', 720, 'CANCELLED', 'user-2');
+  database.run(`
+    INSERT INTO order_items (
+      order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+      quantity, unit_price, subtotal
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'order-user-2-cancelled', 1, 'menu-2', 'legacy-duplicate', 'Enabled B', 8, 90, 720);
+
+  const queryLog = [];
+  const trackedDatabase = {
+    prepare(sql) {
+      queryLog.push(sql);
+      return database.prepare(sql);
+    }
+  };
+  const { response, body } = await call(
+    trackedDatabase,
+    '/api/calendar',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(response.status, 200);
+  assert.equal(body.events['2026-09-08'].totalQuantity, 3);
+  assert.equal(body.events['2026-09-06'].totalQuantity, 1);
+  assert.equal(body.events['2026-09-07'].totalQuantity, 0);
+  const aggregateQueries = queryLog.filter((sql) => sql.includes('SUM(oi.quantity)'));
+  assert.equal(aggregateQueries.length, 1);
+  assert.match(aggregateQueries[0], /WHERE o\.status <> 'CANCELLED'/);
+  assert.match(aggregateQueries[0], /GROUP BY o\.order_date/);
+
+  queryLog.length = 0;
+  const bootstrap = await call(
+    trackedDatabase,
+    '/api/bootstrap',
+    { token: 'token-user' },
+    { token: 'token-user', lineUserId: 'user-1' }
+  );
+  assert.equal(bootstrap.response.status, 200);
+  assert.equal(bootstrap.body.calendar.events['2026-09-08'].totalQuantity, 3);
+  assert.equal(queryLog.filter((sql) => sql.includes('SUM(oi.quantity)')).length, 1);
+});
+
 test('bootstrap and deferred responses are actor-scoped and preserve split data', async () => {
   const database = seedReadOnlyDatabase();
   const primary = await call(
