@@ -10,5 +10,8 @@
       "database_id": "e75bc185-afb5-4a5d-abc9-81bd79525cff",
       "migrations_dir": "migrations-formal"
     }
-  ]
+  ],
+  "triggers": {
+    "crons": ["0 16 * * *"]
+  }
 }

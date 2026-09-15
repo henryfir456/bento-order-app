@@ -6,8 +6,30 @@ import { handleAdminRoute } from './routes/admin.js';
 import { handleCalendarRoute } from './routes/calendar.js';
 import { handleRoleRoute } from './routes/roles.js';
 import { handleReadOnlyRequest } from './routes/readOnly.js';
+import { runAutomaticDailyOpening } from './domain/automaticOpening.js';
 import { HttpError, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
+
+const AUTOMATIC_OPENING_LOG_EVENT = 'automatic_daily_group_opening';
+const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
+
+export const handleScheduled = async (
+  controller,
+  env,
+  { logger = console } = {}
+) => {
+  const result = await runAutomaticDailyOpening(env.DB, controller?.scheduledTime);
+  const logEntry = {
+    event: AUTOMATIC_OPENING_LOG_EVENT,
+    source: AUTOMATIC_OPENING_LOG_SOURCE,
+    status: result.status,
+    businessDate: result.businessDate,
+    targetDate: result.targetDate,
+    ...(result.vendor ? { vendor: result.vendor } : {})
+  };
+  if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
+  return result;
+};
 
 export const handleFormalRequest = async (request, env, options = {}) => {
   let response;
@@ -64,5 +86,8 @@ export const handleFormalRequest = async (request, env, options = {}) => {
 export default {
   fetch(request, env) {
     return handleFormalRequest(request, env);
+  },
+  scheduled(controller, env) {
+    return handleScheduled(controller, env);
   }
 };

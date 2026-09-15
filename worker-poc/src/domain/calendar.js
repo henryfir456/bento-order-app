@@ -1,3 +1,5 @@
+import { auditStatement } from '../db/audit.js';
+import { prepareStatement, resolveClock, runMutationBatch } from '../db/transactions.js';
 import { deadlineInfo, getTaipeiDate, isDateOnly } from './deadlines.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 
@@ -6,6 +8,10 @@ const rowsFrom = (result) => (
 );
 
 const effectiveMode = (row) => (row.mode === 'B' ? 'B' : 'A');
+
+const statementChanges = (result) => Number(
+  result?.meta?.changes ?? result?.changes ?? 0
+);
 
 export const getCalendarSetting = async (database, orderDate) => {
   if (!isDateOnly(orderDate)) return null;
@@ -18,6 +24,58 @@ export const getCalendarSetting = async (database, orderDate) => {
   return row
     ? { order_date: row.order_date, vendor: normalizeMenuVendor(row.vendor), mode: effectiveMode(row) }
     : null;
+};
+
+export const persistCalendarSetting = async (
+  database,
+  {
+    orderDate,
+    vendor,
+    mode,
+    vendorSource = 'CONFIGURED',
+    updatedByUserId = null,
+    onlyIfUnassigned = false,
+    audit = null
+  },
+  clock = new Date()
+) => {
+  const occurredAt = resolveClock(clock).toISOString();
+  const conditionalClause = onlyIfUnassigned
+    ? `
+    WHERE length(trim(calendar_settings.vendor)) = 0`
+    : '';
+  const upsert = prepareStatement(database, `
+    INSERT INTO calendar_settings (
+      order_date, vendor, mode, vendor_source, updated_by_user_id,
+      created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(order_date) DO UPDATE SET
+      vendor = excluded.vendor,
+      mode = excluded.mode,
+      vendor_source = excluded.vendor_source,
+      updated_by_user_id = excluded.updated_by_user_id,
+      updated_at = excluded.updated_at${conditionalClause}
+  `, [
+    orderDate,
+    vendor,
+    mode,
+    vendorSource,
+    updatedByUserId,
+    occurredAt,
+    occurredAt
+  ]);
+  const statements = [upsert];
+  if (audit) {
+    statements.push(auditStatement(database, {
+      ...audit,
+      occurredAt
+    }));
+  }
+  const results = await runMutationBatch(database, statements);
+  return {
+    changed: statementChanges(results[0]) === 1,
+    setting: await getCalendarSetting(database, orderDate)
+  };
 };
 
 export const getCalendarEvents = async (

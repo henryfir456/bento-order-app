@@ -1,7 +1,6 @@
 import { ACTIONS, assertCan, assertSelfTarget } from '../auth/permissions.js';
-import { auditStatement } from '../db/audit.js';
 import { prepareStatement, runMutationBatch, resolveClock, randomId } from '../db/transactions.js';
-import { getCalendarSetting } from '../domain/calendar.js';
+import { getCalendarSetting, persistCalendarSetting } from '../domain/calendar.js';
 import { isDateOnly } from '../domain/deadlines.js';
 import { normalizeMenuVendor } from '../domain/menuVendors.js';
 import { badRequest } from '../http/errors.js';
@@ -94,32 +93,23 @@ export const setCalendarSetting = async (database, identity, orderDate, input, c
   const mode = text(input?.mode).toUpperCase();
   if (!['A', 'B'].includes(mode)) throw badRequest('CALENDAR_MODE_REQUIRED');
   if (vendor.length > 200) throw badRequest('CALENDAR_VENDOR_TOO_LONG');
-  const occurredAt = resolveClock(clock).toISOString();
   const auditId = randomId('audit');
-  const upsert = prepareStatement(database, `
-    INSERT INTO calendar_settings (
-      order_date, vendor, mode, vendor_source, updated_by_user_id,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, 'CONFIGURED', ?, ?, ?)
-    ON CONFLICT(order_date) DO UPDATE SET
-      vendor = excluded.vendor,
-      mode = excluded.mode,
-      vendor_source = 'CONFIGURED',
-      updated_by_user_id = excluded.updated_by_user_id,
-      updated_at = excluded.updated_at
-  `, [orderDate, vendor, mode, identity.actor.userId, occurredAt, occurredAt]);
-  const audit = auditStatement(database, {
-    auditId,
-    actorUserId: identity.actor.userId,
-    actorAuthMode: identity.actor.authMode,
-    actorEmployeeIdSnapshot: identity.actor.employeeId,
-    actorLineUserIdSnapshot: identity.actor.lineUserId,
-    action: 'CALENDAR_SETTING_UPDATED',
-    metadata: { orderDate, vendor, mode },
-    occurredAt
-  });
-  await runMutationBatch(database, [upsert, audit]);
-  return { success: true, setting: await getCalendarSetting(database, orderDate) };
+  const result = await persistCalendarSetting(database, {
+    orderDate,
+    vendor,
+    mode,
+    updatedByUserId: identity.actor.userId,
+    audit: {
+      auditId,
+      actorUserId: identity.actor.userId,
+      actorAuthMode: identity.actor.authMode,
+      actorEmployeeIdSnapshot: identity.actor.employeeId,
+      actorLineUserIdSnapshot: identity.actor.lineUserId,
+      action: 'CALENDAR_SETTING_UPDATED',
+      metadata: { orderDate, vendor, mode }
+    }
+  }, clock);
+  return { success: true, setting: result.setting };
 };
 
 export const handleCalendarRoute = async (request, env, {
