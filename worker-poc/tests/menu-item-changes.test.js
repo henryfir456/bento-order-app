@@ -5,6 +5,7 @@ import { handleFormalRequest } from '../src/formalWorker.js';
 import {
   materializeMenuVersion,
   materializationPlan,
+  normalizeLegacyMenuIdentity,
   projectionVersionId,
   resolveEffectiveMenuState,
   resolveMenuItemChanges,
@@ -89,6 +90,33 @@ const seedCompatibilityVersion = (database, {
     row.price, row.enabled === false ? 0 : 1, row.note || '', row.imageUrl || '', row.sourceOrder);
   }
 };
+
+test('accepted legacy menu identities normalize without guessing ambiguous AP or fee records', () => {
+  const expected = [
+    ['S', ['S', 'BASE']], ['S_half', ['S', 'HALF']], ['SH', ['S', 'HALF']],
+    ['C95', ['C', 'BASE']], ['C95_half', ['C', 'HALF']],
+    ['CP', ['CM', 'BASE']], ['CPH', ['CM', 'HALF']],
+    ['E', ['E', 'BASE']], ['EP', ['E', 'PLUS']],
+    ['A95', ['A', 'BASE']], ['A95_plus', ['A', 'PLUS']],
+    ['A120', ['AM', 'BASE']], ['A120_plus', ['AM', 'PLUS']],
+    ['APP', ['AM', 'PLUS']], ['B_half', ['B', 'HALF']], ['R', ['FR', 'BASE']],
+    ['H5', ['H5', 'BASE']], ['H5H', ['H5', 'HALF']]
+  ];
+  for (const [itemCode, [normalizedCode, variantKey]] of expected) {
+    assert.deepEqual(normalizeLegacyMenuIdentity({
+      vendor: itemCode.startsWith('H') ? '禾拾' : '蔡老師', itemCode
+    }), { item_code: normalizedCode, variant_key: variantKey });
+  }
+  assert.deepEqual(normalizeLegacyMenuIdentity({
+    vendor: '蔡老師', itemCode: 'AP', itemName: '風味便當(主食加量)'
+  }), { item_code: 'A', variant_key: 'PLUS' });
+  assert.deepEqual(normalizeLegacyMenuIdentity({
+    vendor: '蔡老師', itemCode: 'AP', itemName: '風味會議'
+  }), { item_code: 'AM', variant_key: 'BASE' });
+  assert.equal(normalizeLegacyMenuIdentity({ vendor: '蔡老師', itemCode: 'AP' }), null);
+  assert.equal(normalizeLegacyMenuIdentity({ vendor: '蔡老師', itemCode: 'FR1', itemName: '1元' }), null);
+  assert.equal(normalizeLegacyMenuIdentity({ vendor: '蔡老師', itemCode: 'revert1', itemName: '手續費減免' }), null);
+});
 
 test('SQL backfill is exactly 34 facts and reconstructs the five cumulative snapshots', async () => {
   const parsed = await readLegacySqlDump(new URL('../../gas/bento_script.sql', import.meta.url));
@@ -841,6 +869,30 @@ test('post-cutoff overlay keeps compatibility variants distinct when one variant
   assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_items').count, 4);
 });
 
+test('legacy AP compatibility rows remain distinct before and across the normalized boundary', async () => {
+  const database = new SqliteD1();
+  seedCompatibilityVersion(database, {
+    id: 'legacy-ap-two-rows', date: '2026-09-12', vendor: '蔡老師',
+    rows: [
+      { menuItemId: 'legacy-ap-plus', itemCode: 'AP', itemName: '風味便當(主食加量)', price: 110, sourceOrder: 19 },
+      { menuItemId: 'legacy-ap-meeting', itemCode: 'AP', itemName: '風味會議', price: 120, sourceOrder: 20 }
+    ]
+  });
+  const legacyMenu = await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-16' });
+  assert.deepEqual(legacyMenu.map((item) => [item.menu_item_id, item.legacy_item_id, item.item_name, item.price]), [
+    ['legacy-ap-plus', 'AP', '風味便當(主食加量)', 110],
+    ['legacy-ap-meeting', 'AP', '風味會議', 120]
+  ]);
+  const normalizedProjection = await getCustomerMenu(database, {
+    vendor: '蔡老師', targetDate: '2026-09-17'
+  });
+  assert.deepEqual(normalizedProjection.map((item) => [item.legacy_item_id, item.variant_key, item.item_name, item.price]), [
+    ['A', 'PLUS', '風味便當(主食加量)', 110],
+    ['AM', 'BASE', '風味會議', 120]
+  ]);
+  assert.notEqual(normalizedProjection[0].menu_item_id, normalizedProjection[1].menu_item_id);
+});
+
 test('all-disabled post-cutoff projection keeps the established empty-projection rejection', async () => {
   const database = new SqliteD1();
   seedUsers(database);
@@ -993,6 +1045,101 @@ test('Admin requires an explicit variant for the known ambiguous AP identity', a
   });
   assert.equal(valid.response.status, 201);
   assert.equal(valid.body.change.variant_key, 'ap-variant-1');
+});
+
+test('normalized revisions use explicit identities and persisted sequence order', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedCompatibilityVersion(database, {
+    id: 'normalized-baseline', date: '2026-09-12', vendor: '蔡老師',
+    rows: [{ menuItemId: 'normalized-a', itemCode: 'A', itemName: '風味便當', price: 100, sourceOrder: 1 }]
+  });
+  const payload = {
+    effective_date: '2026-09-17', vendor: '蔡老師', item_code: 'A', variant_key: 'BASE',
+    identity_schema_version: 2, item_name: '風味便當修正版', price: 105, enabled: true,
+    image_url: '', note: 'normalized first'
+  };
+  const first = await call(database, '/api/admin/menu/changes', { method: 'POST', body: payload });
+  const second = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: { ...payload, item_name: '風味便當最終版', price: 106, note: 'normalized second' }
+  });
+  assert.equal(first.response.status, 201);
+  assert.equal(second.response.status, 201);
+  assert.equal(first.body.change.identity_schema_version, 2);
+  assert.equal(second.body.change.identity_schema_version, 2);
+  assert.ok(second.body.change.sequence_number > first.body.change.sequence_number);
+  assert.deepEqual({ ...database.get(`
+    SELECT item_name, price, enabled, identity_schema_version
+    FROM menu_item_changes
+    WHERE menu_item_change_id = ?
+  `, first.body.change.menu_item_change_id) }, {
+    item_name: '風味便當修正版', price: 105, enabled: 1, identity_schema_version: 2
+  });
+  const resolved = await resolveEffectiveMenuState(database, {
+    vendor: '蔡老師', targetDate: '2026-09-17'
+  });
+  assert.deepEqual(resolved.rows.map((row) => [row.item_code, row.variant_key, row.item_name, row.price]), [
+    ['A', 'BASE', '風味便當最終版', 106]
+  ]);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM menu_item_changes').count, 2);
+});
+
+test('normalized variant move appends a disabled old identity and rejects an occupied target', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedCompatibilityVersion(database, {
+    id: 'normalized-variant-baseline', date: '2026-09-12', vendor: '蔡老師',
+    rows: [{ menuItemId: 'normalized-c', itemCode: 'C', itemName: '特餐', price: 90, sourceOrder: 1 }]
+  });
+  const base = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-17', vendor: '蔡老師', item_code: 'C', variant_key: 'BASE',
+      identity_schema_version: 2, item_name: '特餐', price: 90, enabled: true,
+      image_url: '', note: ''
+    }
+  });
+  assert.equal(base.response.status, 201);
+  const moved = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-17', vendor: '蔡老師', item_code: 'C', variant_key: 'HALF',
+      previous_variant_key: 'BASE', previous_identity_schema_version: 2,
+      identity_schema_version: 2, item_name: '特餐半飯', price: 90, enabled: true,
+      image_url: '', note: ''
+    }
+  });
+  assert.equal(moved.response.status, 201);
+  assert.ok(moved.body.variant_move.previous_change_id);
+  assert.deepEqual({ ...database.get(`
+    SELECT variant_key, enabled FROM menu_item_changes
+    WHERE menu_item_change_id = ?
+  `, moved.body.variant_move.previous_change_id) }, { variant_key: 'BASE', enabled: 0 });
+  const occupied = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-17', vendor: '蔡老師', item_code: 'C', variant_key: 'PLUS',
+      identity_schema_version: 2, item_name: '特餐加量', price: 100, enabled: true,
+      image_url: '', note: ''
+    }
+  });
+  assert.equal(occupied.response.status, 201);
+  const conflict = await call(database, '/api/admin/menu/changes', {
+    method: 'POST',
+    body: {
+      effective_date: '2026-09-17', vendor: '蔡老師', item_code: 'C', variant_key: 'PLUS',
+      previous_variant_key: 'HALF', previous_identity_schema_version: 2,
+      identity_schema_version: 2, item_name: '特餐半飯改加量', price: 100, enabled: true,
+      image_url: '', note: ''
+    }
+  });
+  assert.equal(conflict.response.status, 409);
+  assert.deepEqual(conflict.body, { error: 'MENU_VARIANT_IDENTITY_CONFLICT' });
+  const menu = await getCustomerMenu(database, { vendor: '蔡老師', targetDate: '2026-09-17' });
+  assert.deepEqual(menu.map((item) => [item.legacy_item_id, item.variant_key, item.item_name]), [
+    ['C', 'HALF', '特餐半飯'], ['C', 'PLUS', '特餐加量']
+  ]);
 });
 
 test('Admin rejects missing or invalid prices and impossible dates without coercion', async () => {

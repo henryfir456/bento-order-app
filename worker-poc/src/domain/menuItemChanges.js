@@ -24,6 +24,10 @@ import {
 } from './menuImageFallback.js';
 
 export const HISTORICAL_MENU_CUTOFF = '2026-09-10';
+export const NORMALIZED_MENU_START_DATE = '2026-09-17';
+export const LEGACY_IDENTITY_SCHEMA_VERSION = 1;
+export const NORMALIZED_IDENTITY_SCHEMA_VERSION = 2;
+export const NORMALIZED_VARIANT_KEYS = Object.freeze(['BASE', 'HALF', 'PLUS']);
 export const HISTORICAL_MENU_VENDOR = HISTORICAL_SQL_VENDOR;
 export const HE_SHI_MENU_VENDOR = CANONICAL_HE_SHI_VENDOR;
 export const HISTORICAL_MENU_IMPORTER_VERSION = 'legacy-sql-menu';
@@ -42,6 +46,79 @@ const text = (value) => (typeof value === 'string' ? value.trim() : '');
 const identityKey = (vendor, itemCode, variantKey) => (
   `${vendor}\u0000${itemCode}\u0000${variantKey}`
 );
+
+const normalizedIdentity = (itemCode, variantKey) => ({
+  item_code: itemCode,
+  variant_key: variantKey
+});
+
+/**
+ * Project a legacy menu code into the normalized identity only for a future
+ * normalized menu projection. The stored historical row is never rewritten.
+ * AP intentionally requires the historical item name because its raw code is
+ * shared by A/PLUS and AM/BASE.
+ */
+export const normalizeLegacyMenuIdentity = ({ vendor, itemCode, variantKey = '', itemName = '' } = {}) => {
+  const normalizedVendor = normalizeMenuVendor(vendor);
+  const code = text(itemCode);
+  const codeKey = code.toUpperCase();
+  const variant = text(variantKey).toUpperCase();
+  const name = text(itemName);
+  if (!code) return null;
+
+  const direct = new Map([
+    ['S', normalizedIdentity('S', 'BASE')],
+    ['SH', normalizedIdentity('S', 'HALF')],
+    ['S_HALF', normalizedIdentity('S', 'HALF')],
+    ['C', normalizedIdentity('C', 'BASE')],
+    ['CH', normalizedIdentity('C', 'HALF')],
+    ['C95', normalizedIdentity('C', 'BASE')],
+    ['C95_HALF', normalizedIdentity('C', 'HALF')],
+    ['CP', normalizedIdentity('CM', 'BASE')],
+    ['CPH', normalizedIdentity('CM', 'HALF')],
+    ['C120', normalizedIdentity('CM', 'BASE')],
+    ['C120_HALF', normalizedIdentity('CM', 'HALF')],
+    ['E', normalizedIdentity('E', 'BASE')],
+    ['EP', normalizedIdentity('E', 'PLUS')],
+    ['E_PLUS', normalizedIdentity('E', 'PLUS')],
+    ['A', normalizedIdentity('A', 'BASE')],
+    ['A95', normalizedIdentity('A', 'BASE')],
+    ['A95_PLUS', normalizedIdentity('A', 'PLUS')],
+    ['A120', normalizedIdentity('AM', 'BASE')],
+    ['A120_PLUS', normalizedIdentity('AM', 'PLUS')],
+    ['APP', normalizedIdentity('AM', 'PLUS')],
+    ['B', normalizedIdentity('B', 'BASE')],
+    ['B_HALF', normalizedIdentity('B', 'HALF')],
+    ['FR', normalizedIdentity('FR', 'BASE')],
+    ['R', normalizedIdentity('FR', 'BASE')]
+  ]);
+  if (direct.has(codeKey)) return direct.get(codeKey);
+
+  if (codeKey === 'AP') {
+    if (name.includes('風味便當')) return normalizedIdentity('A', 'PLUS');
+    if (name.includes('風味會議')) return normalizedIdentity('AM', 'BASE');
+    return null;
+  }
+
+  const halfMatch = codeKey.match(/^(H[1-5])H$/);
+  if (halfMatch) return normalizedIdentity(halfMatch[1], 'HALF');
+  if (/^H[1-5]$/.test(codeKey)) return normalizedIdentity(codeKey, 'BASE');
+
+  if (NORMALIZED_VARIANT_KEYS.includes(variant)) {
+    return normalizedIdentity(code, variant);
+  }
+  if (normalizedVendor === HE_SHI_MENU_VENDOR && /^H[1-5]$/.test(codeKey)) {
+    return normalizedIdentity(codeKey, 'BASE');
+  }
+  return null;
+};
+
+const legacyCodeCannotBeUsedForNormalizedIdentity = (itemCode) => new Set([
+  'AP', 'APP', 'SH', 'EP', 'E_PLUS', 'S_HALF', 'C95', 'C95_HALF',
+  'C120', 'C120_HALF', 'CP', 'CPH', 'A95', 'A95_PLUS', 'A120',
+  'A120_PLUS', 'B_HALF', 'FR1', 'REVERT1', 'R', 'S_HALF',
+  'H1H', 'H2H', 'H3H', 'H4H', 'H5H'
+]).has(String(itemCode || '').trim().toUpperCase());
 
 const projectionHash = (value) => {
   let hash = 2166136261;
@@ -82,6 +159,9 @@ const normalizedChange = (row) => {
   updated_by_user_id: row.updated_by_user_id || null,
   created_at: row.created_at,
   updated_at: row.updated_at,
+  identity_schema_version: Number(row.identity_schema_version || LEGACY_IDENTITY_SCHEMA_VERSION),
+  sequence_number: row.sequence_number === undefined || row.sequence_number === null
+    ? null : Number(row.sequence_number),
   source_read_only: row.source_kind !== ADMIN_SOURCE_KIND,
   menu_item_id: projectionItemId(vendor, row.effective_date, row.item_code, row.variant_key || '')
   };
@@ -106,6 +186,7 @@ const resolveRows = (rows, { vendor, targetDate }) => {
   const selected = new Map();
   for (const rawRow of rows) {
     const row = normalizedChange(rawRow);
+    if (row.identity_schema_version !== LEGACY_IDENTITY_SCHEMA_VERSION) continue;
     if (row.vendor !== normalizedVendor || text(rawRow.effective_date) > targetDate) continue;
     if (!sourceKinds.includes(rawRow.source_kind)) continue;
     const key = identityKey(row.vendor, row.item_code, row.variant_key);
@@ -127,6 +208,68 @@ const resolveRows = (rows, { vendor, targetDate }) => {
       || left.menu_item_change_id.localeCompare(right.menu_item_change_id)
     ))
   };
+};
+
+const resolveNormalizedRows = (rows, { vendor, targetDate }) => {
+  const normalizedVendor = normalizeMenuVendor(vendor);
+  const selected = new Map();
+  for (const rawRow of rows) {
+    const row = normalizedChange(rawRow);
+    if (row.identity_schema_version !== NORMALIZED_IDENTITY_SCHEMA_VERSION) continue;
+    if (row.vendor !== normalizedVendor || text(row.effective_date) > targetDate) continue;
+    if (row.source_kind !== ADMIN_SOURCE_KIND) continue;
+    const key = identityKey(row.vendor, row.item_code, row.variant_key);
+    const previous = selected.get(key);
+    if (!previous
+      || row.effective_date > previous.effective_date
+      || (row.effective_date === previous.effective_date
+        && Number(row.sequence_number || 0) > Number(previous.sequence_number || 0))) {
+      selected.set(key, row);
+    }
+  }
+  return [...selected.values()].sort((left, right) => (
+    left.display_order - right.display_order
+    || left.item_code.localeCompare(right.item_code)
+    || left.variant_key.localeCompare(right.variant_key)
+    || Number(left.sequence_number || 0) - Number(right.sequence_number || 0)
+  ));
+};
+
+const normalizedProjectionRow = (row) => {
+  const identity = normalizeLegacyMenuIdentity({
+    vendor: row.vendor,
+    itemCode: row.item_code || row.legacy_item_id,
+    variantKey: row.variant_key,
+    itemName: row.item_name
+  });
+  if (!identity) return normalizedChange(row);
+  return normalizedChange({
+    ...row,
+    ...identity,
+    identity_schema_version: NORMALIZED_IDENTITY_SCHEMA_VERSION
+  });
+};
+
+const normalizedProjectionRows = (rows) => rows.map(normalizedProjectionRow);
+
+const collapseNormalizedProjectionRows = (rows) => {
+  const selected = new Map();
+  const passthrough = [];
+  for (const row of rows) {
+    if (row.identity_schema_version !== NORMALIZED_IDENTITY_SCHEMA_VERSION) {
+      passthrough.push(row);
+      continue;
+    }
+    const key = identityKey(row.vendor, row.item_code, row.variant_key);
+    const previous = selected.get(key);
+    if (!previous
+      || row.effective_date > previous.effective_date
+      || (row.effective_date === previous.effective_date
+        && Number(row.sequence_number || 0) > Number(previous.sequence_number || 0))) {
+      selected.set(key, row);
+    }
+  }
+  return [...passthrough, ...selected.values()];
 };
 
 const stateRows = (rows) => [...rows].sort((left, right) => (
@@ -252,7 +395,16 @@ export const resolveMenuItemChangesFromRows = (rows = [], options = {}) => {
   const vendor = normalizeMenuVendor(options.vendor);
   const targetDate = text(options.targetDate);
   if (!vendor || !isDateOnly(targetDate)) throw badRequest('MENU_CHANGE_RESOLUTION_INPUT_INVALID');
-  return resolveRows(rows, { vendor, targetDate });
+  const legacy = resolveRows(rows, { vendor, targetDate });
+  const normalized = resolveNormalizedRows(rows, { vendor, targetDate });
+  return {
+    ...legacy,
+    rows: targetDate >= NORMALIZED_MENU_START_DATE && normalized.length
+      ? normalized
+      : legacy.rows,
+    legacyRows: legacy.rows,
+    normalizedRows: normalized
+  };
 };
 
 export const resolveMenuItemChanges = async (database, { vendor, targetDate } = {}) => {
@@ -264,18 +416,31 @@ export const resolveMenuItemChanges = async (database, { vendor, targetDate } = 
   const vendors = historicalMenuRowVendorCandidates(normalizedVendor);
   const placeholders = vendors.map(() => '?').join(', ');
   const result = await database.prepare(`
-    SELECT menu_item_change_id, effective_date, vendor, item_code, variant_key,
+    SELECT mic.menu_item_change_id, mic.effective_date, mic.vendor, mic.item_code, mic.variant_key,
            item_name, price, enabled, image_url, note, display_order,
            source_kind, source_batch_id, source_table, source_row,
-           source_record_id, updated_by_user_id, created_at, updated_at
-    FROM menu_item_changes
-    WHERE vendor IN (${placeholders}) AND effective_date <= ?
-    ORDER BY effective_date DESC, menu_item_change_id DESC
+           source_record_id, updated_by_user_id, created_at, updated_at,
+           mic.identity_schema_version, mis.sequence_number
+    FROM menu_item_changes mic
+    LEFT JOIN menu_item_change_sequence mis
+      ON mis.menu_item_change_id = mic.menu_item_change_id
+    WHERE mic.vendor IN (${placeholders}) AND mic.effective_date <= ?
+    ORDER BY mic.effective_date DESC, mis.sequence_number DESC, mic.menu_item_change_id DESC
   `).bind(...vendors, normalizedDate).all();
-  return resolveRows(rowsFrom(result), {
+  const legacy = resolveRows(rowsFrom(result), {
     vendor: normalizedVendor,
     targetDate: normalizedDate
   });
+  const normalized = resolveNormalizedRows(rowsFrom(result), {
+    vendor: normalizedVendor,
+    targetDate: normalizedDate
+  });
+  return {
+    ...legacy,
+    rows: legacy.rows,
+    legacyRows: legacy.rows,
+    normalizedRows: normalized
+  };
 };
 
 const getLatestCurrentMenuImageRows = async (database) => {
@@ -324,17 +489,35 @@ const applyHistoricalImageFallback = (database, rows) => projectDisplayImageRows
 export const resolveEffectiveMenuState = async (database, { vendor, targetDate } = {}) => {
   const changes = await resolveMenuItemChanges(database, { vendor, targetDate });
   const baseline = await getCompatibilityMenuBaseline(database, { vendor, targetDate });
+  const useNormalizedIdentity = changes.authority !== 'sql_historical'
+    && text(targetDate) >= NORMALIZED_MENU_START_DATE;
+  const effectiveBaselineRows = useNormalizedIdentity
+    ? collapseNormalizedProjectionRows(normalizedProjectionRows(baseline.rows))
+    : baseline.rows;
+  const effectiveChangeRows = useNormalizedIdentity
+    ? [
+      ...collapseNormalizedProjectionRows(normalizedProjectionRows(changes.legacyRows || changes.rows)),
+      ...(changes.normalizedRows || [])
+    ]
+    : changes.rows;
   const rows = changes.authority === 'sql_historical'
     ? attachCompatibilityIds(changes.rows, baseline.rows)
-    : mergeEffectiveMenuRows({ baselineRows: baseline.rows, changeRows: changes.rows });
+    : mergeEffectiveMenuRows({
+      baselineRows: effectiveBaselineRows,
+      changeRows: effectiveChangeRows
+    });
   const displayRows = changes.authority === 'sql_historical'
     ? await applyHistoricalImageFallback(database, rows)
     : rows;
   return {
     ...changes,
     baselineVersion: baseline.version,
-    baselineRows: baseline.rows,
-    changeRows: changes.rows,
+    baselineRows: effectiveBaselineRows,
+    rawBaselineRows: baseline.rows,
+    changeRows: effectiveChangeRows,
+    legacyChangeRows: changes.legacyRows || changes.rows,
+    normalizedChangeRows: changes.normalizedRows || [],
+    normalizedIdentity: useNormalizedIdentity,
     rows: displayRows
   };
 };
@@ -490,6 +673,15 @@ const knownVariantKeysFor = (vendor, itemCode) => (
 );
 
 const assertVariantIdentity = async (database, values) => {
+  if (values.identity_schema_version === NORMALIZED_IDENTITY_SCHEMA_VERSION) {
+    if (!values.variant_key) {
+      throw badRequest('MENU_CHANGE_VARIANT_KEY_INVALID');
+    }
+    if (legacyCodeCannotBeUsedForNormalizedIdentity(values.item_code)) {
+      throw badRequest('MENU_CHANGE_NORMALIZED_ITEM_CODE_INVALID');
+    }
+    return;
+  }
   const knownVariantKeys = knownVariantKeysFor(values.vendor, values.item_code);
   if (knownVariantKeys.length && !values.variant_key) {
     throw badRequest('MENU_CHANGE_VARIANT_KEY_REQUIRED');
@@ -498,10 +690,16 @@ const assertVariantIdentity = async (database, values) => {
     throw badRequest('MENU_CHANGE_VARIANT_KEY_INVALID');
   }
   const result = await database.prepare(`
-    SELECT variant_key
+    SELECT variant_key, identity_schema_version
     FROM menu_item_changes
     WHERE vendor = ? AND item_code = ? AND effective_date = ?
-  `).bind(values.vendor, values.item_code, values.effective_date).all();
+      AND identity_schema_version = ?
+  `).bind(
+    values.vendor,
+    values.item_code,
+    values.effective_date,
+    values.identity_schema_version
+  ).all();
   const existing = rowsFrom(result);
   if (!values.variant_key && existing.some((row) => text(row.variant_key))) {
     throw badRequest('MENU_CHANGE_VARIANT_KEY_REQUIRED');
@@ -515,7 +713,10 @@ const createInput = (input) => {
   const allowed = new Set([
     'effective_date', 'effectiveDate', 'vendor', 'item_code', 'itemCode',
     'variant_key', 'variantKey', 'item_name', 'itemName', 'price', 'enabled',
-    'image_url', 'imageUrl', 'note', 'display_order', 'displayOrder'
+    'image_url', 'imageUrl', 'note', 'display_order', 'displayOrder',
+    'identity_schema_version', 'identitySchemaVersion',
+    'previous_variant_key', 'previousVariantKey',
+    'previous_identity_schema_version', 'previousIdentitySchemaVersion'
   ]);
   if (!input || typeof input !== 'object' || Array.isArray(input)
     || Object.keys(input).some((field) => !allowed.has(field))) {
@@ -545,26 +746,53 @@ const createInput = (input) => {
   }
   const vendor = requiredText(input.vendor, 'MENU_CHANGE_VENDOR_REQUIRED');
   const itemCode = requiredText(input.item_code ?? input.itemCode, 'MENU_CHANGE_ITEM_CODE_REQUIRED');
+  const rawIdentityVersion = input.identity_schema_version ?? input.identitySchemaVersion;
+  const identitySchemaVersion = rawIdentityVersion === undefined
+    ? LEGACY_IDENTITY_SCHEMA_VERSION
+    : Number(rawIdentityVersion);
+  if (![LEGACY_IDENTITY_SCHEMA_VERSION, NORMALIZED_IDENTITY_SCHEMA_VERSION].includes(identitySchemaVersion)) {
+    throw badRequest('MENU_CHANGE_IDENTITY_SCHEMA_VERSION_INVALID');
+  }
+  if (identitySchemaVersion === NORMALIZED_IDENTITY_SCHEMA_VERSION
+    && effectiveDate < NORMALIZED_MENU_START_DATE) {
+    throw badRequest('MENU_CHANGE_NORMALIZED_EFFECTIVE_DATE_INVALID');
+  }
+  let variantKey = optionalText(input.variant_key ?? input.variantKey, 'MENU_CHANGE_VARIANT_KEY_INVALID', 200);
+  if (identitySchemaVersion === NORMALIZED_IDENTITY_SCHEMA_VERSION) {
+    variantKey = variantKey.toUpperCase();
+  }
   return {
     effective_date: effectiveDate,
     vendor: canonicalMenuRowVendor({ vendor, itemCode }),
     item_code: itemCode,
-    variant_key: optionalText(input.variant_key ?? input.variantKey, 'MENU_CHANGE_VARIANT_KEY_INVALID', 200),
+    variant_key: variantKey,
     item_name: requiredText(input.item_name ?? input.itemName, 'MENU_CHANGE_ITEM_NAME_REQUIRED'),
     price,
     enabled: input.enabled !== false,
     image_url: validExternalUrl(input.image_url ?? input.imageUrl),
     note: optionalText(input.note, 'MENU_CHANGE_NOTE_INVALID'),
-    display_order: displayOrder
+    display_order: displayOrder,
+    identity_schema_version: identitySchemaVersion,
+    previous_variant_key: optionalText(
+      input.previous_variant_key ?? input.previousVariantKey,
+      'MENU_CHANGE_PREVIOUS_VARIANT_KEY_INVALID',
+      200
+    ),
+    previous_identity_schema_version: input.previous_identity_schema_version
+      ?? input.previousIdentitySchemaVersion
+      ?? null
   };
 };
 
 const changeSelect = `
-  SELECT menu_item_change_id, effective_date, vendor, item_code, variant_key,
+  SELECT mic.menu_item_change_id, mic.effective_date, mic.vendor, mic.item_code, mic.variant_key,
          item_name, price, enabled, image_url, note, display_order,
          source_kind, source_batch_id, source_table, source_row,
-         source_record_id, updated_by_user_id, created_at, updated_at
-  FROM menu_item_changes
+         source_record_id, updated_by_user_id, created_at, updated_at,
+         mic.identity_schema_version, mis.sequence_number
+  FROM menu_item_changes mic
+  LEFT JOIN menu_item_change_sequence mis
+    ON mis.menu_item_change_id = mic.menu_item_change_id
 `;
 
 const filtersFor = ({ vendor = '', fromDate = '', toDate = '', month = '', itemCode = '', query = '', variantKey = '' } = {}) => {
@@ -613,8 +841,8 @@ export const listAdminMenuItemChanges = async (database, identity, filters = {})
   const result = await database.prepare(`
     ${changeSelect}
     ${filter.suffix}
-    ORDER BY effective_date DESC, vendor ASC, item_code ASC, variant_key ASC,
-             display_order ASC, menu_item_change_id ASC
+    ORDER BY mic.effective_date DESC, mic.vendor ASC, mic.item_code ASC, mic.variant_key ASC,
+             mic.display_order ASC, mic.menu_item_change_id ASC
   `).bind(...filter.bindings).all();
   const projectedRows = await projectDisplayImageRows(
     database,
@@ -641,7 +869,7 @@ export const listAdminMenuVendors = async (database, identity) => {
   };
 };
 
-const uniqueChangeError = (error) => /UNIQUE constraint failed:\s*menu_item_changes\./i.test(
+const uniqueChangeError = (error) => /UNIQUE constraint failed:\s*(menu_item_changes\.|idx_menu_item_changes_legacy_identity_unique)/i.test(
   String(error?.cause?.message || error?.message || '')
 );
 
@@ -660,20 +888,52 @@ export const createAdminMenuItemChange = async (
   }
   const values = createInput(input);
   await assertVariantIdentity(database, values);
+  const isVariantMove = values.identity_schema_version === NORMALIZED_IDENTITY_SCHEMA_VERSION
+    && values.previous_variant_key
+    && values.previous_variant_key !== values.variant_key;
+  if (isVariantMove) {
+    const previousVersion = values.previous_identity_schema_version === null
+      ? NORMALIZED_IDENTITY_SCHEMA_VERSION
+      : Number(values.previous_identity_schema_version);
+    if (previousVersion !== NORMALIZED_IDENTITY_SCHEMA_VERSION) {
+      throw badRequest('MENU_VARIANT_MOVE_NORMALIZED_ONLY');
+    }
+    const existing = await database.prepare(`
+      SELECT menu_item_change_id
+      FROM menu_item_changes
+      WHERE vendor = ? AND item_code = ? AND variant_key = ?
+        AND effective_date = ? AND identity_schema_version = ?
+      LIMIT 1
+    `).bind(
+      values.vendor,
+      values.item_code,
+      values.variant_key,
+      values.effective_date,
+      NORMALIZED_IDENTITY_SCHEMA_VERSION
+    ).first();
+    if (existing) throw conflict('MENU_VARIANT_IDENTITY_CONFLICT');
+  }
   const changeId = randomId('menu-change');
+  const oldChangeId = isVariantMove ? randomId('menu-change-old') : null;
   const occurredAt = resolveClock(clock).toISOString();
-  const insert = prepareStatement(database, `
+  const insertStatement = (id, variantKey, enabled) => prepareStatement(database, `
     INSERT INTO menu_item_changes (
       menu_item_change_id, effective_date, vendor, item_code, variant_key,
       item_name, price, enabled, image_url, note, display_order,
       source_kind, source_table, source_record_id, updated_by_user_id,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', 'admin_menu_item_changes', ?, ?, ?, ?)
+      created_at, updated_at, identity_schema_version
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'admin', 'admin_menu_item_changes', ?, ?, ?, ?, ?)
   `, [
-    changeId, values.effective_date, values.vendor, values.item_code, values.variant_key,
-    values.item_name, values.price, values.enabled ? 1 : 0, values.image_url, values.note,
-    values.display_order, changeId, identity.actor.userId, occurredAt, occurredAt
+    id, values.effective_date, values.vendor, values.item_code, variantKey,
+    values.item_name, values.price, enabled ? 1 : 0, values.image_url, values.note,
+    values.display_order, id, identity.actor.userId, occurredAt, occurredAt,
+    values.identity_schema_version
   ]);
+  const inserts = [];
+  if (isVariantMove) inserts.push(insertStatement(
+    oldChangeId, values.previous_variant_key, false
+  ));
+  inserts.push(insertStatement(changeId, values.variant_key, values.enabled));
   const audit = auditStatement(database, {
     actorUserId: identity.actor.userId,
     actorAuthMode: identity.actor.authMode,
@@ -685,37 +945,47 @@ export const createAdminMenuItemChange = async (
       vendor: values.vendor,
       itemCode: values.item_code,
       variantKey: values.variant_key,
-      effectiveDate: values.effective_date
+      effectiveDate: values.effective_date,
+      identitySchemaVersion: values.identity_schema_version,
+      previousVariantKey: isVariantMove ? values.previous_variant_key : null,
+      previousChangeId: oldChangeId
     },
     occurredAt
   });
-  const proposedChange = {
-    menu_item_change_id: changeId,
+  const proposedChange = (id, variantKey, enabled) => ({
+    menu_item_change_id: id,
     effective_date: values.effective_date,
     vendor: values.vendor,
     item_code: values.item_code,
-    variant_key: values.variant_key,
+    variant_key: variantKey,
     item_name: values.item_name,
     price: values.price,
-    enabled: values.enabled,
+    enabled,
     image_url: values.image_url,
     note: values.note,
     display_order: values.display_order,
     source_kind: ADMIN_SOURCE_KIND,
     source_batch_id: null,
     source_table: 'admin_menu_item_changes',
-    source_record_id: changeId,
+    source_record_id: id,
     updated_by_user_id: identity.actor.userId,
     created_at: occurredAt,
-    updated_at: occurredAt
-  };
+    updated_at: occurredAt,
+    identity_schema_version: values.identity_schema_version,
+    sequence_number: null
+  });
+  const proposedChanges = [];
+  if (isVariantMove) proposedChanges.push(proposedChange(
+    oldChangeId, values.previous_variant_key, false
+  ));
+  proposedChanges.push(proposedChange(changeId, values.variant_key, values.enabled));
   const currentResolution = await resolveEffectiveMenuState(database, {
     vendor: values.vendor,
     targetDate: values.effective_date
   });
   const prospectiveRows = mergeEffectiveMenuRows({
     baselineRows: currentResolution.baselineRows,
-    changeRows: [...currentResolution.changeRows, proposedChange]
+    changeRows: [...currentResolution.changeRows, ...proposedChanges]
   });
   const projection = await prepareMenuVersionMaterialization(database, {
     vendor: values.vendor,
@@ -725,15 +995,23 @@ export const createAdminMenuItemChange = async (
     authority: currentResolution.authority
   });
   try {
-    await runMutationBatch(database, [insert, audit, ...projection.statements]);
+    await runMutationBatch(database, [...inserts, audit, ...projection.statements]);
   } catch (error) {
     if (uniqueChangeError(error)) throw conflict('MENU_CHANGE_DUPLICATE');
     throw error;
   }
 
-  const row = await database.prepare(`${changeSelect} WHERE menu_item_change_id = ?`)
+  const row = await database.prepare(`${changeSelect} WHERE mic.menu_item_change_id = ?`)
     .bind(changeId).first();
-  return { success: true, change: normalizedChange(row) };
+  return {
+    success: true,
+    change: normalizedChange(row),
+    variant_move: isVariantMove ? {
+      previous_change_id: oldChangeId,
+      previous_variant_key: values.previous_variant_key,
+      variant_key: values.variant_key
+    } : null
+  };
 };
 
 export const getAdminMenuItemPreview = async (

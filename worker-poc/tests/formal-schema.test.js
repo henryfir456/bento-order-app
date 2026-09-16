@@ -57,6 +57,7 @@ test('formal migration creates every source-of-truth table', () => {
     'employee_guest_sessions',
     'employee_roster',
     'menu_item_changes',
+    'menu_item_change_sequence',
     'vendors'
   ];
 
@@ -82,6 +83,8 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'users_employee_id_normalized_unique',
     'idx_menu_item_changes_effective',
     'idx_menu_item_changes_identity',
+    'idx_menu_item_changes_legacy_identity_unique',
+    'idx_menu_item_change_sequence_id',
     'idx_menu_items_version_identity',
     'idx_vendors_enabled_name'
   ];
@@ -134,7 +137,8 @@ test('menu item changes are append-only metadata with exact identity and signed 
     'source_record_id',
     'created_at',
     'updated_at',
-    'updated_by_user_id'
+    'updated_by_user_id',
+    'identity_schema_version'
   ]) assert.equal(columns.has(column), true, column);
   assert.equal(columns.get('price').type, 'INTEGER');
   assert.equal(columns.get('variant_key').dflt_value, "''");
@@ -150,14 +154,68 @@ test('menu item changes are append-only metadata with exact identity and signed 
       item_name, price, source_kind
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run('change-schema-duplicate', '2026-09-11', '蔡老師', 'AP', 'ap-variant-1', 'AP two', 2, 'admin'), /UNIQUE|constraint/i);
+  database.prepare(`
+    INSERT INTO menu_item_changes (
+      menu_item_change_id, effective_date, vendor, item_code, variant_key,
+      item_name, price, source_kind, identity_schema_version
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('change-schema-v2', '2026-09-11', '蔡老師', 'AP', 'ap-variant-1', 'AP v2', 2, 'admin', 2);
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM menu_item_change_sequence
+  `).get().count, 2);
+  assert.ok(database.prepare(`
+    SELECT sequence_number FROM menu_item_change_sequence WHERE menu_item_change_id = ?
+  `).get('change-schema-v2').sequence_number > 0);
   assert.throws(() => database.prepare(`
     UPDATE menu_item_changes SET note = 'changed' WHERE menu_item_change_id = ?
   `).run('change-schema-row'), /append-only/i);
   assert.throws(() => database.prepare(`
+    UPDATE menu_item_change_sequence SET menu_item_change_id = ? WHERE menu_item_change_id = ?
+  `).run('change-schema-renamed', 'change-schema-row'), /append-only/i);
+  assert.throws(() => database.prepare(`
     DELETE FROM menu_item_changes WHERE menu_item_change_id = ?
+  `).run('change-schema-row'), /append-only/i);
+  assert.throws(() => database.prepare(`
+    DELETE FROM menu_item_change_sequence WHERE menu_item_change_id = ?
   `).run('change-schema-row'), /append-only/i);
   assert.equal(tableColumns(database, 'menu_items').has('variant_key'), true);
   assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+});
+
+test('0011 preserves legacy menu change rows and backfills their persisted order', () => {
+  const database = new DatabaseSync(':memory:');
+  migrationSql.slice(0, 11).forEach((sql) => database.exec(sql));
+  database.prepare(`
+    INSERT INTO menu_item_changes (
+      menu_item_change_id, effective_date, vendor, item_code, variant_key,
+      item_name, price, enabled, image_url, note, display_order, source_kind,
+      source_table, source_row, source_record_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'legacy-preserve', '2026-09-02', '蔡老師', 'AP', '', '風味會議', 120, 1,
+    'https://example.test/ap.jpg', 'legacy note', 20, 'legacy_sql',
+    'bento_price', 20, 'legacy-record', '2026-09-02T00:00:00.000Z',
+    '2026-09-02T00:00:00.000Z'
+  );
+  database.exec(migrationSql[11]);
+  assert.deepEqual({ ...database.prepare(`
+    SELECT menu_item_change_id, effective_date, vendor, item_code, variant_key,
+           item_name, price, enabled, image_url, note, display_order, source_kind,
+           source_table, source_row, source_record_id, created_at, updated_at,
+           identity_schema_version
+    FROM menu_item_changes WHERE menu_item_change_id = 'legacy-preserve'
+  `).get() }, {
+    menu_item_change_id: 'legacy-preserve', effective_date: '2026-09-02', vendor: '蔡老師',
+    item_code: 'AP', variant_key: '', item_name: '風味會議', price: 120, enabled: 1,
+    image_url: 'https://example.test/ap.jpg', note: 'legacy note', display_order: 20,
+    source_kind: 'legacy_sql', source_table: 'bento_price', source_row: 20,
+    source_record_id: 'legacy-record', created_at: '2026-09-02T00:00:00.000Z',
+    updated_at: '2026-09-02T00:00:00.000Z', identity_schema_version: 1
+  });
+  assert.deepEqual(database.prepare(`
+    SELECT sequence_number, menu_item_change_id
+    FROM menu_item_change_sequence
+  `).all().map((row) => ({ ...row })), [{ sequence_number: 1, menu_item_change_id: 'legacy-preserve' }]);
 });
 
 test('normalized employee ownership rejects case-variant canonical duplicates', () => {

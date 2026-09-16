@@ -11,6 +11,22 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.1': [
+    {
+      name: '新增',
+      changes: [
+        '新增 legacy/raw 與 normalized 菜單 identity 邊界，新的菜單變更支援 BASE／HALF／PLUS variant。',
+        '新增 normalized 菜單同日 append-only revision 與 variant 搬移的原子處理。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        '保留歷史菜單、快照與訂單資料不變，只在新的生效日起將 legacy code 投影為 normalized identity。',
+        'Admin 目前菜單改為依供應商與日期自動載入，既有品項代號唯讀並移除手動查詢按鈕。'
+      ]
+    }
+  ],
   '0.15.0': [
     {
       name: '新增',

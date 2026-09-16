@@ -49,7 +49,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0007_signed_menu_prices.sql',
       '0008_menu_item_changes.sql',
       '0009_topup_method.sql',
-      '0010_vendor_metadata.sql'
+      '0010_vendor_metadata.sql',
+      '0011_menu_item_change_revisions.sql'
     ]
   );
 });

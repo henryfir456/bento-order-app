@@ -2022,9 +2022,9 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.15.0');
-  assert.equal(packageLock.version, '0.15.0');
-  assert.equal(packageLock.packages[''].version, '0.15.0');
+  assert.equal(packageJson.version, '0.15.1');
+  assert.equal(packageLock.version, '0.15.1');
+  assert.equal(packageLock.packages[''].version, '0.15.1');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
   assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);
@@ -3347,6 +3347,9 @@ test('frontend menu change history is Worker-only, Admin-only, append-only, and 
   assert.match(componentSource, /生效日/);
   assert.match(componentSource, /圖片/);
   assert.match(componentSource, /variant_key/);
+  assert.match(componentSource, /BASE/);
+  assert.match(componentSource, /HALF/);
+  assert.match(componentSource, /PLUS/);
   assert.match(componentSource, /目前菜單/);
   assert.match(componentSource, /變更歷程/);
   assert.match(componentSource, /vendorOptions/);
@@ -3355,5 +3358,12 @@ test('frontend menu change history is Worker-only, Admin-only, append-only, and 
   assert.doesNotMatch(componentSource, /<th[^>]*>供應商<\/th>/);
   assert.match(componentSource, /draft/);
   assert.match(componentSource, /isViewAsMode/);
+  assert.match(componentSource, /useEffect/);
+  assert.match(componentSource, /loadCurrentMenu\(selectedCurrentVendor, currentDate\)/);
+  assert.match(componentSource, /readOnly=\{draft\.item_code_locked\}/);
+  assert.match(componentSource, /儲存變更/);
+  assert.match(componentSource, /loadCurrentMenu\(draft\.vendor, draft\.effective_date\)/);
+  assert.doesNotMatch(componentSource, /查詢目前菜單/);
+  assert.doesNotMatch(componentSource, /onClick=\{\(\) => startDraft\(row\)\} disabled=\{isViewAsMode \|\| Boolean\(draft\)\}/);
   assert.doesNotMatch(componentSource, /onUpdate|onDelete/);
 });

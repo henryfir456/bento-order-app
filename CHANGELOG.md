@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.15.1] - 2026-09-16
+
+### Added
+
+- Added migration 0011 for explicit legacy/raw and normalized menu identity versions with persisted append-only revision ordering.
+- Added normalized BASE/HALF/PLUS menu correction support from the 2026-09-17 effective-date boundary, including atomic normalized variant moves.
+
+### Changed
+
+- Kept historical menu changes, menu snapshots, orders, and order items immutable while resolving legacy codes into future normalized projections only.
+- Made Admin current-menu selection auto-load by vendor/date, kept ordinary item codes read-only, and removed the manual query action.
+
 ## [0.15.0] - 2026-09-16
 
 ### Added

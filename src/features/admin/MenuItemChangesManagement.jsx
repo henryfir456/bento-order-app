@@ -1,15 +1,45 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateInput } from '../../dateUtils';
 
 const inputClass = 'w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:outline-emerald-600 disabled:bg-gray-100';
 const HISTORY_MIN_DATE = '2026-09-11';
+const NORMALIZED_MENU_START_DATE = '2026-09-17';
+const NORMALIZED_VARIANT_KEYS = ['BASE', 'HALF', 'PLUS'];
 
 const rowIdentity = (row) => `${row.vendor}\u0000${row.item_code}\u0000${row.variant_key || ''}`;
 
 const errorText = (error) => {
   if (error?.code === 'MENU_CHANGE_DUPLICATE') return '同一生效日、供應商、品項代號與 variant 已存在。請以較晚生效日新增修正。';
+  if (error?.code === 'MENU_VARIANT_IDENTITY_CONFLICT') return '新的 variant identity 在同一生效日已存在，請先選擇其他 variant。';
+  if (error?.code === 'MENU_CHANGE_NORMALIZED_ITEM_CODE_INVALID') return '新菜單請使用 normalized 品項代號，不可再使用 legacy code。';
   if (error?.code === 'MENU_CHANGE_EFFECTIVE_DATE_BEFORE_CUTOFF') return '手動變更只能從 2026-09-11 起建立。';
   return error?.message || '操作失敗，請稍後再試。';
+};
+
+const normalizedIdentityForRow = (row) => {
+  const code = String(row?.item_code || '').trim();
+  const codeKey = code.toUpperCase();
+  const name = String(row?.item_name || '').trim();
+  if (['FR1', 'REVERT1'].includes(code.toUpperCase())) return null;
+  const direct = {
+    S: ['S', 'BASE'], SH: ['S', 'HALF'], S_HALF: ['S', 'HALF'],
+    C: ['C', 'BASE'], CH: ['C', 'HALF'], C95: ['C', 'BASE'], C95_HALF: ['C', 'HALF'],
+    CP: ['CM', 'BASE'], CPH: ['CM', 'HALF'], C120: ['CM', 'BASE'], C120_HALF: ['CM', 'HALF'],
+    E: ['E', 'BASE'], EP: ['E', 'PLUS'], E_PLUS: ['E', 'PLUS'],
+    A: ['A', 'BASE'], A95: ['A', 'BASE'], A95_PLUS: ['A', 'PLUS'],
+    A120: ['AM', 'BASE'], A120_PLUS: ['AM', 'PLUS'], APP: ['AM', 'PLUS'],
+    B: ['B', 'BASE'], B_HALF: ['B', 'HALF'], FR: ['FR', 'BASE'], R: ['FR', 'BASE']
+  };
+  if (codeKey === 'AP') {
+    if (name.includes('風味便當')) return ['A', 'PLUS'];
+    if (name.includes('風味會議')) return ['AM', 'BASE'];
+    return null;
+  }
+  if (/^H[1-5]H$/.test(codeKey)) return [codeKey.slice(0, -1), 'HALF'];
+  if (/^H[1-5]$/.test(codeKey)) return [codeKey, 'BASE'];
+  return direct[codeKey] || (NORMALIZED_VARIANT_KEYS.includes(String(row?.variant_key || '').toUpperCase())
+    ? [code, String(row.variant_key).toUpperCase()]
+    : [code, 'BASE']);
 };
 
 const PreviewImage = ({ url, alt }) => (
@@ -52,6 +82,7 @@ export default function MenuItemChangesManagement({
   const [currentMenu, setCurrentMenu] = useState(null);
   const [currentMenuLoading, setCurrentMenuLoading] = useState(false);
   const [currentMenuError, setCurrentMenuError] = useState('');
+  const previewRequestId = useRef(0);
 
   const normalizedVendorOptions = useMemo(() => Array.from(new Set(
     vendorOptions
@@ -90,17 +121,28 @@ export default function MenuItemChangesManagement({
   const updateDraft = (field, value) => setDraft((current) => ({ ...current, [field]: value }));
 
   const startDraft = (row = null) => {
+    const mappedIdentity = row ? normalizedIdentityForRow(row) : null;
+    const useNormalizedIdentity = !row || row.identity_schema_version === 2 || Boolean(mappedIdentity);
+    const mappedDate = row && row.effective_date >= NORMALIZED_MENU_START_DATE
+      ? row.effective_date
+      : NORMALIZED_MENU_START_DATE;
+    const itemCode = useNormalizedIdentity ? (mappedIdentity?.[0] || row?.item_code || '') : (row?.item_code || '');
+    const variantKey = useNormalizedIdentity ? (mappedIdentity?.[1] || 'BASE') : (row?.variant_key || '');
     setDraft({
-      effective_date: row?.effective_date || currentDate || formatDateInput(),
+      effective_date: row ? mappedDate : (currentDate >= NORMALIZED_MENU_START_DATE ? currentDate : NORMALIZED_MENU_START_DATE),
       vendor: row?.vendor || selectedCurrentVendor,
-      item_code: row?.item_code || '',
-      variant_key: row?.variant_key || '',
+      item_code: itemCode,
+      item_code_locked: Boolean(row),
+      variant_key: variantKey,
       item_name: row?.item_name || '',
       price: row?.price ?? '',
       enabled: row ? Boolean(row.enabled) : true,
       image_url: row?.image_url || '',
       note: row?.note || '',
-      display_order: row?.display_order || 0
+      display_order: row?.display_order || 0,
+      identity_schema_version: useNormalizedIdentity ? 2 : 1,
+      previous_variant_key: row?.identity_schema_version === 2 ? row.variant_key || '' : '',
+      previous_identity_schema_version: row?.identity_schema_version === 2 ? 2 : null
     });
     setDraftError('');
   };
@@ -111,13 +153,19 @@ export default function MenuItemChangesManagement({
     setSaving(true);
     setDraftError('');
     try {
+      const draftPayload = Object.fromEntries(
+        Object.entries(draft).filter(([field]) => field !== 'item_code_locked')
+      );
       await onCreate({
-        ...draft,
+        ...draftPayload,
         price: Number(draft.price),
         display_order: Number(draft.display_order || 0)
       });
       setDraft(null);
+      setCurrentVendor(draft.vendor);
+      setCurrentDate(draft.effective_date);
       if (onRefresh) await onRefresh();
+      await loadCurrentMenu(draft.vendor, draft.effective_date);
     } catch (requestError) {
       setDraftError(errorText(requestError));
     } finally {
@@ -125,36 +173,40 @@ export default function MenuItemChangesManagement({
     }
   };
 
-  const loadCurrentMenu = async (event) => {
-    event.preventDefault();
-    if (!selectedCurrentVendor || !currentDate) {
+  const loadCurrentMenu = useCallback(async (vendor, targetDate) => {
+    const requestId = previewRequestId.current + 1;
+    previewRequestId.current = requestId;
+    if (!vendor || !targetDate) {
+      setCurrentMenu(null);
       setCurrentMenuError('請先選擇供應商與日期。');
       return;
     }
     setCurrentMenuLoading(true);
     setCurrentMenuError('');
     try {
-      const result = await onPreview({ vendor: selectedCurrentVendor, targetDate: currentDate });
+      const result = await onPreview({ vendor, targetDate });
+      if (requestId !== previewRequestId.current) return;
       if (!Array.isArray(result?.items)) throw new Error('目前無法取得有效菜單。');
       setCurrentMenu(result);
     } catch (requestError) {
+      if (requestId !== previewRequestId.current) return;
       setCurrentMenu(null);
       setCurrentMenuError(errorText(requestError));
     } finally {
-      setCurrentMenuLoading(false);
+      if (requestId === previewRequestId.current) setCurrentMenuLoading(false);
     }
-  };
+  }, [onPreview]);
+
+  useEffect(() => {
+    loadCurrentMenu(selectedCurrentVendor, currentDate);
+  }, [currentDate, loadCurrentMenu, selectedCurrentVendor]);
 
   const changeCurrentVendor = (value) => {
     setCurrentVendor(value);
-    setCurrentMenu(null);
-    setCurrentMenuError('');
   };
 
   const changeCurrentDate = (value) => {
     setCurrentDate(value);
-    setCurrentMenu(null);
-    setCurrentMenuError('');
   };
 
   return (
@@ -185,9 +237,9 @@ export default function MenuItemChangesManagement({
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               <label className="text-[11px] font-bold text-gray-600">生效日<input required type="date" min={HISTORY_MIN_DATE} value={draft.effective_date} onChange={(event) => updateDraft('effective_date', event.target.value)} className={inputClass} disabled={saving} /></label>
-              <label className="text-[11px] font-bold text-gray-600">供應商<select required value={draft.vendor} onChange={(event) => updateDraft('vendor', event.target.value)} className={inputClass} disabled={saving || !normalizedVendorOptions.length}><option value="">請選擇</option>{normalizedVendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}</select></label>
-              <label className="text-[11px] font-bold text-gray-600">品項代號<input required value={draft.item_code} onChange={(event) => updateDraft('item_code', event.target.value)} className={inputClass} disabled={saving} /></label>
-              <label className="text-[11px] font-bold text-gray-600">variant_key<input value={draft.variant_key} onChange={(event) => updateDraft('variant_key', event.target.value)} className={inputClass} disabled={saving} /></label>
+              <label className="text-[11px] font-bold text-gray-600">供應商<select required value={draft.vendor} onChange={(event) => updateDraft('vendor', event.target.value)} className={inputClass} disabled={saving || !normalizedVendorOptions.length}>{normalizedVendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}</select></label>
+              <label className="text-[11px] font-bold text-gray-600">品項代號<input required value={draft.item_code} onChange={(event) => updateDraft('item_code', event.target.value)} className={inputClass} readOnly={draft.item_code_locked} disabled={saving} /></label>
+              <label className="text-[11px] font-bold text-gray-600">variant_key{draft.identity_schema_version === 2 ? <select value={draft.variant_key} onChange={(event) => updateDraft('variant_key', event.target.value)} className={inputClass} disabled={saving}>{NORMALIZED_VARIANT_KEYS.map((variant) => <option key={variant} value={variant}>{variant}</option>)}</select> : <input value={draft.variant_key} onChange={(event) => updateDraft('variant_key', event.target.value)} className={inputClass} disabled={saving} />}</label>
               <label className="text-[11px] font-bold text-gray-600 sm:col-span-2">品名<input required value={draft.item_name} onChange={(event) => updateDraft('item_name', event.target.value)} className={inputClass} disabled={saving} /></label>
               <label className="text-[11px] font-bold text-gray-600">簽名價格<input required type="number" value={draft.price} onChange={(event) => updateDraft('price', event.target.value)} className={inputClass} disabled={saving} /></label>
               <label className="flex items-center gap-2 pt-5 text-[11px] font-bold text-gray-600"><input type="checkbox" checked={draft.enabled} onChange={(event) => updateDraft('enabled', event.target.checked)} disabled={saving} />啟用</label>
@@ -196,7 +248,7 @@ export default function MenuItemChangesManagement({
               <label className="text-[11px] font-bold text-gray-600 sm:col-span-4">備註<textarea value={draft.note} onChange={(event) => updateDraft('note', event.target.value)} className={`${inputClass} min-h-12`} disabled={saving} /></label>
             </div>
             {draftError && <p className="mt-2 text-xs text-rose-700">{draftError}</p>}
-            <button type="submit" disabled={saving || isViewAsMode || !draft.vendor} className="mt-3 rounded-xl bg-amber-700 px-4 py-2 text-xs font-bold text-white disabled:bg-gray-300">{saving ? '儲存中...' : 'POST 儲存變更'}</button>
+            <button type="submit" disabled={saving || isViewAsMode || !draft.vendor} className="mt-3 rounded-xl bg-amber-700 px-4 py-2 text-xs font-bold text-white disabled:bg-gray-300">{saving ? '儲存中...' : '儲存變更'}</button>
           </form>
         )}
       </div>
@@ -213,11 +265,10 @@ export default function MenuItemChangesManagement({
 
         {activeView === 'current' ? (
           <div className="pt-3">
-            <form onSubmit={loadCurrentMenu} className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-              <label className="text-xs font-bold text-gray-600">供應商<select required value={selectedCurrentVendor} onChange={(event) => changeCurrentVendor(event.target.value)} className={inputClass} disabled={!normalizedVendorOptions.length || currentMenuLoading}><option value="">請選擇供應商</option>{normalizedVendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}</select></label>
+            <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 sm:items-end">
+              <label className="text-xs font-bold text-gray-600">供應商<select required value={selectedCurrentVendor} onChange={(event) => changeCurrentVendor(event.target.value)} className={inputClass} disabled={!normalizedVendorOptions.length || currentMenuLoading}>{normalizedVendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}</select></label>
               <label className="text-xs font-bold text-gray-600">日期<input required type="date" value={currentDate} onChange={(event) => changeCurrentDate(event.target.value)} className={inputClass} disabled={currentMenuLoading} /></label>
-              <button type="submit" disabled={!selectedCurrentVendor || currentMenuLoading} className="rounded-xl bg-indigo-700 px-3 py-2 text-xs font-bold text-white disabled:bg-gray-300">{currentMenuLoading ? '查詢中...' : '查詢目前菜單'}</button>
-            </form>
+            </div>
             <p className="mt-2 text-xs text-gray-500">已選定 {selectedCurrentVendor || '供應商'} · {currentDate}；結果等同該日期使用者可點到的 canonical menu。</p>
             {currentMenuError && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{currentMenuError}</p>}
             {currentMenu && (
@@ -226,10 +277,10 @@ export default function MenuItemChangesManagement({
                 <div className="hidden overflow-hidden rounded-xl border border-gray-100 sm:block">
                   <table className="w-full table-fixed border-collapse text-xs">
                     <thead><tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500"><th className="w-[15%] p-2">品項代號</th><th className="w-[15%] p-2">variant</th><th className="w-[25%] p-2">品名</th><th className="w-[12%] p-2">價格</th><th className="w-[15%] p-2">生效日</th><th className="w-[10%] p-2">狀態</th><th className="w-[8%] p-2">操作</th></tr></thead>
-                    <tbody>{currentItems.map((row) => <tr key={`${row.item_code}-${row.variant_key}`} className="border-b border-gray-100 align-top last:border-0"><td className="break-words p-2 font-bold">{row.item_code}</td><td className="break-words p-2">{row.variant_key || '—'}</td><td className="break-words p-2">{row.item_name}</td><td className="p-2 font-mono">{row.price}</td><td className="break-words p-2">{row.effective_date}</td><td className="p-2"><Status enabled={row.enabled} /></td><td className="p-2"><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode || Boolean(draft)} className="text-indigo-700 underline disabled:text-gray-300">建立變更</button></td></tr>)}</tbody>
+                    <tbody>{currentItems.map((row) => <tr key={`${row.item_code}-${row.variant_key}`} className="border-b border-gray-100 align-top last:border-0"><td className="break-words p-2 font-bold">{row.item_code}</td><td className="break-words p-2">{row.variant_key || '—'}</td><td className="break-words p-2">{row.item_name}</td><td className="p-2 font-mono">{row.price}</td><td className="break-words p-2">{row.effective_date}</td><td className="p-2"><Status enabled={row.enabled} /></td><td className="p-2"><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode} className="text-indigo-700 underline disabled:text-gray-300">建立變更</button></td></tr>)}</tbody>
                   </table>
                 </div>
-                <div className="space-y-2 sm:hidden">{currentItems.map((row) => <article key={`${row.item_code}-${row.variant_key}`} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-gray-800">{row.item_code}{row.variant_key ? ` · ${row.variant_key}` : ''}</p><p className="mt-1 break-words text-sm text-gray-700">{row.item_name}</p></div><Status enabled={row.enabled} /></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500"><div><dt>價格</dt><dd className="font-mono text-gray-800">{row.price}</dd></div><div><dt>生效日</dt><dd className="text-gray-800">{row.effective_date}</dd></div><div className="col-span-2"><dt>來源</dt><dd className="break-words text-gray-800">{row.source_kind || '—'}</dd></div></dl><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode || Boolean(draft)} className="mt-2 text-xs font-bold text-indigo-700 underline disabled:text-gray-300">建立變更</button></article>)}</div>
+                <div className="space-y-2 sm:hidden">{currentItems.map((row) => <article key={`${row.item_code}-${row.variant_key}`} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-gray-800">{row.item_code}{row.variant_key ? ` · ${row.variant_key}` : ''}</p><p className="mt-1 break-words text-sm text-gray-700">{row.item_name}</p></div><Status enabled={row.enabled} /></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500"><div><dt>價格</dt><dd className="font-mono text-gray-800">{row.price}</dd></div><div><dt>生效日</dt><dd className="text-gray-800">{row.effective_date}</dd></div><div className="col-span-2"><dt>來源</dt><dd className="break-words text-gray-800">{row.source_kind || '—'}</dd></div></dl><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode} className="mt-2 text-xs font-bold text-indigo-700 underline disabled:text-gray-300">建立變更</button></article>)}</div>
                 {currentItems.length === 0 && <p className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-xs text-gray-400">該日期沒有可顯示的有效菜單列。</p>}
               </div>
             )}

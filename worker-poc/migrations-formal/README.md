@@ -32,13 +32,14 @@ The formal chain is exactly:
 0008_menu_item_changes.sql           # append-only authoritative menu change history
 0009_topup_method.sql                # nullable structured payment method for new top-ups
 0010_vendor_metadata.sql              # canonical vendor metadata and menu snapshot links
+0011_menu_item_change_revisions.sql   # legacy/raw boundary and normalized revision ordering
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all eleven files in order. Migration 0003 defaults existing users to
+all twelve files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -69,6 +70,13 @@ Migration 0010 creates the canonical `vendors` metadata table and backfills
 vendor names from current menu/calendar records. The historical alias `合十`
 is stored as canonical `禾拾`; the migration does not rewrite menu snapshots,
 orders, calendar rows, or item-level image fallback data.
+Migration 0011 rebuilds only the append-only `menu_item_changes` table to add
+the explicit `identity_schema_version` boundary. Existing rows are copied as
+legacy v1 without changing any stored field, legacy identity uniqueness is
+retained by a partial unique index, and normalized v2 rows receive a persisted
+insert sequence in `menu_item_change_sequence`. The one-time backfill may use
+the pre-rebuild table's `rowid`; runtime resolution uses only the persisted
+sequence. No menu history, snapshots, orders, or order items are rewritten.
 
 ## Recovery procedure
 
