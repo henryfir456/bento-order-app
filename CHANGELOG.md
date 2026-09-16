@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-16
+
+### Added
+
+- Added Vendor Hub for browsing vendor details, menu images, and external menu links.
+- Added vendor metadata management for Admin and ProxyAdmin users.
+- Added canonical vendor handling to avoid duplicate vendor entries.
+
+### Changed
+
+- Added click-to-zoom lightbox viewing for Vendor Hub menu images.
+- Improved menu preview and close interactions across desktop and mobile layouts.
+
 ## [0.14.2] - 2026-09-15
 
 ### Added

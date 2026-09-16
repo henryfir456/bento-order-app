@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Modal from '../../components/Modal';
 import {
   formatVendorDate,
   isHttpUrl,
@@ -137,8 +138,48 @@ function VendorEditor({ vendor, onSaveVendor }) {
 
 function MenuSnapshot({ vendor }) {
   const [menuImageFailed, setMenuImageFailed] = useState(false);
+  const [menuImageOpen, setMenuImageOpen] = useState(false);
+  const imageAlt = `${vendor.name} 菜單快照`;
+  const handleMenuImageError = () => {
+    setMenuImageFailed(true);
+    setMenuImageOpen(false);
+  };
+
   if (vendor.menu_image_url && !menuImageFailed) {
-    return <img src={vendor.menu_image_url} alt={`${vendor.name} 菜單快照`} onError={() => setMenuImageFailed(true)} className="max-h-[32rem] w-full rounded-xl border border-gray-100 object-contain" />;
+    return (
+      <>
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-label={`放大檢視${imageAlt}`}
+          onClick={() => setMenuImageOpen(true)}
+          className="block w-full rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+        >
+          <img
+            src={vendor.menu_image_url}
+            alt={imageAlt}
+            onError={handleMenuImageError}
+            className="max-h-[32rem] w-full cursor-zoom-in rounded-xl border border-gray-100 object-contain transition hover:opacity-90"
+          />
+        </button>
+        <Modal
+          open={menuImageOpen}
+          title={imageAlt}
+          onClose={() => setMenuImageOpen(false)}
+          ariaLabel="關閉菜單圖片預覽"
+          className="max-w-5xl"
+        >
+          <div className="flex items-center justify-center">
+            <img
+              src={vendor.menu_image_url}
+              alt={imageAlt}
+              onError={handleMenuImageError}
+              className="max-h-[calc(90vh-8rem)] max-w-[95vw] w-auto rounded-xl object-contain"
+            />
+          </div>
+        </Modal>
+      </>
+    );
   }
   return <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">{menuImageFailed ? '菜單快照目前無法顯示。' : '尚未提供 Cloudinary 菜單快照。'}</div>;
 }

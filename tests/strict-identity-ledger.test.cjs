@@ -2022,9 +2022,9 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.14.2');
-  assert.equal(packageLock.version, '0.14.2');
-  assert.equal(packageLock.packages[''].version, '0.14.2');
+  assert.equal(packageJson.version, '0.15.0');
+  assert.equal(packageLock.version, '0.15.0');
+  assert.equal(packageLock.packages[''].version, '0.15.0');
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
   assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);

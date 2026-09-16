@@ -11,6 +11,23 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.0': [
+    {
+      name: '新增',
+      changes: [
+        '新增「店家專區」，集中查看店家介紹、菜單圖片與最新菜單連結。',
+        '新增店家資料管理，Admin／ProxyAdmin 可維護店家 metadata。',
+        '店家名稱統一使用 canonical vendor，避免同一店家重複顯示。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        '菜單圖片支援點擊放大檢視。',
+        '優化桌機與手機上的菜單預覽及關閉操作。'
+      ]
+    }
+  ],
   '0.14.2': [
     {
       name: '新增',

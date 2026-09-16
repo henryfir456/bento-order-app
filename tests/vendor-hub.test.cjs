@@ -93,6 +93,8 @@ test('vendor UI is wired to formal Worker/mock contracts and keeps GAS explicit'
   const hubSource = fs.readFileSync(path.join(ROOT, 'src/features/vendors/VendorHub.jsx'), 'utf8');
   const calendarSource = fs.readFileSync(path.join(ROOT, 'src/features/calendar/CalendarManagement.jsx'), 'utf8');
   const permissionsSource = fs.readFileSync(path.join(ROOT, 'src/auth/permissions.js'), 'utf8');
+  const modalSource = fs.readFileSync(path.join(ROOT, 'src/components/Modal.jsx'), 'utf8');
+  const snapshotBlock = hubSource.match(/function MenuSnapshot[\s\S]*?\n}\n\nfunction VendorDetail/)?.[0];
 
   assert.match(appSource, /🏪 店家專區/);
   assert.match(appSource, /apiClient\.getVendors/);
@@ -103,6 +105,21 @@ test('vendor UI is wired to formal Worker/mock contracts and keeps GAS explicit'
   assert.match(hubSource, /vendor\.menu_image_url/);
   assert.match(hubSource, /vendor\.menu_source_url/);
   assert.doesNotMatch(hubSource, /src=\{vendor\.menu_source_url\}/);
+  assert.ok(snapshotBlock);
+  assert.match(snapshotBlock, /type="button"/);
+  assert.match(snapshotBlock, /aria-haspopup="dialog"/);
+  assert.match(snapshotBlock, /setMenuImageOpen\(true\)/);
+  assert.match(snapshotBlock, /<Modal/);
+  assert.match(snapshotBlock, /open=\{menuImageOpen\}/);
+  assert.equal((snapshotBlock.match(/src=\{vendor\.menu_image_url\}/g) || []).length, 2);
+  assert.match(snapshotBlock, /max-w-\[95vw\]/);
+  assert.match(snapshotBlock, /object-contain/);
+  assert.doesNotMatch(snapshotBlock, /menu_source_url/);
+  assert.match(modalSource, /role="dialog"/);
+  assert.match(modalSource, /aria-modal="true"/);
+  assert.match(modalSource, /event\.key === 'Escape'/);
+  assert.match(modalSource, /document\.body\.style\.overflow = 'hidden'/);
+  assert.match(modalSource, /event\.target === event\.currentTarget/);
   assert.match(hubSource, /GAS 模式尚未支援店家專區/);
   assert.match(calendarSource, /vendorOptions\.map/);
   assert.match(permissionsSource, /manageVendors: true/);
