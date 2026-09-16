@@ -66,49 +66,53 @@ export const normalizeLegacyMenuIdentity = ({ vendor, itemCode, variantKey = '',
   const name = text(itemName);
   if (!code) return null;
 
-  const direct = new Map([
-    ['S', normalizedIdentity('S', 'BASE')],
-    ['SH', normalizedIdentity('S', 'HALF')],
-    ['S_HALF', normalizedIdentity('S', 'HALF')],
-    ['C', normalizedIdentity('C', 'BASE')],
-    ['CH', normalizedIdentity('C', 'HALF')],
-    ['C95', normalizedIdentity('C', 'BASE')],
-    ['C95_HALF', normalizedIdentity('C', 'HALF')],
-    ['CP', normalizedIdentity('CM', 'BASE')],
-    ['CPH', normalizedIdentity('CM', 'HALF')],
-    ['C120', normalizedIdentity('CM', 'BASE')],
-    ['C120_HALF', normalizedIdentity('CM', 'HALF')],
-    ['E', normalizedIdentity('E', 'BASE')],
-    ['EP', normalizedIdentity('E', 'PLUS')],
-    ['E_PLUS', normalizedIdentity('E', 'PLUS')],
-    ['A', normalizedIdentity('A', 'BASE')],
-    ['A95', normalizedIdentity('A', 'BASE')],
-    ['A95_PLUS', normalizedIdentity('A', 'PLUS')],
-    ['A120', normalizedIdentity('AM', 'BASE')],
-    ['A120_PLUS', normalizedIdentity('AM', 'PLUS')],
-    ['APP', normalizedIdentity('AM', 'PLUS')],
-    ['B', normalizedIdentity('B', 'BASE')],
-    ['B_HALF', normalizedIdentity('B', 'HALF')],
-    ['FR', normalizedIdentity('FR', 'BASE')],
-    ['R', normalizedIdentity('FR', 'BASE')]
-  ]);
+  const direct = normalizedVendor === HISTORICAL_MENU_VENDOR
+    ? new Map([
+      ['S', normalizedIdentity('S', 'BASE')],
+      ['SH', normalizedIdentity('S', 'HALF')],
+      ['S_HALF', normalizedIdentity('S', 'HALF')],
+      ['C', normalizedIdentity('C', 'BASE')],
+      ['CH', normalizedIdentity('C', 'HALF')],
+      ['C95', normalizedIdentity('C', 'BASE')],
+      ['C95_HALF', normalizedIdentity('C', 'HALF')],
+      ['CP', normalizedIdentity('CM', 'BASE')],
+      ['CPH', normalizedIdentity('CM', 'HALF')],
+      ['C120', normalizedIdentity('CM', 'BASE')],
+      ['C120_HALF', normalizedIdentity('CM', 'HALF')],
+      ['E', normalizedIdentity('E', 'BASE')],
+      ['EP', normalizedIdentity('E', 'PLUS')],
+      ['E_PLUS', normalizedIdentity('E', 'PLUS')],
+      ['A', normalizedIdentity('A', 'BASE')],
+      ['A95', normalizedIdentity('A', 'BASE')],
+      ['A95_PLUS', normalizedIdentity('A', 'PLUS')],
+      ['A120', normalizedIdentity('AM', 'BASE')],
+      ['A120_PLUS', normalizedIdentity('AM', 'PLUS')],
+      ['APP', normalizedIdentity('AM', 'PLUS')],
+      ['B', normalizedIdentity('B', 'BASE')],
+      ['B_HALF', normalizedIdentity('B', 'HALF')],
+      ['FR', normalizedIdentity('FR', 'BASE')],
+      ['R', normalizedIdentity('FR', 'BASE')]
+    ])
+    : new Map();
   if (direct.has(codeKey)) return direct.get(codeKey);
 
   if (codeKey === 'AP') {
+    if (normalizedVendor !== HISTORICAL_MENU_VENDOR) return null;
     if (name.includes('風味便當')) return normalizedIdentity('A', 'PLUS');
     if (name.includes('風味會議')) return normalizedIdentity('AM', 'BASE');
     return null;
   }
 
-  const halfMatch = codeKey.match(/^(H[1-5])H$/);
-  if (halfMatch) return normalizedIdentity(halfMatch[1], 'HALF');
-  if (/^H[1-5]$/.test(codeKey)) return normalizedIdentity(codeKey, 'BASE');
+  if (normalizedVendor === HE_SHI_MENU_VENDOR) {
+    const halfMatch = codeKey.match(/^(H[1-5])H$/);
+    if (halfMatch) return normalizedIdentity(halfMatch[1], 'HALF');
+    if (/^H[1-5]$/.test(codeKey)) return normalizedIdentity(codeKey, 'BASE');
+  }
+
+  if (/^H[1-5]H?$/.test(codeKey)) return null;
 
   if (NORMALIZED_VARIANT_KEYS.includes(variant)) {
     return normalizedIdentity(code, variant);
-  }
-  if (normalizedVendor === HE_SHI_MENU_VENDOR && /^H[1-5]$/.test(codeKey)) {
-    return normalizedIdentity(codeKey, 'BASE');
   }
   return null;
 };
@@ -354,7 +358,8 @@ export const getCompatibilityMenuBaseline = async (database, { vendor, targetDat
 
 const attachCompatibilityIds = (rows, baselineRows) => rows.map((row) => {
   const matches = baselineRows.filter((baseline) => (
-    baseline.item_code === row.item_code
+    baseline.vendor === row.vendor
+      && baseline.item_code === row.item_code
       && baseline.variant_key === row.variant_key
   ));
   if (matches.length !== 1) return { ...row, persisted_menu_item_id: null };
@@ -369,7 +374,8 @@ export const mergeEffectiveMenuRows = ({ baselineRows = [], changeRows = [] } = 
   let merged = [...baselineRows];
   for (const change of changeRows) {
     const matchingIndexes = merged.reduce((indexes, row, index) => {
-      if (row.item_code === change.item_code && row.variant_key === change.variant_key) {
+      if (identityKey(row.vendor, row.item_code, row.variant_key)
+        === identityKey(change.vendor, change.item_code, change.variant_key)) {
         indexes.push(index);
       }
       return indexes;
@@ -379,7 +385,8 @@ export const mergeEffectiveMenuRows = ({ baselineRows = [], changeRows = [] } = 
       : null;
     if (matchingIndexes.length) {
       merged = merged.filter((row) => (
-        row.item_code !== change.item_code || row.variant_key !== change.variant_key
+        identityKey(row.vendor, row.item_code, row.variant_key)
+          !== identityKey(change.vendor, change.item_code, change.variant_key)
       ));
     }
     merged.push({

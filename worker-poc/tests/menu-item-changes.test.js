@@ -203,10 +203,10 @@ test('historical image fallback leaves unmatched rows empty and legacy live imag
   const liveMenu = await getCustomerMenu(database, { vendor: 'Vendor A', targetDate: '2026-09-11' });
   assert.equal(liveMenu[0].image_url, 'https://live.example/e.jpg');
 
-  seedChange(database, { id: 'history-no-image', date: '2026-09-01', code: 'H1', name: 'History H1', price: 125, source: 'legacy_sql' });
+  seedChange(database, { id: 'history-no-image', date: '2026-09-01', code: 'H1', name: 'History H1', price: 125, source: 'legacy_sql', vendor: '禾拾' });
   const noImage = await getCustomerMenu(database, { vendor: '禾拾', targetDate: '2026-09-10' });
   assert.equal(noImage[0].image_url, '');
-  seedChange(database, { id: 'history-image', date: '2026-09-02', code: 'H1', name: 'History H1 updated', price: 130, image: 'https://history.example/h1.jpg', source: 'legacy_sql' });
+  seedChange(database, { id: 'history-image', date: '2026-09-02', code: 'H1', name: 'History H1 updated', price: 130, image: 'https://history.example/h1.jpg', source: 'legacy_sql', vendor: '禾拾' });
   const withImage = await getCustomerMenu(database, { vendor: '禾拾', targetDate: '2026-09-10' });
   assert.equal(withImage[0].image_url, 'https://history.example/h1.jpg');
 });
@@ -266,11 +266,11 @@ test('historical image fallback fails closed for normalized current-name collisi
   }, currentImageIndex), '');
 });
 
-test('historical H1-H4 rows canonicalize to 禾拾 and 合十 resolves as its alias', () => {
+test('historical H1-H4 rows remain scoped to 禾拾 and 合十 resolves as its alias', () => {
   const rows = ['H1', 'H2', 'H3', 'H4'].map((code, index) => ({
     menu_item_change_id: `historical-${code}`,
     effective_date: '2026-09-01',
-    vendor: '蔡老師',
+    vendor: '禾拾',
     item_code: code,
     variant_key: '',
     item_name: `historical ${code}`,
@@ -385,11 +385,11 @@ test('historical image fallback is display-only, uses approved aliases across di
   `);
   seedChange(database, {
     id: 'historical-h1-no-image', date: '2026-09-01', code: 'H1',
-    name: '  蕃茄鷹豆泥  ', price: 100, source: 'legacy_sql'
+    name: '  蕃茄鷹豆泥  ', price: 100, source: 'legacy_sql', vendor: '禾拾'
   });
   seedChange(database, {
     id: 'historical-h2-image', date: '2026-09-01', code: 'H2',
-    name: '紅麴腐乳板豆腐', price: 100, image: 'https://history.example/h2.jpg', source: 'legacy_sql', order: 2
+    name: '紅麴腐乳板豆腐', price: 100, image: 'https://history.example/h2.jpg', source: 'legacy_sql', order: 2, vendor: '禾拾'
   });
 
   const resolution = await resolveEffectiveMenuState(database, {

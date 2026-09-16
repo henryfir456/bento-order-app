@@ -68,7 +68,8 @@ export const getReadMenuVersion = async (database, vendor, targetDate) => {
 
 const menuItemFromResolvedChange = (change, compatibilityRows, isHistorical) => {
   const matchingRows = compatibilityRows.filter((row) => (
-    String(row.item_code ?? row.legacy_item_id) === change.item_code
+    row.vendor === change.vendor
+      && String(row.item_code ?? row.legacy_item_id) === change.item_code
       && String(row.variant_key || '') === change.variant_key
   ));
   const compatibility = matchingRows.length === 1 ? matchingRows[0] : null;

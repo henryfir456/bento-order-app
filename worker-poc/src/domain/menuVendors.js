@@ -20,9 +20,10 @@ export const isHistoricalMenuVendor = (value) => {
 
 export const historicalMenuRowVendorCandidates = (value) => {
   const normalized = normalizeMenuVendor(value);
-  return isHistoricalMenuVendor(normalized)
-    ? [HISTORICAL_SQL_VENDOR, CANONICAL_HE_SHI_VENDOR, LEGACY_HE_SHI_VENDOR]
-    : [normalized];
+  if (normalized === CANONICAL_HE_SHI_VENDOR) {
+    return [CANONICAL_HE_SHI_VENDOR, LEGACY_HE_SHI_VENDOR];
+  }
+  return [normalized];
 };
 
 export const compatibilityVendorCandidates = (value) => {
@@ -32,14 +33,7 @@ export const compatibilityVendorCandidates = (value) => {
     : [normalized];
 };
 
-export const canonicalMenuRowVendor = ({ vendor, itemCode } = {}) => {
-  const normalizedVendor = normalizeMenuVendor(vendor);
-  const normalizedItemCode = text(itemCode);
-  if (isHistoricalMenuVendor(normalizedVendor) && /^H/i.test(normalizedItemCode)) {
-    return CANONICAL_HE_SHI_VENDOR;
-  }
-  return normalizedVendor;
-};
+export const canonicalMenuRowVendor = ({ vendor } = {}) => normalizeMenuVendor(vendor);
 
 export const normalizeMenuItemName = (value) => text(value)
   .normalize('NFKC')

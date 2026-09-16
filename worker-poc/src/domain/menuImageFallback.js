@@ -1,3 +1,5 @@
+import { normalizeMenuVendor } from './menuVendors.js';
+
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
 export const normalizeHistoricalImageName = (value) => text(value)
@@ -40,6 +42,7 @@ const historicalImageSkipNames = new Set(
 const currentItemName = (row) => row?.item_name ?? row?.itemName;
 const currentImageUrl = (row) => row?.image_url ?? row?.imageUrl;
 const historicalImageUrl = (row) => row?.image_url ?? row?.imageUrl;
+const imageIndexKey = (vendor, name) => `${normalizeMenuVendor(vendor)}\u0000${name}`;
 
 export const buildHistoricalImageFallbackIndex = (currentRows = []) => {
   const index = new Map();
@@ -47,20 +50,21 @@ export const buildHistoricalImageFallbackIndex = (currentRows = []) => {
     if (row?.enabled === false || row?.enabled === 0) continue;
     const normalizedName = normalizeHistoricalImageName(currentItemName(row));
     if (!normalizedName) continue;
-    const entry = index.get(normalizedName) || {
+    const key = imageIndexKey(row?.vendor, normalizedName);
+    const entry = index.get(key) || {
       rowCount: 0,
       imageUrls: new Set()
     };
     entry.rowCount += 1;
     const imageUrl = text(currentImageUrl(row));
     if (imageUrl) entry.imageUrls.add(imageUrl);
-    index.set(normalizedName, entry);
+    index.set(key, entry);
   }
   return index;
 };
 
-const currentImageForTarget = (targetName, currentImageIndex) => {
-  const entry = currentImageIndex.get(targetName);
+const currentImageForTarget = (vendor, targetName, currentImageIndex) => {
+  const entry = currentImageIndex.get(imageIndexKey(vendor, targetName));
   if (!entry || entry.rowCount !== 1 || entry.imageUrls.size !== 1) return '';
   return [...entry.imageUrls][0];
 };
@@ -73,5 +77,5 @@ export const resolveHistoricalImageDisplayUrl = (historicalRow, currentImageInde
   if (!normalizedName || historicalImageSkipNames.has(normalizedName)) return '';
   const targetName = historicalImageMappingByName.get(normalizedName);
   if (!targetName) return '';
-  return currentImageForTarget(targetName, currentImageIndex);
+  return currentImageForTarget(historicalRow?.vendor, targetName, currentImageIndex);
 };
