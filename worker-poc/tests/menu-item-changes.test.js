@@ -56,15 +56,16 @@ const call = async (database, path, {
 
 const seedChange = (database, {
   id, date, code, variant = '', name = code, price = 1,
-  enabled = 1, image = '', source = 'admin', order = 1, vendor = '蔡老師', sourceId = id
+  enabled = 1, image = '', source = 'admin', order = 1, vendor = '蔡老師', sourceId = id,
+  schema = 1
 }) => {
   database.run(`
     INSERT INTO menu_item_changes (
       menu_item_change_id, effective_date, vendor, item_code, variant_key,
       item_name, price, enabled, image_url, note, display_order,
-      source_kind, source_record_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
-  `, id, date, vendor, code, variant, name, price, enabled, image, order, source, sourceId);
+      source_kind, source_record_id, identity_schema_version
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?)
+  `, id, date, vendor, code, variant, name, price, enabled, image, order, source, sourceId, schema);
 };
 
 const seedCompatibilityVersion = (database, {
@@ -689,6 +690,55 @@ test('Admin current-menu projection and customer ordering share the effective me
     persistedMenuItemId: 'parity-a'
   });
   assert.equal(preview.body.items.some((item) => item.item_name === 'A future'), false);
+});
+
+test('UI-facing Admin preview route isolates Cai compatibility AP from HeShi normalized rows', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  seedCompatibilityVersion(database, {
+    id: 'cai-ap-compatibility',
+    date: '2026-09-02',
+    vendor: '蔡老師',
+    rows: [{
+      menuItemId: 'cai-ap',
+      itemCode: 'AP',
+      itemName: '風味便當(主食加量)',
+      price: 110,
+      sourceOrder: 1
+    }]
+  });
+  for (const [index, code] of ['H1', 'H2', 'H3', 'H4', 'H5'].entries()) {
+    for (const [variantIndex, variant] of ['BASE', 'HALF'].entries()) {
+      seedChange(database, {
+        id: `he-shi-${code}-${variant.toLowerCase()}`,
+        date: '2026-09-12',
+        code,
+        variant,
+        name: `${code} ${variant}`,
+        price: 100,
+        order: index * 2 + variantIndex + 1,
+        vendor: '禾拾',
+        schema: 2
+      });
+    }
+  }
+
+  const preview = await call(
+    database,
+    '/api/admin/menu/preview?vendor=%E7%A6%BE%E6%8B%BE&targetDate=2026-09-17'
+  );
+
+  assert.equal(preview.response.status, 200);
+  assert.equal(preview.body.authority, 'live_with_admin_overrides');
+  assert.equal(preview.body.items.length, 10);
+  assert.equal(preview.body.selectableItems.length, 10);
+  assert.equal(preview.body.items.some((item) => item.item_code === 'AP'), false);
+  assert.equal(preview.body.items.some((item) => item.vendor === '蔡老師'), false);
+  assert.ok(preview.body.items.every((item) => item.vendor === '禾拾'));
+  assert.deepEqual(
+    preview.body.items.map((item) => [item.item_code, item.variant_key]),
+    ['H1', 'H2', 'H3', 'H4', 'H5'].flatMap((code) => [['BASE'], ['HALF']].map(([variant]) => [code, variant]))
+  );
 });
 
 test('post-cutoff Admin overlay preserves unchanged compatibility baseline items', async () => {

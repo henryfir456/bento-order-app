@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateInput } from '../../dateUtils';
+import { currentMenuRowKey, shouldApplyPreviewResult } from './menuItemChangesPreview';
 
 const inputClass = 'w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:outline-emerald-600 disabled:bg-gray-100';
 const HISTORY_MIN_DATE = '2026-09-11';
@@ -181,11 +182,18 @@ export default function MenuItemChangesManagement({
       setCurrentMenuError('請先選擇供應商與日期。');
       return;
     }
+    setCurrentMenu(null);
     setCurrentMenuLoading(true);
     setCurrentMenuError('');
     try {
       const result = await onPreview({ vendor, targetDate });
-      if (requestId !== previewRequestId.current) return;
+      if (!shouldApplyPreviewResult({
+        requestId,
+        latestRequestId: previewRequestId.current,
+        requestVendor: vendor,
+        requestDate: targetDate,
+        result
+      })) return;
       if (!Array.isArray(result?.items)) throw new Error('目前無法取得有效菜單。');
       setCurrentMenu(result);
     } catch (requestError) {
@@ -277,10 +285,10 @@ export default function MenuItemChangesManagement({
                 <div className="hidden overflow-hidden rounded-xl border border-gray-100 sm:block">
                   <table className="w-full table-fixed border-collapse text-xs">
                     <thead><tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500"><th className="w-[15%] p-2">品項代號</th><th className="w-[15%] p-2">variant</th><th className="w-[25%] p-2">品名</th><th className="w-[12%] p-2">價格</th><th className="w-[15%] p-2">生效日</th><th className="w-[10%] p-2">狀態</th><th className="w-[8%] p-2">操作</th></tr></thead>
-                    <tbody>{currentItems.map((row) => <tr key={`${row.item_code}-${row.variant_key}`} className="border-b border-gray-100 align-top last:border-0"><td className="break-words p-2 font-bold">{row.item_code}</td><td className="break-words p-2">{row.variant_key || '—'}</td><td className="break-words p-2">{row.item_name}</td><td className="p-2 font-mono">{row.price}</td><td className="break-words p-2">{row.effective_date}</td><td className="p-2"><Status enabled={row.enabled} /></td><td className="p-2"><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode} className="text-indigo-700 underline disabled:text-gray-300">建立變更</button></td></tr>)}</tbody>
+                    <tbody>{currentItems.map((row) => <tr key={currentMenuRowKey(row, selectedCurrentVendor, currentDate)} className="border-b border-gray-100 align-top last:border-0"><td className="break-words p-2 font-bold">{row.item_code}</td><td className="break-words p-2">{row.variant_key || '—'}</td><td className="break-words p-2">{row.item_name}</td><td className="p-2 font-mono">{row.price}</td><td className="break-words p-2">{row.effective_date}</td><td className="p-2"><Status enabled={row.enabled} /></td><td className="p-2"><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode} className="text-indigo-700 underline disabled:text-gray-300">建立變更</button></td></tr>)}</tbody>
                   </table>
                 </div>
-                <div className="space-y-2 sm:hidden">{currentItems.map((row) => <article key={`${row.item_code}-${row.variant_key}`} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-gray-800">{row.item_code}{row.variant_key ? ` · ${row.variant_key}` : ''}</p><p className="mt-1 break-words text-sm text-gray-700">{row.item_name}</p></div><Status enabled={row.enabled} /></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500"><div><dt>價格</dt><dd className="font-mono text-gray-800">{row.price}</dd></div><div><dt>生效日</dt><dd className="text-gray-800">{row.effective_date}</dd></div><div className="col-span-2"><dt>來源</dt><dd className="break-words text-gray-800">{row.source_kind || '—'}</dd></div></dl><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode} className="mt-2 text-xs font-bold text-indigo-700 underline disabled:text-gray-300">建立變更</button></article>)}</div>
+                <div className="space-y-2 sm:hidden">{currentItems.map((row) => <article key={currentMenuRowKey(row, selectedCurrentVendor, currentDate)} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-gray-800">{row.item_code}{row.variant_key ? ` · ${row.variant_key}` : ''}</p><p className="mt-1 break-words text-sm text-gray-700">{row.item_name}</p></div><Status enabled={row.enabled} /></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500"><div><dt>價格</dt><dd className="font-mono text-gray-800">{row.price}</dd></div><div><dt>生效日</dt><dd className="text-gray-800">{row.effective_date}</dd></div><div className="col-span-2"><dt>來源</dt><dd className="break-words text-gray-800">{row.source_kind || '—'}</dd></div></dl><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode} className="mt-2 text-xs font-bold text-indigo-700 underline disabled:text-gray-300">建立變更</button></article>)}</div>
                 {currentItems.length === 0 && <p className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-xs text-gray-400">該日期沒有可顯示的有效菜單列。</p>}
               </div>
             )}
