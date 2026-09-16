@@ -13,6 +13,7 @@
 ### Changed
 
 - Added click-to-zoom lightbox viewing for Vendor Hub menu images.
+- Added menu thumbnails to vendor cards for quick click-to-zoom menu viewing.
 - Improved menu preview and close interactions across desktop and mobile layouts.
 
 ## [0.14.2] - 2026-09-15

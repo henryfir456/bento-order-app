@@ -24,6 +24,7 @@ const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
       name: '變更',
       changes: [
         '菜單圖片支援點擊放大檢視。',
+        '店家列表新增菜單縮圖，可直接點擊放大，不必進入店家頁即可快速查看菜單。',
         '優化桌機與手機上的菜單預覽及關閉操作。'
       ]
     }

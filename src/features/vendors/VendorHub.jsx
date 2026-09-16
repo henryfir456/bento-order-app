@@ -64,15 +64,20 @@ function VendorList({
         <div className="space-y-3">
           {vendors.map((vendor) => (
             <article key={vendor.id} className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="break-words text-lg font-bold text-[#2C4A3E]">{vendor.name}</h3>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-gray-600">{vendor.description || '尚未提供店家介紹。'}</p>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="break-words text-lg font-bold text-[#2C4A3E]">{vendor.name}</h3>
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-gray-600">{vendor.description || '尚未提供店家介紹。'}</p>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-bold ${vendor.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>{vendor.enabled ? '可使用' : '暫停使用'}</span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+                    <span className={`rounded-full px-2 py-1 ${vendor.is_open_for_ordering ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'}`}>{vendor.is_open_for_ordering ? '目前開團中' : '目前未開團'}</span>
+                  </div>
                 </div>
-                <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-bold ${vendor.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>{vendor.enabled ? '可使用' : '暫停使用'}</span>
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
-                <span className={`rounded-full px-2 py-1 ${vendor.is_open_for_ordering ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'}`}>{vendor.is_open_for_ordering ? '目前開團中' : '目前未開團'}</span>
+                <MenuSnapshot key={`${vendor.id}-${vendor.menu_image_url}`} vendor={vendor} variant="thumbnail" />
               </div>
               <button type="button" onClick={() => onSelectVendor(vendor.id)} className="mt-4 w-full rounded-xl bg-[#2C4A3E] px-4 py-2.5 text-sm font-bold text-white transition hover:bg-emerald-800">查看店家</button>
             </article>
@@ -136,14 +141,17 @@ function VendorEditor({ vendor, onSaveVendor }) {
   );
 }
 
-function MenuSnapshot({ vendor }) {
+function MenuSnapshot({ vendor, variant = 'detail' }) {
   const [menuImageFailed, setMenuImageFailed] = useState(false);
   const [menuImageOpen, setMenuImageOpen] = useState(false);
   const imageAlt = `${vendor.name} 菜單快照`;
+  const isThumbnail = variant === 'thumbnail';
   const handleMenuImageError = () => {
     setMenuImageFailed(true);
     setMenuImageOpen(false);
   };
+
+  if (!vendor.menu_image_url && isThumbnail) return null;
 
   if (vendor.menu_image_url && !menuImageFailed) {
     return (
@@ -153,13 +161,13 @@ function MenuSnapshot({ vendor }) {
           aria-haspopup="dialog"
           aria-label={`放大檢視${imageAlt}`}
           onClick={() => setMenuImageOpen(true)}
-          className="block w-full rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2"
+          className={`block cursor-pointer rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${isThumbnail ? 'w-full max-w-[12rem] self-start sm:w-32 sm:max-w-none' : 'w-full'}`}
         >
           <img
             src={vendor.menu_image_url}
             alt={imageAlt}
             onError={handleMenuImageError}
-            className="max-h-[32rem] w-full cursor-zoom-in rounded-xl border border-gray-100 object-contain transition hover:opacity-90"
+            className={`${isThumbnail ? 'h-32 w-full' : 'max-h-[32rem] w-full'} cursor-zoom-in rounded-xl border border-gray-100 object-contain transition hover:opacity-90`}
           />
         </button>
         <Modal
@@ -181,6 +189,11 @@ function MenuSnapshot({ vendor }) {
       </>
     );
   }
+
+  if (isThumbnail) {
+    return <div className="w-full max-w-[12rem] rounded-xl border border-dashed border-gray-300 bg-gray-50 p-3 text-center text-xs text-gray-500">菜單快照目前無法顯示。</div>;
+  }
+
   return <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-8 text-center text-sm text-gray-500">{menuImageFailed ? '菜單快照目前無法顯示。' : '尚未提供 Cloudinary 菜單快照。'}</div>;
 }
 
