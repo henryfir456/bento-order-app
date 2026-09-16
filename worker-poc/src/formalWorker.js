@@ -10,6 +10,7 @@ import { handleReadOnlyRequest } from './routes/readOnly.js';
 import { runAutomaticDailyOpening } from './domain/automaticOpening.js';
 import { HttpError, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
+import { asNumber } from './contract.js';
 
 const AUTOMATIC_OPENING_LOG_EVENT = 'automatic_daily_group_opening';
 const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
@@ -37,6 +38,22 @@ export const handleFormalRequest = async (request, env, options = {}) => {
   try {
     if (request.method === 'OPTIONS') {
       response = emptyResponse();
+    } else if (request.method === 'GET' && new URL(request.url).pathname === '/api/health') {
+      try {
+        const row = await env?.DB?.prepare('SELECT COUNT(*) AS users FROM users').first();
+        response = jsonResponse({
+          ok: true,
+          database: true,
+          users: asNumber(row?.users)
+        });
+      } catch {
+        response = jsonResponse({
+          ok: false,
+          database: false,
+          users: 0,
+          error: 'DATABASE_UNAVAILABLE'
+        }, 503);
+      }
     } else {
       const authResponse = await handleAuthRoute(request, env, options);
       if (authResponse) response = authResponse;
