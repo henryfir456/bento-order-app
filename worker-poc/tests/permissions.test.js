@@ -27,19 +27,23 @@ const identity = (role, lineUserId = 'user-1') => ({
 test('permission matrix preserves User, ProxyAdmin, and Admin boundaries', () => {
   assert.equal(can('User', ACTIONS.READ_SELF, 'line', true, 'employee-user'), true);
   assert.equal(can('User', ACTIONS.ADMIN_CALENDAR, 'line', true, 'employee-user'), false);
+  assert.equal(can('User', ACTIONS.ADMIN_VENDORS, 'line', true, 'employee-user'), false);
   assert.equal(can('User', ACTIONS.READ_ADMIN_SUMMARY, 'line', true, 'employee-user'), true);
   assert.equal(can('ProxyAdmin', ACTIONS.READ_ADMIN_SUMMARY, 'line', true, 'employee-proxy'), true);
   assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_CALENDAR, 'line', true, 'employee-proxy'), true);
+  assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_VENDORS, 'line', true, 'employee-proxy'), true);
   assert.equal(can('ProxyAdmin', ACTIONS.READ_MEMBER_BALANCES, 'line', true, 'employee-proxy'), false);
   assert.equal(can('ProxyAdmin', ACTIONS.ADMIN_BALANCE, 'line', true, 'employee-proxy'), false);
   assert.equal(can('Admin', ACTIONS.READ_MEMBER_BALANCES, 'line', true, 'employee-admin'), true);
   assert.equal(can('Admin', ACTIONS.ADMIN_CALENDAR, 'line', true, 'employee-admin'), true);
+  assert.equal(can('Admin', ACTIONS.ADMIN_VENDORS, 'line', true, 'employee-admin'), true);
   assert.equal(can('Admin', ACTIONS.ADMIN_ROLE, 'line', true, 'employee-admin'), true);
   for (const role of ['User', 'ProxyAdmin', 'Admin']) {
     assert.equal(can(role, ACTIONS.READ_SELF, 'employee_guest'), true);
     assert.equal(can(role, ACTIONS.WRITE_SELF, 'employee_guest'), true);
     assert.equal(can(role, ACTIONS.READ_ADMIN_SUMMARY, 'employee_guest'), false);
     assert.equal(can(role, ACTIONS.ADMIN_TOP_UP, 'employee_guest'), false);
+    assert.equal(can(role, ACTIONS.ADMIN_VENDORS, 'employee_guest'), false);
     assert.equal(can(role, ACTIONS.ADMIN_ROLE, 'employee_guest'), false);
     assert.equal(can(role, ACTIONS.VIEW_AS, 'employee_guest'), false);
   }
@@ -50,6 +54,7 @@ test('User gains only order-summary read access and no other administrative acti
   for (const action of [
     ACTIONS.READ_MEMBER_BALANCES,
     ACTIONS.ADMIN_CALENDAR,
+    ACTIONS.ADMIN_VENDORS,
     ACTIONS.ADMIN_TOP_UP,
     ACTIONS.ADMIN_ROLE,
     ACTIONS.ADMIN_ANNOUNCEMENTS,

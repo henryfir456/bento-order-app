@@ -6,6 +6,7 @@ export default function CalendarManagement({
   specialAdminDate,
   onSpecialAdminDateChange,
   specialAdminVendorChoice,
+  vendorOptions = [],
   onVendorChange,
   onSaveVendor,
   loading,
@@ -56,8 +57,7 @@ export default function CalendarManagement({
                 onChange={(e) => onVendorChange(e.target.value)}
                 className="w-full min-w-0 border border-rose-200 rounded-xl p-2.5 bg-white text-sm focus:outline-rose-500"
               >
-                <option value="蔡老師">蔡老師</option>
-                <option value="禾拾">禾拾</option>
+                {vendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}
                 <option value="">不開團</option>
               </select>
             </div>

@@ -56,7 +56,8 @@ test('formal migration creates every source-of-truth table', () => {
     'opening_balance_snapshots',
     'employee_guest_sessions',
     'employee_roster',
-    'menu_item_changes'
+    'menu_item_changes',
+    'vendors'
   ];
 
   const actual = tableNames(database);
@@ -81,7 +82,8 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'users_employee_id_normalized_unique',
     'idx_menu_item_changes_effective',
     'idx_menu_item_changes_identity',
-    'idx_menu_items_version_identity'
+    'idx_menu_items_version_identity',
+    'idx_vendors_enabled_name'
   ];
   const actual = new Set(rows(database, `
     SELECT name
@@ -89,6 +91,25 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     WHERE type = 'index'
   `).map((row) => row.name));
   for (const indexName of expected) assert.equal(actual.has(indexName), true, indexName);
+});
+
+test('0010 backfills canonical vendors without duplicating historical aliases', () => {
+  const database = new DatabaseSync(':memory:');
+  migrationSql.slice(0, 10).forEach((sql) => database.exec(sql));
+  database.prepare(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES (?, ?, ?)
+  `).run('vendor-menu-1', '禾拾', '2026-09-10');
+  database.prepare(`
+    INSERT INTO calendar_settings (order_date, vendor, mode)
+    VALUES (?, ?, ?)
+  `).run('2026-09-11', '合十', 'B');
+  database.exec(migrationSql[10]);
+
+  const vendors = database.prepare('SELECT vendor_id, name, enabled FROM vendors ORDER BY name').all();
+  assert.deepEqual(vendors.map((vendor) => vendor.name), ['禾拾']);
+  assert.equal(vendors.filter((vendor) => vendor.name === '禾拾').length, 1);
+  assert.equal(vendors.find((vendor) => vendor.name === '禾拾').enabled, 1);
 });
 
 test('menu item changes are append-only metadata with exact identity and signed prices', () => {

@@ -2,6 +2,7 @@ import {
   ApiAuthenticationError,
   ApiAuthorizationError,
   ApiBackendError,
+  ApiContractGapError,
   ApiConfigurationError,
   ApiNetworkError
 } from './apiErrors.js';
@@ -174,6 +175,37 @@ const createGasOperations = ({ gasApi, authClient }) => ({
     action: 'getMemberBalances',
     accessToken: readToken(authClient, 'getMemberBalances')
   }),
+  getVendors: () => {
+    if (authClient?.isMock) return gasApi.get(`?action=getVendors&t=${Date.now()}`);
+    throw new ApiContractGapError(
+      'VENDOR_HUB_UNSUPPORTED_TRANSPORT',
+      'getVendors',
+      'Vendor Hub is not implemented for the GAS transport.'
+    );
+  },
+  getVendor: ({ vendorId } = {}) => {
+    if (authClient?.isMock) return gasApi.get(
+      `?action=getVendor&vendorId=${encodeURIComponent(vendorId || '')}&t=${Date.now()}`
+    );
+    throw new ApiContractGapError(
+      'VENDOR_HUB_UNSUPPORTED_TRANSPORT',
+      'getVendor',
+      'Vendor Hub is not implemented for the GAS transport.'
+    );
+  },
+  updateVendor: ({ vendorId, payload = {} } = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'updateVendor',
+      accessToken: readToken(authClient, 'updateVendor'),
+      vendorId,
+      ...payload
+    });
+    throw new ApiContractGapError(
+      'VENDOR_HUB_UNSUPPORTED_TRANSPORT',
+      'updateVendor',
+      'Vendor Hub is not implemented for the GAS transport.'
+    );
+  },
   toggleLike: ({ date, userId } = {}) => gasApi.post({
     action: 'toggleLike',
     date,
@@ -379,6 +411,24 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'getAdminMenuVendors',
     'GET',
     '/api/admin/menu/vendors'
+  ),
+  getVendors: ({ viewAsUserId } = {}) => workerRequest(
+    'getVendors',
+    'GET',
+    '/api/vendors',
+    { query: { viewAs: viewAsUserId } }
+  ),
+  getVendor: ({ vendorId, viewAsUserId } = {}) => workerRequest(
+    'getVendor',
+    'GET',
+    `/api/vendors/${encodeURIComponent(String(vendorId || '').trim())}`,
+    { query: { viewAs: viewAsUserId } }
+  ),
+  updateVendor: ({ vendorId, payload = {} } = {}) => workerRequest(
+    'updateVendor',
+    'PATCH',
+    `/api/admin/vendors/${encodeURIComponent(String(vendorId || '').trim())}`,
+    { body: payload }
   ),
   getMemberBalances: () => workerRequest(
     'getMemberBalances',

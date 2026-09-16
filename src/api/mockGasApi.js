@@ -8,7 +8,10 @@ import {
   getMockOrderPageData,
   getMockOrdersMap,
   getMockSessionState,
-  registerMockUser
+  getMockVendor,
+  getMockVendors,
+  registerMockUser,
+  updateMockVendor
 } from '../auth/mockData.js';
 
 const VALID_FLOORS = ['1樓', '9樓'];
@@ -97,6 +100,17 @@ export const createMockGasApi = ({ mockUser }) => {
       return getUser()
         ? jsonResponse(getMockOrderPageData(mockUser, params.get('targetDate')))
         : errorResponse('Mock user is not registered.');
+    }
+
+    if (action === 'getVendors') {
+      return getUser()
+        ? jsonResponse({ success: true, vendors: getMockVendors(mockUser) })
+        : errorResponse('Mock user is not registered.');
+    }
+
+    if (action === 'getVendor') {
+      const vendor = getUser() ? getMockVendor(mockUser, params.get('vendorId')) : null;
+      return vendor ? jsonResponse(vendor) : errorResponse('VENDOR_NOT_FOUND');
     }
 
     return errorResponse(MOCK_API_UNSUPPORTED);
@@ -268,6 +282,27 @@ export const createMockGasApi = ({ mockUser }) => {
       target.balance += amount;
       if (target.userId === user.userId) user.balance = target.balance;
       return jsonResponse({ success: true, newBalance: target.balance, targetUserId });
+    }
+
+    if (action === 'updateVendor') {
+      if (!hasMockPermission(user, 'manageVendors')) {
+        return errorResponse('Mock user does not have vendor permission.');
+      }
+      const fields = [
+        'description',
+        'phone',
+        'address',
+        'website_url',
+        'menu_source_url',
+        'menu_image_url',
+        'menu_updated_at',
+        'enabled'
+      ];
+      const patch = Object.fromEntries(fields
+        .filter((field) => Object.prototype.hasOwnProperty.call(payload, field))
+        .map((field) => [field, payload[field]]));
+      const vendor = updateMockVendor(mockUser, payload.vendorId, patch);
+      return vendor ? jsonResponse(vendor) : errorResponse('VENDOR_NOT_FOUND');
     }
 
     return errorResponse(MOCK_API_UNSUPPORTED);

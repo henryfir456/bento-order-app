@@ -32,6 +32,13 @@ import AnnouncementModal from './components/AnnouncementModal';
 import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
+import VendorHub from './features/vendors/VendorHub';
+import {
+  CANONICAL_VENDOR_FALLBACKS,
+  normalizeVendor,
+  normalizeVendorList,
+  normalizeVendorName
+} from './features/vendors/vendorModel';
 import OrderPage from './features/orders/OrderPage';
 import { getWorkerSelectionKey, normalizeWorkerOrderMenu } from './features/orders/orderSelection';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
@@ -226,13 +233,21 @@ const parseMenuItemName = (itemName = '') => {
 };
 
 const getConfiguredVendor = (event) => {
-  const vendor = event?.vendor;
-  return vendor === undefined || vendor === null ? '蔡老師' : vendor;
+  const vendor = normalizeVendorName(event?.vendor);
+  return vendor || CANONICAL_VENDOR_FALLBACKS[0];
 };
 
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
   const [calendarEvents, setCalendarEvents] = useState({});
+  const [vendors, setVendors] = useState([]);
+  const [selectedVendor, setSelectedVendor] = useState(null);
+  const [vendorHubLoading, setVendorHubLoading] = useState(false);
+  const [vendorDetailLoading, setVendorDetailLoading] = useState(false);
+  const [vendorHubError, setVendorHubError] = useState('');
+  const [vendorDetailError, setVendorDetailError] = useState('');
+  const [vendorHubUnsupported, setVendorHubUnsupported] = useState(false);
+  const vendorRequestRef = useRef(0);
   const [userOrdersMap, setUserOrdersMap] = useState({});
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -399,6 +414,7 @@ export default function App() {
     historyRequestRef.current += 1;
     memberBalancesRequestRef.current += 1;
     orderTargetsRequestRef.current += 1;
+    vendorRequestRef.current += 1;
     deferredUiGenerationRef.current += 1;
     deferredUiBootRef.current = '';
     setLineUserId('');
@@ -420,6 +436,13 @@ export default function App() {
     setEmployeeGuestSuccess('');
     setName('');
     setCalendarEvents({});
+    setVendors([]);
+    setSelectedVendor(null);
+    setVendorHubLoading(false);
+    setVendorDetailLoading(false);
+    setVendorHubError('');
+    setVendorDetailError('');
+    setVendorHubUnsupported(false);
     setUserOrdersMap({});
     setSelectedDate(null);
     setActiveOrderId('');
@@ -1598,6 +1621,111 @@ export default function App() {
     }
   };
 
+  const vendorResponseError = (data, fallback) => {
+    const error = new Error(data?.error || data?.message || fallback);
+    error.code = data?.error || data?.code || 'VENDOR_API_ERROR';
+    return error;
+  };
+
+  const openVendorHub = async () => {
+    if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+
+    setViewMode('vendors');
+    setSelectedVendor(null);
+    setVendorDetailError('');
+    setVendorHubError('');
+    setVendorHubUnsupported(false);
+
+    if (apiClient.transport === 'gas') {
+      setVendorHubUnsupported(true);
+      return;
+    }
+
+    const requestId = ++vendorRequestRef.current;
+    setVendorHubLoading(true);
+    try {
+      const response = await apiClient.getVendors({
+        viewAsUserId: apiClient.transport === 'worker' ? viewAsUser?.userId : null
+      });
+      const data = await response.json();
+      if (!response.ok || data?.success === false) {
+        throw vendorResponseError(data, '店家列表讀取失敗');
+      }
+      if (requestId !== vendorRequestRef.current) return;
+      setVendors(normalizeVendorList(data));
+    } catch (error) {
+      if (requestId !== vendorRequestRef.current) return;
+      setVendorHubError(getApiErrorPresentation(error, '讀取店家列表').message);
+    } finally {
+      if (requestId === vendorRequestRef.current) setVendorHubLoading(false);
+    }
+  };
+
+  const openVendorDetail = async (vendorId) => {
+    if (authState !== AUTH_STATES.REGISTERED || !authUserId || !vendorId) return;
+
+    setViewMode('vendorDetail');
+    setSelectedVendor(normalizeVendor(vendors.find((vendor) => vendor.id === vendorId)));
+    setVendorDetailError('');
+    setVendorHubUnsupported(false);
+
+    if (apiClient.transport === 'gas') {
+      setVendorHubUnsupported(true);
+      return;
+    }
+
+    const requestId = ++vendorRequestRef.current;
+    setVendorDetailLoading(true);
+    try {
+      const response = await apiClient.getVendor({
+        vendorId,
+        viewAsUserId: apiClient.transport === 'worker' ? viewAsUser?.userId : null
+      });
+      const data = await response.json();
+      if (!response.ok || data?.success === false) {
+        throw vendorResponseError(data, '店家詳細資料讀取失敗');
+      }
+      const vendor = normalizeVendor(data);
+      if (!vendor) throw vendorResponseError(data, '店家詳細資料格式不正確');
+      if (requestId !== vendorRequestRef.current) return;
+      setSelectedVendor(vendor);
+      setVendors((current) => current.map((item) => item.id === vendor.id ? vendor : item));
+    } catch (error) {
+      if (requestId !== vendorRequestRef.current) return;
+      setVendorDetailError(getApiErrorPresentation(error, '讀取店家詳細資料').message);
+    } finally {
+      if (requestId === vendorRequestRef.current) setVendorDetailLoading(false);
+    }
+  };
+
+  const handleVendorMetadataSave = async (vendorId, payload) => {
+    if (!canAuth('manageVendors') || isViewAsMode) {
+      throw new Error('目前身分沒有店家管理權限。');
+    }
+    const response = await apiClient.updateVendor({ vendorId, payload });
+    const data = await response.json();
+    if (!response.ok || data?.success === false) {
+      throw vendorResponseError(data, '店家資料更新失敗');
+    }
+    const vendor = normalizeVendor(data);
+    if (!vendor) throw vendorResponseError(data, '店家資料格式不正確');
+    setSelectedVendor(vendor);
+    setVendors((current) => current.map((item) => item.id === vendor.id ? vendor : item));
+    setVendorDetailError('');
+    return vendor;
+  };
+
+  const handleExitVendorHub = () => {
+    vendorRequestRef.current += 1;
+    setSelectedVendor(null);
+    setVendorHubLoading(false);
+    setVendorDetailLoading(false);
+    setVendorHubError('');
+    setVendorDetailError('');
+    setVendorHubUnsupported(false);
+    setViewMode('calendar');
+  };
+
   const fetchUserAllOrders = async (uId, viewAsUserId = null, targetUserId = null) => {
     if (!uId) return false;
     const requestStartTime = getPerformanceNow();
@@ -1894,7 +2022,9 @@ export default function App() {
   const handleSpecialAdminDateChange = (dateStr) => {
     setSpecialAdminDate(dateStr);
     const event = calendarEvents[dateStr];
-    setSpecialAdminVendorChoice(event ? event.vendor || '' : '蔡老師');
+    setSpecialAdminVendorChoice(event
+      ? normalizeVendorName(event.vendor)
+      : CANONICAL_VENDOR_FALLBACKS[0]);
   };
 
   const handleSpecialAdminSaveVendor = () => saveAdminVendor(specialAdminDate, specialAdminVendorChoice);
@@ -2167,14 +2297,14 @@ export default function App() {
     }
   };
 
-  const openAdminCalendar = () => {
+  const openAdminCalendar = (vendorName = '') => {
     if (!can('manageCalendar') || viewAsUser) return;
     setAdminSection('calendar');
     setViewMode('calendar');
     setAdminManageMode(true);
     const today = formatDateInput(new Date());
     setSpecialAdminDate(today);
-    setSpecialAdminVendorChoice(getConfiguredVendor(calendarEvents[today]));
+    setSpecialAdminVendorChoice(normalizeVendorName(vendorName) || getConfiguredVendor(calendarEvents[today]));
   };
 
   const handleOpenViewAs = async (mode = 'view') => {
@@ -2732,6 +2862,17 @@ export default function App() {
   const displayName = effectiveUser?.name || name || registrationDisplayName || authStateLabel;
   const displayFloor = effectiveUser?.defaultFloor || effectiveUser?.floor || defaultFloor;
   const displayBalance = effectiveUser?.balance ?? userBalance;
+  const vendorOptions = useMemo(() => {
+    const values = [
+      ...vendors.map((vendor) => normalizeVendorName(vendor.name)),
+      ...adminMenuVendors.map((vendor) => normalizeVendorName(
+        typeof vendor === 'string' ? vendor : vendor?.name
+      )),
+      ...Object.values(calendarEvents).map((event) => normalizeVendorName(event?.vendor))
+    ].filter(Boolean);
+    const unique = Array.from(new Set(values));
+    return unique.length > 0 ? unique : CANONICAL_VENDOR_FALLBACKS;
+  }, [vendors, adminMenuVendors, calendarEvents]);
   const selectionRows = viewAsModalMode === 'delegate' ? orderTargetRows : adminMemberRows;
   const weekendEvents = renderWeekendEvents();
 
@@ -2799,6 +2940,15 @@ export default function App() {
             onExitDelegated={handleExitDelegatedOrder}
           />
           <div aria-label="功能操作" className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+            {isRegistered && (
+              <button
+                type="button"
+                onClick={openVendorHub}
+                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${['vendors', 'vendorDetail'].includes(viewMode) ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
+              >
+                🏪 店家專區
+              </button>
+            )}
             {isRegistered && canAuth('viewAsUser') && !isViewAsMode && (
               <button
                 type="button"
@@ -2869,7 +3019,7 @@ export default function App() {
             )}
             {isRegistered && viewMode !== 'calendar' && (
               <button
-                onClick={handleExitToCalendar}
+                onClick={['vendors', 'vendorDetail'].includes(viewMode) ? handleExitVendorHub : handleExitToCalendar}
                 className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg transition"
               >
                 📅 月曆
@@ -3051,9 +3201,35 @@ export default function App() {
             specialAdminVendorChoice={specialAdminVendorChoice}
             onVendorChange={setSpecialAdminVendorChoice}
             onSaveVendor={handleSpecialAdminSaveVendor}
+            vendorOptions={vendorOptions}
             loading={loading}
             renderCalendarDays={renderCalendarDays}
             weekendEvents={weekendEvents}
+          />
+        )}
+
+        {isRegistered && ['vendors', 'vendorDetail'].includes(viewMode) && !loading && (
+          <VendorHub
+            vendors={vendors}
+            selectedVendor={selectedVendor}
+            loading={vendorHubLoading}
+            detailLoading={vendorDetailLoading}
+            error={vendorHubError}
+            detailError={vendorDetailError}
+            gasUnsupported={vendorHubUnsupported}
+            canManageVendors={canAuth('manageVendors') && !isViewAsMode}
+            canManageCalendar={can('manageCalendar') && !isViewAsMode}
+            isViewAsMode={isViewAsMode}
+            onRetry={openVendorHub}
+            onSelectVendor={openVendorDetail}
+            onBackToList={() => {
+              setSelectedVendor(null);
+              setVendorDetailError('');
+              setViewMode('vendors');
+            }}
+            onBackToCalendar={handleExitVendorHub}
+            onSaveVendor={handleVendorMetadataSave}
+            onOpenGroupManagement={openAdminCalendar}
           />
         )}
 
@@ -3551,8 +3727,9 @@ export default function App() {
                   onChange={(e) => setAdminVendorChoice(e.target.value)}
                   className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm"
                 >
-                  <option value="蔡老師">蔡老師</option>
-                  <option value="禾拾">禾拾</option>
+                  {vendorOptions.map((vendor) => (
+                    <option key={vendor} value={vendor}>{vendor}</option>
+                  ))}
                   <option value="">不開團</option>
                 </select>
               </div>

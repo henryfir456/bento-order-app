@@ -5,11 +5,12 @@ const { test } = require('node:test');
 
 const repositoryRoot = path.join(__dirname, '..');
 
-test('calendar vendor options expose 禾拾 but not legacy 合十', () => {
+test('calendar vendor options are supplied from canonical runtime data', () => {
   const source = fs.readFileSync(
     path.join(repositoryRoot, 'src', 'features', 'calendar', 'CalendarManagement.jsx'),
     'utf8'
   );
-  assert.match(source, /<option value="禾拾">禾拾<\/option>/);
+  assert.match(source, /vendorOptions\.map/);
+  assert.match(source, /<option key=\{vendor\} value=\{vendor\}>\{vendor\}<\/option>/);
   assert.doesNotMatch(source, /<option value="合十">合十<\/option>/);
 });

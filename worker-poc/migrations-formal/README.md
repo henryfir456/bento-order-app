@@ -31,13 +31,14 @@ The formal chain is exactly:
 0007_signed_menu_prices.sql         # signed menu price values with preserved menu-item dependencies
 0008_menu_item_changes.sql           # append-only authoritative menu change history
 0009_topup_method.sql                # nullable structured payment method for new top-ups
+0010_vendor_metadata.sql              # canonical vendor metadata and menu snapshot links
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all ten files in order. Migration 0003 defaults existing users to
+all eleven files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -64,6 +65,10 @@ performed separately from reviewed SQL/GAS facts.
 Migration 0009 adds nullable `balance_ledger.topup_method` for structured
 payment-method provenance on new Admin top-ups. It does not backfill existing
 ledger rows; historical NULL values remain NULL and are not inferred.
+Migration 0010 creates the canonical `vendors` metadata table and backfills
+vendor names from current menu/calendar records. The historical alias `合十`
+is stored as canonical `禾拾`; the migration does not rewrite menu snapshots,
+orders, calendar rows, or item-level image fallback data.
 
 ## Recovery procedure
 

@@ -29,6 +29,37 @@ export const seedMenuVersion = (database, {
   `, menuVersionId, vendor, effectiveDate);
 };
 
+export const seedVendor = (database, {
+  vendorId,
+  name,
+  description = '',
+  phone = '',
+  address = '',
+  websiteUrl = '',
+  menuSourceUrl = '',
+  menuImageUrl = '',
+  menuUpdatedAt = null,
+  enabled = 1
+}) => {
+  database.run(`
+    INSERT INTO vendors (
+      vendor_id, name, description, phone, address, website_url,
+      menu_source_url, menu_image_url, menu_updated_at, enabled
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+    vendorId,
+    name,
+    description,
+    phone,
+    address,
+    websiteUrl,
+    menuSourceUrl,
+    menuImageUrl,
+    menuUpdatedAt,
+    enabled
+  );
+};
+
 export const seedLedgerRow = (database, {
   transactionId,
   userId,

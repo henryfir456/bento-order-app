@@ -1,5 +1,32 @@
 const MOCK_VENDORS = Object.freeze(['Mock Bento A', 'Mock Bento B']);
 
+export const MOCK_VENDOR_FIXTURES = Object.freeze([
+  Object.freeze({
+    id: 'mock-vendor-a',
+    name: 'Mock Bento A',
+    description: 'Local mock vendor fixture.',
+    phone: '02-0000-0001',
+    address: '1樓',
+    website_url: 'https://example.com/mock-bento-a',
+    menu_source_url: 'https://example.com/mock-bento-a/menu',
+    menu_image_url: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+    menu_updated_at: '2099-01-01',
+    enabled: true
+  }),
+  Object.freeze({
+    id: 'mock-vendor-b',
+    name: 'Mock Bento B',
+    description: 'Second local mock vendor fixture.',
+    phone: '',
+    address: '',
+    website_url: '',
+    menu_source_url: 'https://example.com/mock-bento-b/menu',
+    menu_image_url: '',
+    menu_updated_at: null,
+    enabled: true
+  })
+]);
+
 const MOCK_USER_FIXTURES = Object.freeze({
   user: Object.freeze({
     userId: 'mock-user-id',
@@ -124,6 +151,7 @@ const createSessionState = (mockUser) => {
     orderSequence: 0,
     likes: new Set(),
     vendors: {},
+    vendorMetadata: MOCK_VENDOR_FIXTURES.map(clone),
     members: Object.values(MOCK_USER_FIXTURES)
       .filter(Boolean)
       .map(clone)
@@ -234,6 +262,46 @@ export const getMockCalendarEvents = (mockUser) => {
     };
     return events;
   }, {});
+};
+
+const normalizeMockVendorName = (value) => (
+  String(value || '').trim() === '合十' ? '禾拾' : String(value || '').trim()
+);
+
+export const getMockVendors = (mockUser) => {
+  const state = getMockSessionState(mockUser);
+  const events = Object.values(getMockCalendarEvents(mockUser));
+  return state.vendorMetadata.map((vendor) => {
+    const name = normalizeMockVendorName(vendor.name);
+    const recentGroups = events
+      .filter((event) => normalizeMockVendorName(event.vendor) === name)
+      .map((event) => ({
+        order_date: event.order_date,
+        mode: event.mode,
+        deadline: event.deadline,
+        is_expired: Boolean(event.isExpired)
+      }));
+    return {
+      ...clone(vendor),
+      name,
+      is_open_for_ordering: Boolean(vendor.enabled && recentGroups.some((group) => !group.is_expired)),
+      recent_groups: recentGroups
+    };
+  });
+};
+
+export const getMockVendor = (mockUser, vendorId) => (
+  getMockVendors(mockUser).find((vendor) => vendor.id === String(vendorId || '').trim()) || null
+);
+
+export const updateMockVendor = (mockUser, vendorId, patch = {}) => {
+  const state = getMockSessionState(mockUser);
+  const vendor = state.vendorMetadata.find((candidate) => candidate.id === String(vendorId || '').trim());
+  if (!vendor) return null;
+  Object.keys(patch).forEach((field) => {
+    if (Object.prototype.hasOwnProperty.call(vendor, field)) vendor[field] = patch[field];
+  });
+  return getMockVendor(mockUser, vendor.id);
 };
 
 export const getMockAnnouncements = () => ([
