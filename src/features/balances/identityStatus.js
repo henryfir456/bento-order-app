@@ -1,5 +1,6 @@
 export const IDENTITY_FILTERS = Object.freeze({
   ALL: 'ALL',
+  NEGATIVE_BALANCE: 'NEGATIVE_BALANCE',
   BIND_REQUIRED: 'EMPLOYEE_BIND_REQUIRED',
   // Kept for compatibility with historical member payloads. It is not an
   // active verification-review filter and is intentionally not rendered.
@@ -100,11 +101,14 @@ export const getIdentityBadges = ({ authSource, identityState } = {}) => ([
 ]);
 
 export const identityFilterMatches = (member, filter) => (
-  filter === IDENTITY_FILTERS.ALL || member?.identityState === filter
+  filter === IDENTITY_FILTERS.ALL
+    ? true
+    : filter === IDENTITY_FILTERS.NEGATIVE_BALANCE
+      ? Number(member?.balance) < 0
+      : member?.identityState === filter
 );
 
 export const identityFilterOptions = Object.freeze([
   { value: IDENTITY_FILTERS.ALL, label: '全部' },
-  { value: IDENTITY_FILTERS.BIND_REQUIRED, label: '待綁員編' },
-  { value: IDENTITY_FILTERS.VERIFIED, label: '已註冊' }
+  { value: IDENTITY_FILTERS.NEGATIVE_BALANCE, label: '負餘額' }
 ]);

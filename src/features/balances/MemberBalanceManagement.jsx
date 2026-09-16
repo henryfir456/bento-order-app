@@ -72,11 +72,11 @@ export default function MemberBalanceManagement({
   onOpenTopupModal,
   onOpenEmployeeBindModal
 }) {
-  const [identityFilter, setIdentityFilter] = useState(IDENTITY_FILTERS.ALL);
+  const [balanceFilter, setBalanceFilter] = useState(IDENTITY_FILTERS.ALL);
   const adminMembers = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
   const filteredMembers = useMemo(() => (
-    adminMembers.filter((member) => identityFilterMatches(member, identityFilter))
-  ), [adminMembers, identityFilter]);
+    adminMembers.filter((member) => identityFilterMatches(member, balanceFilter))
+  ), [adminMembers, balanceFilter]);
   const hasActions = !isViewAsMode && (canTopup || canBindEmployee);
 
   return (
@@ -86,14 +86,14 @@ export default function MemberBalanceManagement({
           <h3 className="font-bold text-base text-[#2C4A3E]">💰 餘額與身份管理</h3>
           <p className="text-xs text-gray-500">登入來源與註冊狀態以 Worker authoritative response 為準；餘額為目前帳戶總額。</p>
         </div>
-        <div className="flex max-w-full flex-wrap gap-2" role="group" aria-label="身份狀態篩選">
+        <div className="flex max-w-full flex-wrap gap-2" role="group" aria-label="餘額篩選">
           {identityFilterOptions.map((option) => (
             <button
               key={option.value}
               type="button"
-              onClick={() => setIdentityFilter(option.value)}
-              aria-pressed={identityFilter === option.value}
-              className={`rounded-full border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${identityFilter === option.value
+              onClick={() => setBalanceFilter(option.value)}
+              aria-pressed={balanceFilter === option.value}
+              className={`rounded-full border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${balanceFilter === option.value
                 ? 'border-emerald-700 bg-emerald-700 text-white'
                 : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50'}`}
             >

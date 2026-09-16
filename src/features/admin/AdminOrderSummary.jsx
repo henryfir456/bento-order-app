@@ -1,4 +1,6 @@
 import { formatSignedAmount } from '../orders/amountFormat.js';
+import { shiftDateInput } from '../../dateUtils';
+import { groupOrdersByFloor } from './orderSummary.js';
 
 export default function AdminOrderSummary({
   selectedOrderDate,
@@ -13,20 +15,38 @@ export default function AdminOrderSummary({
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
                   <div className="flex flex-wrap justify-between items-center gap-3">
                     <h3 className="font-bold text-base text-[#2C4A3E]">📋 訂單管理</h3>
-                    <label className="flex items-center gap-2 text-xs font-bold text-gray-600" htmlFor="admin-order-date">
-                      訂單日期
+                    <div className="flex min-w-0 items-center gap-1 rounded-2xl border border-gray-200 bg-white p-1 shadow-sm">
+                      <button
+                        type="button"
+                        aria-label="前一天"
+                        title="前一天"
+                        onClick={() => onDateChange(shiftDateInput(selectedOrderDate, -1))}
+                        className="inline-flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl text-lg font-bold text-emerald-800 transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        ◀
+                      </button>
+                      <label className="flex min-w-0 items-center" htmlFor="admin-order-date">
+                        <span className="sr-only">訂單日期</span>
                       <input
                         id="admin-order-date"
+                        aria-label="訂單日期"
                         type="date"
                         value={selectedOrderDate}
                         onChange={(e) => onDateChange(e.target.value)}
-                        className="min-w-0 border border-gray-200 rounded-xl px-2.5 py-2 bg-white text-sm focus:outline-emerald-600"
+                        className="min-w-0 rounded-xl border-0 bg-transparent px-2.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       />
-                    </label>
+                      </label>
+                      <button
+                        type="button"
+                        aria-label="後一天"
+                        title="後一天"
+                        onClick={() => onDateChange(shiftDateInput(selectedOrderDate, 1))}
+                        className="inline-flex min-h-[2.75rem] min-w-[2.75rem] items-center justify-center rounded-xl text-lg font-bold text-emerald-800 transition hover:bg-emerald-50 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      >
+                        ▶
+                      </button>
+                    </div>
                   </div>
-                  {adminSummary.targetDate && (
-                    <p className="text-xs text-gray-500">目前顯示：{adminSummary.targetDate}</p>
-                  )}
                 </div>
 
                 {adminSummaryLoading ? (
@@ -52,17 +72,24 @@ export default function AdminOrderSummary({
 
                     <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
                       <h3 className="font-bold text-base text-[#2C4A3E]">📦 便購種類匯總</h3>
-                      {Object.keys(aggregatedOrders).length === 0 ? (
+                      {aggregatedOrders.length === 0 ? (
                         <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
                       ) : (
-                        <div className="grid grid-cols-2 gap-2">
-                          {Object.entries(aggregatedOrders).map(([itemKey, qty], idx) => (
-                            <div key={idx} className="bg-emerald-50/60 border border-emerald-100 p-2.5 rounded-xl flex justify-between items-center">
-                              <span className="text-xs font-bold text-emerald-900">{itemKey}</span>
-                              <span className="text-xs font-extrabold text-emerald-700 bg-white px-2 py-0.5 rounded-md border border-emerald-200 shadow-sm">
-                                x {qty}
-                              </span>
-                            </div>
+                        <div className="space-y-4">
+                          {aggregatedOrders.map(({ floor, items }) => (
+                            <section key={floor} className="space-y-2">
+                              <h4 className="border-b border-emerald-100 pb-1 text-sm font-bold text-emerald-800">{floor} 訂單</h4>
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                {items.map(({ itemName, quantity }) => (
+                                  <div key={`${floor}-${itemName}`} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
+                                    <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{itemName}</span>
+                                    <span className="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-xs font-extrabold text-emerald-700 shadow-sm">
+                                      × {quantity}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </section>
                           ))}
                         </div>
                       )}
@@ -74,14 +101,7 @@ export default function AdminOrderSummary({
                         <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
                       ) : (
                         <div className="space-y-4">
-                          {Object.entries(
-                            adminSummary.todayOrders.reduce((acc, order) => {
-                              const floor = order.pickup_floor || '其他';
-                              if (!acc[floor]) acc[floor] = [];
-                              acc[floor].push(order);
-                              return acc;
-                            }, {})
-                          ).map(([floor, orders]) => (
+                          {groupOrdersByFloor(adminSummary.todayOrders).map(({ floor, orders }) => (
                             <div key={floor} className="space-y-2">
                               <h4 className="text-sm font-bold text-emerald-800 border-b border-emerald-100 pb-1">{floor} 訂單</h4>
                               {orders.map((o, idx) => (

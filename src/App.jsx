@@ -48,6 +48,8 @@ import {
   buildOrderSubmission
 } from './features/orders/orderSubmission';
 import AdminOrderSummary from './features/admin/AdminOrderSummary';
+import { aggregateOrdersByFloor } from './features/admin/orderSummary.js';
+import { filterMembersByEmployeeId } from './features/admin/delegateOrderFilter.js';
 import AnnouncementManagement from './features/admin/AnnouncementManagement';
 import MenuItemChangesManagement from './features/admin/MenuItemChangesManagement';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
@@ -346,7 +348,9 @@ export default function App() {
   const orderTargetsRequestRef = useRef(0);
   const [showViewAsModal, setShowViewAsModal] = useState(false);
   const [viewAsModalMode, setViewAsModalMode] = useState(null);
+  const [employeeIdFilter, setEmployeeIdFilter] = useState('');
   const [showFloorModal, setShowFloorModal] = useState(false);
+  const [profileNameDraft, setProfileNameDraft] = useState('');
   const [floorDraft, setFloorDraft] = useState('');
   const [floorLoading, setFloorLoading] = useState(false);
   const [floorError, setFloorError] = useState('');
@@ -495,7 +499,9 @@ export default function App() {
     setOrderTargetsLoaded(false);
     setShowViewAsModal(false);
     setViewAsModalMode(null);
+    setEmployeeIdFilter('');
     setShowFloorModal(false);
+    setProfileNameDraft('');
     setFloorDraft('');
     setFloorError('');
     setShowChangelogModal(false);
@@ -2311,6 +2317,7 @@ export default function App() {
     const wantsViewAs = mode === 'view';
     const allowed = wantsViewAs ? canAuth('viewAsUser') : canAuth('delegateOrder');
     if (!allowed || viewAsUser || delegatedOrderUser) return;
+    setEmployeeIdFilter('');
     setShowViewAsModal(true);
     setViewAsModalMode(mode);
     await (wantsViewAs ? loadMemberBalances() : loadOrderTargets());
@@ -2322,6 +2329,7 @@ export default function App() {
     setDelegatedOrderUser(null);
     setShowViewAsModal(false);
     setViewAsModalMode(null);
+    setEmployeeIdFilter('');
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
@@ -2358,6 +2366,7 @@ export default function App() {
     setViewAsUser(null);
     setShowViewAsModal(false);
     setViewAsModalMode(null);
+    setEmployeeIdFilter('');
     setAdminManageMode(false);
     setSelectedAdminDate(null);
     setSelectedTopupUser(null);
@@ -2373,6 +2382,7 @@ export default function App() {
     setViewAsUser(null);
     setShowViewAsModal(false);
     setViewAsModalMode(null);
+    setEmployeeIdFilter('');
     setSelectedTopupUser(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
@@ -2394,6 +2404,7 @@ export default function App() {
     setDelegatedOrderUser(null);
     setShowViewAsModal(false);
     setViewAsModalMode(null);
+    setEmployeeIdFilter('');
     setSelectedTopupUser(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
@@ -2404,6 +2415,7 @@ export default function App() {
 
   const handleOpenFloorModal = () => {
     if (!isRegistered || isViewAsMode || !authUser) return;
+    setProfileNameDraft(authUser.name || authUser.displayName || name || '');
     setFloorDraft(authUser.defaultFloor || authUser.floor || defaultFloor || '1樓');
     setFloorError('');
     setShowFloorModal(true);
@@ -2411,6 +2423,12 @@ export default function App() {
 
   const handleSaveDefaultFloor = async () => {
     if (!authUser || isViewAsMode || floorLoading) return;
+
+    const nextDisplayName = String(profileNameDraft || '').trim();
+    if (!nextDisplayName || nextDisplayName.length > 100) {
+      setFloorError('姓名不可為空白，且長度不可超過 100 個字元');
+      return;
+    }
 
     const nextFloor = String(floorDraft || '').trim();
     if (!['1樓', '9樓'].includes(nextFloor)) {
@@ -2427,7 +2445,10 @@ export default function App() {
     setFloorLoading(true);
     setFloorError('');
     try {
-      const res = await apiClient.updatePickupFloor({ pickupFloor: nextFloor });
+      const res = await apiClient.updatePickupFloor({
+        displayName: nextDisplayName,
+        pickupFloor: nextFloor
+      });
       if (!res.ok) {
         setFloorError(`更新失敗（HTTP ${res.status}）`);
         return;
@@ -2439,15 +2460,20 @@ export default function App() {
         return;
       }
 
+      const canonicalName = data.user.name || data.user.displayName || nextDisplayName;
       const canonicalFloor = data.user.defaultFloor || data.user.floor || nextFloor;
       setAuthUser(prev => prev ? {
         ...prev,
         ...data.user,
+        name: canonicalName,
+        displayName: canonicalName,
         floor: canonicalFloor,
         defaultFloor: canonicalFloor
       } : prev);
+      setName(canonicalName);
+      setRegistrationDisplayName(canonicalName);
       setDefaultFloor(canonicalFloor);
-      if (!hasExistingOrder) setFloor(canonicalFloor);
+      setFloor(canonicalFloor);
       setShowFloorModal(false);
     } catch {
       setFloorError('目前無法更新預設領取樓層，請稍後再試。');
@@ -2590,15 +2616,6 @@ export default function App() {
     } finally {
       setEmployeeBindLoading(false);
     }
-  };
-
-  const getAggregatedOrders = () => {
-    const aggregated = {};
-    (adminSummary.todayOrders || []).forEach(o => {
-      const key = `(${o.pickup_floor}) ${o.item_name}`;
-      aggregated[key] = (aggregated[key] || 0) + o.quantity;
-    });
-    return aggregated;
   };
 
   const renderCalendarDays = () => {
@@ -2835,7 +2852,7 @@ export default function App() {
     }
   };
 
-  const aggregatedOrders = getAggregatedOrders();
+  const aggregatedOrders = aggregateOrdersByFloor(adminSummary.todayOrders);
   const isRegistered = authState === AUTH_STATES.REGISTERED;
   const isUnregistered = authState === AUTH_STATES.UNREGISTERED;
   const isEmployeeBindRequired = authState === AUTH_STATES.EMPLOYEE_BIND_REQUIRED;
@@ -2845,6 +2862,7 @@ export default function App() {
   const authRole = authUser?.role || 'User';
   const effectiveUser = viewAsUser || authUser;
   const effectiveRole = effectiveUser?.role || 'User';
+  const headerRoleLabel = ['Admin', 'ProxyAdmin'].includes(effectiveRole) ? effectiveRole : '';
   const isViewAsMode = Boolean(viewAsUser);
   const can = (permission) => isRegistered
     && hasPermission(effectiveRole, permission, authMode, isRegistered);
@@ -2874,6 +2892,12 @@ export default function App() {
     return unique.length > 0 ? unique : CANONICAL_VENDOR_FALLBACKS;
   }, [vendors, adminMenuVendors, calendarEvents]);
   const selectionRows = viewAsModalMode === 'delegate' ? orderTargetRows : adminMemberRows;
+  const visibleSelectionRows = useMemo(
+    () => viewAsModalMode === 'delegate'
+      ? filterMembersByEmployeeId(selectionRows, employeeIdFilter)
+      : selectionRows,
+    [employeeIdFilter, selectionRows, viewAsModalMode]
+  );
   const weekendEvents = renderWeekendEvents();
 
   return (
@@ -2884,11 +2908,23 @@ export default function App() {
             <h1 className="text-xl font-bold">蔬食便當預訂系統</h1>
           </div>
           <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-emerald-100">
-            <span>👤 {displayName}</span>
-            {effectiveUser && isRegistered && (
-              <span className="rounded bg-emerald-800/80 px-1.5 py-0.5">
-                {authMode === 'employee_guest' ? '員編登入' : effectiveRole}
+            <span aria-hidden="true">👤</span>
+            {headerRoleLabel && isRegistered && (
+              <span className="rounded bg-emerald-800/80 px-1.5 py-0.5 font-bold">
+                {headerRoleLabel}
               </span>
+            )}
+            {isViewAsMode || !isRegistered ? (
+              <span>{displayName}</span>
+            ) : (
+              <button
+                type="button"
+                onClick={handleOpenFloorModal}
+                aria-label={`修改個人資料，目前姓名 ${displayName}`}
+                className="cursor-pointer rounded px-1 py-0.5 transition hover:bg-emerald-800/60 hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+              >
+                {displayName}
+              </button>
             )}
             <DevAuthBadge mode={authClient.mode} mockUser={authClient.mockUser} />
             {displayFloor && (isViewAsMode ? (
@@ -3498,6 +3534,7 @@ export default function App() {
                 onClick={() => {
                   setShowViewAsModal(false);
                   setViewAsModalMode(null);
+                  setEmployeeIdFilter('');
                 }}
                 className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
               >
@@ -3505,17 +3542,37 @@ export default function App() {
               </button>
             </div>
 
+            {viewAsModalMode === 'delegate' && (
+              <label className="block space-y-1" htmlFor="delegate-employee-id-filter">
+                <span className="block text-xs font-bold text-gray-600">員編篩選</span>
+                <input
+                  id="delegate-employee-id-filter"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="off"
+                  value={employeeIdFilter}
+                  onChange={(event) => setEmployeeIdFilter(event.target.value)}
+                  placeholder="輸入員編篩選"
+                  className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                />
+              </label>
+            )}
+
             {(viewAsModalMode === 'view' ? memberBalancesLoading : orderTargetsLoading) ? (
               <p className="text-center text-sm text-emerald-800 animate-pulse py-6">讀取成員列表中...</p>
             ) : (viewAsModalMode === 'view' ? memberBalancesError : orderTargetsError) ? (
               <div className="text-center text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">
                 {viewAsModalMode === 'view' ? memberBalancesError : orderTargetsError}
               </div>
-            ) : selectionRows.length === 0 ? (
-              <p className="text-center text-sm text-gray-400 py-6">目前沒有可檢視的成員資料</p>
+            ) : visibleSelectionRows.length === 0 ? (
+              <p className="text-center text-sm text-gray-400 py-6">
+                {viewAsModalMode === 'delegate' && employeeIdFilter.trim()
+                  ? '找不到符合此員編的成員'
+                  : '目前沒有可檢視的成員資料'}
+              </p>
             ) : (
               <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-                {selectionRows.map((user, idx) => (
+                {visibleSelectionRows.map((user, idx) => (
                   <div
                     key={user.userId || `view-as-${idx}`}
                     className="rounded-2xl border border-gray-100 bg-gray-50 p-3 transition-colors"
@@ -3755,9 +3812,11 @@ export default function App() {
 
       <PickupFloorModal
         open={showFloorModal}
+        displayName={profileNameDraft}
         floor={floorDraft}
         loading={floorLoading}
         error={floorError}
+        onDisplayNameChange={setProfileNameDraft}
         onChange={setFloorDraft}
         onSave={handleSaveDefaultFloor}
         onClose={() => {

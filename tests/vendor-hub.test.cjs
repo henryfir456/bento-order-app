@@ -110,6 +110,9 @@ test('vendor UI is wired to formal Worker/mock contracts and keeps GAS explicit'
   assert.ok(vendorListBlock);
   assert.match(vendorListBlock, /<MenuSnapshot key=\{`\$\{vendor\.id\}-\$\{vendor\.menu_image_url\}`\} vendor=\{vendor\} variant="thumbnail" \/>/);
   assert.match(vendorListBlock, /flex-col gap-4 sm:flex-row/);
+  assert.match(vendorListBlock, /min-w-0 flex-1 space-y-3/);
+  assert.match(vendorListBlock, /<h3[\s\S]*vendor\.name[\s\S]*vendor\.enabled[\s\S]*可使用[\s\S]*<\/h3|<h3[\s\S]*vendor\.name[\s\S]*<\/h3>[\s\S]*vendor\.enabled[\s\S]*可使用/);
+  assert.doesNotMatch(vendorListBlock, /items-start justify-between gap-3[\s\S]*vendor\.description[\s\S]*vendor\.enabled/);
   assert.match(vendorListBlock, /onClick=\{\(\) => onSelectVendor\(vendor\.id\)\}/);
   assert.ok(snapshotBlock);
   assert.match(snapshotBlock, /variant = 'detail'/);
@@ -123,6 +126,7 @@ test('vendor UI is wired to formal Worker/mock contracts and keeps GAS explicit'
   assert.equal((snapshotBlock.match(/src=\{vendor\.menu_image_url\}/g) || []).length, 2);
   assert.match(snapshotBlock, /max-w-\[95vw\]/);
   assert.match(snapshotBlock, /object-contain/);
+  assert.match(snapshotBlock, /max-w-\[12rem\]/);
   assert.doesNotMatch(snapshotBlock, /menu_source_url/);
   assert.doesNotMatch(snapshotBlock, /onSelectVendor/);
   assert.match(modalSource, /role="dialog"/);

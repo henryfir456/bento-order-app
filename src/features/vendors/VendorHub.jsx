@@ -65,15 +65,13 @@ function VendorList({
           {vendors.map((vendor) => (
             <article key={vendor.id} className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h3 className="break-words text-lg font-bold text-[#2C4A3E]">{vendor.name}</h3>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-gray-600">{vendor.description || '尚未提供店家介紹。'}</p>
-                    </div>
+                <div className="min-w-0 flex-1 space-y-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <h3 className="break-words text-lg font-bold text-[#2C4A3E]">{vendor.name}</h3>
                     <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-bold ${vendor.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>{vendor.enabled ? '可使用' : '暫停使用'}</span>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
+                  <p className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-600">{vendor.description || '尚未提供店家介紹。'}</p>
+                  <div className="flex flex-wrap gap-2 text-xs font-bold">
                     <span className={`rounded-full px-2 py-1 ${vendor.is_open_for_ordering ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-500'}`}>{vendor.is_open_for_ordering ? '目前開團中' : '目前未開團'}</span>
                   </div>
                 </div>
@@ -161,7 +159,7 @@ function MenuSnapshot({ vendor, variant = 'detail' }) {
           aria-haspopup="dialog"
           aria-label={`放大檢視${imageAlt}`}
           onClick={() => setMenuImageOpen(true)}
-          className={`block cursor-pointer rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${isThumbnail ? 'w-full max-w-[12rem] self-start sm:w-32 sm:max-w-none' : 'w-full'}`}
+          className={`block cursor-pointer rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 ${isThumbnail ? 'w-full max-w-[12rem] self-start sm:w-40 sm:max-w-none' : 'w-full'}`}
         >
           <img
             src={vendor.menu_image_url}

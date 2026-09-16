@@ -38,6 +38,28 @@ export const formatDateInput = (date = new Date()) => {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
+export const shiftDateInput = (dateInput, offset) => {
+  const match = String(dateInput || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const dayOffset = Number(offset);
+  if (!match || !Number.isInteger(dayOffset)) return String(dateInput || '');
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const monthStart = new Date(Date.UTC(2000, 0, 1));
+  monthStart.setUTCFullYear(year, month - 1, 1);
+  const daysInMonth = new Date(Date.UTC(
+    monthStart.getUTCFullYear(),
+    monthStart.getUTCMonth() + 1,
+    0
+  )).getUTCDate();
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth) return String(dateInput || '');
+
+  const shifted = new Date(Date.UTC(2000, 0, 1));
+  shifted.setUTCFullYear(year, month - 1, day + dayOffset);
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}-${String(shifted.getUTCDate()).padStart(2, '0')}`;
+};
+
 export const formatDateTime = (value) => {
   if (value === null || value === undefined || value === '') return '';
 

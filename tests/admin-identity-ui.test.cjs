@@ -7,8 +7,8 @@ const { test } = require('node:test');
 const root = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
 
-test('identity badges render source and registration state without review semantics', async () => {
-  const { getIdentityBadges, identityFilterMatches, identityFilterOptions } = await import(
+test('identity badges render source and the balance filter exposes all or negative balances', async () => {
+  const { getIdentityBadges, identityFilterMatches, identityFilterOptions, IDENTITY_FILTERS } = await import(
     pathToFileURL(path.join(root, 'src/features/balances/identityStatus.js')).href
   );
   assert.deepEqual(
@@ -24,8 +24,14 @@ test('identity badges render source and registration state without review semant
     ['員編', '已註冊']
   );
   assert.equal(identityFilterMatches({ identityState: 'EMPLOYEE_BIND_REQUIRED' }, 'EMPLOYEE_BIND_REQUIRED'), true);
-  assert.equal(identityFilterOptions.some((option) => option.value === 'PENDING_VERIFICATION'), false);
-  assert.deepEqual(identityFilterOptions.map((option) => option.label), ['全部', '待綁員編', '已註冊']);
+  assert.deepEqual(identityFilterOptions.map((option) => option.label), ['全部', '負餘額']);
+  assert.equal(identityFilterOptions.some((option) => option.label === '待綁員編'), false);
+  assert.equal(identityFilterOptions.some((option) => option.label === '已註冊'), false);
+  assert.equal(identityFilterMatches({ balance: -1 }, IDENTITY_FILTERS.NEGATIVE_BALANCE), true);
+  assert.equal(identityFilterMatches({ balance: '-200' }, IDENTITY_FILTERS.NEGATIVE_BALANCE), true);
+  assert.equal(identityFilterMatches({ balance: 0 }, IDENTITY_FILTERS.NEGATIVE_BALANCE), false);
+  assert.equal(identityFilterMatches({ balance: 400 }, IDENTITY_FILTERS.NEGATIVE_BALANCE), false);
+  assert.equal(identityFilterMatches({ balance: 'not-a-number' }, IDENTITY_FILTERS.NEGATIVE_BALANCE), false);
 });
 
 test('mock identity fixtures distinguish registered LINE Admin from unbound and guest Admin rows', async () => {
@@ -65,13 +71,16 @@ test('Admin identity UI uses Worker binding and never writes verification state 
   assert.match(app, /await fetchUserInfo\(readCurrentCredential\(\)\)/);
   assert.match(app, /setOrderTargetRows\(data\.targets\)/);
   assert.match(app, /const selectionRows = viewAsModalMode === 'delegate' \? orderTargetRows : adminMemberRows;/);
-  assert.match(app, /selectionRows\.map\(\(user, idx\) =>/);
+  assert.match(app, /visibleSelectionRows\.map\(\(user, idx\) =>/);
   assert.doesNotMatch(app, /selectionRows\.filter\(/);
   assert.doesNotMatch(app, /data\.targets\.filter\([\s\S]*lineUserId/);
   assert.match(app, /formatDateTime\(item\.occurredAt \|\| item\.timestamp\)/);
   assert.match(app, /setMemberBalancesLoaded\(false\);[\s\S]*?loadMemberBalances\(true\)/);
   assert.match(member, /登入來源/);
-  assert.match(member, /註冊狀態/);
+  assert.match(member, /身份狀態/);
+  assert.match(identityStatus, /負餘額/);
+  assert.doesNotMatch(member, /待綁員編/);
+  assert.doesNotMatch(member, /已註冊/);
   assert.match(identityStatus, /待綁員編/);
   assert.doesNotMatch(member, /待審核/);
   assert.match(member, /md:hidden/);

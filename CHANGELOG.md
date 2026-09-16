@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.15.2] - 2026-09-16
+
+### Added
+
+- Added live employee ID filtering to the delegated ordering member selector.
+
+### Changed
+
+- Changed balance management to provide `全部／負餘額` filtering.
+- Adjusted Admin / ProxyAdmin role display in the header.
+- Extended personal profile maintenance to edit display name and default pickup floor.
+- Added quick previous/next date navigation to order management.
+- Grouped the purchase summary by pickup floor.
+- Improved Vendor Hub card layout so the description has more available width.
+
 ## [0.15.1] - 2026-09-16
 
 ### Added

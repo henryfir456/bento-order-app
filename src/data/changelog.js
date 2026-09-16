@@ -11,6 +11,25 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.2': [
+    {
+      name: '變更',
+      changes: [
+        '餘額管理改為「全部／負餘額」',
+        'Admin / ProxyAdmin header role 顯示調整',
+        '個人資料可修改姓名與預設取餐樓層',
+        '訂單管理日期快速前後切換',
+        '便購種類匯總改為依樓層分組',
+        '店家專區卡片版面改善'
+      ]
+    },
+    {
+      name: '新增',
+      changes: [
+        '代點餐新增員編即時篩選'
+      ]
+    }
+  ],
   '0.15.1': [
     {
       name: '新增',
