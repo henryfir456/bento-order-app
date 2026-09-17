@@ -111,6 +111,41 @@ test('normal User with existing LINE binding can still employee-login without ch
   ).line_user_id, 'line-existing-001003');
 });
 
+test('normal User can alternate employee and LINE sessions on one canonical user', async () => {
+  const database = seedNormalUser({
+    userId: 'user-alternating-entry',
+    employeeId: '001006',
+    lineUserId: 'line-alternating-entry'
+  });
+
+  const employeeLogin = await call(database, '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '001006' }
+  });
+  const employeeMe = await call(database, '/api/me', {
+    token: employeeLogin.body.token
+  });
+  const lineMe = await call(database, '/api/me', {
+    token: 'line-alternating-token'
+  }, {
+    fetchImpl: profileFetch({
+      token: 'line-alternating-token',
+      lineUserId: 'line-alternating-entry',
+      displayName: 'Alternating Entry'
+    })
+  });
+
+  assert.equal(employeeMe.response.status, 200);
+  assert.equal(employeeMe.body.user.userId, 'user-alternating-entry');
+  assert.equal(lineMe.response.status, 200);
+  assert.equal(lineMe.body.user.userId, 'user-alternating-entry');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+  assert.equal(database.get(
+    'SELECT line_user_id FROM users WHERE user_id = ?',
+    'user-alternating-entry'
+  ).line_user_id, 'line-alternating-entry');
+});
+
 test('LINE employee resolution returns the existing normal canonical User on ownership conflict', async () => {
   const database = seedNormalUser({
     userId: 'user-target-001004',

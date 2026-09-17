@@ -11,6 +11,16 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.5': [
+    {
+      name: '修正',
+      changes: [
+        '修正尚未註冊的員編完成 onboarding 後仍被導向 LINE 綁定流程的問題。',
+        '一般 User 首次使用員編註冊完成後，可直接進入主畫面並使用一般點餐功能。',
+        'LINE 綁定維持為選用，不再作為一般 User 首次員編註冊的必要條件。'
+      ]
+    }
+  ],
   '0.15.4': [
     {
       name: '變更',

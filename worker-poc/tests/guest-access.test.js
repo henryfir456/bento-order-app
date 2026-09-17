@@ -284,6 +284,23 @@ test('employee guest provisional onboarding completes without LINE and keeps a n
     revoked_at: null
   });
 
+  const me = await call(database, '/api/me', { token: guestToken });
+  assert.equal(me.response.status, 200);
+  assert.equal(me.body.registered, true);
+  assert.equal(me.body.authMode, 'employee_guest');
+  assert.equal(me.body.identityState, 'VERIFIED');
+  assert.equal(me.body.user.userId, completion.body.user.userId);
+  assert.equal(me.body.user.role, 'User');
+  assert.notEqual(me.body.identityState, 'EMPLOYEE_BIND_REQUIRED');
+  assert.notEqual(me.body.status, 'LINE_BIND_REQUIRED');
+
+  const bootstrap = await call(database, '/api/bootstrap', { token: guestToken });
+  assert.equal(bootstrap.response.status, 200);
+  assert.equal(bootstrap.body.success, true);
+  assert.equal(bootstrap.body.registered, true);
+  assert.equal(bootstrap.body.user.userId, completion.body.user.userId);
+  assert.equal(bootstrap.body.user.role, 'User');
+
   const replay = await call(database, '/api/auth/employee-guest/onboarding', {
     method: 'POST',
     token: '',
@@ -293,6 +310,36 @@ test('employee guest provisional onboarding completes without LINE and keeps a n
   assert.equal(replay.response.status, 200);
   assert.equal(replay.body.user.userId, completion.body.user.userId);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+});
+
+test('fresh employee onboarding is always a normal User and cannot obtain elevated access', async () => {
+  for (const employeeId of ['009001', '009002']) {
+    const database = new SqliteD1();
+    const login = await call(database, '/api/auth/employee-guest', {
+      method: 'POST',
+      body: { employeeId }
+    });
+    const onboarding = await call(database, '/api/auth/employee-guest/onboarding', {
+      method: 'POST',
+      headers: { 'X-Employee-Guest-Session': login.body.token },
+      body: { displayName: `Fresh ${employeeId}`, pickupFloor: '1樓' }
+    });
+
+    assert.equal(onboarding.response.status, 200);
+    assert.equal(onboarding.body.user.role, 'User');
+    assert.deepEqual(onboarding.body.capabilities, [
+      'READ_SELF',
+      'REGISTER_SELF',
+      'WRITE_SELF'
+    ]);
+    assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+
+    const adminSummary = await call(database, '/api/admin/summary', {
+      token: login.body.token
+    });
+    assert.equal(adminSummary.response.status, 403);
+    assert.equal(database.get('SELECT role FROM users LIMIT 1').role, 'User');
+  }
 });
 
 test('legacy employee_guest onboarding may project roster verification, not LINE access', async () => {

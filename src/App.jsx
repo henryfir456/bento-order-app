@@ -890,7 +890,11 @@ export default function App() {
         const nextAuthState = identity.identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED
           ? AUTH_STATES.EMPLOYEE_BIND_REQUIRED
           : identity.authMode === 'employee_guest'
-          && identity.user
+          && (
+            identity.user
+            || identity.status === 'UNVERIFIED_EMPLOYEE'
+            || identity.identityState === IDENTITY_STATES.NEW_PROVISIONAL_EMPLOYEE
+          )
           ? AUTH_STATES.UNVERIFIED
           : AUTH_STATES.UNREGISTERED;
         setAuthState(nextAuthState);

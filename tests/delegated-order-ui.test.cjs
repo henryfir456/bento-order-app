@@ -36,9 +36,9 @@ test('frontend keeps View-As read-only and exposes explicit delegated ordering m
   assert.match(orderPage, /isViewAsMode/);
   assert.match(api, /getOrderTargets/);
   assert.match(api, /targetUserId/);
-  assert.equal(packageJson.version, '0.15.4');
-  assert.equal(packageLock.version, '0.15.4');
-  assert.equal(packageLock.packages[''].version, '0.15.4');
+  assert.equal(packageJson.version, '0.15.5');
+  assert.equal(packageLock.version, '0.15.5');
+  assert.equal(packageLock.packages[''].version, '0.15.5');
   assert.match(changelog, /## \[0\.15\.2\] - 2026-09-16/);
   assert.match(changelog, /## \[0\.14\.1\] - 2026-09-15/);
   assert.match(app, /v\{APP_VERSION\}/);

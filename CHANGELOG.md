@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.15.5] - 2026-09-17
+
+### Fixed
+
+- Fixed fresh employee-ID onboarding continuing into the LINE binding flow after the canonical normal User and employee guest session were created.
+- Normal Users registering for the first time with employee ID can now enter the main UI and use general ordering without mandatory LINE binding.
+- Kept LINE binding optional while preserving strict Admin / ProxyAdmin identity and authorization protection.
+
 ## [0.15.4] - 2026-09-17
 
 ### Changed
