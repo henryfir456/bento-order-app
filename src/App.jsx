@@ -368,6 +368,7 @@ export default function App() {
   const [historyList, setHistoryList] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const [historySummaryExpanded, setHistorySummaryExpanded] = useState(false);
   const [selectedYear, setSelectedYear] = useState(() => getTaipeiYearMonth().year);
   const [selectedMonth, setSelectedMonth] = useState(() => getTaipeiYearMonth().month);
   const [historySummary, setHistorySummary] = useState({
@@ -809,12 +810,6 @@ export default function App() {
       if (!restoredGuest && !accessToken) {
         failAuthentication('LIFF_ACCESS_TOKEN_MISSING', 'LIFF accessToken 不存在');
         return;
-      }
-
-      if (workerResolution === WORKER_AUTH_RESOLUTIONS.LINE && guestSession) {
-        logAuthDiagnostic('LINE_IDENTITY_PRECEDENCE_CLEAR_GUEST');
-        guestSessionStore.clearGuestSession({ reason: 'line-precedence', notify: false });
-        guestSession = null;
       }
 
       if (apiClient.transport === 'worker' && hasBindIntent && guestSession?.token) {
@@ -1527,6 +1522,9 @@ export default function App() {
   const handleLineLogin = async () => {
     if (lineBindLoading || employeeGuestLoading) return;
     try {
+      // An explicit LINE entry selects LINE for this session. This only
+      // clears the local employee credential; it never changes LINE ownership.
+      guestSessionStore.clearGuestSession({ reason: 'line-login', notify: false });
       await authClient.init();
       if (!authClient.isLoggedIn()) {
         authClient.login();
@@ -1850,6 +1848,7 @@ export default function App() {
     const currentMonth = getTaipeiYearMonth();
     setSelectedYear(currentMonth.year);
     setSelectedMonth(currentMonth.month);
+    setHistorySummaryExpanded(false);
     setShowHistoryModal(true);
     loadBalanceHistory(currentMonth.year, currentMonth.month, viewAsUser?.userId || null);
   };
@@ -1964,6 +1963,19 @@ export default function App() {
 
     if (!event || !event.vendor) {
       await showPopup({ icon: 'warning', title: '尚未開團', text: '若想吃蔡老師，可以點擊愛心投票開團。' });
+      return;
+    }
+
+    if (
+      delegatedOrderUser
+      && authUser?.role === 'ProxyAdmin'
+      && dateStr < formatDateInput(new Date())
+    ) {
+      await showPopup({
+        icon: 'info',
+        title: '無法代點過去日期',
+        text: 'ProxyAdmin 代點餐僅可選擇今天或未來已開團日期。'
+      });
       return;
     }
 
@@ -3494,23 +3506,46 @@ export default function App() {
             </div>
 
             {!historyLoading && !historyError && (
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="rounded-xl bg-gray-50 border border-gray-100 p-2.5">
-                  <div className="text-gray-500">月初餘額</div>
-                  <div className="font-bold text-gray-800 mt-1">{formatBalanceAmount(historySummary.openingBalance)}</div>
-                </div>
-                <div className="rounded-xl bg-gray-50 border border-gray-100 p-2.5">
-                  <div className="text-gray-500">月底餘額</div>
-                  <div className="font-bold text-gray-800 mt-1">{formatBalanceAmount(historySummary.closingBalance)}</div>
-                </div>
-                <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-2.5">
-                  <div className="text-emerald-700">本月增加</div>
-                  <div className="font-bold text-emerald-800 mt-1">+${historySummary.totalCredit}</div>
-                </div>
-                <div className="rounded-xl bg-rose-50 border border-rose-100 p-2.5">
-                  <div className="text-rose-700">本月扣除</div>
-                  <div className="font-bold text-rose-800 mt-1">-${historySummary.totalDebit}</div>
-                </div>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  aria-expanded={historySummaryExpanded}
+                  aria-controls="monthly-balance-summary"
+                  onClick={() => setHistorySummaryExpanded((expanded) => !expanded)}
+                  className="flex w-full items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-left text-xs"
+                >
+                  <span className="min-w-0">
+                    <span className="block font-bold text-[#2C4A3E]">本月摘要</span>
+                    <span className="mt-1 block truncate text-gray-600">
+                      月初 {formatBalanceAmount(historySummary.openingBalance)} → 月底 {formatBalanceAmount(historySummary.closingBalance)}
+                    </span>
+                  </span>
+                  <span className="shrink-0 text-right font-bold">
+                    <span className="block text-emerald-800">+${historySummary.totalCredit}</span>
+                    <span className="block text-rose-800">-${historySummary.totalDebit}</span>
+                    <span className="mt-1 block text-[11px] text-[#2C4A3E]">{historySummaryExpanded ? '收合' : '展開'} {historySummaryExpanded ? '⌃' : '⌄'}</span>
+                  </span>
+                </button>
+                {historySummaryExpanded && (
+                  <div id="monthly-balance-summary" className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 p-2.5">
+                      <div className="text-gray-500">月初餘額</div>
+                      <div className="font-bold text-gray-800 mt-1">{formatBalanceAmount(historySummary.openingBalance)}</div>
+                    </div>
+                    <div className="rounded-xl bg-gray-50 border border-gray-100 p-2.5">
+                      <div className="text-gray-500">月底餘額</div>
+                      <div className="font-bold text-gray-800 mt-1">{formatBalanceAmount(historySummary.closingBalance)}</div>
+                    </div>
+                    <div className="rounded-xl bg-emerald-50 border border-emerald-100 p-2.5">
+                      <div className="text-emerald-700">本月增加</div>
+                      <div className="font-bold text-emerald-800 mt-1">+${historySummary.totalCredit}</div>
+                    </div>
+                    <div className="rounded-xl bg-rose-50 border border-rose-100 p-2.5">
+                      <div className="text-rose-700">本月扣除</div>
+                      <div className="font-bold text-rose-800 mt-1">-${historySummary.totalDebit}</div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

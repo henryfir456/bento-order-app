@@ -11,7 +11,13 @@ const importFromRoot = (relativePath) => import(pathToFileURL(
 ).href);
 
 test('vendor model normalizes aliases and keeps menu snapshot/source fields separate', async () => {
-  const { formatVendorDate, normalizeVendor, normalizeVendorName } = await importFromRoot('src/features/vendors/vendorModel.js');
+  const {
+    formatVendorCutoff,
+    formatVendorDate,
+    latestVendorOrderingGroup,
+    normalizeVendor,
+    normalizeVendorName
+  } = await importFromRoot('src/features/vendors/vendorModel.js');
   const vendor = normalizeVendor({
     vendor_id: 'vendor-1',
     name: '合十',
@@ -20,7 +26,7 @@ test('vendor model normalizes aliases and keeps menu snapshot/source fields sepa
     menu_updated_at: '2026-09-01',
     enabled: 1,
     is_open_for_ordering: true,
-    recent_groups: [{ order_date: '2026-09-12', mode: 'A', is_expired: false }]
+    recent_groups: [{ order_date: '2026-09-12', mode: 'A', deadline: '2026-09-12T02:00:00.000Z', is_expired: false }]
   });
 
   assert.equal(normalizeVendorName('合十'), '禾拾');
@@ -31,6 +37,8 @@ test('vendor model normalizes aliases and keeps menu snapshot/source fields sepa
   assert.equal(vendor.enabled, true);
   assert.equal(vendor.is_open_for_ordering, true);
   assert.equal(formatVendorDate(vendor.menu_updated_at), '2026/09/01');
+  assert.equal(latestVendorOrderingGroup(vendor).order_date, '2026-09-12');
+  assert.equal(formatVendorCutoff(latestVendorOrderingGroup(vendor)), '9/12 10:00 前');
 });
 
 test('mock adapter can render and update vendor metadata without external scraping', async () => {
@@ -106,6 +114,9 @@ test('vendor UI is wired to formal Worker/mock contracts and keeps GAS explicit'
   assert.match(appSource, /handleExitVendorHub/);
   assert.match(hubSource, /vendor\.menu_image_url/);
   assert.match(hubSource, /vendor\.menu_source_url/);
+  assert.match(hubSource, /formatVendorCutoff/);
+  assert.match(hubSource, /latestVendorOrderingGroup/);
+  assert.equal((hubSource.match(/最後點餐時間/g) || []).length, 2);
   assert.doesNotMatch(hubSource, /src=\{vendor\.menu_source_url\}/);
   assert.ok(vendorListBlock);
   assert.match(vendorListBlock, /<MenuSnapshot key=\{`\$\{vendor\.id\}-\$\{vendor\.menu_image_url\}`\} vendor=\{vendor\} variant="thumbnail" \/>/);

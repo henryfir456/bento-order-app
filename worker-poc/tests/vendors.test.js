@@ -52,6 +52,7 @@ test('vendor domain returns metadata, current ordering status, and recent groups
   assert.equal(teacher.menu_image_url, 'https://res.cloudinary.com/demo/image/upload/menu.png');
   assert.equal(teacher.menu_source_url, 'https://example.com/teacher/menu');
   assert.deepEqual(teacher.recent_groups.map((group) => group.order_date), ['2026-09-12', '2026-09-01']);
+  assert.equal(teacher.recent_groups[0].deadline, '2026-09-12T02:00:00.000Z');
   assert.equal(teacher.recent_groups[0].is_expired, false);
 });
 

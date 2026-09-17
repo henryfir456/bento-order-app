@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.15.4] - 2026-09-17
+
+### Changed
+
+- Compact the mobile personal balance and transaction summary by default while preserving month navigation and balance semantics; the complete four-card summary remains available on expansion.
+- Relaxed normal-user authentication so a `User` can use LINE or employee ID, alternate between both entries, and resolve both entries to the same canonical user without creating duplicates.
+- Removed LINE binding as a prerequisite for normal-user employee onboarding; LINE binding remains an optional identity enhancement.
+- Extended ProxyAdmin delegated ordering to today and future eligible open dates while retaining calendar, menu, cutoff, authorization, and mutation protections.
+- Added the canonical calendar-derived last-order time to Vendor Hub list and detail views.
+
+### Security
+
+- Kept Admin and ProxyAdmin on strict verified identity authentication; employee-only and `employee_guest` paths cannot obtain elevated roles, capabilities, or admin bootstrap.
+- Kept existing LINE ownership immutable during normal-user session resolution, including ownership conflicts.
+
+### Fixed
+
+- Fixed residual employee-login routing and state precedence that could incorrectly require LINE binding for a normal User.
+- Preserved the existing LINE ownership, calendar/menu, and mutation protections while applying the bounded changes.
+
 ## [0.15.3] - 2026-09-17
 
 ### Changed

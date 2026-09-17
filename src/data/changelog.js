@@ -11,6 +11,31 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.4': [
+    {
+      name: '變更',
+      changes: [
+        '手機個人儲值／交易明細改為預設收合的本月摘要，展開後仍可查看完整四項統計，月份與餘額語意不變。',
+        '一般 User 現在可使用 LINE 或員編登入並交替使用，兩種 entry 共用同一個 canonical user，不建立 duplicate user。',
+        '一般 User 完成員編 onboarding 後即可使用一般點餐功能，LINE binding 不再是強制前置條件。',
+        'ProxyAdmin 代點餐支援今天與未來已開團且尚未截止的日期；既有 cutoff、授權與 mutation protection 維持不變。',
+        'Vendor Hub 列表與詳細頁新增由 canonical calendar deadline 投影的最後點餐時間。'
+      ]
+    },
+    {
+      name: '安全',
+      changes: [
+        'Admin／ProxyAdmin 維持嚴格身份驗證；employee-only／employee_guest 不可取得 elevated role、capability 或 admin bootstrap。',
+        'ownership conflict 不再阻擋一般 User session resolution，但不會自動覆寫既有 LINE ownership。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '修正一般 User 員編登入後仍被殘留狀態導向 LINE binding 的問題。'
+      ]
+    }
+  ],
   '0.15.3': [
     {
       name: '變更',

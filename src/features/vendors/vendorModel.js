@@ -61,6 +61,28 @@ export const formatVendorDate = (value) => {
   return normalized.replaceAll('-', '/');
 };
 
+export const latestVendorOrderingGroup = (vendor) => (
+  Array.isArray(vendor?.recent_groups) ? vendor.recent_groups[0] || null : null
+);
+
+export const formatVendorCutoff = (group) => {
+  const deadline = new Date(text(group?.deadline));
+  if (Number.isNaN(deadline.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(deadline).reduce((result, part) => {
+    if (part.type !== 'literal') result[part.type] = part.value;
+    return result;
+  }, {});
+  if (!parts.month || !parts.day || !parts.hour || !parts.minute) return '';
+  return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute} 前`;
+};
+
 export const isHttpUrl = (value) => {
   const normalized = text(value);
   if (!normalized) return true;

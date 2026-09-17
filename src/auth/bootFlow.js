@@ -30,12 +30,12 @@ export const IDENTITY_STATES = Object.freeze({
   UNREGISTERED: 'UNREGISTERED'
 });
 
-// Guest credentials are a fallback cache. Resolve this only after LIFF has
-// been initialized and its authentication state has been checked.
+// Guest credentials represent an explicit employee entry. Once present, they
+// remain the selected normal-User authentication entry even when LIFF also
+// happens to be authenticated. LINE binding is a separate, explicit action.
 export const resolveWorkerAuthResolution = ({
   hasGuestSession = false,
   hasBindIntent = false,
-  preferGuestSession = false,
   lineAuthState = 'unknown'
 } = {}) => {
   if (hasBindIntent && hasGuestSession) {
@@ -43,7 +43,7 @@ export const resolveWorkerAuthResolution = ({
       ? WORKER_AUTH_RESOLUTIONS.LINE_BIND
       : WORKER_AUTH_RESOLUTIONS.LOGIN_REQUIRED;
   }
-  if (preferGuestSession && hasGuestSession) {
+  if (hasGuestSession) {
     return WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST;
   }
   if (lineAuthState === 'authenticated') return WORKER_AUTH_RESOLUTIONS.LINE;
@@ -59,7 +59,6 @@ export const resolveAuthBootPlan = ({
   transport = 'worker',
   hasGuestSession = false,
   hasBindIntent = false,
-  preferGuestSession = false,
   isLoggedIn = false
 } = {}) => {
   const plan = [AUTH_BOOT_STAGES.UNKNOWN];
@@ -69,7 +68,6 @@ export const resolveAuthBootPlan = ({
     const resolution = resolveWorkerAuthResolution({
       hasGuestSession,
       hasBindIntent,
-      preferGuestSession,
       lineAuthState: isLoggedIn ? 'authenticated' : 'anonymous'
     });
     if (resolution === WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST) {

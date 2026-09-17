@@ -55,6 +55,7 @@ export const isApiError = (error) => error instanceof ApiError;
 
 const businessMessages = Object.freeze({
   DEADLINE_CLOSED: '已過截止時間，請重新整理訂單狀態後再試。',
+  DELEGATED_ORDER_DATE_NOT_ELIGIBLE: 'ProxyAdmin 代點餐僅可選擇今天或未來已開團且尚未截止的日期。',
   IDEMPOTENCY_CONFLICT: '請求內容已變更，請重新確認後再試。',
   IDEMPOTENCY_IN_PROGRESS: '請求仍在處理中，請稍候再試。',
   ORDER_ALREADY_CANCELLED: '訂單已取消，請重新整理訂單狀態。',

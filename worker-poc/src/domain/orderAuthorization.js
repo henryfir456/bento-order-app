@@ -108,12 +108,15 @@ export const resolveOrderMutationTiming = ({
   const adminBypass = actor?.role === 'Admin';
   const proxyDelegatedBypass = actor?.role === 'ProxyAdmin' && isDelegated;
   const proxyDelegatedDateAllowed = !proxyDelegatedBypass
-    || targetDate === getTaipeiDate(now);
+    || targetDate >= getTaipeiDate(now);
   if (proxyDelegatedBypass && !proxyDelegatedDateAllowed && enforceProxyDelegatedDate) {
-    throw forbidden('DELEGATED_ORDER_TODAY_ONLY');
+    throw forbidden('DELEGATED_ORDER_DATE_NOT_ELIGIBLE');
   }
 
-  const cutoffApplies = !(adminBypass || (proxyDelegatedBypass && proxyDelegatedDateAllowed));
+  // ProxyAdmin delegation expands the eligible date range only. It never
+  // bypasses the canonical calendar/menu cutoff; Admin remains the sole
+  // elevated cutoff bypass.
+  const cutoffApplies = !adminBypass;
   const deadline = deadlineInfo(targetDate, mode, now);
   return {
     deadline,

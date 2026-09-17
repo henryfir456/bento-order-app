@@ -86,7 +86,8 @@ test('auth boot plan checks LIFF before restoring a guest fallback', async () =>
   }), [
     AUTH_BOOT_STAGES.UNKNOWN,
     AUTH_BOOT_STAGES.LIFF_CHECK,
-    AUTH_BOOT_STAGES.AUTH_LINE
+    AUTH_BOOT_STAGES.RESTORE_GUEST,
+    AUTH_BOOT_STAGES.AUTH_GUEST
   ]);
   assert.deepEqual(resolveAuthBootPlan({
     transport: 'worker',
@@ -101,7 +102,7 @@ test('auth boot plan checks LIFF before restoring a guest fallback', async () =>
   assert.equal(resolveWorkerAuthResolution({
     hasGuestSession: true,
     lineAuthState: 'authenticated'
-  }), WORKER_AUTH_RESOLUTIONS.LINE);
+  }), WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST);
   assert.equal(resolveWorkerAuthResolution({
     hasGuestSession: true,
     preferGuestSession: true,
@@ -118,25 +119,32 @@ test('auth boot plan checks LIFF before restoring a guest fallback', async () =>
   assert.equal(resolveWorkerAuthResolution({
     hasGuestSession: true,
     lineAuthState: 'unknown'
-  }), WORKER_AUTH_RESOLUTIONS.CHECK_LINE);
+  }), WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST);
 });
 
-test('Worker startup gives resolved LINE identity precedence over stale guest state', () => {
+test('Worker startup preserves explicit employee entry when LIFF is also authenticated', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const bootSource = appSource.match(/const initLiffAndFetchData[\s\S]*?\n  useEffect/)?.[0] || '';
   const liffCheckIndex = bootSource.indexOf("logAuthDiagnostic('LIFF_INIT_START')");
   const guestRestoreIndex = bootSource.indexOf("logAuthDiagnostic('RESTORE_GUEST_SESSION')");
   const lineBootstrapIndex = bootSource.indexOf('fetchBootstrapData(accessToken, bootId)');
-  const clearGuestIndex = bootSource.indexOf("reason: 'line-precedence'");
 
   assert.ok(liffCheckIndex >= 0);
   assert.ok(guestRestoreIndex > liffCheckIndex);
-  assert.ok(clearGuestIndex > liffCheckIndex);
-  assert.ok(lineBootstrapIndex > clearGuestIndex);
+  assert.ok(lineBootstrapIndex > guestRestoreIndex);
   assert.match(bootSource, /lineAuthState: isLoggedIn && accessToken/);
-  assert.match(bootSource, /workerResolution === WORKER_AUTH_RESOLUTIONS\.LINE/);
-  assert.match(bootSource, /guestSessionStore\.clearGuestSession\(\{ reason: 'line-precedence', notify: false \}\)/);
+  assert.match(bootSource, /workerResolution === WORKER_AUTH_RESOLUTIONS\.EMPLOYEE_GUEST/);
+  assert.doesNotMatch(bootSource, /reason: 'line-precedence'/);
   assert.match(bootSource, /resolveWorkerAuthResolution/);
+});
+
+test('explicit LINE login clears only the local employee entry before boot', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const lineLogin = appSource.match(/const handleLineLogin = async \(\) => \{[\s\S]*?\n  };/)?.[0] || '';
+
+  assert.match(lineLogin, /reason: 'line-login'/);
+  assert.match(lineLogin, /guestSessionStore\.clearGuestSession/);
+  assert.match(lineLogin, /initLiffAndFetchData\(\{ force: true \}\)/);
 });
 
 test('bound LINE identity never re-enters provisional onboarding', () => {
