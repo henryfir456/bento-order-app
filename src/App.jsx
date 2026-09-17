@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
-import { formatDateInput, formatDateTime, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
+import { formatDateInput, formatDateTime, formatTaipeiTopupNote, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
 import { apiClient, guestSessionStore } from './api/apiClient';
 import { getApiErrorPresentation } from './api/apiErrors';
 import {
@@ -380,8 +380,8 @@ export default function App() {
   const historyRequestRef = useRef(0);
   const [selectedTopupUser, setSelectedTopupUser] = useState(null);
   const [topupAmount, setTopupAmount] = useState('');
-  const [topupMethod, setTopupMethod] = useState('');
-  const [topupNote, setTopupNote] = useState('現金收款');
+  const [topupMethod, setTopupMethod] = useState('TAIWAN_PAY');
+  const [topupNote, setTopupNote] = useState(() => formatTaipeiTopupNote());
   const [topupLoading, setTopupLoading] = useState(false);
   const [topupIdempotencyKey, setTopupIdempotencyKey] = useState('');
   const [selectedEmployeeBindUser, setSelectedEmployeeBindUser] = useState(null);
@@ -2553,8 +2553,8 @@ export default function App() {
   const handleOpenTopupModal = (user) => {
     setSelectedTopupUser(user);
     setTopupAmount('');
-    setTopupMethod('');
-    setTopupNote('現金收款');
+    setTopupMethod('TAIWAN_PAY');
+    setTopupNote(formatTaipeiTopupNote());
     setTopupIdempotencyKey(createClientRequestKey('topup'));
   };
 
@@ -3805,7 +3805,6 @@ export default function App() {
                   disabled={topupLoading}
                   className="w-full border border-gray-200 rounded-2xl p-3.5 bg-gray-50 text-sm focus:outline-emerald-600 focus:bg-white transition-colors shadow-sm disabled:bg-gray-100"
                 >
-                  <option value="">請選擇儲值方式</option>
                   {TOPUP_METHOD_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}

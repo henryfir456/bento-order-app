@@ -11,6 +11,15 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.6': [
+    {
+      name: '變更',
+      changes: [
+        '訂單管理新增「全部明細／樓層明細／餐點匯總」分頁，預設顯示全部明細，既有內容與匯總邏輯維持不變。',
+        '儲值預設方式改為台灣 Pay，備註預設為當日台北日期的 M/D收款，且仍可手動修改。'
+      ]
+    }
+  ],
   '0.15.5': [
     {
       name: '修正',

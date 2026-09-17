@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.15.6] - 2026-09-17
+
+### Changed
+
+- Added ordered tabs for admin order management: 全部明細, 樓層明細, and 餐點匯總, with 全部明細 as the default while preserving the existing view content and aggregation logic.
+- Set 台灣 Pay as the default top-up method and initialized the editable note with the current Taipei date in M/D收款 format.
+
 ## [0.15.5] - 2026-09-17
 
 ### Fixed

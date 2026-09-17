@@ -3,6 +3,12 @@ const floorNumber = (floor) => {
   return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
 };
 
+export const ORDER_SUMMARY_TABS = Object.freeze([
+  { id: 'detail', label: '明細' },
+  { id: 'floorCount', label: '樓層數' },
+  { id: 'totalCount', label: '總數' }
+]);
+
 export const compareFloors = (left, right) => {
   const leftNumber = floorNumber(left);
   const rightNumber = floorNumber(right);
@@ -38,3 +44,15 @@ export const aggregateOrdersByFloor = (orders = []) => (
     };
   })
 );
+
+export const aggregateOrdersByItem = (orders = []) => {
+  const items = new Map();
+  (Array.isArray(orders) ? orders : []).forEach((order) => {
+    const itemName = String(order?.item_name || '未命名品項').trim() || '未命名品項';
+    const quantity = Number(order?.quantity || 0);
+    if (!Number.isFinite(quantity)) return;
+    items.set(itemName, (items.get(itemName) || 0) + quantity);
+  });
+
+  return Array.from(items.entries()).map(([itemName, quantity]) => ({ itemName, quantity }));
+};

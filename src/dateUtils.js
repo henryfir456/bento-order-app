@@ -38,6 +38,11 @@ export const formatDateInput = (date = new Date()) => {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 };
 
+export const formatTaipeiTopupNote = (date = new Date()) => {
+  const { month, day } = getTaipeiDateParts(date);
+  return `${month}/${day}收款`;
+};
+
 export const shiftDateInput = (dateInput, offset) => {
   const match = String(dateInput || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const dayOffset = Number(offset);

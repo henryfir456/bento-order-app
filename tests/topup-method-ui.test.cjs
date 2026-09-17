@@ -25,19 +25,24 @@ test('transaction descriptions use the canonical method and preserve legacy NULL
   assert.equal(formatTransactionDescription({ type: 'ORDER', description: '點餐', topupMethod: 'CASH', note: '不應顯示' }), '點餐');
 });
 
-test('Admin top-up UI requires an explicit method and sends topupMethod to Worker', () => {
+test('Admin top-up UI defaults to Taiwan Pay without an empty placeholder and keeps other methods selectable', () => {
   const app = read('src/App.jsx');
   const client = read('src/api/apiClientCore.js');
   const handler = app.match(/const handleTopupSubmit = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   const modal = app.match(/\{selectedTopupUser && can\('topupMember'\)[\s\S]*?\n      \)\}/)?.[0] || '';
 
-  assert.match(app, /const \[topupMethod, setTopupMethod\] = useState\(''\)/);
-  assert.match(app, /setTopupMethod\(''\)/);
+  assert.match(app, /const \[topupMethod, setTopupMethod\] = useState\('TAIWAN_PAY'\)/);
+  assert.match(app, /setTopupMethod\('TAIWAN_PAY'\)/);
+  assert.match(app, /formatTaipeiTopupNote/);
+  assert.match(app, /setTopupNote\(formatTaipeiTopupNote\(\)\)/);
+  assert.doesNotMatch(modal, /<option value="">請選擇儲值方式<\/option>/);
+  assert.doesNotMatch(modal, /請選擇儲值方式/);
   assert.match(handler, /if \(!topupMethod\)/);
   assert.match(handler, /topupMethod,/);
   assert.match(modal, /<select/);
   assert.match(modal, /id="topup-method"/);
-  assert.match(modal, /required/);
+  assert.match(modal, /TOPUP_METHOD_OPTIONS\.map/);
+  assert.match(modal, /onChange=\{\(e\) => setTopupNote\(e\.target\.value\)\}/);
   assert.match(modal, /disabled=\{topupLoading \|\| !topupMethod\}/);
   assert.match(client, /topUpBalance: \(\{ targetUserId, amount, topupMethod, note, idempotencyKey \}/);
   assert.match(client, /body: \{ targetUserId, amount, topupMethod, note \}/);

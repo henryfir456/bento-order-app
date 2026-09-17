@@ -139,7 +139,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0', '0.12.1', '0.13.0', '0.14.0', '0.14.1', '0.14.2', '0.15.0', '0.15.1', '0.15.2', '0.15.3', '0.15.4', '0.15.5'].includes(release.version)
+    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0', '0.12.1', '0.13.0', '0.14.0', '0.14.1', '0.14.2', '0.15.0', '0.15.1', '0.15.2', '0.15.3', '0.15.4', '0.15.5', '0.15.6'].includes(release.version)
   ));
 
   assert.deepEqual(
@@ -287,7 +287,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.deepEqual(unreleased[0].changes, []);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.15.5', '0.15.4', '0.15.3', '0.15.2', '0.15.1']);
+  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.15.6', '0.15.5', '0.15.4', '0.15.3', '0.15.2']);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);
