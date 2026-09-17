@@ -21,7 +21,7 @@ export default function ProvisionalEmployeeOnboarding({
         </h2>
         <p className="text-sm text-gray-500">
           員工編號 <span className="font-bold text-gray-700">{employeeId}</span> 尚未建立員工資料，
-          請完成基本資料後開始使用員工訪客功能。
+          請完成基本資料後即可開始一般點餐功能；LINE 綁定為選用功能。
         </p>
       </div>
 
@@ -61,7 +61,7 @@ export default function ProvisionalEmployeeOnboarding({
         >
           {loading
             ? '建立 onboarding 中...'
-            : '完成 onboarding'}
+            : '完成設定並開始使用'}
         </button>
         {error && (
           <p role="alert" className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">

@@ -417,18 +417,6 @@ test('guest, unbound LINE Admin, and inactive LINE Admin cannot cross privileged
     method: 'POST',
     body: { employeeId: '139653' }
   });
-  assert.equal(guestLogin.response.status, 200);
-  await assertDenied(
-    'employee_guest Admin',
-    guestDatabase,
-    { token: guestLogin.body.token },
-    {}
-  );
-
-  const guestLineBind = await call(guestDatabase, '/api/auth/line-employee-bind', {
-    method: 'POST',
-    token: guestLogin.body.token,
-    body: { employeeId: '139653' }
-  });
-  assert.equal(guestLineBind.response.status, 401);
+  assert.equal(guestLogin.response.status, 403);
+  assert.equal(guestLogin.body.error, 'ADMIN_LINE_AUTH_REQUIRED');
 });

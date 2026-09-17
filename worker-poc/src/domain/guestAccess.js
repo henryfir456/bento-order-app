@@ -4,6 +4,8 @@ import { createGuestSession, inspectGuestSession } from '../auth/guestSession.js
 import {
   capabilitiesFor,
   identityStateFor,
+  isGeneralUser,
+  isRegisteredEmployeeGuestPrincipal,
   VERIFICATION_STATUSES
 } from '../auth/permissions.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
@@ -42,6 +44,48 @@ const statementChanges = (result) => Number(
   result?.meta?.changes ?? result?.changes ?? 0
 );
 
+const guestStatusFor = (user) => (
+  user?.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED
+    ? 'UNVERIFIED_EMPLOYEE'
+    : 'VERIFIED'
+);
+
+const employeeGuestResult = (user, session, status = guestStatusFor(user)) => {
+  const registered = isRegisteredEmployeeGuestPrincipal({
+    ...user,
+    authMode: 'employee_guest',
+    canonicalRole: user.role
+  });
+  return {
+    success: true,
+    registered,
+    status,
+    identityState: identityStateFor({
+      ...user,
+      authMode: 'employee_guest',
+      provisional: !registered,
+      registered
+    }),
+    verificationStatus: user.verificationStatus,
+    authMode: 'employee_guest',
+    ...(session ? {
+      token: session.token,
+      expiresAt: session.expiresAt
+    } : {}),
+    capabilities: capabilitiesFor(
+      user.role,
+      'employee_guest',
+      user.active,
+      user.employeeId
+    ),
+    employeeId: user.employeeId,
+    user: publicUser(user, {
+      authMode: 'employee_guest',
+      provisional: !registered
+    })
+  };
+};
+
 export const employeeGuestLogin = async (
   database,
   employeeIdInput,
@@ -77,75 +121,19 @@ export const employeeGuestLogin = async (
     };
   }
   if (!user.active) throw forbidden('EMPLOYEE_INACTIVE');
-  if (user.lineUserId !== null && user.lineUserId !== undefined) {
-    throw conflict('LINE_LOGIN_REQUIRED');
-  }
-  const status = user.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED
-    ? 'UNVERIFIED_EMPLOYEE'
-    : 'VERIFIED';
+  if (!isGeneralUser(user)) throw forbidden('ADMIN_LINE_AUTH_REQUIRED');
+  const status = guestStatusFor(user);
   const session = await createGuestSession(database, {
     userId: user.userId,
     employeeId: user.employeeId || employeeId,
     status,
     clock
   });
-  return {
-    success: true,
-    status,
-    identityState: identityStateFor({
-      userId: user.userId,
-      authMode: 'employee_guest',
-      provisional: status === 'UNVERIFIED_EMPLOYEE',
-      employeeId: user.employeeId,
-      verificationStatus: user.verificationStatus,
-      active: user.active
-    }),
-    verificationStatus: user.verificationStatus,
-    authMode: 'employee_guest',
-    token: session.token,
-    expiresAt: session.expiresAt,
-    capabilities: capabilitiesFor(
-      user.role,
-      'employee_guest',
-      user.active,
-      user.employeeId
-    ),
-    user: publicUser(user, {
-      authMode: 'employee_guest',
-      provisional: status === 'UNVERIFIED_EMPLOYEE'
-    })
-  };
+  return employeeGuestResult(user, session, status);
 };
 
 const provisionalGuestResult = (user, session) => {
-  const verified = user.verificationStatus === VERIFICATION_STATUSES.VERIFIED;
-  return {
-  success: true,
-  registered: verified,
-  status: verified ? 'VERIFIED' : 'UNVERIFIED_EMPLOYEE',
-  identityState: identityStateFor({
-    userId: user.userId,
-    employeeId: user.employeeId,
-    authMode: 'employee_guest',
-    provisional: !verified,
-    verificationStatus: user.verificationStatus,
-    active: user.active
-  }),
-  verificationStatus: user.verificationStatus,
-  authMode: 'employee_guest',
-  expiresAt: session?.expiresAt || null,
-  capabilities: capabilitiesFor(
-    user.role,
-    'employee_guest',
-    user.active,
-    user.employeeId
-  ),
-  employeeId: user.employeeId,
-  user: publicUser(user, {
-    authMode: 'employee_guest',
-    provisional: !verified
-  })
-  };
+  return employeeGuestResult(user, session);
 };
 
 export const completeEmployeeGuestOnboarding = async (
@@ -265,7 +253,11 @@ export const lineEmployeeLookup = async (
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
   if (currentLineUser) {
     if (!currentLineUser.active) throw forbidden('EMPLOYEE_INACTIVE');
-    if (currentLineUser.employeeId !== null && currentLineUser.employeeId !== undefined) {
+    if (
+      !isGeneralUser(currentLineUser)
+      && currentLineUser.employeeId !== null
+      && currentLineUser.employeeId !== undefined
+    ) {
       throw conflict('LINE_ALREADY_BOUND');
     }
   }
@@ -293,25 +285,30 @@ export const lineEmployeeLookup = async (
     };
   }
   if (!user.active) throw forbidden('EMPLOYEE_INACTIVE');
-  if (user.lineUserId !== null && user.lineUserId !== undefined) {
-    throw conflict('EMPLOYEE_ALREADY_LINE_BOUND');
-  }
-  return {
-    success: true,
-    status: 'FOUND',
-    identityState: identityStateFor({
-      userId: user.userId,
+  if (isGeneralUser(user)) {
+    const registered = isRegisteredEmployeeGuestPrincipal({
+      ...user,
       authMode: 'employee_guest',
-      provisional: true,
-      employeeId: user.employeeId,
+      canonicalRole: user.role
+    });
+    return {
+      success: true,
+      status: 'FOUND',
+      resolution: 'EMPLOYEE_SESSION',
+      ownershipChanged: false,
+      identityState: identityStateFor({
+        ...user,
+        authMode: 'employee_guest',
+        provisional: !registered,
+        registered
+      }),
       verificationStatus: user.verificationStatus,
-      active: user.active
-    }),
-    verificationStatus: user.verificationStatus,
-    authMode: 'line',
-    employeeId,
-    user: employeePreview(user)
-  };
+      authMode: 'line',
+      employeeId,
+      user: employeePreview(user)
+    };
+  }
+  throw conflict('EMPLOYEE_ALREADY_LINE_BOUND');
 };
 
 const createProvisionalCanonicalUser = async (
@@ -365,6 +362,31 @@ export const lineEmployeeBind = async (
   const employeeId = employeeIdText(employeeIdInput);
   const verifiedLineUserId = lineIdText(lineUserId);
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
+  const user = await getUserByEmployeeId(database, employeeId);
+
+  // Resolve an existing normal canonical User through an employee session.
+  // This is deliberately read-only: the target's line_user_id and the
+  // current LINE owner's line_user_id are never changed here.
+  const currentLineHasEmployee = Boolean(String(currentLineUser?.employeeId || '').trim());
+  const currentLineCanResolveNormalUser = !currentLineUser
+    || (isGeneralUser(currentLineUser) && currentLineHasEmployee);
+  if (user && user.active && isGeneralUser(user) && currentLineCanResolveNormalUser) {
+    if (sameEmployeeId(currentLineUser?.employeeId, employeeId)) {
+      return lineBindingResult(currentLineUser, 'ALREADY_BOUND');
+    }
+    const session = await createGuestSession(database, {
+      userId: user.userId,
+      employeeId: user.employeeId || employeeId,
+      status: guestStatusFor(user),
+      clock
+    });
+    return {
+      ...employeeGuestResult(user, session, 'RESOLVED'),
+      resolution: 'EMPLOYEE_SESSION',
+      ownershipChanged: false
+    };
+  }
+
   if (currentLineUser) {
     if (!currentLineUser.active) throw forbidden('EMPLOYEE_INACTIVE');
     if (sameEmployeeId(currentLineUser.employeeId, employeeId)) {
@@ -428,7 +450,6 @@ export const lineEmployeeBind = async (
     return lineBindingResult(boundUser);
   }
 
-  const user = await getUserByEmployeeId(database, employeeId);
   if (user) {
     if (!user.active) throw forbidden('EMPLOYEE_INACTIVE');
     if (user.lineUserId !== null && user.lineUserId !== undefined) {
@@ -518,6 +539,18 @@ export const bindLineIdentity = async (
   }
   if (!inspected.normal) {
     throw unauthorized('GUEST_SESSION_INVALID');
+  }
+  if (inspected.user?.lineUserId) {
+    if (inspected.user.lineUserId === verifiedLineUserId) {
+      return {
+        success: true,
+        status: 'ALREADY_BOUND',
+        identityState: publicUser(inspected.user).identityState,
+        authMode: 'line',
+        user: publicUser(inspected.user)
+      };
+    }
+    throw conflict('EMPLOYEE_ALREADY_LINE_BOUND');
   }
   if (existingLineUser && existingLineUser.userId !== inspected.user.userId) {
     throw conflict('LINE_ALREADY_BOUND');

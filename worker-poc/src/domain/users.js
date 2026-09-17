@@ -8,6 +8,7 @@ import {
   capabilitiesFor,
   identityStateFor,
   IDENTITY_STATES,
+  isRegisteredEmployeeGuestPrincipal,
   VERIFICATION_STATUSES
 } from '../auth/permissions.js';
 import { VALID_PICKUP_FLOORS } from './profile.js';
@@ -43,7 +44,7 @@ export const getMe = (identity) => {
   const guest = actor.authMode === 'employee_guest';
   const identityState = identityStateFor(actor);
   const employeeBindingRequired = identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED;
-  const registered = Boolean(actor.registered && !guest);
+  const registered = Boolean(actor.registered);
   const user = actor.userId ? publicUser(actor) : null;
   return {
     success: true,
@@ -119,10 +120,20 @@ export const updatePickupFloor = async (
     occurredAt: timestamp
   });
   const user = await getUserById(database, identity.actor.userId);
+  const registered = identity.actor.authMode === 'employee_guest'
+    ? isRegisteredEmployeeGuestPrincipal({
+      ...user,
+      authMode: identity.actor.authMode,
+      canonicalRole: user?.role
+    })
+    : Boolean(
+      identity.actor.registered
+      && identity.actor.authMode === 'line'
+      && String(user?.employeeId || '').trim()
+    );
   return {
     success: true,
-    registered: !guest && identity.actor.authMode === 'line'
-      && Boolean(String(user?.employeeId || '').trim()),
+    registered,
     identityState: identityStateFor({
       ...identity.actor,
       userId: user?.userId || identity.actor.userId,
@@ -130,8 +141,7 @@ export const updatePickupFloor = async (
       active: user?.active ?? identity.actor.active,
       authMode: identity.actor.authMode,
       employeeId: user?.employeeId || identity.actor.employeeId,
-      registered: !guest && identity.actor.authMode === 'line'
-        && Boolean(String(user?.employeeId || '').trim())
+      registered
     }),
     authMode: identity.actor.authMode,
     ...(guest ? {

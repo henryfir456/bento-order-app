@@ -36,7 +36,7 @@ const seedGuestDatabase = () => {
     displayName: 'Guest Admin',
     pickupFloor: '1樓',
     balance: 100,
-    role: 'Admin'
+    role: 'User'
   });
   database.run(`
     INSERT INTO calendar_settings (order_date, vendor, mode)
@@ -196,8 +196,8 @@ test('guest restore reconciles an existing unverified canonical user without att
   const restored = await call(database, '/api/me', { token: guestToken });
   assert.equal(restored.response.status, 200);
   assert.equal(restored.body.authMode, 'employee_guest');
-  assert.equal(restored.body.registered, false);
-  assert.equal(restored.body.identityState, 'PENDING_VERIFICATION');
+  assert.equal(restored.body.registered, true);
+  assert.equal(restored.body.identityState, 'VERIFIED');
   assert.equal(restored.body.status, 'UNVERIFIED_EMPLOYEE');
   assert.equal(restored.body.user.userId, 'reconciled-user-139653');
   assert.equal(restored.body.user.lineUserId, null);
@@ -216,11 +216,11 @@ test('guest restore reconciles an existing unverified canonical user without att
     body: { displayName: 'Reconciled profile', pickupFloor: '9樓' }
   });
   assert.equal(profileUpdate.response.status, 200);
-  assert.equal(profileUpdate.body.identityState, 'PENDING_VERIFICATION');
+  assert.equal(profileUpdate.body.identityState, 'VERIFIED');
   assert.equal(profileUpdate.body.user.userId, 'reconciled-user-139653');
   assert.equal(profileUpdate.body.user.lineUserId, null);
   assert.equal(profileUpdate.body.user.authSource, 'EMPLOYEE_GUEST');
-  assert.equal(profileUpdate.body.user.identityState, 'PENDING_VERIFICATION');
+  assert.equal(profileUpdate.body.user.identityState, 'VERIFIED');
   assert.equal(profileUpdate.body.user.verificationStatus, 'UNVERIFIED');
   assert.equal(profileUpdate.body.user.name, 'Reconciled profile');
   assert.equal(profileUpdate.body.user.floor, '9樓');
@@ -260,7 +260,8 @@ test('employee guest provisional onboarding completes without LINE and keeps a n
 
   assert.equal(completion.response.status, 200);
   assert.equal(completion.body.status, 'UNVERIFIED_EMPLOYEE');
-  assert.equal(completion.body.identityState, 'PENDING_VERIFICATION');
+  assert.equal(completion.body.registered, true);
+  assert.equal(completion.body.identityState, 'VERIFIED');
   assert.equal(completion.body.authMode, 'employee_guest');
   assert.equal(completion.body.verificationStatus, 'UNVERIFIED');
   assert.equal(completion.body.user.employeeId, '139653');
@@ -337,7 +338,7 @@ test('invalid employee IDs are rejected after trim and uppercase normalization',
   assert.equal(normalized.body.employeeId, 'AB12CD');
 });
 
-test('LINE binding does not attach to an unbound canonical owner without a survivor claim', async () => {
+test('LINE employee resolution uses an unbound canonical owner without attaching LINE', async () => {
   const database = seedGuestDatabase();
   const lineProfile = profileFetch({
     token: 'line-direct-token',
@@ -371,10 +372,14 @@ test('LINE binding does not attach to an unbound canonical owner without a survi
       pickupFloor: '9樓'
     }
   }, { fetchImpl: lineProfile });
-  assert.equal(binding.response.status, 409);
-  assert.deepEqual(binding.body, { error: 'EMPLOYEE_ID_ALREADY_BOUND' });
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.status, 'RESOLVED');
+  assert.equal(binding.body.authMode, 'employee_guest');
+  assert.equal(binding.body.resolution, 'EMPLOYEE_SESSION');
+  assert.equal(binding.body.user.userId, USER_ID);
+  assert.ok(binding.body.token);
   assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', USER_ID).line_user_id, null);
-  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 1);
 });
 
 test('LINE canonical user without employee ID must bind an employee before application access', async () => {
@@ -606,8 +611,8 @@ test('LINE binding is canonical, idempotent, conflict-safe, and revokes every ol
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 
   const newLogin = await guestLogin(database);
-  assert.equal(newLogin.response.status, 409);
-  assert.deepEqual(newLogin.body, { error: 'LINE_LOGIN_REQUIRED' });
+  assert.equal(newLogin.response.status, 201);
+  assert.equal(newLogin.body.user.userId, USER_ID);
 
   const conflictDatabase = seedGuestDatabase();
   seedUser(conflictDatabase, {
@@ -657,8 +662,11 @@ test('SQL-only imported non-LINE canonical user converges through employee guest
       pickupFloor: '9樓'
     }
   }, { fetchImpl: lineProfile });
-  assert.equal(directClaim.response.status, 409);
-  assert.deepEqual(directClaim.body, { error: 'EMPLOYEE_ID_ALREADY_BOUND' });
+  assert.equal(directClaim.response.status, 200);
+  assert.equal(directClaim.body.status, 'RESOLVED');
+  assert.equal(directClaim.body.authMode, 'employee_guest');
+  assert.equal(directClaim.body.user.userId, 'sql-imported-001234');
+  assert.equal(directClaim.body.user.lineUserId, null);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 
   const firstLogin = await guestLogin(database);
@@ -696,8 +704,8 @@ test('SQL-only imported non-LINE canonical user converges through employee guest
   assert.equal(replay.body.user.userId, 'sql-imported-001234');
 
   const employeeAfterBind = await guestLogin(database);
-  assert.equal(employeeAfterBind.response.status, 409);
-  assert.deepEqual(employeeAfterBind.body, { error: 'LINE_LOGIN_REQUIRED' });
+  assert.equal(employeeAfterBind.response.status, 200);
+  assert.equal(employeeAfterBind.body.user.userId, 'sql-imported-001234');
 });
 
 test('legacy guest-to-LINE binding creates a registered canonical user without roster gating', async () => {
@@ -801,6 +809,6 @@ test('legacy guest-to-LINE binding creates a registered canonical user without r
     method: 'POST',
     body: { employeeId: '139653' }
   });
-  assert.equal(employeeOnly.response.status, 409);
-  assert.deepEqual(employeeOnly.body, { error: 'LINE_LOGIN_REQUIRED' });
+  assert.equal(employeeOnly.response.status, 201);
+  assert.equal(employeeOnly.body.user.userId, binding.body.user.userId);
 });

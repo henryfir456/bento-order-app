@@ -19,7 +19,7 @@ export default function EmployeeGuestLogin({
         <div className="text-4xl">🍱</div>
         <h2 className="text-xl font-bold text-[#2C4A3E]">員工登入</h2>
         <p className="text-sm text-gray-500">
-          請優先使用 LINE 登入；若目前無法使用 LINE，可從其他登入方式進入員工流程。
+          LINE 與員工編號都可以登入，兩種方式可依需要交替使用。
         </p>
       </div>
 
@@ -42,7 +42,7 @@ export default function EmployeeGuestLogin({
             其他登入方式
           </summary>
           <p className="mt-2 text-xs text-gray-500">
-            員編登入僅是沒有 LINE 身份時的 bootstrap/fallback；若此員編已綁定 LINE，伺服器仍會要求改用 LINE 登入。
+            員工編號登入會使用既有 canonical 員工帳號；LINE 綁定是選用的身份 enhancement。
           </p>
           <div className="mt-3">
             {employeeFallbackOpen && (

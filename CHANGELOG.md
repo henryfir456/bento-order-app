@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [0.15.3] - 2026-09-17
+
+### Changed
+
+- Relaxed normal-user authentication so a `User` can sign in with either LINE or employee ID, alternate between both entry points, and resolve both paths to the same canonical user without creating duplicates.
+- Allowed a normal User with an existing LINE binding to continue using employee-ID login, and allowed employee-authenticated users to use LINE without making LINE binding a mandatory application prerequisite.
+- Kept existing LINE ownership immutable when a normal User session is resolved through an employee-ID or LINE employee entry, including ownership conflicts.
+- Allowed normal Users to access general ordering after completing employee onboarding with an employee lookup, display name, and pickup floor.
+
+### Security
+
+- Kept Admin and ProxyAdmin on the strict verified LINE and identity policy; employee-only and `employee_guest` authentication cannot obtain elevated roles, capabilities, or admin bootstrap.
+
+### Fixed
+
+- Fixed the LIFF completion callback/state refresh so the same session enters the normal main UI after completion, and corrected the `lineUserId` state refresh.
+- Fixed the 2026-09-21 normalized menu overlay to retain the persisted `menu_item_id`, avoiding synthetic menu-item IDs that caused order foreign-key failures to surface as `MUTATION_CONFLICT`.
+- Preserved the existing mutation and optimistic-concurrency protections.
+
 ## [0.15.2] - 2026-09-16
 
 ### Added

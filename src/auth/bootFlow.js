@@ -35,12 +35,16 @@ export const IDENTITY_STATES = Object.freeze({
 export const resolveWorkerAuthResolution = ({
   hasGuestSession = false,
   hasBindIntent = false,
+  preferGuestSession = false,
   lineAuthState = 'unknown'
 } = {}) => {
   if (hasBindIntent && hasGuestSession) {
     return lineAuthState === 'authenticated'
       ? WORKER_AUTH_RESOLUTIONS.LINE_BIND
       : WORKER_AUTH_RESOLUTIONS.LOGIN_REQUIRED;
+  }
+  if (preferGuestSession && hasGuestSession) {
+    return WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST;
   }
   if (lineAuthState === 'authenticated') return WORKER_AUTH_RESOLUTIONS.LINE;
   if (lineAuthState === 'anonymous' || lineAuthState === 'unavailable') {
@@ -55,6 +59,7 @@ export const resolveAuthBootPlan = ({
   transport = 'worker',
   hasGuestSession = false,
   hasBindIntent = false,
+  preferGuestSession = false,
   isLoggedIn = false
 } = {}) => {
   const plan = [AUTH_BOOT_STAGES.UNKNOWN];
@@ -64,6 +69,7 @@ export const resolveAuthBootPlan = ({
     const resolution = resolveWorkerAuthResolution({
       hasGuestSession,
       hasBindIntent,
+      preferGuestSession,
       lineAuthState: isLoggedIn ? 'authenticated' : 'anonymous'
     });
     if (resolution === WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST) {

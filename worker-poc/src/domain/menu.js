@@ -73,7 +73,10 @@ const menuItemFromResolvedChange = (change, compatibilityRows, isHistorical) => 
       && String(row.variant_key || '') === change.variant_key
   ));
   const compatibility = matchingRows.length === 1 ? matchingRows[0] : null;
-  const menuItemId = compatibility?.menu_item_id || change.menu_item_id;
+  const menuItemId = change.persisted_menu_item_id
+    || compatibility?.persisted_menu_item_id
+    || compatibility?.menu_item_id
+    || change.menu_item_id;
   return {
     menu_item_id: menuItemId,
     item_id: isHistorical ? change.item_code : menuItemId,

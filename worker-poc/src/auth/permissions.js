@@ -1,4 +1,5 @@
 import { forbidden } from '../http/errors.js';
+import { isProfileComplete } from '../domain/profile.js';
 
 export const ACTIONS = Object.freeze({
   READ_SELF: 'READ_SELF',
@@ -65,6 +66,25 @@ export const IDENTITY_STATES = Object.freeze({
 
 const hasEmployeeId = (value) => String(value ?? '').trim().length > 0;
 
+const canonicalRoleFor = (principal) => (
+  principal?.canonicalRole || principal?.role || 'User'
+);
+
+export const isGeneralUser = (principal) => (
+  canonicalRoleFor(principal) === 'User'
+);
+
+// Employee guest sessions may authenticate a normal canonical User without
+// inheriting the canonical row's LINE binding. Elevated canonical roles are
+// deliberately excluded even when their profile is complete.
+export const isRegisteredEmployeeGuestPrincipal = (principal) => Boolean(
+  principal?.authMode === 'employee_guest'
+    && isGeneralUser(principal)
+    && principal?.active === true
+    && hasEmployeeId(principal.employeeId)
+    && isProfileComplete(principal)
+);
+
 export const isRegisteredLinePrincipal = (principal) => Boolean(
   principal?.authMode === 'line'
     && principal?.active === true
@@ -94,7 +114,7 @@ export const identityStateFor = (principal) => {
     authMode === 'employee_guest'
     && principal?.userId
     && principal?.active !== false
-    && principal?.verificationStatus === VERIFICATION_STATUSES.VERIFIED
+    && principal?.registered
   ) {
     return IDENTITY_STATES.VERIFIED;
   }

@@ -11,6 +11,31 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.3': [
+    {
+      name: '變更',
+      changes: [
+        '一般 User 現在可使用 LINE 或員編登入，兩種 entry 可交替使用並共用同一個 canonical user。',
+        '已有 LINE 綁定的 User 仍可使用員編登入；員編登入後也可再使用 LINE。',
+        '一般 User 完成員編查詢、顯示名稱與領取樓層設定後即可使用一般點餐功能，LINE 綁定為選用功能。'
+      ]
+    },
+    {
+      name: '安全',
+      changes: [
+        'ownership conflict 不再阻擋一般 User 的 session resolution，但不會自動覆寫既有 LINE ownership。',
+        'employee-only／employee_guest 不可取得 Admin／ProxyAdmin elevated privileges；管理角色仍維持嚴格身份驗證。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '修正 LINE completion 後按繼續無法直接進入主畫面的問題，補上 callback／state refresh 並修正 lineUserId state。',
+        '修正 9/21 normalized menu overlay 遺失既有 menu_item_id，避免 synthetic menu item ID 導致 order FK failure／MUTATION_CONFLICT。',
+        '保留既有 concurrency／mutation protection 不變。'
+      ]
+    }
+  ],
   '0.15.2': [
     {
       name: '變更',

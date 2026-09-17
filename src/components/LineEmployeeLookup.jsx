@@ -14,12 +14,12 @@ export default function LineEmployeeLookup({
       <div className="space-y-2 text-center">
         <div className="text-4xl">🔗</div>
         <h2 className="text-xl font-bold text-[#2C4A3E]">
-          {bindingRequired ? 'LINE 綁定員編' : '完成 LINE 綁定'}
+          {bindingRequired ? 'LINE 綁定員編' : '使用員工編號登入'}
         </h2>
         <p className="text-sm text-gray-500">
           {bindingRequired
             ? '目前 LINE 身份尚未綁定員編，請輸入員工編號完成綁定。Worker 會安全處理既有暫存員工身份。'
-            : '請輸入員工編號完成 LINE 綁定；Worker 會處理新綁定、既有 ownership 與暫存員工 claim。'}
+            : '請輸入員工編號登入既有 canonical 員工帳號；LINE 綁定可稍後再完成。'}
         </p>
       </div>
 
@@ -46,7 +46,7 @@ export default function LineEmployeeLookup({
           disabled={loading || !employeeId.trim()}
           className="w-full rounded-2xl bg-[#2C4A3E] py-3.5 text-sm font-bold text-white shadow-md transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-gray-300"
         >
-          {loading ? '綁定中...' : (bindingRequired ? '綁定員編' : '綁定 LINE 與員編')}
+          {loading ? '處理中...' : (bindingRequired ? '綁定員編' : '使用員工編號登入')}
         </button>
         {error && (
           <p role="alert" className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">

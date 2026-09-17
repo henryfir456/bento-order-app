@@ -167,7 +167,8 @@ const normalizedChange = (row) => {
   sequence_number: row.sequence_number === undefined || row.sequence_number === null
     ? null : Number(row.sequence_number),
   source_read_only: row.source_kind !== ADMIN_SOURCE_KIND,
-  menu_item_id: projectionItemId(vendor, row.effective_date, row.item_code, row.variant_key || '')
+  menu_item_id: projectionItemId(vendor, row.effective_date, row.item_code, row.variant_key || ''),
+  persisted_menu_item_id: row.persisted_menu_item_id || null
   };
 };
 
@@ -381,7 +382,8 @@ export const mergeEffectiveMenuRows = ({ baselineRows = [], changeRows = [] } = 
       return indexes;
     }, []);
     const persistedMenuItemId = matchingIndexes.length === 1
-      ? merged[matchingIndexes[0]].menu_item_id
+      ? (merged[matchingIndexes[0]].persisted_menu_item_id
+        || merged[matchingIndexes[0]].menu_item_id)
       : null;
     if (matchingIndexes.length) {
       merged = merged.filter((row) => (

@@ -558,7 +558,7 @@ export default function App() {
       setIdentityState(requireAuthoritativeIdentityState(data));
       setAuthUser(nextUser);
       setViewAsUser(null);
-      setLineUserId(nextUser.userId);
+      setLineUserId(data.lineUserId || nextUser.lineUserId || '');
       setUserBalance(nextUser.balance);
       setName(nextUser.name);
       setDefaultFloor(nextUser.defaultFloor);
@@ -607,7 +607,7 @@ export default function App() {
     if (data.success
       && data.registered === false
       && data.authMode === 'employee_guest'
-      && data.status === 'UNVERIFIED_EMPLOYEE') {
+      && data.user) {
       const provisionalUser = data.user ? {
         ...data.user,
         userId: data.user.userId,
@@ -663,6 +663,7 @@ export default function App() {
 
   const initLiffAndFetchData = (options = {}) => {
     const force = Boolean(options?.force);
+    const preferGuestSession = Boolean(options?.preferGuestSession);
     if (authBootPromiseRef.current && !force) {
       return authBootPromiseRef.current;
     }
@@ -760,6 +761,7 @@ export default function App() {
         ? resolveWorkerAuthResolution({
           hasGuestSession: Boolean(guestSession),
           hasBindIntent,
+          preferGuestSession,
           lineAuthState: isLoggedIn && accessToken
             ? 'authenticated'
             : liffAvailable ? 'anonymous' : 'unavailable'
@@ -773,6 +775,7 @@ export default function App() {
         const restoredIdentity = await fetchBootstrapData(guestSession.token, bootId);
         if (restoredIdentity?.success && (
           (restoredIdentity.registered && restoredIdentity.user)
+          || (restoredIdentity.authMode === 'employee_guest' && restoredIdentity.user)
           || restoredIdentity.status === 'UNVERIFIED_EMPLOYEE'
         )) {
           identity = restoredIdentity;
@@ -892,7 +895,7 @@ export default function App() {
         const nextAuthState = identity.identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED
           ? AUTH_STATES.EMPLOYEE_BIND_REQUIRED
           : identity.authMode === 'employee_guest'
-          && identity.status === 'UNVERIFIED_EMPLOYEE'
+          && identity.user
           ? AUTH_STATES.UNVERIFIED
           : AUTH_STATES.UNREGISTERED;
         setAuthState(nextAuthState);
@@ -1032,7 +1035,50 @@ export default function App() {
 
   useEffect(() => {
     void initLiffAndFetchData();
+    // initLiffAndFetchData is intentionally a render-local orchestration
+    // closure; the boot must run only once on initial mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (apiClient.transport !== 'worker' || authClient.isMock) return undefined;
+    const resumableStates = new Set([
+      AUTH_STATES.AUTH_REQUIRED,
+      AUTH_STATES.AUTH_FAILED,
+      AUTH_STATES.UNREGISTERED,
+      AUTH_STATES.EMPLOYEE_BIND_REQUIRED,
+      AUTH_STATES.UNVERIFIED
+    ]);
+    let lastResumeAt = 0;
+    const resumeAfterLiffReturn = () => {
+      if (loading || document.visibilityState === 'hidden' || !resumableStates.has(authState)) {
+        return;
+      }
+      let loggedIn = false;
+      try {
+        loggedIn = authClient.isLoggedIn();
+      } catch {
+        return;
+      }
+      if (!loggedIn || authInitInFlightRef.current) return;
+      const now = Date.now();
+      if (now - lastResumeAt < 500) return;
+      lastResumeAt = now;
+      authBootCompletedRef.current = false;
+      logAuthDiagnostic('LIFF_RETURN_RESUME');
+      void initLiffAndFetchData({ force: true });
+    };
+
+    window.addEventListener('pageshow', resumeAfterLiffReturn);
+    window.addEventListener('focus', resumeAfterLiffReturn);
+    document.addEventListener('visibilitychange', resumeAfterLiffReturn);
+    return () => {
+      window.removeEventListener('pageshow', resumeAfterLiffReturn);
+      window.removeEventListener('focus', resumeAfterLiffReturn);
+      document.removeEventListener('visibilitychange', resumeAfterLiffReturn);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authState, loading]);
 
   const canManageAdminAnnouncements = () => (
     apiClient.transport === 'worker'
@@ -1405,7 +1451,7 @@ export default function App() {
       } else {
         setEmployeeGuestId('');
       }
-      await initLiffAndFetchData({ force: true });
+      await initLiffAndFetchData({ force: true, preferGuestSession: true });
     } catch (error) {
       setEmployeeGuestError(getApiErrorPresentation(error, '員工登入').message);
     } finally {
@@ -1447,17 +1493,13 @@ export default function App() {
         || data.authMode !== 'employee_guest'
         || !['UNVERIFIED_EMPLOYEE', 'VERIFIED'].includes(data.status)
         || !data.user
-        || data.user.lineUserId !== null
       ) {
         throw new Error(data.error || data.message || 'EMPLOYEE_GUEST_ONBOARDING_INVALID_RESPONSE');
       }
-      applyUserInfoData(data);
-      const guestState = data.status === 'VERIFIED'
-        ? AUTH_STATES.REGISTERED
-        : AUTH_STATES.UNVERIFIED;
-      setAuthState(guestState);
-      setAuthStage(guestState);
-      setEmployeeGuestSuccess('基本資料已建立，員工訪客模式可繼續使用；如需完整系統功能，請使用 LINE 綁定員編。');
+      // Re-resolve the canonical identity and bootstrap in the same session.
+      // The onboarding response is not treated as the final UI projection.
+      authBootCompletedRef.current = false;
+      await initLiffAndFetchData({ force: true, preferGuestSession: true });
     } catch (error) {
       setEmployeeGuestError(getApiErrorPresentation(error, '完成 onboarding').message);
     } finally {
@@ -1573,7 +1615,12 @@ export default function App() {
         throw new Error(data.error || data.message || 'LINE_EMPLOYEE_BIND_FAILED');
       }
       authBootCompletedRef.current = false;
-      await initLiffAndFetchData({ force: true });
+      if (data.authMode === 'employee_guest' && data.token && data.expiresAt) {
+        guestSessionStore.setGuestSession({ token: data.token, expiresAt: data.expiresAt });
+        await initLiffAndFetchData({ force: true, preferGuestSession: true });
+      } else {
+        await initLiffAndFetchData({ force: true });
+      }
     } catch (error) {
       setEmployeeGuestError(getApiErrorPresentation(error, '綁定 LINE').message);
     } finally {

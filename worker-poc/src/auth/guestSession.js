@@ -91,7 +91,10 @@ export const inspectGuestSession = async (
   const expired = row.expires_at <= nowIso;
   const active = row.user_id ? Boolean(row.active) : true;
   const lineBound = Boolean(String(row.line_user_id ?? '').trim());
-  const normal = !expired && active && !lineBound && row.revoked_at === null;
+  // Employee authentication is intentionally independent from LINE
+  // ownership. A valid employee session remains usable for the same
+  // canonical user even when that row already has a LINE binding.
+  const normal = !expired && active && row.revoked_at === null;
   const replay = allowRevokedLineBindReplay
     && !expired
     && active

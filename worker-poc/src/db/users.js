@@ -1,4 +1,8 @@
-import { identityStateFor, VERIFICATION_STATUSES } from '../auth/permissions.js';
+import {
+  identityStateFor,
+  isRegisteredEmployeeGuestPrincipal,
+  VERIFICATION_STATUSES
+} from '../auth/permissions.js';
 import { isProfileComplete } from '../domain/profile.js';
 
 export const toUser = (row) => {
@@ -89,6 +93,12 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
   const hasLineBinding = Boolean(String(user.lineUserId || '').trim());
   const authMode = projectedAuthMode || user.authMode || (hasLineBinding ? 'line' : 'canonical');
   const isEmployeeGuest = authMode === 'employee_guest';
+  const canonicalRole = user.canonicalRole || user.role;
+  const registeredEmployeeGuest = isRegisteredEmployeeGuestPrincipal({
+    ...user,
+    authMode,
+    canonicalRole
+  });
   // A canonical member without a LINE binding is still a canonical member.
   // `employee_guest` belongs to the authenticated session principal and must
   // not be inferred from a nullable users.line_user_id projection.
@@ -96,9 +106,10 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
     userId: user.userId,
     employeeId: user.employeeId,
     authMode,
-    registered: !isEmployeeGuest && user.active && hasEmployeeId,
-    provisional: isEmployeeGuest && (provisional
-      || verificationStatus === VERIFICATION_STATUSES.UNVERIFIED),
+    registered: isEmployeeGuest
+      ? registeredEmployeeGuest
+      : user.active && hasEmployeeId,
+    provisional: isEmployeeGuest && (provisional || !registeredEmployeeGuest),
     verificationStatus,
     active: user.active
   });
@@ -116,7 +127,9 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
     floor: user.pickupFloor,
     defaultFloor: user.pickupFloor,
     balance: user.balance,
-    role: user.role,
+    // The employee_guest projection is intentionally self-service only and
+    // must never expose an elevated role obtained through employee auth.
+    role: isEmployeeGuest ? 'User' : user.role,
     active: user.active,
     authSource,
     identityState,

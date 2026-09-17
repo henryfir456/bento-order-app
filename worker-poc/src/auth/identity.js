@@ -3,6 +3,7 @@ import { forbidden, unauthorized } from '../http/errors.js';
 import {
   capabilitiesFor,
   identityStateFor,
+  isRegisteredEmployeeGuestPrincipal,
   isRegisteredLinePrincipal,
   VERIFICATION_STATUSES
 } from './permissions.js';
@@ -36,13 +37,23 @@ const actorFromUser = (
   const active = user ? Boolean(user.active) : true;
   const registered = Boolean(
     user
-    && authMode === 'line'
     && active
     && hasEmployeeId
+    && (
+      authMode === 'line'
+      || isRegisteredEmployeeGuestPrincipal({
+        ...user,
+        authMode,
+        employeeId: user.employeeId || employeeId,
+        canonicalRole: user.role
+      })
+    )
   );
+  const canonicalRole = user?.role || null;
   const guestProvisional = authMode === 'employee_guest'
-    && (provisional || user?.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED);
+    && (provisional || !registered);
   const actor = {
+    ...(user || {}),
     userId: user?.userId || null,
     employeeId: user?.employeeId || employeeId || null,
     lineUserId: user?.lineUserId || lineUserId || null,
@@ -51,7 +62,9 @@ const actorFromUser = (
     provisional: guestProvisional,
     requiresEmployeeBinding,
     verificationStatus,
-    ...(user || {}),
+    canonicalRole,
+    // Employee-only authentication never becomes an elevated principal.
+    role: authMode === 'employee_guest' ? 'User' : (canonicalRole || 'User'),
     authMode
   };
   actor.capabilities = capabilitiesFor(
@@ -93,15 +106,13 @@ const viewAsTarget = (url) => (
 );
 
 // An older unbound guest token may outlive the canonical user created by a
-// prior onboarding attempt. Resolve only the matching active, still-unbound
-// user. This is deliberately read-only and never exposes a LINE-bound user
-// through employee-number-only credentials.
+// prior onboarding attempt. Resolve only the matching active user. Employee
+// authentication is intentionally independent from persistent LINE ownership.
 const resolveGuestCanonicalUser = async (database, guest) => {
   if (!guest?.provisional || guest.user || !guest.employeeId) return guest?.user || null;
   const user = await getUserByEmployeeId(database, guest.employeeId);
   if (!user
-    || !user.active
-    || user.lineUserId !== null) {
+    || !user.active) {
     return null;
   }
   return user;
@@ -124,10 +135,13 @@ export const resolveCanonicalIdentity = async (
     if (viewAsTarget(new URL(request.url))) throw forbidden('VIEW_AS_FORBIDDEN');
     if (guest?.provisional) {
       const canonicalUser = await resolveGuestCanonicalUser(env.DB, guest);
+      if (canonicalUser && canonicalUser.role !== 'User') {
+        throw forbidden('ADMIN_LINE_AUTH_REQUIRED');
+      }
       const actor = actorFromUser(canonicalUser, {
         authMode: 'employee_guest',
         employeeId: guest.employeeId,
-        provisional: true
+        provisional: !canonicalUser
       });
       return {
         actor,
@@ -137,6 +151,9 @@ export const resolveCanonicalIdentity = async (
       };
     }
     if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
+    if (guest.user && guest.user.role !== 'User') {
+      throw forbidden('ADMIN_LINE_AUTH_REQUIRED');
+    }
     const actor = actorFromUser(guest.user, { authMode: 'employee_guest' });
     return {
       actor,

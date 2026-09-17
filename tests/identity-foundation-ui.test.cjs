@@ -104,6 +104,11 @@ test('auth boot plan checks LIFF before restoring a guest fallback', async () =>
   }), WORKER_AUTH_RESOLUTIONS.LINE);
   assert.equal(resolveWorkerAuthResolution({
     hasGuestSession: true,
+    preferGuestSession: true,
+    lineAuthState: 'authenticated'
+  }), WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST);
+  assert.equal(resolveWorkerAuthResolution({
+    hasGuestSession: true,
     lineAuthState: 'anonymous'
   }), WORKER_AUTH_RESOLUTIONS.EMPLOYEE_GUEST);
   assert.equal(resolveWorkerAuthResolution({
@@ -188,7 +193,8 @@ test('legacy guest identity states remain compatibility-only and do not gate LIN
   assert.match(submitBlock, /handleEmployeeGuestOnboarding/);
   assert.doesNotMatch(submitBlock, /PENDING_VERIFICATION|EXISTING_UNVERIFIED_EMPLOYEE/);
   assert.match(workerIdentitySource, /getUserByEmployeeId/);
-  assert.match(workerIdentitySource, /user\.lineUserId !== null/);
+  assert.match(workerIdentitySource, /isRegisteredEmployeeGuestPrincipal/);
+  assert.doesNotMatch(workerIdentitySource, /user\.lineUserId !== null/);
   assert.doesNotMatch(workerIdentitySource, /isVerifiedPrincipal/);
   assert.match(workerUsersSource, /const identityState = identityStateFor\(actor\)/);
 });
@@ -236,6 +242,17 @@ test('LIFF init is idempotent across concurrent boot attempts', async () => {
 
   await Promise.all([client.init(), client.init(), client.init()]);
   assert.equal(initCalls, 1);
+});
+
+test('LIFF completion resumes the same session into normal UI without manual reopen', () => {
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  assert.match(appSource, /const resumeAfterLiffReturn/);
+  assert.match(appSource, /window\.addEventListener\('pageshow', resumeAfterLiffReturn\)/);
+  assert.match(appSource, /window\.addEventListener\('focus', resumeAfterLiffReturn\)/);
+  assert.match(appSource, /document\.addEventListener\('visibilitychange', resumeAfterLiffReturn\)/);
+  assert.match(appSource, /logAuthDiagnostic\('LIFF_RETURN_RESUME'\)/);
+  assert.match(appSource, /authBootCompletedRef\.current = false;[\s\S]*initLiffAndFetchData\(\{ force: true \}\)/);
+  assert.match(appSource, /initLiffAndFetchData\(\{ force: true, preferGuestSession: true \}\)/);
 });
 
 test('Worker transport sends guest login without auth and protected calls with opaque guest bearer', async () => {
@@ -466,8 +483,9 @@ test('employee guest provisional onboarding does not require or initiate LINE bi
   assert.match(submitBlock, /authMode !== 'employee_guest'/);
   assert.match(submitBlock, /handleEmployeeGuestOnboarding/);
   assert.doesNotMatch(submitBlock, /handleLineEmployeeBind|handleBindLine/);
-  assert.doesNotMatch(onboardingSource, /lineAuthenticated|LINE 綁定/);
-  assert.match(onboardingSource, /員工訪客功能/);
+  assert.doesNotMatch(onboardingSource, /lineAuthenticated/);
+  assert.match(onboardingSource, /一般點餐功能/);
+  assert.match(onboardingSource, /LINE 綁定為選用功能/);
 });
 
 test('employee binding success copy is role-neutral for every target role', () => {
