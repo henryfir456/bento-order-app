@@ -2,6 +2,30 @@
 
 這是公司蔬食便當預訂系統的 React/Vite 前端，透過 LINE LIFF 提供登入、查看開團月曆、選餐、送出或取消訂單，以及餘額與交易紀錄查詢。正式架構使用 Cloudflare Worker + D1；前端預設使用 Worker transport，沒有自動 fallback 到 GAS。
 
+## Built for Real-World Lunch Operations
+
+這套系統從公司日常蔬食便當流程逐步演化，涵蓋開團月曆、手機點餐、跨樓層取餐，以及 Admin 訂單彙整。以下畫面呈現實際操作流程，而不是獨立的 UI demo。
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/calendar.webp" alt="開團月曆" />
+      <br />
+      <sub>開團月曆：查看每日店家、訂單狀態與預訂進度</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/order-page.webp" alt="點餐畫面" />
+      <br />
+      <sub>點餐流程：選擇餐點、份量、領取樓層並送出訂單</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="docs/screenshots/order-management.webp" alt="訂單管理" />
+      <br />
+      <sub>訂單管理：明細、樓層數與總數切換</sub>
+    </td>
+  </tr>
+</table>
+
 ## 目前功能
 
 - LINE LIFF 登入、未註冊使用者註冊，以及員工訪客登入流程。

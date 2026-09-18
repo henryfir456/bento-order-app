@@ -11,6 +11,15 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.7': [
+    {
+      name: '新增',
+      changes: [
+        'README 新增實際系統畫面展示，包含開團月曆、點餐流程與訂單管理。',
+        '新增最佳化的 README 截圖資產，讓專案流程與實際使用情境更容易理解。'
+      ]
+    }
+  ],
   '0.15.6': [
     {
       name: '變更',

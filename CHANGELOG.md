@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.15.7] - 2026-09-18
+
+### Added
+
+- Added a real-world README showcase with representative calendar, ordering, and Admin order-management screens.
+- Added optimized screenshot assets under `docs/screenshots/` so the end-to-end lunch-ordering workflow is easier to understand at a glance.
+
 ## [0.15.6] - 2026-09-17
 
 ### Changed

@@ -84,15 +84,10 @@ test('Taipei top-up note formatting uses an unpadded M/D label', async () => {
   assert.equal(formatTaipeiTopupNote(new Date('2026-01-02T16:30:00.000Z')), '1/3收款');
 });
 
-test('release metadata is updated to v0.15.6 with a matching changelog entry', () => {
-  const packageJson = JSON.parse(read('package.json'));
-  const packageLock = JSON.parse(read('package-lock.json'));
+test('v0.15.6 remains represented in release history', () => {
   const changelog = read('CHANGELOG.md');
   const changelogSource = read('src/data/changelog.js');
 
-  assert.equal(packageJson.version, '0.15.6');
-  assert.equal(packageLock.version, '0.15.6');
-  assert.equal(packageLock.packages[''].version, '0.15.6');
-  assert.match(changelog, /^## \[0\.15\.6\] - 2026-09-17/m);
-  assert.match(changelogSource, /'0\.15\.6': \[/);
+  assert.match(changelog, /^## \\[0\\.15\\.6\\] - 2026-09-17/m);
+  assert.match(changelogSource, /'0\\.15\\.6': \\[/);
 });
