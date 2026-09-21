@@ -1,6 +1,6 @@
 import { badRequest, conflict } from '../http/errors.js';
 import { prepareStatement, runMutationBatch } from './transactions.js';
-import { currentBalanceProjection } from './users.js';
+import { authoritativeBalanceProjection } from './users.js';
 import { isAllowedTopupMethod } from '../domain/topupMethods.js';
 
 export const LEDGER_TYPES = Object.freeze(['TOPUP', 'ORDER', 'REFUND', 'ADJUSTMENT']);
@@ -163,11 +163,18 @@ export const ledgerMutationStatements = (
   const reference = dynamicOrder
     ? { sql: dynamicOrderExists, params: dynamicOrderParams }
     : referenceRule(entry);
-  const authoritativeBalance = currentBalanceProjection('target');
+  const authoritativeBalance = authoritativeBalanceProjection('target');
   const updateCondition = dynamicBalanceAfter
     ? `(${reference.sql})`
     : `(${authoritativeBalance} + ? = ? AND (${reference.sql}))`;
   const updateAmount = dynamicOrder ? dynamicOrderAmount : '?';
+  // The UPDATE runs first in the same atomic batch.  After it succeeds,
+  // target.balance is the canonical post-mutation projection.  Re-evaluating
+  // authoritativeBalance here would see that just-updated mirror and apply
+  // the amount twice.
+  const dynamicBalanceAfterSql = dynamicBalanceAfter ? 'target.balance' : '?';
+  const insertAmountParams = dynamicOrder ? dynamicOrderParams : [entry.amount];
+  const insertBalanceParams = dynamicBalanceAfter ? [] : [entry.balanceAfter];
   const updateElse = dynamicOrder ? 'target.balance' : 'NULL';
   const updateParams = dynamicBalanceAfter
     ? [
@@ -207,7 +214,7 @@ export const ledgerMutationStatements = (
     )
     SELECT ?, ?, ?, ?, ?,
       ${dynamicOrder ? dynamicOrderAmount : '?'},
-      ${dynamicBalanceAfter ? 'target.balance' : '?'},
+      ${dynamicBalanceAfterSql},
       ?,
       ?,
       ${dynamicOrder ? dynamicOrderReference : '?'},
@@ -223,8 +230,8 @@ export const ledgerMutationStatements = (
     entry.employeeIdSnapshot,
     entry.lineUserIdSnapshot,
     entry.displayNameSnapshot,
-    ...(dynamicOrder ? dynamicOrderParams : [entry.amount]),
-    ...(dynamicBalanceAfter || dynamicOrder ? [] : [entry.balanceAfter]),
+    ...insertAmountParams,
+    ...insertBalanceParams,
     entry.type,
     entry.topupMethod,
     ...(dynamicOrder ? dynamicOrderParams : [entry.referenceId]),
@@ -291,6 +298,7 @@ export const getLedgerRows = async (database, userId, { from, to } = {}) => {
     SELECT bl.transaction_id, bl.user_id, bl.employee_id_snapshot,
            bl.line_user_id_snapshot, bl.display_name_snapshot, bl.amount,
            bl.balance_after, bl.type, bl.topup_method, bl.operator_user_id, bl.note,
+           bls.sequence_number,
            bl.reference_id, bl.occurred_at, bl.source_batch_id, o.order_date
     FROM balance_ledger bl
     JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
@@ -341,10 +349,11 @@ export const getHistoricalOrderDetails = async (database, orderIds = []) => {
 
 export const getLatestLedgerRow = async (database, userId, before = null) => (
   database.prepare(`
-    SELECT bl.transaction_id, bl.user_id, bl.employee_id_snapshot,
-           bl.line_user_id_snapshot, bl.display_name_snapshot, bl.amount,
-           bl.balance_after, bl.type, bl.reference_id, bl.topup_method, bl.operator_user_id,
-           bl.note, bl.occurred_at, bl.source_batch_id
+     SELECT bl.transaction_id, bl.user_id, bl.employee_id_snapshot,
+            bl.line_user_id_snapshot, bl.display_name_snapshot, bl.amount,
+            bl.balance_after, bl.type, bl.reference_id, bl.topup_method, bl.operator_user_id,
+            bl.note, bl.occurred_at, bl.source_batch_id,
+            bls.sequence_number
     FROM balance_ledger bl
     JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
     WHERE bl.user_id = ?

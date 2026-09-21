@@ -6,6 +6,7 @@ import {
   getLedgerRows
 } from '../db/ledgerQueries.js';
 import { getUserById } from '../db/users.js';
+import { buildMonthlyReconciliation } from './ledgerConsistency.js';
 
 const MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
@@ -105,9 +106,25 @@ export const getBalanceHistory = async (database, userId, monthInput) => {
       : null,
     amount: Number(row.amount),
     changeAmount: Number(row.amount),
+    sequenceNumber: Number(row.sequence_number),
+    balanceBefore: Number(row.balance_after) - Number(row.amount),
     balanceAfter: Number(row.balance_after),
     balance: Number(row.balance_after)
   }));
+
+  const closingBalance = closing ? Number(closing.balance_after) : (openingBalance ?? 0);
+  const reconciliation = buildMonthlyReconciliation({
+    allRows,
+    monthRows,
+    monthStart: month.start,
+    monthEnd: month.end,
+    openingBalance: openingBalance ?? null,
+    closingBalance,
+    openingSequence: prior?.sequence_number ?? null,
+    closingSequence: closing?.sequence_number ?? null,
+    totalCredit,
+    totalDebit
+  });
 
   return {
     success: true,
@@ -118,7 +135,8 @@ export const getBalanceHistory = async (database, userId, monthInput) => {
     openingBalance: openingBalance ?? null,
     totalCredit,
     totalDebit,
-    closingBalance: closing ? Number(closing.balance_after) : (openingBalance ?? 0),
+    closingBalance,
+    reconciliation,
     transactions,
     openingBalancePolicyRequired: openingBalance === null
   };

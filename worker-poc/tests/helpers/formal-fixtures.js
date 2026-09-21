@@ -68,14 +68,15 @@ export const seedLedgerRow = (database, {
   type = 'ADJUSTMENT',
   referenceId = null,
   topupMethod = null,
+  note = '',
   occurredAt = '2026-09-06T00:00:00.000Z'
 }) => {
   database.run(`
     INSERT INTO balance_ledger (
       transaction_id, user_id, amount, balance_after, type,
-      reference_id, topup_method, auth_mode, occurred_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'legacy_import', ?)
-  `, transactionId, userId, amount, balanceAfter, type, referenceId, topupMethod, occurredAt);
+      reference_id, topup_method, note, auth_mode, occurred_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'legacy_import', ?)
+  `, transactionId, userId, amount, balanceAfter, type, referenceId, topupMethod, note, occurredAt);
 };
 
 export const profileFetch = ({

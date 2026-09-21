@@ -28,7 +28,7 @@ export const toUser = (row) => {
   };
 };
 
-export const currentBalanceProjection = (alias = 'u') => `COALESCE((
+export const authoritativeBalanceProjection = (alias = 'u') => `COALESCE((
   SELECT bl.balance_after
   FROM balance_ledger bl
   JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
@@ -36,6 +36,10 @@ export const currentBalanceProjection = (alias = 'u') => `COALESCE((
   ORDER BY bls.sequence_number DESC
   LIMIT 1
 ), ${alias}.balance)`;
+
+// Kept as a compatibility name for existing read projections. New ledger
+// writers must use authoritativeBalanceProjection through ledgerQueries.
+export const currentBalanceProjection = authoritativeBalanceProjection;
 
 export const getCurrentBalance = async (database, userId) => {
   const row = await database.prepare(`
