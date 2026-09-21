@@ -138,6 +138,9 @@ npm run preview
 
 ## 相關文件
 
+- [目前有效狀態](PROJECT_STATE.md)
+- [架構與治理決策](DECISIONS.md)
+- [Agent 工作規則](AGENTS.md)
 - [Worker + D1 說明](worker-poc/README.md)
 - [React-to-Worker transport 邊界](docs/react-worker-cutover-matrix.md)
 - [身份驗證架構](docs/identity-verification-architecture.md)
