@@ -6,11 +6,13 @@ self-contained and must not depend on the AI parent workspace.
 ## Bootstrap
 
 1. Find this repository's Git root.
-2. Read the root agent.yaml before mutation.
-3. Validate the supported schema and resolve only the repo-relative skill
-   paths explicitly declared there.
-4. Use the declared ap-safe-preflight and ap-verification-core skills for
-   their detailed workflows.
+2. Read the root `agent.yaml` before mutation.
+3. Read `PROJECT_STATE.md` for current effective state and `DECISIONS.md`
+   for durable rationale.
+4. Validate the supported schema and resolve only the repo-relative skill
+   paths explicitly declared in `agent.yaml`.
+5. Use the declared `ap-safe-preflight` and `ap-verification-core` skills
+   for their detailed workflows.
 
 ## Safety floor
 
