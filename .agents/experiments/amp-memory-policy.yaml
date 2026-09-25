@@ -1,0 +1,55 @@
+# AMP Memory PoC consumer policy.
+# Experimental only. Not part of agent.yaml schema 2.
+# This file does not authorize hooks, runtime installation, production writes,
+# deployment, or automatic memory capture.
+
+version: 1
+enabled: false
+
+provider: amp
+
+platform_issue:
+  repository: "henryfir456/agent-platform"
+  issue: 1
+
+memory_repository:
+  # Configure only after a separate memory repository is created.
+  repository: "<not-configured>"
+
+allowed_types:
+  - pattern
+  - invalidation
+  - discovery
+
+capture:
+  mode: manual_review
+  require_verified_evidence: true
+  exclude_current_state_facts: true
+
+recall:
+  enabled: false
+  canonical_repo_wins_on_conflict: true
+
+canonical_sources:
+  - PROJECT_STATE.md
+  - DECISIONS.md
+  - REPO_FACTS.md
+  - CHANGELOG.md
+  - agent.yaml
+  - AGENTS.md
+
+privacy:
+  deny_secrets: true
+  deny_credentials: true
+  deny_private_user_data: true
+  deny_production_auth_artifacts: true
+
+evaluation:
+  task_set: "agent-platform/docs/experiments/bento-amp-pilot.md"
+  record:
+    - repository_files_read
+    - tool_calls
+    - input_context_tokens
+    - elapsed_time
+    - first_hypothesis_quality
+    - wrong_memory_events
