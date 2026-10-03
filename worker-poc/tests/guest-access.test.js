@@ -385,7 +385,7 @@ test('invalid employee IDs are rejected after trim and uppercase normalization',
   assert.equal(normalized.body.employeeId, 'AB12CD');
 });
 
-test('LINE employee resolution uses an unbound canonical owner without attaching LINE', async () => {
+test('LINE employee resolution permanently binds an eligible unbound canonical owner', async () => {
   const database = seedGuestDatabase();
   const lineProfile = profileFetch({
     token: 'line-direct-token',
