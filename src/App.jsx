@@ -151,7 +151,10 @@ const normalizeDeferredAnnouncements = (rawAnnouncements) => {
       title,
       content,
       start_date: startDate,
-      end_date: endDate
+      end_date: endDate,
+      images: Array.isArray(announcement?.images)
+        ? announcement.images.filter((imageUrl) => typeof imageUrl === 'string' && imageUrl.trim())
+        : []
     });
     return result;
   }, []);
