@@ -201,7 +201,8 @@ test('Admin can create, edit every field, toggle, and delete announcements atomi
     content: 'The menu is ready.',
     start_date: '2026-09-10',
     end_date: '2026-09-20',
-    enabled: true
+    enabled: true,
+    images: []
   });
   assert.equal(database.get(
     'SELECT source_order FROM announcements WHERE announcement_id = ?',
@@ -223,6 +224,15 @@ test('Admin can create, edit every field, toggle, and delete announcements atomi
     body: { content: 'Updated content' }
   });
   assert.equal(content.body.content, 'Updated content');
+
+  const images = await call(database, `/api/admin/announcements/${created.body.id}`, {
+    method: 'PATCH',
+    body: { images: ['https://example.com/notice-1.webp', 'https://example.com/notice-2.webp'] }
+  });
+  assert.deepEqual(images.body.images, [
+    'https://example.com/notice-1.webp',
+    'https://example.com/notice-2.webp'
+  ]);
 
   const startDate = await call(database, `/api/admin/announcements/${created.body.id}`, {
     method: 'PATCH',
@@ -253,7 +263,7 @@ test('Admin can create, edit every field, toggle, and delete announcements atomi
   ).source_order, 0);
   assert.equal(database.get(
     "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ANNOUNCEMENT_UPDATED'"
-  ).count, 6);
+  ).count, 7);
 
   const deleted = await call(database, `/api/admin/announcements/${created.body.id}`, {
     method: 'DELETE'
@@ -321,6 +331,13 @@ test('announcement CRUD rejects malformed, incomplete, unknown, and invalid payl
   });
   assert.equal(invalidBoolean.response.status, 400);
   assert.deepEqual(invalidBoolean.body, { error: 'ANNOUNCEMENT_ENABLED_INVALID' });
+
+  const invalidImages = await call(database, '/api/admin/announcements', {
+    method: 'POST',
+    body: { ...validAnnouncement, images: ['http://example.com/insecure.png'] }
+  });
+  assert.equal(invalidImages.response.status, 400);
+  assert.deepEqual(invalidImages.body, { error: 'ANNOUNCEMENT_IMAGES_INVALID' });
 
   const unknownField = await call(database, '/api/admin/announcements', {
     method: 'POST',
