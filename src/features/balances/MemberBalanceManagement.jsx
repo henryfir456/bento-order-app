@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { formatBalanceAmount } from './formatters';
 import { formatEmployeeId } from '../../components/userIdentityDisplay';
 import IdentityStatusBadges from '../../components/IdentityStatusBadges';
+import { filterMembersByEmployeeId } from '../admin/delegateOrderFilter.js';
 import {
   getAdminMemberRows,
   identityFilterMatches,
@@ -73,10 +74,12 @@ export default function MemberBalanceManagement({
   onOpenEmployeeBindModal
 }) {
   const [balanceFilter, setBalanceFilter] = useState(IDENTITY_FILTERS.ALL);
+  const [employeeIdFilter, setEmployeeIdFilter] = useState('');
   const adminMembers = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
-  const filteredMembers = useMemo(() => (
-    adminMembers.filter((member) => identityFilterMatches(member, balanceFilter))
-  ), [adminMembers, balanceFilter]);
+  const filteredMembers = useMemo(() => {
+    const identityFiltered = adminMembers.filter((member) => identityFilterMatches(member, balanceFilter));
+    return filterMembersByEmployeeId(identityFiltered, employeeIdFilter);
+  }, [adminMembers, balanceFilter, employeeIdFilter]);
   const hasActions = !isViewAsMode && (canTopup || canBindEmployee);
 
   return (
@@ -86,6 +89,18 @@ export default function MemberBalanceManagement({
           <h3 className="font-bold text-base text-[#2C4A3E]">💰 餘額與身份管理</h3>
           <p className="text-xs text-gray-500">登入來源與註冊狀態以 Worker authoritative response 為準；餘額為目前帳戶總額。</p>
         </div>
+        <label className="block max-w-sm">
+          <span className="sr-only">搜尋員編</span>
+          <input
+            type="search"
+            inputMode="search"
+            value={employeeIdFilter}
+            onChange={(event) => setEmployeeIdFilter(event.target.value)}
+            placeholder="搜尋員編"
+            aria-label="搜尋員編"
+            className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+          />
+        </label>
         <div className="flex max-w-full flex-wrap gap-2" role="group" aria-label="餘額篩選">
           {identityFilterOptions.map((option) => (
             <button
@@ -113,7 +128,7 @@ export default function MemberBalanceManagement({
         </div>
       ) : filteredMembers.length === 0 ? (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-gray-400">
-          {adminMembers.length === 0 ? '目前沒有成員餘額資料' : '目前篩選條件沒有符合的成員'}
+          {adminMembers.length === 0 ? '目前沒有成員餘額資料' : '目前篩選或員編搜尋沒有符合的成員'}
         </div>
       ) : (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10">

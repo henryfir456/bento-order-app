@@ -85,6 +85,11 @@ test('Admin identity UI uses Worker binding and never writes verification state 
   assert.doesNotMatch(member, /待審核/);
   assert.match(member, /md:hidden/);
   assert.match(member, /onOpenEmployeeBindModal/);
+  assert.match(member, /filterMembersByEmployeeId/);
+  assert.match(member, /const \[employeeIdFilter, setEmployeeIdFilter\] = useState\(''\);/);
+  assert.match(member, /placeholder="搜尋員編"/);
+  assert.match(member, /aria-label="搜尋員編"/);
+  assert.match(member, /filterMembersByEmployeeId\(identityFiltered, employeeIdFilter\)/);
 });
 
 test('legacy GAS adapter has no Admin identity binding operation', () => {
@@ -113,4 +118,20 @@ test('identity governance records Worker-only authority and separate review conc
   assert.doesNotMatch(manifest, /react-gas-liff|GAS deployment and production contract/);
   assert.match(envExample, /VITE_API_TRANSPORT=worker/);
   assert.match(envExample, /VITE_WORKER_API_URL=/);
+});
+
+
+test('balance employee ID search reuses delegated-order partial matching semantics', async () => {
+  const { filterMembersByEmployeeId } = await import('../src/features/admin/delegateOrderFilter.js');
+  const members = [
+    { employeeId: 'A12345', name: '甲' },
+    { employeeId: 'b12399', name: '乙' },
+    { employee_id: ' C777 ', name: '丙' }
+  ];
+
+  assert.deepEqual(filterMembersByEmployeeId(members, '123').map((row) => row.name), ['甲', '乙']);
+  assert.deepEqual(filterMembersByEmployeeId(members, 'b123').map((row) => row.name), ['乙']);
+  assert.deepEqual(filterMembersByEmployeeId(members, 'c777').map((row) => row.name), ['丙']);
+  assert.equal(filterMembersByEmployeeId(members, '999').length, 0);
+  assert.equal(filterMembersByEmployeeId(members, '').length, 3);
 });
