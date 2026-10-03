@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [0.15.8] - 2026-10-03
+
+### Fixed
+
+- Restored order-summary read access for normal Users signed in through employee ID (`employee_guest`) so employee-ID and LINE entry points expose the same read-only order overview.
+- Added regression coverage for employee-guest order-summary access while keeping privileged administration capabilities denied.
+
+### Changed
+
+- Renamed the user-facing 「訂單管理」 surface to 「訂單總覽」 to reflect that the page is read-only.
+
+### Security
+
+- Kept member balances, top-up, calendar/vendor administration, role management, announcements, and View As unavailable to employee-guest sessions.
+
 ## [0.15.7] - 2026-09-18
 
 ### Added

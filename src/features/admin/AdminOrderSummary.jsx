@@ -19,7 +19,7 @@ export default function AdminOrderSummary({
 <>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
                   <div className="flex flex-wrap justify-between items-center gap-3">
-                    <h3 className="font-bold text-base text-[#2C4A3E]">📋 訂單管理</h3>
+                    <h3 className="font-bold text-base text-[#2C4A3E]">📋 訂單總覽</h3>
                     <div className="flex min-w-0 items-center gap-1 rounded-2xl border border-gray-200 bg-white p-1 shadow-sm">
                       <button
                         type="button"
@@ -75,7 +75,7 @@ export default function AdminOrderSummary({
                       </div>
                     </div>
 
-                    <div className="flex gap-1 rounded-2xl border border-gray-200 bg-white p-1 shadow-sm" role="tablist" aria-label="訂單管理檢視">
+                    <div className="flex gap-1 rounded-2xl border border-gray-200 bg-white p-1 shadow-sm" role="tablist" aria-label="訂單總覽檢視">
                       {ORDER_SUMMARY_TABS.map((tab) => (
                         <button
                           key={tab.id}

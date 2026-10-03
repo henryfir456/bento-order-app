@@ -337,7 +337,7 @@ test('fresh employee onboarding is always a normal User and cannot obtain elevat
     const adminSummary = await call(database, '/api/admin/summary', {
       token: login.body.token
     });
-    assert.equal(adminSummary.response.status, 403);
+    assert.equal(adminSummary.response.status, 200);
     assert.equal(database.get('SELECT role FROM users LIMIT 1').role, 'User');
   }
 });

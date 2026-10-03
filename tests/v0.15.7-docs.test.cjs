@@ -13,11 +13,11 @@ test('v0.15.7 release metadata and README showcase stay in sync', () => {
   const changelogSource = read('src/data/changelog.js');
   const readme = read('README.md');
 
-  assert.equal(packageJson.version, '0.15.7');
-  assert.equal(packageLock.version, '0.15.7');
-  assert.equal(packageLock.packages[''].version, '0.15.7');
-  assert.match(changelog, /^## \[0\.15\.7\] - 2026-09-18/m);
-  assert.match(changelogSource, /'0\.15\.7': \[/);
+  assert.equal(packageJson.version, '0.15.8');
+  assert.equal(packageLock.version, '0.15.8');
+  assert.equal(packageLock.packages[''].version, '0.15.8');
+  assert.match(changelog, /^## \[0\.15\.8\] - 2026-10-03/m);
+  assert.match(changelogSource, /'0\.15\.8': \[/);
   assert.match(readme, /Built for Real-World Lunch Operations/);
   assert.match(readme, /docs\/screenshots\/calendar\.webp/);
   assert.match(readme, /docs\/screenshots\/order-page\.webp/);

@@ -41,7 +41,7 @@ test('permission matrix preserves User, ProxyAdmin, and Admin boundaries', () =>
   for (const role of ['User', 'ProxyAdmin', 'Admin']) {
     assert.equal(can(role, ACTIONS.READ_SELF, 'employee_guest'), true);
     assert.equal(can(role, ACTIONS.WRITE_SELF, 'employee_guest'), true);
-    assert.equal(can(role, ACTIONS.READ_ADMIN_SUMMARY, 'employee_guest'), false);
+    assert.equal(can(role, ACTIONS.READ_ADMIN_SUMMARY, 'employee_guest'), true);
     assert.equal(can(role, ACTIONS.ADMIN_TOP_UP, 'employee_guest'), false);
     assert.equal(can(role, ACTIONS.ADMIN_VENDORS, 'employee_guest'), false);
     assert.equal(can(role, ACTIONS.ADMIN_ROLE, 'employee_guest'), false);
@@ -106,7 +106,7 @@ test('verification status does not change registered LINE or guest capabilities'
   );
   assert.deepEqual(
     capabilitiesFor('User', 'employee_guest', true, '139653'),
-    [ACTIONS.READ_SELF, ACTIONS.REGISTER_SELF, ACTIONS.WRITE_SELF].sort()
+    [ACTIONS.READ_SELF, ACTIONS.REGISTER_SELF, ACTIONS.WRITE_SELF, ACTIONS.READ_ADMIN_SUMMARY].sort()
   );
   assert.equal(
     can('User', ACTIONS.WRITE_SELF, 'line', true, '139653'),

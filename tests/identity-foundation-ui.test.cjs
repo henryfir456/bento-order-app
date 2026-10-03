@@ -386,12 +386,18 @@ test('Worker guest 401 keeps stable code and clears only the guest credential', 
   assert.equal(sessionStore.getGuestSession(), null);
 });
 
-test('frontend permissions treat employee guest as self-only even when canonical role is Admin', async () => {
+test('frontend permissions give employee guest order-summary read access without admin mutations', async () => {
   const { hasPermission } = await import('../src/auth/permissions.js');
   assert.equal(hasPermission('Admin', 'viewOwnBalance', 'employee_guest'), true);
   assert.equal(hasPermission('Admin', 'orderOwn', 'employee_guest'), true);
   for (const permission of [
     'viewAdminOrderSummary',
+    'viewAllOrders',
+    'viewOrderStatistics'
+  ]) {
+    assert.equal(hasPermission('Admin', permission, 'employee_guest'), true, permission);
+  }
+  for (const permission of [
     'viewMemberBalances',
     'topupMember',
     'manageCalendar',

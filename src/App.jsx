@@ -3076,7 +3076,7 @@ export default function App() {
                 onClick={() => handleAdminSectionChange('orders')}
                 className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'orders' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
               >
-                📋 訂單管理
+                📋 訂單總覽
               </button>
             )}
             {isRegistered && can('viewMemberBalances') && (

@@ -11,6 +11,21 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.8': [
+    {
+      name: '修正',
+      changes: [
+        '修正一般 User 使用員編登入時看不到訂單總覽的問題，現在與 LINE 登入具有相同的唯讀訂單總覽權限。',
+        '補強權限回歸測試，確保員編登入仍無法取得餘額管理、儲值、開團、角色管理與 View As 等管理能力。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        '「訂單管理」更名為「訂單總覽」，讓名稱符合目前僅提供查詢與統計的唯讀功能。'
+      ]
+    }
+  ],
   '0.15.7': [
     {
       name: '新增',
