@@ -146,6 +146,52 @@ test('normal User can alternate employee and LINE sessions on one canonical user
   ).line_user_id, 'line-alternating-entry');
 });
 
+test('LINE employee resolution permanently binds an eligible unbound normal User', async () => {
+  const database = seedNormalUser({
+    userId: 'user-line-first-bind',
+    employeeId: '001007',
+    lineUserId: null
+  });
+  const lineProfile = profileFetch({
+    token: 'line-first-bind-token',
+    lineUserId: 'line-first-bind',
+    displayName: 'LINE First Bind'
+  });
+
+  const resolution = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'line-first-bind-token',
+    body: { employeeId: '001007' }
+  }, { fetchImpl: lineProfile });
+
+  assert.equal(resolution.response.status, 200);
+  assert.equal(resolution.body.status, 'BOUND');
+  assert.equal(resolution.body.authMode, 'line');
+  assert.equal(resolution.body.user.userId, 'user-line-first-bind');
+  assert.equal(resolution.body.user.lineUserId, 'line-first-bind');
+  assert.equal(database.get(
+    'SELECT line_user_id FROM users WHERE user_id = ?',
+    'user-line-first-bind'
+  ).line_user_id, 'line-first-bind');
+
+  const secondLogin = await call(database, '/api/me', {
+    token: 'line-first-bind-token'
+  }, { fetchImpl: lineProfile });
+  assert.equal(secondLogin.response.status, 200);
+  assert.equal(secondLogin.body.registered, true);
+  assert.equal(secondLogin.body.authMode, 'line');
+  assert.equal(secondLogin.body.user.userId, 'user-line-first-bind');
+
+  const replay = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'line-first-bind-token',
+    body: { employeeId: '001007' }
+  }, { fetchImpl: lineProfile });
+  assert.equal(replay.response.status, 200);
+  assert.equal(replay.body.status, 'ALREADY_BOUND');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+});
+
 test('LINE employee resolution returns the existing normal canonical User on ownership conflict', async () => {
   const database = seedNormalUser({
     userId: 'user-target-001004',
