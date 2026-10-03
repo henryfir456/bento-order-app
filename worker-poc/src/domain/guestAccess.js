@@ -364,9 +364,55 @@ export const lineEmployeeBind = async (
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
   const user = await getUserByEmployeeId(database, employeeId);
 
-  // Resolve an existing normal canonical User through an employee session.
-  // This is deliberately read-only: the target's line_user_id and the
-  // current LINE owner's line_user_id are never changed here.
+  if (user && user.active && isGeneralUser(user) && !currentLineUser && !user.lineUserId) {
+    const timestamp = resolveClock(clock).toISOString();
+    try {
+      const result = await database.prepare(`
+        UPDATE users
+        SET line_user_id = ?, updated_at = ?
+        WHERE user_id = ?
+          AND line_user_id IS NULL
+          AND active = 1
+          AND role = 'User'
+      `).bind(
+        verifiedLineUserId,
+        timestamp,
+        user.userId
+      ).run();
+      if (statementChanges(result) !== 1) {
+        const replay = await getUserById(database, user.userId);
+        if (replay?.lineUserId === verifiedLineUserId) {
+          return lineBindingResult(replay, 'ALREADY_BOUND');
+        }
+        if (replay?.lineUserId) throw conflict('EMPLOYEE_ALREADY_LINE_BOUND');
+        throw conflict('LINE_BIND_CONFLICT');
+      }
+    } catch (error) {
+      if (error?.status === 409) throw error;
+      if (/unique|constraint/i.test(error?.message || error?.cause?.message || '')) {
+        const conflictingLine = await getUserByLineId(database, verifiedLineUserId);
+        if (conflictingLine && conflictingLine.userId !== user.userId) {
+          throw conflict('LINE_ALREADY_BOUND');
+        }
+        const replay = await getUserById(database, user.userId);
+        if (replay?.lineUserId === verifiedLineUserId) {
+          return lineBindingResult(replay, 'ALREADY_BOUND');
+        }
+        if (replay?.lineUserId) throw conflict('EMPLOYEE_ALREADY_LINE_BOUND');
+        throw conflict('LINE_BIND_CONFLICT');
+      }
+      throw error;
+    }
+
+    const boundUser = await getUserById(database, user.userId);
+    if (!boundUser || boundUser.lineUserId !== verifiedLineUserId) {
+      throw conflict('LINE_BIND_CONFLICT');
+    }
+    return lineBindingResult(boundUser);
+  }
+
+  // Preserve the existing fail-closed conflict semantics whenever the
+  // authenticated LINE identity or target employee is already owned.
   const currentLineHasEmployee = Boolean(String(currentLineUser?.employeeId || '').trim());
   const currentLineCanResolveNormalUser = !currentLineUser
     || (isGeneralUser(currentLineUser) && currentLineHasEmployee);
