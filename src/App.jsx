@@ -11,6 +11,7 @@ import {
 } from './api/clientRequestKeys';
 import { normalizeWorkerLikeResponse, restoreCalendarEvent } from './api/likeState';
 import { authClient } from './auth/liffClient';
+import { redactAuthSecrets, requireAuthoritativeIdentityState } from './auth/authRuntime';
 import { hasPermission } from './auth/permissions';
 import {
   AUTH_BOOT_STAGES,
@@ -41,6 +42,7 @@ import {
 } from './features/vendors/vendorModel';
 import OrderPage from './features/orders/OrderPage';
 import { getWorkerSelectionKey, normalizeWorkerOrderMenu } from './features/orders/orderSelection';
+import { parseMenuItemName } from './features/orders/menuItemName';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
 import OrderConfirmationModal from './features/orders/OrderConfirmationModal';
 import {
@@ -54,6 +56,8 @@ import AnnouncementManagement from './features/admin/AnnouncementManagement';
 import MenuItemChangesManagement from './features/admin/MenuItemChangesManagement';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
+import { formatLedgerOrderDate } from './features/balances/ledgerFormatters';
+import { normalizeDeferredAnnouncements, normalizeDeferredLikes, mergeDeferredLikes } from './features/bootstrap/deferredBootstrap';
 import { formatTransactionDescription, TOPUP_METHOD_OPTIONS } from './features/balances/topupMethods';
 import {
   getAdminMemberRows,
@@ -71,23 +75,6 @@ const AUTH_STATES = Object.freeze({
   REGISTERED: 'REGISTERED'
 });
 
-const redactAuthSecrets = (value) => String(value || 'Unknown error')
-  .replace(/(access[_-]?token|id[_-]?token|authorization)\s*[:=]?\s*[^\s,;]+/gi, '$1=[REDACTED]')
-  .replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [REDACTED]');
-
-const requireAuthoritativeIdentityState = (data) => {
-  const identityState = data?.user?.identityState || data?.identityState;
-  if (typeof identityState !== 'string' || !identityState.trim()) {
-    throw new Error('IDENTITY_STATE_MISSING');
-  }
-  return identityState;
-};
-
-const formatLedgerOrderDate = (value) => {
-  const match = String(value || '').match(/^\d{4}-(\d{2})-(\d{2})$/);
-  return match ? `${Number(match[1])}/${Number(match[2])}` : String(value || '');
-};
-
 const logAuthDiagnostic = (message) => {
   if (import.meta.env.DEV) {
     console.info(`[AUTH] ${message}`);
@@ -99,73 +86,6 @@ const logPerformanceTiming = (label, startTime) => {
   const elapsedMs = getPerformanceNow() - startTime;
   console.info(`[PERF] ${label}_MS=${elapsedMs.toFixed(1)}`);
 };
-
-const normalizeDeferredLikes = (rawLikes) => {
-  if (!rawLikes || typeof rawLikes !== 'object' || Array.isArray(rawLikes)) return null;
-
-  return Object.entries(rawLikes).reduce((result, [dateStr, state]) => {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return result;
-
-    const likeCount = Number(state?.likeCount);
-    if (!Number.isFinite(likeCount) || likeCount < 0 || typeof state?.isUserLiked !== 'boolean') {
-      return result;
-    }
-
-    result[dateStr] = {
-      likeCount: Math.floor(likeCount),
-      isUserLiked: state.isUserLiked,
-      calendarEvent: state.calendarEvent && typeof state.calendarEvent === 'object'
-        ? {
-          order_date: String(state.calendarEvent.order_date || '').trim(),
-          vendor: String(state.calendarEvent.vendor || ''),
-          mode: String(state.calendarEvent.mode || ''),
-          deadline: String(state.calendarEvent.deadline || ''),
-          isExpired: Boolean(state.calendarEvent.isExpired),
-          lunarLabel: state.calendarEvent.lunarLabel == null
-            ? null
-            : String(state.calendarEvent.lunarLabel)
-        }
-        : null
-    };
-    return result;
-  }, {});
-};
-
-const normalizeDeferredAnnouncements = (rawAnnouncements) => {
-  if (!Array.isArray(rawAnnouncements)) return null;
-
-  return rawAnnouncements.reduce((result, announcement) => {
-    const id = String(announcement?.id || '').trim();
-    const title = String(announcement?.title || '').trim();
-    const content = String(announcement?.content || '');
-    const startDate = String(announcement?.start_date || '').trim();
-    const endDate = String(announcement?.end_date || '').trim();
-
-    if (!id || !title || !content.trim()) return result;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate) || !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
-      return result;
-    }
-
-    result.push({
-      id,
-      title,
-      content,
-      start_date: startDate,
-      end_date: endDate
-    });
-    return result;
-  }, []);
-};
-
-const mergeDeferredLikes = (events, likes) => Object.entries(likes).reduce((result, [dateStr, likeState]) => {
-  const { calendarEvent, ...likeStateWithoutEvent } = likeState;
-  if (!result[dateStr] && calendarEvent?.order_date === dateStr && calendarEvent.mode) {
-    result[dateStr] = { ...calendarEvent, ...likeStateWithoutEvent };
-  } else if (result[dateStr]) {
-    result[dateStr] = { ...result[dateStr], ...likeStateWithoutEvent };
-  }
-  return result;
-}, { ...events });
 
 const fetchDeferredBootstrapData = async (accessToken, bootId) => {
   try {
@@ -219,20 +139,6 @@ const showToast = (options) => Swal.fire({
   timerProgressBar: true,
   ...options
 });
-
-const parseMenuItemName = (itemName = '') => {
-  const fullName = String(itemName).trim();
-  const match = fullName.match(/^(.*?)\s*(?:\(([^()]*)\)|（([^（）]*)）)\s*$/);
-
-  if (!match || !match[1].trim()) {
-    return { baseName: fullName, variant: '' };
-  }
-
-  return {
-    baseName: match[1].trim(),
-    variant: (match[2] ?? match[3] ?? '').trim()
-  };
-};
 
 const getConfiguredVendor = (event) => {
   const vendor = normalizeVendorName(event?.vendor);
