@@ -49,7 +49,10 @@ export const normalizeDeferredAnnouncements = (rawAnnouncements) => {
       title,
       content,
       start_date: startDate,
-      end_date: endDate
+      end_date: endDate,
+      ...(Array.isArray(announcement?.images) ? {
+        images: announcement.images.filter((imageUrl) => typeof imageUrl === 'string' && imageUrl.trim())
+      } : {})
     });
     return result;
   }, []);
