@@ -226,6 +226,9 @@ export default function MenuItemChangesManagement({
             <p className="mt-1 text-xs leading-5 text-gray-500">
               目前菜單與正式點餐頁共用同一套 vendor／日期 resolver；變更歷程採 append-only。
             </p>
+            <p className="mt-1 text-xs leading-5 text-emerald-700">
+              風味餐可用「當日主餐名 (風味餐)／(風味便當)」命名；同一主餐使用相同圖片與備註時，點餐頁會合併顯示主餐圖片、名稱與介紹。
+            </p>
           </div>
           <div className="flex shrink-0 gap-2">
             <button type="button" onClick={onRefresh} disabled={loading || isViewAsMode} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50">
