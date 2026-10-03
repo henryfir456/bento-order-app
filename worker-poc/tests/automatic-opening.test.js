@@ -208,6 +208,31 @@ test('scheduled handler logs structured automatic-opening outcomes', async () =>
   });
 });
 
+test('daily flavor cron runs at Taipei 16:00 without replacing the midnight group opener', async () => {
+  const database = new SqliteD1();
+  const lines = [];
+  const result = await handleScheduled(
+    { cron: '0 8 * * *', scheduledTime: new Date('2026-10-02T08:00:00.000Z') },
+    { DB: database },
+    {
+      logger: { log: (line) => lines.push(line) },
+      fetchImpl: async (url) => {
+        assert.equal(url, 'https://www.vegetsai.com.tw/products.html');
+        return new Response(`<script>const menuData = [
+          { date: "2026/10/03", title: "明日風味餐", img: "E05.jpg" }
+        ];</script>`, { status: 200 });
+      }
+    }
+  );
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(result.addedCount, 1);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM calendar_settings').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_daily_flavors').count, 1);
+  assert.equal(JSON.parse(lines[0]).event, 'cai_teacher_daily_flavor_sync');
+  assert.equal(JSON.stringify(JSON.parse(lines[0])).includes('vegetsai.com.tw'), false);
+});
+
 test('formal Worker exposes the scheduled entry point', () => {
   assert.equal(typeof formalWorker.fetch, 'function');
   assert.equal(typeof formalWorker.scheduled, 'function');
@@ -215,5 +240,5 @@ test('formal Worker exposes the scheduled entry point', () => {
 
 test('formal Wrangler config schedules the Worker at Taipei midnight', () => {
   const config = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
-  assert.deepEqual(config.triggers?.crons, ['0 16 * * *']);
+  assert.deepEqual(config.triggers?.crons, ['0 16 * * *', '0 8 * * *']);
 });

@@ -88,6 +88,6 @@ test('v0.15.6 remains represented in release history', () => {
   const changelog = read('CHANGELOG.md');
   const changelogSource = read('src/data/changelog.js');
 
-  assert.match(changelog, /^## \\[0\\.15\\.6\\] - 2026-09-17/m);
-  assert.match(changelogSource, /'0\\.15\\.6': \\[/);
+  assert.match(changelog, /^## \[0\.15\.6\] - 2026-09-17/m);
+  assert.match(changelogSource, /'0\.15\.6': \[/);
 });

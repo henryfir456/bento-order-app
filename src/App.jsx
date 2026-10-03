@@ -40,6 +40,7 @@ import {
   normalizeVendorName
 } from './features/vendors/vendorModel';
 import OrderPage from './features/orders/OrderPage';
+import { buildDailyFlavorCardModel, isDailyFlavorMenuItem } from './features/orders/dailyFlavorPresentation.js';
 import { getWorkerSelectionKey, normalizeWorkerOrderMenu } from './features/orders/orderSelection';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
 import OrderConfirmationModal from './features/orders/OrderConfirmationModal';
@@ -291,6 +292,7 @@ export default function App() {
   const [setting, setSetting] = useState(null);
   const [deadline, setDeadline] = useState(null);
   const [menu, setMenu] = useState([]);
+  const [dailyFlavor, setDailyFlavor] = useState(null);
   const [imageLoadErrors, setImageLoadErrors] = useState({});
   const [name, setName] = useState('');
   const [floor, setFloor] = useState('1樓');
@@ -454,6 +456,7 @@ export default function App() {
     setSetting(null);
     setDeadline(null);
     setMenu([]);
+    setDailyFlavor(null);
     setImageLoadErrors({});
     setOrderItems({});
     setActiveOrderSnapshot(null);
@@ -1150,6 +1153,30 @@ export default function App() {
     && !viewAsUser
     && hasPermission(authUser?.role, 'manageMenu', authMode, true)
   );
+
+  const getAdminDailyFlavorSyncStatus = useCallback(async () => {
+    if (
+      apiClient.transport !== 'worker'
+      || authState !== AUTH_STATES.REGISTERED
+      || !authUser?.userId
+      || viewAsUser
+      || !hasPermission(authUser?.role, 'manageMenu', authMode, true)
+    ) return null;
+    const response = await apiClient.getAdminDailyFlavorSyncStatus();
+    return response.json();
+  }, [authMode, authState, authUser, viewAsUser]);
+
+  const syncAdminDailyFlavors = useCallback(async () => {
+    if (
+      apiClient.transport !== 'worker'
+      || authState !== AUTH_STATES.REGISTERED
+      || !authUser?.userId
+      || viewAsUser
+      || !hasPermission(authUser?.role, 'manageMenu', authMode, true)
+    ) throw new Error('蔡老師每日風味餐同步僅限已註冊的 Admin 使用。');
+    const response = await apiClient.syncAdminDailyFlavors();
+    return response.json();
+  }, [authMode, authState, authUser, viewAsUser]);
 
   const loadAdminMenuChanges = async (force = false) => {
     if (!canManageAdminMenuChanges()) return;
@@ -1984,6 +2011,7 @@ export default function App() {
     }
 
     setSelectedDate(dateStr);
+    setDailyFlavor(null);
     clearClientRequestKey(orderSubmitRequestRef);
     clearClientRequestKey(orderCancelRequestRef);
     setLoading(true);
@@ -2020,6 +2048,7 @@ export default function App() {
         setDeadline(data.deadline);
         setOrderPolicy(data.orderPolicy || null);
         setMenu(workerOrderMode ? normalizeWorkerOrderMenu(data.menu) : data.menu);
+        setDailyFlavor(workerOrderMode ? (data.dailyFlavor || null) : null);
         setImageLoadErrors({});
         setOrderItems(orderMap);
         setActiveOrderSnapshot(buildExistingOrderSubmission({
@@ -2861,10 +2890,23 @@ export default function App() {
   });
   const { totalCount, totalAmount } = orderSubmission;
 
+  const dailyFlavorCard = useMemo(() => buildDailyFlavorCardModel({
+    vendor: setting?.vendor,
+    targetDate: selectedDate,
+    dailyFlavor,
+    menu
+  }), [dailyFlavor, menu, selectedDate, setting?.vendor]);
+
   const groupedMenu = useMemo(() => {
     const groups = new Map();
 
-    menu.forEach(item => {
+    const dailyFlavorItemIds = new Set(
+      (dailyFlavorCard?.items || []).map((item) => item.item_id)
+    );
+    menu.filter((item) => (
+      !dailyFlavorItemIds.has(item.item_id)
+      && (!dailyFlavorCard || !isDailyFlavorMenuItem(item))
+    )).forEach(item => {
       const { baseName, variant } = parseMenuItemName(item.item_name);
       const groupKey = baseName || item.item_name;
       const group = groups.get(groupKey) || {
@@ -2887,7 +2929,7 @@ export default function App() {
       ...group,
       imageUrl: group.baseImageUrl || group.variantImageUrl
     }));
-  }, [menu]);
+  }, [dailyFlavorCard, menu]);
 
   // 修復版：精確比對 Intl 回傳的農曆日期
   const getLunarLabel = (dateStr) => {
@@ -3344,6 +3386,7 @@ export default function App() {
             onFloorChange={setFloor}
             orderNote={orderNote}
             onOrderNoteChange={setOrderNote}
+            dailyFlavorCard={dailyFlavorCard}
             groupedMenu={groupedMenu}
             imageLoadErrors={imageLoadErrors}
             onImageError={(groupName) => setImageLoadErrors(prev => ({ ...prev, [groupName]: true }))}
@@ -3409,6 +3452,8 @@ export default function App() {
                 onRefresh={() => loadAdminMenuChanges(true)}
                 onCreate={createAdminMenuChange}
                 onPreview={previewAdminMenu}
+                onGetDailyFlavorSyncStatus={getAdminDailyFlavorSyncStatus}
+                onSyncDailyFlavors={syncAdminDailyFlavors}
               />
             )}
           </div>

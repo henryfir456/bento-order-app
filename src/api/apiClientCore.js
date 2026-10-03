@@ -412,6 +412,16 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'GET',
     '/api/admin/menu/vendors'
   ),
+  getAdminDailyFlavorSyncStatus: () => workerRequest(
+    'getAdminDailyFlavorSyncStatus',
+    'GET',
+    '/api/admin/daily-flavors/sync-status'
+  ),
+  syncAdminDailyFlavors: () => workerRequest(
+    'syncAdminDailyFlavors',
+    'POST',
+    '/api/admin/daily-flavors/sync'
+  ),
   getVendors: ({ viewAsUserId } = {}) => workerRequest(
     'getVendors',
     'GET',
