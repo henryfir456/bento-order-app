@@ -166,7 +166,10 @@ test('admin sync status omits the source URL and exposes the latest summary only
     fetchImpl: async () => response(html(sourceRows))
   });
 
-  const status = await getDailyFlavorSyncStatus(database);
+  const status = await getDailyFlavorSyncStatus(
+    database,
+    new Date('2026-10-02T18:00:00.000Z')
+  );
   assert.equal(status.success, true);
   assert.equal(status.availableDateCount, 2);
   assert.equal(status.lastRun.status, 'SUCCESS');
