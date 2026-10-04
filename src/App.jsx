@@ -996,6 +996,24 @@ export default function App() {
     && hasPermission(authUser?.role, 'manageAnnouncements', authMode, true)
   );
 
+  const refreshPublicAnnouncements = async () => {
+    if (apiClient.transport !== 'worker' || authState !== AUTH_STATES.REGISTERED) return;
+    try {
+      const response = await apiClient.getCalendar({
+        viewAsUserId: isViewAsMode ? viewAsUser?.userId : null
+      });
+      const data = await response.json();
+      const nextAnnouncements = normalizeDeferredAnnouncements(data?.announcements);
+      if (nextAnnouncements !== null) {
+        setAnnouncements(nextAnnouncements);
+        setAnnouncementsLoaded(true);
+      }
+    } catch {
+      // Admin management remains usable even if the public announcement
+      // projection cannot be refreshed immediately.
+    }
+  };
+
   const loadAdminAnnouncements = async (force = false) => {
     if (!canManageAdminAnnouncements()) return;
     if (!force && adminAnnouncementsLoaded) return;
@@ -3339,7 +3357,10 @@ export default function App() {
                 loading={adminAnnouncementsLoading}
                 error={adminAnnouncementsError}
                 isViewAsMode={isViewAsMode}
-                onRefresh={() => loadAdminAnnouncements(true)}
+                onRefresh={async () => {
+                  await loadAdminAnnouncements(true);
+                  await refreshPublicAnnouncements();
+                }}
                 onCreate={createAdminAnnouncement}
                 onUpdate={updateAdminAnnouncement}
                 onDelete={deleteAdminAnnouncement}
