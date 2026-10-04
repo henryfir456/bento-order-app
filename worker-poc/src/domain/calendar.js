@@ -102,6 +102,12 @@ export const getCalendarEvents = async (
     GROUP BY o.order_date
     ORDER BY o.order_date ASC
   `).all();
+  const dailyFlavorsResult = await database.prepare(`
+    SELECT service_date, flavor_name
+    FROM vendor_daily_flavors
+    WHERE vendor = '蔡老師'
+    ORDER BY service_date ASC
+  `).all();
   const events = {};
   const likesResult = includeLikes
     ? await database.prepare(`
@@ -114,6 +120,12 @@ export const getCalendarEvents = async (
   const orderQuantitiesByDate = rowsFrom(orderQuantitiesResult).reduce((totals, row) => {
     totals[row.order_date] = Number(row.total_quantity || 0);
     return totals;
+  }, {});
+  const dailyFlavorsByDate = rowsFrom(dailyFlavorsResult).reduce((flavors, row) => {
+    const date = String(row.service_date || '').trim();
+    const name = String(row.flavor_name || '').trim();
+    if (isDateOnly(date) && name) flavors[date] = name;
+    return flavors;
   }, {});
   const likesByDate = likeRows.reduce((result, row) => {
     const current = result[row.order_date] || { count: 0, users: new Set() };
@@ -136,6 +148,7 @@ export const getCalendarEvents = async (
       isExpired: Boolean(deadlineInfo(row.order_date, mode, now)?.isExpired),
       lunarLabel: null,
       totalQuantity: orderQuantitiesByDate[row.order_date] || 0,
+      ...(dailyFlavorsByDate[row.order_date] ? { dailyFlavorName: dailyFlavorsByDate[row.order_date] } : {}),
       ...(includeLikes ? {
         likeCount: likeState.count,
         isUserLiked: likeState.users.has(userId),
@@ -155,11 +168,31 @@ export const getCalendarEvents = async (
         isExpired: Boolean(fallback?.isExpired),
         lunarLabel: null,
         totalQuantity: orderQuantitiesByDate[date] || 0,
+        ...(dailyFlavorsByDate[date] ? { dailyFlavorName: dailyFlavorsByDate[date] } : {}),
         likeCount: likeState.count,
         isUserLiked: likeState.users.has(userId),
         ...(includeSource ? { vendorSource: 'LIKE_DEFAULT' } : {})
       };
     }
+  }
+  for (const [date, dailyFlavorName] of Object.entries(dailyFlavorsByDate)) {
+    if (events[date] || (fromDate && date < fromDate) || (toDate && date > toDate)) continue;
+    const fallback = deadlineInfo(date, 'A', now);
+    events[date] = {
+      order_date: date,
+      vendor: '',
+      mode: 'A',
+      deadline: fallback?.deadline || null,
+      isExpired: Boolean(fallback?.isExpired),
+      lunarLabel: null,
+      totalQuantity: orderQuantitiesByDate[date] || 0,
+      dailyFlavorName,
+      ...(includeLikes ? {
+        likeCount: 0,
+        isUserLiked: false,
+        ...(includeSource ? { vendorSource: 'DAILY_FLAVOR_DEFAULT' } : {})
+      } : {})
+    };
   }
   return events;
 };

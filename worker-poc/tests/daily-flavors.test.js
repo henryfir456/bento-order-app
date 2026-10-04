@@ -7,6 +7,7 @@ import {
   getDailyFlavorSyncStatus,
   runCaiTeacherDailyFlavorSync
 } from '../src/domain/dailyFlavors.js';
+import { getCalendarEvents } from '../src/domain/calendar.js';
 
 const html = (rows) => `<script>const menuData = [${rows}];</script>`;
 const sourceRows = `
@@ -171,4 +172,32 @@ test('admin sync status omits the source URL and exposes the latest summary only
   assert.equal(status.lastRun.status, 'SUCCESS');
   assert.equal(status.lastRun.addedCount, 2);
   assert.equal(JSON.stringify(status).includes('vegetsai.com.tw'), false);
+});
+
+
+test('calendar projection exposes daily flavor names for opened and unopened dates', async () => {
+  const database = new SqliteD1();
+  await runCaiTeacherDailyFlavorSync(database, {
+    now: new Date('2026-10-02T18:00:00.000Z'),
+    fetchImpl: async () => response(html(sourceRows))
+  });
+  database.run(`
+    INSERT INTO calendar_settings (order_date, vendor, mode)
+    VALUES
+      ('2026-10-03', '蔡老師', 'A'),
+      ('2026-10-05', '禾拾', 'A')
+  `);
+
+  const events = await getCalendarEvents(database, {
+    now: new Date('2026-10-02T18:00:00.000Z'),
+    includeLikes: true,
+    userId: 'user-1'
+  });
+
+  assert.equal(events['2026-10-03'].vendor, '蔡老師');
+  assert.equal(events['2026-10-03'].dailyFlavorName, '今日餐點');
+  assert.equal(events['2026-10-04'].vendor, '');
+  assert.equal(events['2026-10-04'].dailyFlavorName, '明日餐點');
+  assert.equal(events['2026-10-05'].vendor, '禾拾');
+  assert.equal(events['2026-10-05'].dailyFlavorName, undefined);
 });
