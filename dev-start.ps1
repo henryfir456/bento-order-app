@@ -218,12 +218,31 @@ Write-Host "      Channel access: PASS" -ForegroundColor Green
 
 Write-Host "[3/6] Starting Vite..."
 
+$vitePort = $null
+foreach ($candidatePort in 5173..5199) {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $candidatePort)
+    try {
+        $listener.Start()
+        $listener.Stop()
+        $vitePort = $candidatePort
+        break
+    }
+    catch {
+        $listener.Stop()
+    }
+}
+
+if ($null -eq $vitePort) {
+    Pause-And-Exit "No free IPv4 port found in 5173-5199 for Bento Vite."
+}
+
+Write-Host "      Bento Vite port: $vitePort" -ForegroundColor Green
 $escapedRepoRoot = $repoRoot.Replace("'", "''")
 
 Start-Process powershell.exe -ArgumentList @(
     "-NoExit",
     "-Command",
-    "Set-Location '$escapedRepoRoot'; npm run dev"
+    "Set-Location '$escapedRepoRoot'; npm run dev -- --host 127.0.0.1 --port $vitePort --strictPort"
 )
 
 Start-Sleep -Seconds 2
@@ -235,7 +254,7 @@ Start-Sleep -Seconds 2
 Write-Host "[4/6] Starting Pinggy..."
 Write-Host "      When Pinggy asks for a password, press Enter." -ForegroundColor Yellow
 
-$pinggyCmd = "ssh -p 443 -R0:127.0.0.1:5173 -L${pinggyDebugPort}:127.0.0.1:4300 free.pinggy.io"
+$pinggyCmd = "ssh -p 443 -R0:127.0.0.1:$vitePort -L${pinggyDebugPort}:127.0.0.1:4300 free.pinggy.io"
 
 Start-Process cmd.exe `
     -WorkingDirectory $repoRoot `
