@@ -2927,6 +2927,28 @@ export default function App() {
       : selectionRows,
     [employeeIdFilter, selectionRows, viewAsModalMode]
   );
+  const orderNavigationDates = useMemo(() => {
+    const today = formatDateInput(new Date());
+    return Object.entries(calendarEvents)
+      .filter(([dateStr, event]) => {
+        if (!event?.vendor) return false;
+        if (delegatedOrderUser && authUser?.role === 'ProxyAdmin' && dateStr < today) return false;
+        return true;
+      })
+      .map(([dateStr]) => dateStr)
+      .sort();
+  }, [calendarEvents, delegatedOrderUser, authUser?.role]);
+  const selectedOrderNavigationIndex = selectedDate
+    ? orderNavigationDates.indexOf(selectedDate)
+    : -1;
+  const previousOrderDate = selectedOrderNavigationIndex > 0
+    ? orderNavigationDates[selectedOrderNavigationIndex - 1]
+    : null;
+  const nextOrderDate = selectedOrderNavigationIndex >= 0
+    && selectedOrderNavigationIndex < orderNavigationDates.length - 1
+    ? orderNavigationDates[selectedOrderNavigationIndex + 1]
+    : null;
+
   const weekendEvents = renderWeekendEvents();
 
   return (
@@ -3301,6 +3323,10 @@ export default function App() {
         {isRegistered && viewMode === 'order' && !loading && (
           <OrderPage
             selectedDate={selectedDate}
+            previousDate={previousOrderDate}
+            nextDate={nextOrderDate}
+            onPreviousDate={() => previousOrderDate && handleSelectDate(previousOrderDate)}
+            onNextDate={() => nextOrderDate && handleSelectDate(nextOrderDate)}
             setting={setting}
             isExpired={isOrderExpired}
             policyBlocked={orderPolicyBlocked}
