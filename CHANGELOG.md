@@ -10,6 +10,8 @@
 - Added optional ordered image snapshots to announcements and rendered them in Admin management and public announcement detail.
 - Added employee-ID search to balance and identity management.
 - Added previous/next navigation between configured order dates directly on the order page.
+- Added the date-specific Cai Teacher flavor name to calendar cells for unopened dates and Cai Teacher groups so users can decide whether to vote/order without opening the order page.
+- Simplified the order-page date header by removing the redundant "預訂日期" label.
 
 ### Changed
 
