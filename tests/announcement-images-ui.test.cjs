@@ -18,3 +18,12 @@ test('announcement image snapshots remain optional and render responsively', () 
   assert.match(modal, /target="_blank"/);
   assert.match(modal, /object-contain/);
 });
+
+
+test('public announcement projection refreshes after admin edits', () => {
+  const app = read('src/App.jsx');
+  assert.match(app, /const refreshPublicAnnouncements = async/);
+  assert.match(app, /apiClient\.getCalendar/);
+  assert.match(app, /normalizeDeferredAnnouncements\(data\?\.announcements\)/);
+  assert.match(app, /await loadAdminAnnouncements\(true\);[\s\S]*await refreshPublicAnnouncements\(\);/);
+});
