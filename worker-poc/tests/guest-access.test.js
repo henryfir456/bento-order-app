@@ -385,7 +385,7 @@ test('invalid employee IDs are rejected after trim and uppercase normalization',
   assert.equal(normalized.body.employeeId, 'AB12CD');
 });
 
-test('LINE employee resolution uses an unbound canonical owner without attaching LINE', async () => {
+test('LINE employee resolution permanently binds an eligible unbound canonical owner', async () => {
   const database = seedGuestDatabase();
   const lineProfile = profileFetch({
     token: 'line-direct-token',
@@ -420,13 +420,19 @@ test('LINE employee resolution uses an unbound canonical owner without attaching
     }
   }, { fetchImpl: lineProfile });
   assert.equal(binding.response.status, 200);
-  assert.equal(binding.body.status, 'RESOLVED');
-  assert.equal(binding.body.authMode, 'employee_guest');
-  assert.equal(binding.body.resolution, 'EMPLOYEE_SESSION');
+  assert.equal(binding.body.status, 'BOUND');
+  assert.equal(binding.body.authMode, 'line');
   assert.equal(binding.body.user.userId, USER_ID);
-  assert.ok(binding.body.token);
-  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', USER_ID).line_user_id, null);
-  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 1);
+  assert.equal(binding.body.user.lineUserId, 'line-direct-001234');
+  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', USER_ID).line_user_id, 'line-direct-001234');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
+
+  const secondLogin = await call(database, '/api/me', {
+    token: 'line-direct-token'
+  }, { fetchImpl: lineProfile });
+  assert.equal(secondLogin.response.status, 200);
+  assert.equal(secondLogin.body.authMode, 'line');
+  assert.equal(secondLogin.body.user.userId, USER_ID);
 });
 
 test('LINE canonical user without employee ID must bind an employee before application access', async () => {
@@ -682,7 +688,7 @@ test('LINE binding is canonical, idempotent, conflict-safe, and revokes every ol
   assert.equal(conflictDatabase.get('SELECT revoked_at FROM employee_guest_sessions WHERE user_id = ?', USER_ID).revoked_at, null);
 });
 
-test('SQL-only imported non-LINE canonical user converges through employee guest proof and authenticated LINE bind', async () => {
+test('SQL-only imported non-LINE canonical user converges through direct authenticated LINE binding', async () => {
   const database = new SqliteD1();
   seedUser(database, {
     userId: 'sql-imported-001234',
@@ -710,10 +716,11 @@ test('SQL-only imported non-LINE canonical user converges through employee guest
     }
   }, { fetchImpl: lineProfile });
   assert.equal(directClaim.response.status, 200);
-  assert.equal(directClaim.body.status, 'RESOLVED');
-  assert.equal(directClaim.body.authMode, 'employee_guest');
+  assert.equal(directClaim.body.status, 'BOUND');
+  assert.equal(directClaim.body.authMode, 'line');
   assert.equal(directClaim.body.user.userId, 'sql-imported-001234');
-  assert.equal(directClaim.body.user.lineUserId, null);
+  assert.equal(directClaim.body.user.lineUserId, 'line-sql-import-001234');
+  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', 'sql-imported-001234').line_user_id, 'line-sql-import-001234');
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 
   const firstLogin = await guestLogin(database);
@@ -735,7 +742,7 @@ test('SQL-only imported non-LINE canonical user converges through employee guest
     }
   }, { fetchImpl: lineProfile });
   assert.equal(binding.response.status, 200);
-  assert.equal(binding.body.status, 'BOUND');
+  assert.equal(binding.body.status, 'ALREADY_BOUND');
   assert.equal(binding.body.user.userId, 'sql-imported-001234');
   assert.equal(binding.body.user.lineUserId, 'line-sql-import-001234');
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
