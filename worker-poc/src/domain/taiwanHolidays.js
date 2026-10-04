@@ -79,12 +79,14 @@ export const parseGovernmentHolidayCsv = (csv) => {
 
 const resourceUrlForYear = (html, westernYear) => {
   const rocYear = westernYear - 1911;
-  const links = Array.from(String(html || '').matchAll(/href=["']([^"']+\.csv[^"']*)["'][^>]*>[\s\S]*?<\/a>/giu));
+  const source = String(html || '');
+  const links = Array.from(source.matchAll(/href=["']([^"']+)["'][^>]*>\s*CSV\s*<\/a>/giu));
   for (const match of links) {
     const href = decodeHtml(match[1]);
-    const surrounding = match[0];
-    if (!new RegExp(`${rocYear}年[^<]*中華民國政府行政機關辦公日曆表`, 'u').test(surrounding)) continue;
-    if (/Google行事曆/u.test(surrounding)) continue;
+    if (!/\.csv(?:[?&"']|$)/iu.test(href)) continue;
+    const context = source.slice(match.index, match.index + 420);
+    if (!new RegExp(`檢視資料\\s*${rocYear}年中華民國政府行政機關辦公日曆表`, 'u').test(context)) continue;
+    if (/Google行事曆/u.test(context)) continue;
     return href.startsWith('http') ? href : new URL(href, SOURCE_HOST).toString();
   }
   return null;
