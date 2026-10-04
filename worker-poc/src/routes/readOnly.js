@@ -8,6 +8,7 @@ import {
 } from '../domain/calendar.js';
 import { deadlineInfo, getTaipeiDate, isDateOnly } from '../domain/deadlines.js';
 import { getCustomerMenu } from '../domain/menu.js';
+import { getCaiTeacherDailyFlavor } from '../domain/dailyFlavors.js';
 import {
   getHistoricalOrdersMap,
   getReadableOrder,
@@ -142,6 +143,11 @@ export const handleReadOnlyRequest = async (request, env, {
       throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
     }
     const menu = await getCustomerMenu(env.DB, { vendor: setting.vendor, targetDate });
+    const dailyFlavor = await getCaiTeacherDailyFlavor(env.DB, {
+      vendor: setting.vendor,
+      targetDate,
+      menu
+    });
     const permission = identity.viewAs
       ? null
       : await resolveOrderPermission(env.DB, identity, {
@@ -161,6 +167,7 @@ export const handleReadOnlyRequest = async (request, env, {
       setting,
       deadline: permission?.timing.deadline || deadlineInfo(targetDate, setting.mode, now),
       menu,
+      ...(dailyFlavor ? { dailyFlavor } : {}),
       myOrder,
       targetUser: publicUser(orderSubject),
       orderPolicy: permission

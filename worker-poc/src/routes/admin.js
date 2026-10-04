@@ -15,6 +15,11 @@ import {
 import { badRequest } from '../http/errors.js';
 import { emptyResponse, jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
+import { ACTIONS, assertCan } from '../auth/permissions.js';
+import {
+  getDailyFlavorSyncStatus,
+  runCaiTeacherDailyFlavorSync
+} from '../domain/dailyFlavors.js';
 
 const asBoolean = (value) => value === true || String(value).toLowerCase() === 'true';
 
@@ -73,14 +78,25 @@ export const handleAdminRoute = async (request, env, {
   const isMenuVendorList = request.method === 'GET'
     && url.pathname === '/api/admin/menu/vendors';
   const isMenuRoute = isMenuChangeList || isMenuChangeCreate || isMenuPreview || isMenuVendorList;
+  const isDailyFlavorStatus = request.method === 'GET'
+    && url.pathname === '/api/admin/daily-flavors/sync-status';
+  const isDailyFlavorSync = request.method === 'POST'
+    && url.pathname === '/api/admin/daily-flavors/sync';
+  const isDailyFlavorRoute = isDailyFlavorStatus || isDailyFlavorSync;
   if (!isSummary && !isMembers && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
     && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId
-    && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview && !isMenuVendorList) return null;
+    && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview && !isMenuVendorList
+    && !isDailyFlavorRoute) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding,
+    allowViewAs: !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isDailyFlavorRoute,
     now
   });
+  if (isDailyFlavorRoute) {
+    assertCan(identity, ACTIONS.ADMIN_MENU_CHANGES);
+    if (isDailyFlavorStatus) return jsonResponse(await getDailyFlavorSyncStatus(env.DB, now));
+    return jsonResponse(await runCaiTeacherDailyFlavorSync(env.DB, { fetchImpl, now }));
+  }
   if (isAnnouncementMissingId) throw badRequest('ANNOUNCEMENT_ID_REQUIRED');
   if (isEmployeeBinding) {
     let targetUserId;

@@ -68,7 +68,9 @@ export default function MenuItemChangesManagement({
   isViewAsMode = false,
   onRefresh,
   onCreate,
-  onPreview
+  onPreview,
+  onGetDailyFlavorSyncStatus,
+  onSyncDailyFlavors
 }) {
   const [activeView, setActiveView] = useState('current');
   const [historyVendor, setHistoryVendor] = useState('');
@@ -83,6 +85,10 @@ export default function MenuItemChangesManagement({
   const [currentMenu, setCurrentMenu] = useState(null);
   const [currentMenuLoading, setCurrentMenuLoading] = useState(false);
   const [currentMenuError, setCurrentMenuError] = useState('');
+  const [dailyFlavorSyncStatus, setDailyFlavorSyncStatus] = useState(null);
+  const [dailyFlavorSyncLoading, setDailyFlavorSyncLoading] = useState(false);
+  const [dailyFlavorSyncError, setDailyFlavorSyncError] = useState('');
+  const [dailyFlavorSyncMessage, setDailyFlavorSyncMessage] = useState('');
   const previewRequestId = useRef(0);
 
   const normalizedVendorOptions = useMemo(() => Array.from(new Set(
@@ -94,6 +100,46 @@ export default function MenuItemChangesManagement({
   const selectedCurrentVendor = normalizedVendorOptions.includes(currentVendor)
     ? currentVendor
     : normalizedVendorOptions[0] || '';
+  const supportsDailyFlavorSync = normalizedVendorOptions.includes('蔡老師');
+
+  useEffect(() => {
+    let active = true;
+    if (!supportsDailyFlavorSync || !onGetDailyFlavorSyncStatus) return () => { active = false; };
+    onGetDailyFlavorSyncStatus()
+      .then((status) => {
+        if (active) {
+          setDailyFlavorSyncStatus(status);
+          setDailyFlavorSyncError('');
+        }
+      })
+      .catch((requestError) => {
+        if (active) setDailyFlavorSyncError(requestError?.code || '目前無法取得同步狀態。');
+      });
+    return () => { active = false; };
+  }, [onGetDailyFlavorSyncStatus, supportsDailyFlavorSync]);
+
+  const syncDailyFlavors = async () => {
+    if (isViewAsMode || dailyFlavorSyncLoading || !onSyncDailyFlavors) return;
+    setDailyFlavorSyncLoading(true);
+    setDailyFlavorSyncError('');
+    setDailyFlavorSyncMessage('');
+    try {
+      const result = await onSyncDailyFlavors();
+      if (result?.status === 'SUCCESS') {
+        setDailyFlavorSyncMessage(
+          `同步完成：新增 ${result.addedCount}、更新 ${result.updatedCount}、未變更 ${result.unchangedCount} 筆。`
+        );
+      } else {
+        setDailyFlavorSyncError(result?.errorCode || '同步失敗，既有資料仍保留。');
+      }
+      const status = await onGetDailyFlavorSyncStatus?.();
+      if (status) setDailyFlavorSyncStatus(status);
+    } catch (requestError) {
+      setDailyFlavorSyncError(requestError?.code || '同步失敗，既有資料仍保留。');
+    } finally {
+      setDailyFlavorSyncLoading(false);
+    }
+  };
 
   const visibleChanges = useMemo(() => {
     const vendor = historyVendor.trim();
@@ -226,6 +272,9 @@ export default function MenuItemChangesManagement({
             <p className="mt-1 text-xs leading-5 text-gray-500">
               目前菜單與正式點餐頁共用同一套 vendor／日期 resolver；變更歷程採 append-only。
             </p>
+            <p className="mt-1 text-xs leading-5 text-emerald-700">
+              蔡老師每日風味餐名稱、介紹與圖片由官方菜單同步；同步資料只供顯示，不會更動品項代號或價格。
+            </p>
           </div>
           <div className="flex shrink-0 gap-2">
             <button type="button" onClick={onRefresh} disabled={loading || isViewAsMode} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50">
@@ -236,6 +285,36 @@ export default function MenuItemChangesManagement({
             </button>
           </div>
         </div>
+        {supportsDailyFlavorSync && (
+          <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50/60 p-3" data-testid="daily-flavor-sync-panel">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#2C4A3E]">蔡老師每日風味餐同步</h3>
+                <p className="mt-1 text-xs text-gray-600">
+                  已有 {dailyFlavorSyncStatus?.availableDateCount ?? '—'} 個今日起可用日期
+                  {dailyFlavorSyncStatus?.lastRun?.finishedAt
+                    ? ` · 上次同步 ${new Date(dailyFlavorSyncStatus.lastRun.finishedAt).toLocaleString()}`
+                    : ''}
+                </p>
+                {dailyFlavorSyncStatus?.lastRun?.status === 'FAILED' && (
+                  <p className="mt-1 text-xs text-rose-700">
+                    上次同步未完成（{dailyFlavorSyncStatus.lastRun.errorCode || dailyFlavorSyncStatus.lastRun.stage}）；目前保留既有資料。
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={syncDailyFlavors}
+                disabled={dailyFlavorSyncLoading || isViewAsMode}
+                className="rounded-xl bg-[#2C4A3E] px-3 py-2 text-xs font-bold text-white disabled:bg-gray-300"
+              >
+                {dailyFlavorSyncLoading ? '同步中…' : '立即同步'}
+              </button>
+            </div>
+            {dailyFlavorSyncMessage && <p className="mt-2 text-xs font-bold text-emerald-800">{dailyFlavorSyncMessage}</p>}
+            {dailyFlavorSyncError && <p className="mt-2 text-xs text-rose-700">{dailyFlavorSyncError}</p>}
+          </div>
+        )}
         {error && <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}
         {draft && (
           <form onSubmit={submitDraft} className="mt-4 rounded-xl border border-amber-200 bg-amber-50/50 p-3">

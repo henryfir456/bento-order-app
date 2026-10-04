@@ -8,6 +8,7 @@ import { handleCalendarRoute } from './routes/calendar.js';
 import { handleRoleRoute } from './routes/roles.js';
 import { handleReadOnlyRequest } from './routes/readOnly.js';
 import { runAutomaticDailyOpening } from './domain/automaticOpening.js';
+import { runCaiTeacherDailyFlavorSync } from './domain/dailyFlavors.js';
 import { HttpError, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
 import { asNumber } from './contract.js';
@@ -18,8 +19,24 @@ const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
 export const handleScheduled = async (
   controller,
   env,
-  { logger = console } = {}
+  { logger = console, fetchImpl = globalThis.fetch } = {}
 ) => {
+  if (controller?.cron === '0 8 * * *') {
+    const result = await runCaiTeacherDailyFlavorSync(env.DB, {
+      fetchImpl,
+      now: controller?.scheduledTime === undefined
+        ? new Date()
+        : new Date(controller.scheduledTime)
+    });
+    const logEntry = {
+      event: 'cai_teacher_daily_flavor_sync',
+      source: 'daily_flavor_cron',
+      ...result
+    };
+    if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
+    return result;
+  }
+
   const result = await runAutomaticDailyOpening(env.DB, controller?.scheduledTime);
   const logEntry = {
     event: AUTOMATIC_OPENING_LOG_EVENT,
