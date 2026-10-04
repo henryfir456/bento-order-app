@@ -123,3 +123,33 @@ test('order page adds a separate date/vendor flavor projection without changing 
     { item_id: 'FR', item_name: '非風味餐', price: 90 }
   ]);
 });
+
+
+test('daily flavor source fetch uses browser-compatible headers', async () => {
+  const database = databaseWithUsers();
+  let sourceInit = null;
+  const fetchImpl = async (url, init = {}) => {
+    if (url === 'https://api.line.me/v2/profile') {
+      return Response.json({ userId: 'line-admin', displayName: 'Admin' });
+    }
+    if (url === 'https://www.vegetsai.com.tw/products.html') {
+      sourceInit = init;
+      return new Response('<html><script>const menuData = [{date:"2026/10/06",title:"測試風味餐",img:"sample.jpg",note:"測試"}];</script></html>', {
+        status: 200,
+        headers: { 'Content-Type': 'text/html' }
+      });
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+
+  const response = await call(database, '/api/admin/daily-flavors/sync', {
+    method: 'POST',
+    token: 'admin-token'
+  }, { fetchImpl });
+
+  assert.equal(response.response.status, 200);
+  assert.ok(sourceInit);
+  assert.match(sourceInit.headers['User-Agent'], /Mozilla\/5\.0/);
+  assert.match(sourceInit.headers.Accept, /text\/html/);
+  assert.match(sourceInit.headers['Accept-Language'], /zh-TW/);
+});
