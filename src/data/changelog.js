@@ -11,6 +11,31 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.9': [
+    {
+      name: '新增',
+      changes: [
+        '蔡老師每日風味餐會依日期同步官方名稱、介紹與圖片，既有餐點代號與價格維持不變。',
+        '公告支援圖片快照，可在公告管理與公告詳情中查看。',
+        '餘額與身份管理新增員編搜尋。',
+        '點餐頁新增上一個／下一個開團日按鈕，可快速切換其他已開團日期。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '一般 User 以 LINE 搭配員編解析後會保留有效 LINE 綁定，後續 LINE 登入可直接進入。',
+        '修正公告管理更新圖片後，同一個 session 的公告詳情仍顯示舊內容。',
+        '修正蔡老師官方網站阻擋 Cloudflare 極簡請求造成每日風味餐同步失敗。'
+      ]
+    },
+    {
+      name: '重構',
+      changes: [
+        '將 App.jsx 部分純函式拆分到 auth、bootstrap、orders 與 balances 模組，維持既有行為。'
+      ]
+    }
+  ],
   '0.15.8': [
     {
       name: '修正',
