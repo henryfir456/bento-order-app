@@ -80,16 +80,17 @@ export const parseGovernmentHolidayCsv = (csv) => {
 const resourceUrlForYear = (html, westernYear) => {
   const rocYear = westernYear - 1911;
   const source = String(html || '');
-  const links = Array.from(source.matchAll(/href=["']([^"']+)["'][^>]*>\s*CSV\s*<\/a>/giu));
-  for (const match of links) {
-    const href = decodeHtml(match[1]);
-    if (!/\.csv(?:[?&"']|$)/iu.test(href)) continue;
-    const context = source.slice(match.index, match.index + 420);
-    if (!new RegExp(`檢視資料\\s*${rocYear}年中華民國政府行政機關辦公日曆表`, 'u').test(context)) continue;
-    if (/Google行事曆/u.test(context)) continue;
-    return href.startsWith('http') ? href : new URL(href, SOURCE_HOST).toString();
-  }
-  return null;
+  const label = `${rocYear}年中華民國政府行政機關辦公日曆表`;
+  const labelIndex = source.indexOf(label);
+  if (labelIndex < 0) return null;
+
+  const context = source.slice(Math.max(0, labelIndex - 1800), labelIndex);
+  const links = Array.from(context.matchAll(/<a\b[^>]*href=["']([^"']+\.csv[^"']*)["'][^>]*>/giu));
+  const match = links.at(-1);
+  if (!match) return null;
+
+  const href = decodeHtml(match[1]);
+  return href.startsWith('http') ? href : new URL(href, SOURCE_HOST).toString();
 };
 
 export const syncTaiwanGovernmentHolidays = async (
