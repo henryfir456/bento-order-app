@@ -43,7 +43,6 @@ export default function OrderPage({
                   ‹
                 </button>
                 <div className="min-w-0">
-                  <span className="text-xs text-gray-500">預訂日期</span>
                   <h2 className="text-lg font-bold text-[#2C4A3E] break-words">{selectedDate} ({setting?.vendor})</h2>
                 </div>
                 <button
