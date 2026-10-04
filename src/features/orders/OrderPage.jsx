@@ -2,6 +2,10 @@ import { formatSignedAmount } from './amountFormat.js';
 
 export default function OrderPage({
   selectedDate,
+  previousDate,
+  nextDate,
+  onPreviousDate,
+  onNextDate,
   setting,
   isExpired,
   policyBlocked,
@@ -26,12 +30,34 @@ export default function OrderPage({
 
   return (
 <div className="space-y-4">
-            <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 flex justify-between items-center">
-              <div>
-                <span className="text-xs text-gray-500">預訂日期</span>
-                <h2 className="text-lg font-bold text-[#2C4A3E]">{selectedDate} ({setting?.vendor})</h2>
+            <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 flex justify-between items-center gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onPreviousDate}
+                  disabled={!previousDate}
+                  aria-label={previousDate ? `切換到上一個開團日 ${previousDate}` : '沒有上一個開團日'}
+                  title={previousDate ? `上一個開團日：${previousDate}` : '沒有上一個開團日'}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-900/10 bg-emerald-50 text-xl font-bold text-[#2C4A3E] transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+                >
+                  ‹
+                </button>
+                <div className="min-w-0">
+                  <span className="text-xs text-gray-500">預訂日期</span>
+                  <h2 className="text-lg font-bold text-[#2C4A3E] break-words">{selectedDate} ({setting?.vendor})</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={onNextDate}
+                  disabled={!nextDate}
+                  aria-label={nextDate ? `切換到下一個開團日 ${nextDate}` : '沒有下一個開團日'}
+                  title={nextDate ? `下一個開團日：${nextDate}` : '沒有下一個開團日'}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-900/10 bg-emerald-50 text-xl font-bold text-[#2C4A3E] transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-300"
+                >
+                  ›
+                </button>
               </div>
-              <div className="text-right">
+              <div className="shrink-0 text-right">
                 {readOnly ? (
                   <span className="bg-slate-500 text-white text-xs px-2.5 py-1 rounded-full font-bold">
                     🧾 歷史訂單 (唯讀)
