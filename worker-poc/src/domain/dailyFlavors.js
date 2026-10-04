@@ -80,7 +80,11 @@ export const runCaiTeacherDailyFlavorSync = async (
   try {
     const response = await fetchImpl(SOURCE_URL_FOR_FETCH, {
       method: 'GET',
-      headers: { Accept: 'text/html' },
+      headers: {
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'zh-TW,zh;q=0.9,en;q=0.7',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154.0.0.0 Safari/537.36'
+      },
       redirect: 'follow'
     });
     if (!response?.ok) return await finish('FAILED', 'fetch', 'DAILY_FLAVOR_SOURCE_UNAVAILABLE');
