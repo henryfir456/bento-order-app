@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.15.9] - 2026-10-04
+
+### Added
+
+- Added Cai Teacher daily flavor synchronization for date-specific meal names, descriptions, and images without changing canonical menu item IDs or prices.
+- Added optional ordered image snapshots to announcements and rendered them in Admin management and public announcement detail.
+- Added employee-ID search to balance and identity management.
+- Added previous/next navigation between configured order dates directly on the order page.
+
+### Changed
+
+- Persist eligible LINE ownership after employee resolution so subsequent LINE sign-ins resolve directly to the canonical User.
+- Refresh public announcement state after Admin announcement changes so image edits appear in the same session.
+- Hardened Cai Teacher source synchronization with browser-compatible request headers after the official site rejected minimal Cloudflare fetches.
+
+### Refactored
+
+- Extracted low-risk pure helpers from App.jsx into auth, bootstrap, order, and balance feature modules.
+
+
 ## [0.15.8] - 2026-10-03
 
 ### Fixed
