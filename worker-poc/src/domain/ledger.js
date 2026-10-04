@@ -10,11 +10,14 @@ import { buildMonthlyReconciliation } from './ledgerConsistency.js';
 
 const MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
+// Asia/Taipei is UTC+08 year-round; local month boundaries are the prior day at 16:00 UTC.
+const TAIPEI_UTC_OFFSET_MS = 8 * 60 * 60 * 1000;
+
 const monthBounds = (month) => {
   const match = String(month || '').match(MONTH_PATTERN);
   if (!match) throw badRequest('INVALID_MONTH');
-  const start = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
-  const end = new Date(Date.UTC(Number(match[1]), Number(match[2]), 1));
+  const start = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1) - TAIPEI_UTC_OFFSET_MS);
+  const end = new Date(Date.UTC(Number(match[1]), Number(match[2]), 1) - TAIPEI_UTC_OFFSET_MS);
   return { month: `${match[1]}-${match[2]}`, start: start.toISOString(), end: end.toISOString() };
 };
 
