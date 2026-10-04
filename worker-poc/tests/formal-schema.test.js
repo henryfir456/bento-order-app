@@ -60,7 +60,8 @@ test('formal migration creates every source-of-truth table', () => {
     'menu_item_change_sequence',
     'vendors',
     'vendor_daily_flavors',
-    'vendor_daily_flavor_sync_runs'
+    'vendor_daily_flavor_sync_runs',
+    'taiwan_government_holidays'
   ];
 
   const actual = tableNames(database);
@@ -90,7 +91,8 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_menu_items_version_identity',
     'idx_vendors_enabled_name',
     'idx_vendor_daily_flavors_date',
-    'idx_vendor_daily_flavor_sync_runs_started'
+    'idx_vendor_daily_flavor_sync_runs_started',
+    'idx_taiwan_government_holidays_year'
   ];
   const actual = new Set(rows(database, `
     SELECT name

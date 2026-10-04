@@ -9,6 +9,7 @@ import {
   secondFollowingBusinessDay
 } from '../src/domain/businessDays.js';
 import { runAutomaticDailyOpening } from '../src/domain/automaticOpening.js';
+import { syncTaiwanGovernmentHolidays } from '../src/domain/taiwanHolidays.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 
 const taipeiMidnight = (dateOnly) => {
@@ -24,6 +25,12 @@ test('second following business day mappings', () => {
   assert.equal(secondFollowingBusinessDay('2026-09-18'), '2026-09-22');
   assert.equal(secondFollowingBusinessDay('2026-09-19'), null);
   assert.equal(secondFollowingBusinessDay('2026-09-20'), null);
+});
+
+test('holiday-aware business-day calculation skips observed holidays', () => {
+  const holidays = new Set(['2026-10-09']);
+  assert.equal(secondFollowingBusinessDay('2026-10-07', holidays), '2026-10-12');
+  assert.equal(secondFollowingBusinessDay('2026-10-09', holidays), null);
 });
 
 test('scheduled time is converted to the explicit Taipei calendar date', () => {
@@ -87,6 +94,60 @@ test('missing target group creates canonical 禾拾 exactly once with mode B', a
     updated_by_auth_mode: null
   });
   assert.equal(database.get('SELECT COUNT(*) AS count FROM admin_audit_log').count, 0);
+});
+
+test('automatic opening skips an official Taiwan observed holiday', async () => {
+  const database = new SqliteD1();
+  const result = await runAutomaticDailyOpening(database, taipeiMidnight('2026-10-09'));
+
+  assert.deepEqual(result, {
+    status: 'SKIP_NON_BUSINESS_DAY',
+    businessDate: '2026-10-09',
+    targetDate: null
+  });
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM calendar_settings').count, 0);
+});
+
+test('automatic opening skips official holidays while calculating the second following business day', async () => {
+  const database = new SqliteD1();
+  const result = await runAutomaticDailyOpening(database, taipeiMidnight('2026-10-07'));
+
+  assert.deepEqual(result, {
+    status: 'OPENED',
+    businessDate: '2026-10-07',
+    targetDate: '2026-10-12',
+    vendor: '禾拾'
+  });
+  assert.equal(database.get(
+    "SELECT vendor FROM calendar_settings WHERE order_date = '2026-10-12'"
+  ).vendor, '禾拾');
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM calendar_settings WHERE order_date = '2026-10-09'"
+  ).count, 0);
+});
+
+test('Cai Teacher holiday wording is a fail-closed fallback for auto opening', async () => {
+  const database = new SqliteD1();
+  const timestamp = '2026-10-29T00:00:00.000Z';
+  database.run(`
+    INSERT INTO vendor_daily_flavors (
+      vendor, service_date, flavor_name, description, image_url,
+      source_url, source_hash, fetched_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+    '蔡老師', '2026-11-02', '臨時補假', '',
+    'https://www.vegetsai.com.tw/img/sp_meals_s/holiday.jpg',
+    'https://www.vegetsai.com.tw/products.html#specials',
+    'b'.repeat(64), timestamp, timestamp, timestamp
+  );
+
+  const result = await runAutomaticDailyOpening(database, taipeiMidnight('2026-10-29'));
+
+  assert.equal(result.status, 'OPENED');
+  assert.equal(result.targetDate, '2026-11-03');
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM calendar_settings WHERE order_date = '2026-11-02'"
+  ).count, 0);
 });
 
 test('existing manual assignment is never overwritten', async () => {
@@ -233,6 +294,63 @@ test('daily flavor cron runs at Taipei 16:00 without replacing the midnight grou
   assert.equal(JSON.stringify(JSON.parse(lines[0])).includes('vegetsai.com.tw'), false);
 });
 
+test('government holiday preload imports official CSV data', async () => {
+  const database = new SqliteD1();
+  const datasetHtml = `
+    <a href="https://www.dgpa.gov.tw/files/115-calendar.csv">CSV</a>
+    檢視資料115年中華民國政府行政機關辦公日曆表
+  `;
+  const csv = [
+    '西元日期,星期,是否放假,備註',
+    '20261008,四,0,上班日',
+    '20261009,五,2,國慶日補假'
+  ].join('\n');
+
+  const result = await syncTaiwanGovernmentHolidays(database, {
+    now: new Date('2026-07-15T00:30:00.000Z'),
+    fetchImpl: async (url) => {
+      if (url === 'https://data.gov.tw/dataset/14718') return new Response(datasetHtml, { status: 200 });
+      if (url === 'https://www.dgpa.gov.tw/files/115-calendar.csv') return new Response(csv, { status: 200 });
+      throw new Error(`Unexpected holiday URL: ${url}`);
+    }
+  });
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.deepEqual(result.importedYears, [2026]);
+  assert.equal(database.get(
+    "SELECT holiday_name FROM taiwan_government_holidays WHERE holiday_date = '2026-10-09'"
+  ).holiday_name, '國慶日補假');
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM taiwan_government_holidays WHERE holiday_date = '2026-10-08'"
+  ).count, 0);
+});
+
+test('holiday preload cron runs in the annual publication window', async () => {
+  const database = new SqliteD1();
+  const lines = [];
+  const datasetHtml = `
+    <a href="https://www.dgpa.gov.tw/files/115-calendar.csv">CSV</a>
+    檢視資料115年中華民國政府行政機關辦公日曆表
+  `;
+  const csv = '西元日期,星期,是否放假,備註\n20261009,五,2,國慶日補假';
+
+  const result = await handleScheduled(
+    { cron: '30 0 15 6-12 *', scheduledTime: new Date('2026-07-15T00:30:00.000Z') },
+    { DB: database },
+    {
+      logger: { log: (line) => lines.push(line) },
+      fetchImpl: async (url) => {
+        if (url === 'https://data.gov.tw/dataset/14718') return new Response(datasetHtml, { status: 200 });
+        if (url === 'https://www.dgpa.gov.tw/files/115-calendar.csv') return new Response(csv, { status: 200 });
+        throw new Error(`Unexpected holiday URL: ${url}`);
+      }
+    }
+  );
+
+  assert.equal(result.status, 'SUCCESS');
+  assert.equal(JSON.parse(lines[0]).event, 'taiwan_government_holiday_sync');
+});
+
 test('formal Worker exposes the scheduled entry point', () => {
   assert.equal(typeof formalWorker.fetch, 'function');
   assert.equal(typeof formalWorker.scheduled, 'function');
@@ -240,5 +358,9 @@ test('formal Worker exposes the scheduled entry point', () => {
 
 test('formal Wrangler config schedules the Worker at Taipei midnight', () => {
   const config = JSON.parse(readFileSync(new URL('../wrangler.jsonc', import.meta.url), 'utf8'));
-  assert.deepEqual(config.triggers?.crons, ['0 16 * * *', '0 8 * * *']);
+  assert.deepEqual(config.triggers?.crons, [
+    '0 16 * * *',
+    '0 8 * * *',
+    '30 0 15 6-12 *'
+  ]);
 });
