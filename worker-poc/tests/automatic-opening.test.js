@@ -297,8 +297,8 @@ test('daily flavor cron runs at Taipei 16:00 without replacing the midnight grou
 test('government holiday preload imports official CSV data', async () => {
   const database = new SqliteD1();
   const datasetHtml = `
-    <a href="https://www.dgpa.gov.tw/files/115-calendar.csv">CSV</a>
-    檢視資料115年中華民國政府行政機關辦公日曆表
+    <a href="https://www.dgpa.gov.tw/files/115-calendar.csv"><button><span>CSV</span></button></a>
+    <button><span>檢視資料</span></button><span>115年中華民國政府行政機關辦公日曆表</span>
   `;
   const csv = [
     '西元日期,星期,是否放假,備註',
@@ -329,8 +329,8 @@ test('holiday preload cron runs in the annual publication window', async () => {
   const database = new SqliteD1();
   const lines = [];
   const datasetHtml = `
-    <a href="https://www.dgpa.gov.tw/files/115-calendar.csv">CSV</a>
-    檢視資料115年中華民國政府行政機關辦公日曆表
+    <a href="https://www.dgpa.gov.tw/files/115-calendar.csv"><button><span>CSV</span></button></a>
+    <button><span>檢視資料</span></button><span>115年中華民國政府行政機關辦公日曆表</span>
   `;
   const csv = '西元日期,星期,是否放假,備註\n20261009,五,2,國慶日補假';
 
