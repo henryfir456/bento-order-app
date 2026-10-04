@@ -29,7 +29,11 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
   assert.equal(formalD1?.binding, 'DB');
   assert.equal(formalD1?.database_name, 'bento-formal');
   assert.equal(formalD1?.migrations_dir, 'migrations-formal');
-  assert.deepEqual(formalConfig.triggers?.crons, ['0 16 * * *', '0 8 * * *']);
+  assert.deepEqual(formalConfig.triggers?.crons, [
+    '0 16 * * *',
+    '0 8 * * *',
+    '30 0 15 6-12 *'
+  ]);
   assert.match(packageConfig.scripts['db:info'], /\bbento-formal\b/);
   assert.match(packageConfig.scripts['db:migrations:local'], /\bbento-formal\b/);
   assert.match(packageConfig.scripts['db:migrations:remote'], /\bbento-formal\b/);
@@ -52,7 +56,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0010_vendor_metadata.sql',
       '0011_menu_item_change_revisions.sql',
       '0012_vendor_daily_flavors.sql',
-      '0013_announcement_images.sql'
+      '0013_announcement_images.sql',
+      '0014_taiwan_government_holidays.sql'
     ]
   );
 });
