@@ -9,6 +9,7 @@ import { handleRoleRoute } from './routes/roles.js';
 import { handleReadOnlyRequest } from './routes/readOnly.js';
 import { runAutomaticDailyOpening } from './domain/automaticOpening.js';
 import { runCaiTeacherDailyFlavorSync } from './domain/dailyFlavors.js';
+import { syncTaiwanGovernmentHolidays } from './domain/taiwanHolidays.js';
 import { HttpError, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
 import { asNumber } from './contract.js';
@@ -31,6 +32,22 @@ export const handleScheduled = async (
     const logEntry = {
       event: 'cai_teacher_daily_flavor_sync',
       source: 'daily_flavor_cron',
+      ...result
+    };
+    if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
+    return result;
+  }
+
+  if (controller?.cron === '30 0 15 6-12 *') {
+    const result = await syncTaiwanGovernmentHolidays(env.DB, {
+      fetchImpl,
+      now: controller?.scheduledTime === undefined
+        ? new Date()
+        : new Date(controller.scheduledTime)
+    });
+    const logEntry = {
+      event: 'taiwan_government_holiday_sync',
+      source: 'holiday_calendar_cron',
       ...result
     };
     if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
