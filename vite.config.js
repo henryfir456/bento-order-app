@@ -10,7 +10,7 @@ export default defineConfig({
   ],
   server: {
     host: true, // 允許外網連線
-    allowedHosts: true, // 允許 localtunnel 網域存取
+    allowedHosts: ['.run.pinggy-free.link'], // Allow rotating Pinggy subdomains via Vite's leading-dot syntax (not literal *).
   }
 })
 
