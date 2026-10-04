@@ -2655,6 +2655,10 @@ export default function App() {
       const eventExpired = Boolean(event?.isExpired || event?.expired);
       const isUserOrdered = Boolean(userOrdersMap[dateStr]);
       const hasVendor = Boolean(event?.vendor);
+      const showDailyFlavorName = Boolean(
+        event?.dailyFlavorName
+        && (!hasVendor || normalizeVendorName(event.vendor) === '蔡老師')
+      );
 
       let statusBg = "bg-white text-gray-400 border-gray-200";
       let statusBadge = null;
@@ -2702,7 +2706,7 @@ export default function App() {
             )}
           </div>
 
-          <div className="my-auto">
+          <div className="my-auto min-w-0">
             {hasVendor ? (
               <div className="flex min-w-0 items-center justify-between gap-1">
                 <span className="min-w-0 truncate text-xs font-bold text-gray-700">
@@ -2717,6 +2721,14 @@ export default function App() {
               </div>
             ) : (
               <div className="text-[10px] text-gray-400 font-normal">未開團</div>
+            )}
+            {showDailyFlavorName && (
+              <div
+                className="mt-0.5 truncate text-[9px] font-medium text-amber-700"
+                title={event.dailyFlavorName}
+              >
+                {event.dailyFlavorName}
+              </div>
             )}
           </div>
 
