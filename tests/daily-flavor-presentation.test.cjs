@@ -56,6 +56,36 @@ test('daily flavor card stays absent for other vendors, dates, or unrelated menu
   }), null);
 });
 
+test('calendar flavor image requires the exact date, Cai Teacher event, and mapped flavor data', async () => {
+  const { getCalendarDailyFlavorImage } = await presentation;
+  const event = {
+    order_date: '2026-10-06',
+    vendor: '蔡老師',
+    dailyFlavorName: '泰式打拋豆腐拌飯',
+    dailyFlavorImageUrl: 'https://www.vegetsai.com.tw/img/sp_meals_s/E06.jpg'
+  };
+
+  assert.equal(getCalendarDailyFlavorImage(event, '2026-10-06'), event.dailyFlavorImageUrl);
+  assert.equal(getCalendarDailyFlavorImage({ ...event, vendor: '' }, '2026-10-06'), '');
+  assert.equal(getCalendarDailyFlavorImage({ ...event, vendor: '禾拾' }, '2026-10-06'), '');
+  assert.equal(getCalendarDailyFlavorImage(event, '2026-10-07'), '');
+  assert.equal(getCalendarDailyFlavorImage({ ...event, dailyFlavorName: '' }, '2026-10-06'), '');
+  assert.equal(getCalendarDailyFlavorImage({ ...event, dailyFlavorImageUrl: '' }, '2026-10-06'), '');
+});
+
+test('calendar thumbnail is absent on missing image and hides on image load error', () => {
+  const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const calendar = app.match(/const renderCalendarDays = \(\) => \{[\s\S]*?const renderWeekendEvents = \(\) => \{/)?.[0] || '';
+
+  assert.match(calendar, /showDailyFlavorImage &&/);
+  assert.match(calendar, /&& dailyFlavorImageUrl/);
+  assert.match(calendar, /onError=\{\(\) => setCalendarFlavorImageErrors/);
+  assert.match(calendar, /type="button"[\s\S]*?aria-label=\{`放大檢視/);
+  assert.match(calendar, /h-11 w-full rounded-md object-cover/);
+  assert.match(calendar, /min-h-\[132px\] min-w-0/);
+  assert.doesNotMatch(calendar, /無圖片/);
+});
+
 test('order and admin screens render the independent projection and drop the item-name suffix instructions', () => {
   const read = (relativePath) => fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
   const orderPage = read('src/features/orders/OrderPage.jsx');

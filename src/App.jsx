@@ -41,7 +41,7 @@ import {
   normalizeVendorName
 } from './features/vendors/vendorModel';
 import OrderPage from './features/orders/OrderPage';
-import { buildDailyFlavorCardModel, isDailyFlavorMenuItem } from './features/orders/dailyFlavorPresentation.js';
+import { buildDailyFlavorCardModel, getCalendarDailyFlavorImage, isDailyFlavorMenuItem } from './features/orders/dailyFlavorPresentation.js';
 import { getWorkerSelectionKey, normalizeWorkerOrderMenu } from './features/orders/orderSelection';
 import { parseMenuItemName } from './features/orders/menuItemName';
 import ImagePreviewModal from './features/orders/ImagePreviewModal';
@@ -270,6 +270,7 @@ export default function App() {
   const [announcementsLoaded, setAnnouncementsLoaded] = useState(false);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
+  const [calendarFlavorImageErrors, setCalendarFlavorImageErrors] = useState({});
 
   // 餘額歷史彈窗狀態
   const [showHistoryModal, setShowHistoryModal] = useState(false);
@@ -2659,6 +2660,12 @@ export default function App() {
         event?.dailyFlavorName
         && (!hasVendor || normalizeVendorName(event.vendor) === '蔡老師')
       );
+      const dailyFlavorImageUrl = getCalendarDailyFlavorImage(event, dateStr);
+      const showDailyFlavorImage = Boolean(
+        showDailyFlavorName
+        && dailyFlavorImageUrl
+        && !calendarFlavorImageErrors[`${dateStr}:${dailyFlavorImageUrl}`]
+      );
 
       let statusBg = "bg-white text-gray-400 border-gray-200";
       let statusBadge = null;
@@ -2693,7 +2700,7 @@ export default function App() {
         <div
           key={dateStr}
           onClick={() => handleSelectDate(dateStr)}
-          className={`h-24 p-1.5 border rounded-xl flex flex-col justify-between transition-all relative ${statusBg}`}
+          className={`min-h-[132px] min-w-0 p-1.5 border rounded-xl flex flex-col justify-between transition-all relative ${statusBg}`}
         >
           <div className="flex justify-between items-start">
             <span className="font-bold text-sm leading-none">{day}</span>
@@ -2730,9 +2737,30 @@ export default function App() {
                 {event.dailyFlavorName}
               </div>
             )}
+            {showDailyFlavorImage && (
+              <button
+                type="button"
+                aria-label={`放大檢視${event.dailyFlavorName}圖片`}
+                onClick={(clickEvent) => {
+                  clickEvent.stopPropagation();
+                  handleImagePreview(dailyFlavorImageUrl, event.dailyFlavorName);
+                }}
+                className="mt-1 block w-full min-w-0 overflow-hidden rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <img
+                  src={dailyFlavorImageUrl}
+                  alt={`${event.dailyFlavorName}餐點`}
+                  onError={() => setCalendarFlavorImageErrors((current) => ({
+                    ...current,
+                    [`${dateStr}:${dailyFlavorImageUrl}`]: true
+                  }))}
+                  className="h-11 w-full rounded-md object-cover"
+                />
+              </button>
+            )}
           </div>
 
-          <div className="flex justify-between items-end mt-1">
+          <div className="flex min-w-0 flex-wrap justify-between items-end gap-x-1 gap-y-0.5 mt-1">
             {/* 愛心投票按鈕 */}
             {likesLoaded ? (
               <button

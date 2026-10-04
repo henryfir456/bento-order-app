@@ -11,6 +11,15 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.10': [
+    {
+      name: '新增',
+      changes: [
+        '月曆在對應日期且開蔡老師團時，會在風味餐名稱下方顯示當日餐點縮圖。',
+        '點擊縮圖可放大查看；假日、補假與未開團日期不顯示縮圖。'
+      ]
+    }
+  ],
   '0.15.9': [
     {
       name: '新增',

@@ -12,6 +12,16 @@ export const isDailyFlavorMenuItem = (item) => (
   Object.hasOwn(DAILY_FLAVOR_ITEM_LABELS, normalizedFlavorCode(item))
 );
 
+export const getCalendarDailyFlavorImage = (event, dateStr) => {
+  if (
+    !event
+    || event.order_date !== dateStr
+    || String(event.vendor || '').trim() !== CAI_TEACHER_VENDOR
+    || !String(event.dailyFlavorName || '').trim()
+  ) return '';
+  return String(event.dailyFlavorImageUrl || '').trim();
+};
+
 export const buildDailyFlavorCardModel = ({
   vendor,
   targetDate,

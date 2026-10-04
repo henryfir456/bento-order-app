@@ -6,6 +6,13 @@
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.10] - 2026-10-05
+
+### Added
+
+- Added Cai Teacher daily flavor thumbnails to calendar dates when the matching date is open for that vendor; official holidays, makeup holidays, and unopened dates do not show a thumbnail.
+- Added click-to-enlarge calendar image previews with Escape, backdrop, and close-button dismissal.
+
 ## [0.15.9] - 2026-10-04
 
 ### Added

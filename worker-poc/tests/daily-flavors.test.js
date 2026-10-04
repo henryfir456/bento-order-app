@@ -199,8 +199,19 @@ test('calendar projection exposes daily flavor names for opened and unopened dat
 
   assert.equal(events['2026-10-03'].vendor, '蔡老師');
   assert.equal(events['2026-10-03'].dailyFlavorName, '今日餐點');
+  assert.equal(events['2026-10-03'].dailyFlavorImageUrl, 'https://www.vegetsai.com.tw/img/sp_meals_s/E05.jpg');
   assert.equal(events['2026-10-04'].vendor, '');
   assert.equal(events['2026-10-04'].dailyFlavorName, '明日餐點');
+  assert.equal(events['2026-10-04'].dailyFlavorImageUrl, undefined);
   assert.equal(events['2026-10-05'].vendor, '禾拾');
   assert.equal(events['2026-10-05'].dailyFlavorName, undefined);
+
+  database.run("INSERT INTO taiwan_government_holidays (holiday_date, holiday_name, source_year, source_url, fetched_at) VALUES ('2026-10-03', '補假', 2026, 'https://example.test/holidays.csv', '2026-10-02T18:00:00.000Z')");
+  const holidayEvents = await getCalendarEvents(database, {
+    now: new Date('2026-10-02T18:00:00.000Z'),
+    includeLikes: true,
+    userId: 'user-1'
+  });
+  assert.equal(holidayEvents['2026-10-03'].dailyFlavorName, '今日餐點');
+  assert.equal(holidayEvents['2026-10-03'].dailyFlavorImageUrl, undefined);
 });
