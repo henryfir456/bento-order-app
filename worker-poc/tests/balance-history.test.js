@@ -15,7 +15,7 @@ const seedOrder = (database) => database.run(`
   ) VALUES ('history-order', 'user-1', 'User One', '2026-09-08', 'Vendor A', '1樓', 30, 'ACTIVE', 'user-1')
 `);
 
-test('balance history filters by UTC month and preserves business-date context', async () => {
+test('balance history filters by Taipei month and preserves business-date context', async () => {
   const database = new SqliteD1();
   seedUser(database, { lineUserId: 'user-1', balance: 100 });
   seedOrder(database);
@@ -200,7 +200,7 @@ test('history follows committed ledger sequence across reversed timestamps and m
     balanceAfter: 95,
     type: 'ORDER',
     referenceId: 'before-month-order',
-    occurredAt: '2026-08-31T23:59:00.000Z'
+    occurredAt: '2026-08-31T15:59:00.000Z'
   });
   await appendAuditEvent(database, {
     auditId: 'audit-reversed-late',

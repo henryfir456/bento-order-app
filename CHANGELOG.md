@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Align personal balance history filtering and monthly summaries with the Taipei time zone.
+
 ## [0.15.9] - 2026-10-04
 
 ### Added

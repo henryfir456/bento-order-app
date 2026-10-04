@@ -203,7 +203,7 @@ test('monthly summary exposes out-of-period rows interleaved by sequence', async
     amount: -5,
     balanceAfter: 85,
     type: 'ORDER',
-    occurredAt: '2026-08-31T23:59:00.000Z'
+    occurredAt: '2026-08-31T15:59:00.000Z'
   });
   seedLedgerRow(database, {
     transactionId: 'boundary-september-last',
@@ -221,5 +221,102 @@ test('monthly summary exposes out-of-period rows interleaved by sequence', async
   assert.deepEqual(
     result.reconciliation.outOfPeriodSequenceRows.map((row) => row.transactionId),
     ['boundary-late-august']
+  );
+});
+
+test('balance history assigns transaction timestamps to Asia/Taipei months', async () => {
+  const database = new SqliteD1();
+  const userId = 'taipei-month-user';
+  seedUser(database, { userId, employeeId: 'month-test', displayName: 'Month Test', balance: 27 });
+  const rows = [
+    { transactionId: 'taipei-september-last', amount: 25, balanceAfter: 25, occurredAt: '2026-09-30T15:59:59.999Z' },
+    { transactionId: 'taipei-october-first', amount: -10, balanceAfter: 15, occurredAt: '2026-09-30T16:00:00.000Z' },
+    { transactionId: 'issue-23-timestamp', amount: -5, balanceAfter: 10, occurredAt: '2026-09-30T17:35:45.510Z' },
+    { transactionId: 'taipei-october-last', amount: 20, balanceAfter: 30, occurredAt: '2026-10-31T15:59:59.999Z' },
+    { transactionId: 'taipei-november-first', amount: -3, balanceAfter: 27, occurredAt: '2026-10-31T16:00:00.000Z' }
+  ];
+  for (const row of rows) seedLedgerRow(database, { ...row, userId });
+
+  const september = await getBalanceHistory(database, userId, '2026-09');
+  const october = await getBalanceHistory(database, userId, '2026-10');
+  const november = await getBalanceHistory(database, userId, '2026-11');
+  const december = await getBalanceHistory(database, userId, '2026-12');
+
+  const transactionIds = (history) => history.transactions.map((transaction) => transaction.transactionId);
+  assert.deepEqual(transactionIds(september), ['taipei-september-last']);
+  assert.deepEqual(transactionIds(october), [
+    'taipei-october-last',
+    'issue-23-timestamp',
+    'taipei-october-first'
+  ]);
+  assert.equal(october.transactions[1].occurredAt, '2026-09-30T17:35:45.510Z');
+  assert.equal(october.openingBalance, 25);
+  assert.equal(october.totalCredit, 20);
+  assert.equal(october.totalDebit, 15);
+  assert.equal(october.closingBalance, 30);
+  assert.equal(october.reconciliation.status, 'CONSISTENT');
+  assert.deepEqual(transactionIds(november), ['taipei-november-first']);
+  assert.deepEqual(transactionIds(december), []);
+  assert.equal(december.openingBalance, 27);
+  assert.equal(december.closingBalance, 27);
+});
+
+test('balance history handles Taipei year-end month rollover', async () => {
+  const database = new SqliteD1();
+  const userId = 'taipei-year-rollover-user';
+  seedUser(database, { userId, employeeId: 'year-test', displayName: 'Year Test', balance: 7 });
+  seedLedgerRow(database, {
+    transactionId: 'taipei-december-last',
+    userId,
+    amount: 12,
+    balanceAfter: 12,
+    occurredAt: '2026-12-31T15:59:59.999Z'
+  });
+  seedLedgerRow(database, {
+    transactionId: 'taipei-january-first',
+    userId,
+    amount: -5,
+    balanceAfter: 7,
+    occurredAt: '2026-12-31T16:00:00.000Z'
+  });
+
+  const december = await getBalanceHistory(database, userId, '2026-12');
+  const january = await getBalanceHistory(database, userId, '2027-01');
+
+  assert.deepEqual(december.transactions.map((transaction) => transaction.transactionId), ['taipei-december-last']);
+  assert.equal(december.closingBalance, 12);
+  assert.deepEqual(january.transactions.map((transaction) => transaction.transactionId), ['taipei-january-first']);
+  assert.equal(january.openingBalance, 12);
+  assert.equal(january.closingBalance, 7);
+});
+
+test('balance history handles Taipei leap-February boundaries and still requires a month', async () => {
+  const database = new SqliteD1();
+  const userId = 'taipei-leap-year-user';
+  seedUser(database, { userId, employeeId: 'leap-test', displayName: 'Leap Test', balance: 5 });
+  const rows = [
+    { transactionId: 'taipei-january-last', amount: 5, balanceAfter: 5, occurredAt: '2024-01-31T15:59:59.999Z' },
+    { transactionId: 'taipei-february-first', amount: -2, balanceAfter: 3, occurredAt: '2024-01-31T16:00:00.000Z' },
+    { transactionId: 'taipei-february-last', amount: 3, balanceAfter: 6, occurredAt: '2024-02-29T15:59:59.999Z' },
+    { transactionId: 'taipei-march-first', amount: -1, balanceAfter: 5, occurredAt: '2024-02-29T16:00:00.000Z' }
+  ];
+  for (const row of rows) seedLedgerRow(database, { ...row, userId });
+
+  const february = await getBalanceHistory(database, userId, '2024-02');
+  const march = await getBalanceHistory(database, userId, '2024-03');
+
+  assert.deepEqual(
+    february.transactions.map((transaction) => transaction.transactionId),
+    ['taipei-february-last', 'taipei-february-first']
+  );
+  assert.equal(february.openingBalance, 5);
+  assert.equal(february.totalCredit, 3);
+  assert.equal(february.totalDebit, 2);
+  assert.equal(february.closingBalance, 6);
+  assert.deepEqual(march.transactions.map((transaction) => transaction.transactionId), ['taipei-march-first']);
+
+  await assert.rejects(
+    getBalanceHistory(database, userId, ''),
+    (error) => error.code === 'INVALID_MONTH' && error.status === 400
   );
 });
