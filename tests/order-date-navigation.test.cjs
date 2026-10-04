@@ -32,3 +32,15 @@ test('0.15.9 is the current formal release', () => {
   assert.equal(pkg.version, '0.15.9');
   assert.match(ui, /'0\.15\.9'/);
 });
+
+
+test('calendar shows daily flavor names only when useful for Cai Teacher decisions', () => {
+  const app = read('src/App.jsx');
+  const orderPage = read('src/features/orders/OrderPage.jsx');
+
+  assert.doesNotMatch(orderPage, />預訂日期</);
+  assert.match(app, /event\?\.dailyFlavorName/);
+  assert.match(app, /!hasVendor \|\| normalizeVendorName\(event\.vendor\) === '蔡老師'/);
+  assert.match(app, /title=\{event\.dailyFlavorName\}/);
+  assert.match(app, /\{event\.dailyFlavorName\}/);
+});
