@@ -160,6 +160,7 @@ test('bound LINE identity never re-enters provisional onboarding', () => {
 
 test('registered bootstrap consumes nested identity state for an UNVERIFIED Admin', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const authRuntimeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'authRuntime.js'), 'utf8');
   const bootstrap = {
     success: true,
     registered: true,
@@ -172,7 +173,7 @@ test('registered bootstrap consumes nested identity state for an UNVERIFIED Admi
       verificationStatus: 'UNVERIFIED'
     }
   };
-  const identityResolver = appSource.match(/const requireAuthoritativeIdentityState[\s\S]*?\n};/)?.[0] || '';
+  const identityResolver = authRuntimeSource.match(/export const requireAuthoritativeIdentityState[\s\S]*?\n};/)?.[0] || '';
   const registeredBranch = appSource.match(/if \(identity\?\.success && identity\.registered && identity\.user\)[\s\S]*?\n      } else if \(identity\?\.success && identity\.registered === false\)/)?.[0] || '';
 
   assert.equal(bootstrap.user.identityState, 'VERIFIED');
