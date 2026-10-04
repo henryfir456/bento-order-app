@@ -18,7 +18,8 @@ const EDITABLE_FIELDS = Object.freeze([
   'content',
   'start_date',
   'end_date',
-  'enabled'
+  'enabled',
+  'images'
 ]);
 
 const editableFieldSet = new Set(EDITABLE_FIELDS);
@@ -48,6 +49,38 @@ const enabledValue = (value) => {
   return value;
 };
 
+const imageUrlsValue = (value) => {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) {
+    throw badRequest('ANNOUNCEMENT_IMAGES_INVALID');
+  }
+  const normalized = value.map((item) => text(item)).filter(Boolean);
+  if (normalized.length !== value.length || new Set(normalized).size !== normalized.length) {
+    throw badRequest('ANNOUNCEMENT_IMAGES_INVALID');
+  }
+  for (const imageUrl of normalized) {
+    if (imageUrl.length > 2000) throw badRequest('ANNOUNCEMENT_IMAGES_INVALID');
+    let parsed;
+    try {
+      parsed = new URL(imageUrl);
+    } catch {
+      throw badRequest('ANNOUNCEMENT_IMAGES_INVALID');
+    }
+    if (parsed.protocol !== 'https:') throw badRequest('ANNOUNCEMENT_IMAGES_INVALID');
+  }
+  return normalized;
+};
+
+const parseStoredImages = (value) => {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string' && item) : [];
+  } catch {
+    return [];
+  }
+};
+
 const assertDateRange = (startDate, endDate) => {
   if (endDate < startDate) throw badRequest('ANNOUNCEMENT_DATE_RANGE_INVALID');
 };
@@ -58,11 +91,12 @@ const adminAnnouncement = (row) => ({
   content: row.content,
   start_date: row.start_date,
   end_date: row.end_date,
-  enabled: Number(row.enabled) === 1
+  enabled: Number(row.enabled) === 1,
+  images: parseStoredImages(row.image_urls_json)
 });
 
 const getAnnouncementRow = async (database, id) => database.prepare(`
-  SELECT announcement_id, title, content, start_date, end_date, enabled, source_order
+  SELECT announcement_id, title, content, start_date, end_date, enabled, source_order, image_urls_json
   FROM announcements
   WHERE announcement_id = ?
 `).bind(id).first();
@@ -75,7 +109,8 @@ const createInput = (input) => {
   const end_date = dateValue(input.end_date);
   assertDateRange(start_date, end_date);
   const enabled = input.enabled === undefined ? true : enabledValue(input.enabled);
-  return { title, content, start_date, end_date, enabled };
+  const images = imageUrlsValue(input.images);
+  return { title, content, start_date, end_date, enabled, images };
 };
 
 const patchInput = (input, existing) => {
@@ -88,6 +123,7 @@ const patchInput = (input, existing) => {
   if ('start_date' in input) patch.start_date = dateValue(input.start_date);
   if ('end_date' in input) patch.end_date = dateValue(input.end_date);
   if ('enabled' in input) patch.enabled = enabledValue(input.enabled);
+  if ('images' in input) patch.images = imageUrlsValue(input.images);
 
   const startDate = patch.start_date || existing.start_date;
   const endDate = patch.end_date || existing.end_date;
@@ -99,7 +135,7 @@ const patchInput = (input, existing) => {
 export const getActiveAnnouncements = async (database, now = new Date()) => {
   const today = getTaipeiDate(now);
   const result = await database.prepare(`
-    SELECT announcement_id, title, content, start_date, end_date, enabled, source_order
+    SELECT announcement_id, title, content, start_date, end_date, enabled, source_order, image_urls_json
     FROM announcements
     WHERE enabled = 1
     ORDER BY start_date DESC, source_order DESC
@@ -116,14 +152,15 @@ export const getActiveAnnouncements = async (database, now = new Date()) => {
       title: row.title,
       content: row.content,
       start_date: row.start_date,
-      end_date: row.end_date
+      end_date: row.end_date,
+      images: parseStoredImages(row.image_urls_json)
     }));
 };
 
 export const getAdminAnnouncements = async (database, identity) => {
   assertCan(identity, ACTIONS.ADMIN_ANNOUNCEMENTS);
   const result = await database.prepare(`
-    SELECT announcement_id, title, content, start_date, end_date, enabled, source_order
+    SELECT announcement_id, title, content, start_date, end_date, enabled, source_order, image_urls_json
     FROM announcements
     ORDER BY start_date DESC, source_order DESC, announcement_id DESC
   `).all();
@@ -143,8 +180,8 @@ export const createAnnouncement = async (
   const insert = prepareStatement(database, `
     INSERT INTO announcements (
       announcement_id, title, content, start_date, end_date, enabled,
-      created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      image_urls_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     announcementId,
     values.title,
@@ -152,6 +189,7 @@ export const createAnnouncement = async (
     values.start_date,
     values.end_date,
     values.enabled ? 1 : 0,
+    JSON.stringify(values.images),
     occurredAt,
     occurredAt
   ]);
@@ -184,6 +222,11 @@ export const updateAnnouncement = async (
   const bindings = [];
   for (const field of EDITABLE_FIELDS) {
     if (!(field in patch)) continue;
+    if (field === 'images') {
+      assignments.push('image_urls_json = ?');
+      bindings.push(JSON.stringify(patch.images));
+      continue;
+    }
     assignments.push(`${field} = ?`);
     bindings.push(field === 'enabled' ? (patch[field] ? 1 : 0) : patch[field]);
   }

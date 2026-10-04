@@ -5,7 +5,8 @@ const EMPTY_FORM = Object.freeze({
   content: '',
   start_date: '',
   end_date: '',
-  enabled: true
+  enabled: true,
+  image_urls: ''
 });
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -15,7 +16,8 @@ const formFromAnnouncement = (announcement) => ({
   content: announcement?.content || '',
   start_date: announcement?.start_date || '',
   end_date: announcement?.end_date || '',
-  enabled: announcement?.enabled !== false
+  enabled: announcement?.enabled !== false,
+  image_urls: Array.isArray(announcement?.images) ? announcement.images.join('\n') : ''
 });
 
 const validateForm = (form) => {
@@ -77,7 +79,8 @@ export default function AnnouncementManagement({
       content: form.content.trim(),
       start_date: form.start_date,
       end_date: form.end_date,
-      enabled: form.enabled
+      enabled: form.enabled,
+      images: form.image_urls.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)
     };
     setActionError('');
     setActionLoading(true);
@@ -191,6 +194,19 @@ export default function AnnouncementManagement({
           />
         </label>
 
+        <label className="block space-y-1 text-xs font-bold text-gray-600" htmlFor="announcement-images">
+          圖片網址（每行一張，可留空）
+          <textarea
+            id="announcement-images"
+            value={form.image_urls}
+            onChange={(event) => setForm((current) => ({ ...current, image_urls: event.target.value }))}
+            disabled={isViewAsMode || actionLoading}
+            rows="3"
+            placeholder="https://..."
+            className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm font-normal focus:outline-emerald-600 disabled:bg-gray-100"
+          />
+        </label>
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="block space-y-1 text-xs font-bold text-gray-600" htmlFor="announcement-start-date">
             開始日期
@@ -257,6 +273,15 @@ export default function AnnouncementManagement({
               </span>
             </div>
             <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-gray-600">{announcement.content}</p>
+            {Array.isArray(announcement.images) && announcement.images.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {announcement.images.map((imageUrl, index) => (
+                  <a key={imageUrl} href={imageUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-gray-100">
+                    <img src={imageUrl} alt={`${announcement.title} 圖片 ${index + 1}`} className="h-24 w-full object-cover" loading="lazy" />
+                  </a>
+                ))}
+              </div>
+            )}
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
