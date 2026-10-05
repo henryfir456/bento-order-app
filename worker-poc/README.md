@@ -309,11 +309,12 @@ correct.
 
 ## Formal remote migration and deployment
 
-Remote migration and deploy are external writes. Run migrations only after
-the implementation, local Worker/security tests, compatibility checks, root
-verification, and a fresh backup pass. Apply and verify 0002, 0003, and 0004
-in order. Only the later separately authorized deployment activates
-the new Worker source:
+Remote migration and deploy are external writes. Run migrations only when the
+backend change requires them, after the implementation, local Worker/security
+tests, compatibility checks, root verification, and a fresh backup pass. Apply
+and verify required migrations in order. For production-backend changes, the
+formal Worker deployment from the resulting `main` revision is the default
+delivery gate; a separate deploy request is not needed:
 
 ```powershell
 npm.cmd run db:migrations:remote
@@ -321,13 +322,13 @@ npm.cmd run deploy
 ```
 
 The package guard refuses remote writes when `wrangler.jsonc` contains an
-invalid database ID. This task does not deploy. After a separately
-authorized formal deployment, smoke-test `/api/me`, the employee guest and
-LINE onboarding contracts, `/api/bootstrap`,
-`/api/bootstrap/deferred?bootId=...`, and `/api/order-page` with a
-representative Bearer token. The local Vite topology intentionally keeps
-`.env.development` pointed at the remote formal Worker and does not require a
-local Worker or local D1.
+invalid database ID. After deployment, run `npm.cmd run smoke:cors` against the
+deployed Worker, then verify the relevant read-only API contracts (including
+`/api/me`, `/api/bootstrap`, `/api/bootstrap/deferred?bootId=...`, and
+`/api/order-page`) with a representative Bearer token when available. Record the
+deployed version and smoke/contract results before handing the task back. The
+local Vite topology intentionally keeps `.env.development` pointed at the
+remote formal Worker and does not require a local Worker or local D1.
 
 There is intentionally no remote migration, deploy, or seed command for the
 legacy POC. `wrangler-poc.jsonc` omits `database_id`, and
