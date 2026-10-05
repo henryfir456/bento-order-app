@@ -6,6 +6,12 @@
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.12] - 2026-10-05
+
+### Fixed
+
+- Show the matching daily flavor image on unopened dates that have an explicit empty-vendor calendar setting, while preserving holiday and other-vendor image guards.
+
 ## [0.15.11] - 2026-10-05
 
 ### Fixed

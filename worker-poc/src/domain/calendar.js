@@ -147,11 +147,12 @@ export const getCalendarEvents = async (
     if (!isDateOnly(row.order_date)) continue;
     if (fromDate && row.order_date < fromDate) continue;
     if (toDate && row.order_date > toDate) continue;
+    const vendor = normalizeMenuVendor(row.vendor);
     const mode = effectiveMode(row);
     const likeState = likesByDate[row.order_date] || { count: 0, users: new Set() };
     events[row.order_date] = {
       order_date: row.order_date,
-      vendor: normalizeMenuVendor(row.vendor),
+      vendor,
       mode,
       deadline: deadlineInfo(row.order_date, mode, now)?.deadline || null,
       isExpired: Boolean(deadlineInfo(row.order_date, mode, now)?.isExpired),
@@ -159,7 +160,7 @@ export const getCalendarEvents = async (
       totalQuantity: orderQuantitiesByDate[row.order_date] || 0,
       ...(dailyFlavorsByDate[row.order_date] ? {
         dailyFlavorName: dailyFlavorsByDate[row.order_date].name,
-        ...(normalizeMenuVendor(row.vendor) === '蔡老師' && dailyFlavorsByDate[row.order_date].imageUrl
+        ...((!vendor || vendor === '蔡老師') && dailyFlavorsByDate[row.order_date].imageUrl
           ? { dailyFlavorImageUrl: dailyFlavorsByDate[row.order_date].imageUrl }
           : {})
       } : {}),

@@ -11,6 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.12': [
+    {
+      name: '修正',
+      changes: [
+        '修正已有空店家設定的未開團日期，仍會顯示該日對應的風味餐圖片。'
+      ]
+    }
+  ],
   '0.15.11': [
     {
       name: '修正',

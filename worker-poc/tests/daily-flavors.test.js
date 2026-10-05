@@ -178,7 +178,7 @@ test('admin sync status omits the source URL and exposes the latest summary only
 });
 
 
-test('calendar projection exposes daily flavor names for opened and unopened dates', async () => {
+test('calendar projection exposes exact-date flavors on unopened dates with empty settings', async () => {
   const database = new SqliteD1();
   await runCaiTeacherDailyFlavorSync(database, {
     now: new Date('2026-10-02T18:00:00.000Z'),
@@ -188,7 +188,8 @@ test('calendar projection exposes daily flavor names for opened and unopened dat
     INSERT INTO calendar_settings (order_date, vendor, mode)
     VALUES
       ('2026-10-03', '蔡老師', 'A'),
-      ('2026-10-05', '禾拾', 'A')
+      ('2026-10-05', '禾拾', 'A'),
+      ('2026-10-08', '', 'A')
   `);
   database.run("INSERT INTO users (user_id, display_name, pickup_floor) VALUES ('user-1', '測試使用者', '1樓')");
   database.run("INSERT INTO likes (order_date, user_id) VALUES ('2026-10-04', 'user-1')");
@@ -197,8 +198,8 @@ test('calendar projection exposes daily flavor names for opened and unopened dat
       vendor, service_date, flavor_name, description, image_url,
       source_url, source_hash, fetched_at, created_at, updated_at
     ) VALUES (
-      '蔡老師', '2026-10-06', '另一個未開團餐點', '',
-      'https://www.vegetsai.com.tw/img/sp_meals_s/E07.jpg',
+      '蔡老師', '2026-10-08', '墨西哥燻肉香料炒飯', '',
+      'https://www.vegetsai.com.tw/img/sp_meals_s/E83.webp',
       'https://www.vegetsai.com.tw/products.html', '${'a'.repeat(64)}',
       '2026-10-02T18:00:00.000Z', '2026-10-02T18:00:00.000Z', '2026-10-02T18:00:00.000Z'
     )
@@ -227,9 +228,9 @@ test('calendar projection exposes daily flavor names for opened and unopened dat
   assert.equal(events['2026-10-04'].vendor, '');
   assert.equal(events['2026-10-04'].dailyFlavorName, '明日餐點');
   assert.equal(events['2026-10-04'].dailyFlavorImageUrl, 'https://www.vegetsai.com.tw/img/sp_meals_s/E06.jpg');
-  assert.equal(events['2026-10-06'].vendor, '');
-  assert.equal(events['2026-10-06'].dailyFlavorName, '另一個未開團餐點');
-  assert.equal(events['2026-10-06'].dailyFlavorImageUrl, 'https://www.vegetsai.com.tw/img/sp_meals_s/E07.jpg');
+  assert.equal(events['2026-10-08'].vendor, '');
+  assert.equal(events['2026-10-08'].dailyFlavorName, '墨西哥燻肉香料炒飯');
+  assert.equal(events['2026-10-08'].dailyFlavorImageUrl, 'https://www.vegetsai.com.tw/img/sp_meals_s/E83.webp');
   assert.equal(events['2026-10-05'].vendor, '禾拾');
   assert.equal(events['2026-10-05'].dailyFlavorName, '其他店家日期的風味餐');
   assert.equal(events['2026-10-05'].dailyFlavorImageUrl, undefined);
