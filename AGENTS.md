@@ -24,10 +24,29 @@ self-contained and must not depend on the AI parent workspace.
 - Never substitute a global, parent, plugin, latest, or differently
   located skill for a missing manifest-declared skill.
 - A command listed in agent.yaml is not authorization to execute it.
-- Commit, push, and deploy only when explicitly requested by the current
-  user.
+- Commit and push may proceed when they are part of the requested implementation workflow.
+- For Bento production-backend work, merge to `main` and deploy the formal Cloudflare Worker by default before handing the task back to the user, unless the user explicitly says not to merge or not to deploy.
 - Report automated and manual verification separately as PASS, FAIL,
   NOT RUN, or NOT VERIFIED.
+
+## Delivery gate
+
+For this repository, "done", "complete", "delivered", or equivalent user-facing completion language is gated by production delivery, not by branch or PR state.
+
+For any task that changes the production Worker/backend path:
+
+1. Implement and run the required automated verification.
+2. Commit and push the change.
+3. Merge the approved change into `main`.
+4. Deploy the formal Cloudflare Worker from the resulting `main` revision.
+5. Perform bounded post-deploy smoke/contract verification appropriate to the change.
+6. Only then hand the task back to the user as completed.
+
+A pushed branch, open/Draft PR, green local tests, review approval, or mergeable state is **not** delivery. If any step above is blocked, report the task as **WAITING_FOR_DELIVERY** (or equivalent), name the exact blocker, and continue the delivery path when possible instead of presenting the implementation as finished.
+
+Do not require the user to repeat "merge to main and deploy backend" for ordinary Bento backend work. Treat that as the repository default. The user may override this only with an explicit instruction such as "do not merge", "do not deploy", "PR only", or "stop before production".
+
+Data-repair tasks are a special case: production data mutation may be completed before code delivery, but preventive code is still not delivered until its code reaches `main`, the Worker is deployed, and post-deploy verification is recorded.
 
 ## Operational Handoff
 
