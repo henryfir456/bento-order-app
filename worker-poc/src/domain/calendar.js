@@ -182,7 +182,12 @@ export const getCalendarEvents = async (
         isExpired: Boolean(fallback?.isExpired),
         lunarLabel: null,
         totalQuantity: orderQuantitiesByDate[date] || 0,
-        ...(dailyFlavorsByDate[date] ? { dailyFlavorName: dailyFlavorsByDate[date].name } : {}),
+        ...(dailyFlavorsByDate[date] ? {
+          dailyFlavorName: dailyFlavorsByDate[date].name,
+          ...(dailyFlavorsByDate[date].imageUrl
+            ? { dailyFlavorImageUrl: dailyFlavorsByDate[date].imageUrl }
+            : {})
+        } : {}),
         likeCount: likeState.count,
         isUserLiked: likeState.users.has(userId),
         ...(includeSource ? { vendorSource: 'LIKE_DEFAULT' } : {})
@@ -201,6 +206,7 @@ export const getCalendarEvents = async (
       lunarLabel: null,
       totalQuantity: orderQuantitiesByDate[date] || 0,
       dailyFlavorName: dailyFlavor.name,
+      ...(dailyFlavor.imageUrl ? { dailyFlavorImageUrl: dailyFlavor.imageUrl } : {}),
       ...(includeLikes ? {
         likeCount: 0,
         isUserLiked: false,

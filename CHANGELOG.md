@@ -6,6 +6,12 @@
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.11] - 2026-10-05
+
+### Fixed
+
+- Show the matching Cai Teacher daily flavor image on unopened calendar dates as well as open dates, while continuing to hide holiday and makeup-holiday images.
+
 ## [0.15.10] - 2026-10-05
 
 ### Added

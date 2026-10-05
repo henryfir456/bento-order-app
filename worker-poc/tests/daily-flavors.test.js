@@ -190,6 +190,30 @@ test('calendar projection exposes daily flavor names for opened and unopened dat
       ('2026-10-03', '蔡老師', 'A'),
       ('2026-10-05', '禾拾', 'A')
   `);
+  database.run("INSERT INTO users (user_id, display_name, pickup_floor) VALUES ('user-1', '測試使用者', '1樓')");
+  database.run("INSERT INTO likes (order_date, user_id) VALUES ('2026-10-04', 'user-1')");
+  database.run(`
+    INSERT INTO vendor_daily_flavors (
+      vendor, service_date, flavor_name, description, image_url,
+      source_url, source_hash, fetched_at, created_at, updated_at
+    ) VALUES (
+      '蔡老師', '2026-10-06', '另一個未開團餐點', '',
+      'https://www.vegetsai.com.tw/img/sp_meals_s/E07.jpg',
+      'https://www.vegetsai.com.tw/products.html', '${'a'.repeat(64)}',
+      '2026-10-02T18:00:00.000Z', '2026-10-02T18:00:00.000Z', '2026-10-02T18:00:00.000Z'
+    )
+  `);
+  database.run(`
+    INSERT INTO vendor_daily_flavors (
+      vendor, service_date, flavor_name, description, image_url,
+      source_url, source_hash, fetched_at, created_at, updated_at
+    ) VALUES (
+      '蔡老師', '2026-10-05', '其他店家日期的風味餐', '',
+      'https://www.vegetsai.com.tw/img/sp_meals_s/E08.jpg',
+      'https://www.vegetsai.com.tw/products.html', '${'b'.repeat(64)}',
+      '2026-10-02T18:00:00.000Z', '2026-10-02T18:00:00.000Z', '2026-10-02T18:00:00.000Z'
+    )
+  `);
 
   const events = await getCalendarEvents(database, {
     now: new Date('2026-10-02T18:00:00.000Z'),
@@ -202,9 +226,13 @@ test('calendar projection exposes daily flavor names for opened and unopened dat
   assert.equal(events['2026-10-03'].dailyFlavorImageUrl, 'https://www.vegetsai.com.tw/img/sp_meals_s/E05.jpg');
   assert.equal(events['2026-10-04'].vendor, '');
   assert.equal(events['2026-10-04'].dailyFlavorName, '明日餐點');
-  assert.equal(events['2026-10-04'].dailyFlavorImageUrl, undefined);
+  assert.equal(events['2026-10-04'].dailyFlavorImageUrl, 'https://www.vegetsai.com.tw/img/sp_meals_s/E06.jpg');
+  assert.equal(events['2026-10-06'].vendor, '');
+  assert.equal(events['2026-10-06'].dailyFlavorName, '另一個未開團餐點');
+  assert.equal(events['2026-10-06'].dailyFlavorImageUrl, 'https://www.vegetsai.com.tw/img/sp_meals_s/E07.jpg');
   assert.equal(events['2026-10-05'].vendor, '禾拾');
-  assert.equal(events['2026-10-05'].dailyFlavorName, undefined);
+  assert.equal(events['2026-10-05'].dailyFlavorName, '其他店家日期的風味餐');
+  assert.equal(events['2026-10-05'].dailyFlavorImageUrl, undefined);
 
   database.run("INSERT INTO taiwan_government_holidays (holiday_date, holiday_name, source_year, source_url, fetched_at) VALUES ('2026-10-03', '補假', 2026, 'https://example.test/holidays.csv', '2026-10-02T18:00:00.000Z')");
   const holidayEvents = await getCalendarEvents(database, {

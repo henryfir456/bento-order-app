@@ -56,7 +56,7 @@ test('daily flavor card stays absent for other vendors, dates, or unrelated menu
   }), null);
 });
 
-test('calendar flavor image requires the exact date, Cai Teacher event, and mapped flavor data', async () => {
+test('calendar flavor image supports unopened exact-date flavors and rejects unrelated event data', async () => {
   const { getCalendarDailyFlavorImage } = await presentation;
   const event = {
     order_date: '2026-10-06',
@@ -66,7 +66,7 @@ test('calendar flavor image requires the exact date, Cai Teacher event, and mapp
   };
 
   assert.equal(getCalendarDailyFlavorImage(event, '2026-10-06'), event.dailyFlavorImageUrl);
-  assert.equal(getCalendarDailyFlavorImage({ ...event, vendor: '' }, '2026-10-06'), '');
+  assert.equal(getCalendarDailyFlavorImage({ ...event, vendor: '' }, '2026-10-06'), event.dailyFlavorImageUrl);
   assert.equal(getCalendarDailyFlavorImage({ ...event, vendor: '禾拾' }, '2026-10-06'), '');
   assert.equal(getCalendarDailyFlavorImage(event, '2026-10-07'), '');
   assert.equal(getCalendarDailyFlavorImage({ ...event, dailyFlavorName: '' }, '2026-10-06'), '');

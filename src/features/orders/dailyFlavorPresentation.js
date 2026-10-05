@@ -13,10 +13,11 @@ export const isDailyFlavorMenuItem = (item) => (
 );
 
 export const getCalendarDailyFlavorImage = (event, dateStr) => {
+  const vendor = String(event?.vendor || '').trim();
   if (
     !event
     || event.order_date !== dateStr
-    || String(event.vendor || '').trim() !== CAI_TEACHER_VENDOR
+    || (vendor && vendor !== CAI_TEACHER_VENDOR)
     || !String(event.dailyFlavorName || '').trim()
   ) return '';
   return String(event.dailyFlavorImageUrl || '').trim();
