@@ -56,7 +56,7 @@ const seedGuestDatabase = () => {
   return database;
 };
 
-test('unbound active employee can use a restricted guest session for self-service ordering', async () => {
+test('unbound active employee can order and read the order summary through a guest session', async () => {
   const database = seedGuestDatabase();
   const invalid = await call(database, '/api/auth/employee-guest', {
     method: 'POST',
@@ -71,21 +71,31 @@ test('unbound active employee can use a restricted guest session for self-servic
   assert.equal(login.body.user.userId, USER_ID);
   assert.equal(login.body.user.employeeId, EMPLOYEE_ID);
   assert.equal(login.body.user.lineUserId, null);
-  assert.deepEqual(login.body.capabilities, ['READ_SELF', 'REGISTER_SELF', 'WRITE_SELF']);
+  assert.deepEqual(login.body.capabilities, [
+    'READ_ADMIN_SUMMARY',
+    'READ_SELF',
+    'REGISTER_SELF',
+    'WRITE_SELF'
+  ]);
   const guestToken = login.body.token;
 
   const me = await call(database, '/api/me', { token: guestToken });
   assert.equal(me.response.status, 200);
   assert.equal(me.body.authMode, 'employee_guest');
   assert.equal(me.body.user.userId, USER_ID);
-  assert.deepEqual(me.body.capabilities, ['READ_SELF', 'REGISTER_SELF', 'WRITE_SELF']);
+  assert.deepEqual(me.body.capabilities, [
+    'READ_ADMIN_SUMMARY',
+    'READ_SELF',
+    'REGISTER_SELF',
+    'WRITE_SELF'
+  ]);
 
-  const forbiddenSummary = await call(
+  const orderSummary = await call(
     database,
     '/api/admin/summary?date=2026-09-08',
     { token: guestToken }
   );
-  assert.equal(forbiddenSummary.response.status, 403);
+  assert.equal(orderSummary.response.status, 200);
   const forbiddenTopUp = await call(database, '/api/admin/balances/top-up', {
     method: 'POST',
     token: guestToken,
@@ -140,6 +150,7 @@ test('valid unknown employee IDs enter explicit provisional onboarding', async (
   assert.equal(result.body.employeeId, '139653');
   assert.equal(result.body.user, null);
   assert.deepEqual(result.body.capabilities, [
+    'READ_ADMIN_SUMMARY',
     'READ_SELF',
     'REGISTER_SELF',
     'WRITE_SELF'
@@ -202,6 +213,7 @@ test('guest restore reconciles an existing unverified canonical user without att
   assert.equal(restored.body.user.userId, 'reconciled-user-139653');
   assert.equal(restored.body.user.lineUserId, null);
   assert.deepEqual(restored.body.capabilities, [
+    'READ_ADMIN_SUMMARY',
     'READ_SELF',
     'REGISTER_SELF',
     'WRITE_SELF'
@@ -328,13 +340,14 @@ test('fresh employee onboarding is always a normal User and cannot obtain elevat
     assert.equal(onboarding.response.status, 200);
     assert.equal(onboarding.body.user.role, 'User');
     assert.deepEqual(onboarding.body.capabilities, [
+      'READ_ADMIN_SUMMARY',
       'READ_SELF',
       'REGISTER_SELF',
       'WRITE_SELF'
     ]);
     assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 
-    const adminSummary = await call(database, '/api/admin/summary', {
+    const adminSummary = await call(database, '/api/admin/summary?date=2026-09-08', {
       token: login.body.token
     });
     assert.equal(adminSummary.response.status, 200);
@@ -760,6 +773,101 @@ test('SQL-only imported non-LINE canonical user converges through direct authent
   const employeeAfterBind = await guestLogin(database);
   assert.equal(employeeAfterBind.response.status, 200);
   assert.equal(employeeAfterBind.body.user.userId, 'sql-imported-001234');
+});
+
+test('employee guest LINE binding refreshes only the canonical legacy placeholder and preserves order history', async () => {
+  const database = new SqliteD1();
+  seedUser(database, {
+    userId: USER_ID,
+    employeeId: EMPLOYEE_ID,
+    lineUserId: null,
+    displayName: `Legacy employee ${EMPLOYEE_ID}`,
+    pickupFloor: '1樓',
+    verificationStatus: 'UNVERIFIED'
+  });
+  seedUser(database, {
+    userId: 'summary-admin',
+    employeeId: 'ADMIN-1',
+    lineUserId: 'summary-admin-line',
+    displayName: 'Summary Admin',
+    role: 'Admin'
+  });
+  database.run(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor,
+      pickup_floor, total_amount, status, created_by_user_id
+    ) VALUES (?, ?, ?, '2026-09-06', 'Vendor A', '1樓', 80, 'COMPLETED', ?)
+  `, 'legacy-order-snapshot', USER_ID, `Legacy employee ${EMPLOYEE_ID}`, USER_ID);
+  database.run(`
+    INSERT INTO order_items (
+      order_id, line_no, legacy_item_id, item_name_snapshot,
+      quantity, unit_price, subtotal
+    ) VALUES ('legacy-order-snapshot', 1, 'LEGACY-01', 'Historical Bento', 1, 80, 80)
+  `);
+
+  const employeeLogin = await guestLogin(database);
+  const lineProfile = profileFetch({
+    token: 'legacy-guest-line-token',
+    lineUserId: 'legacy-guest-line',
+    displayName: 'Verified LINE Profile'
+  });
+  const binding = await call(database, '/api/auth/line-bind', {
+    method: 'POST',
+    token: 'legacy-guest-line-token',
+    headers: { 'X-Employee-Guest-Session': employeeLogin.body.token }
+  }, { fetchImpl: lineProfile });
+
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.user.userId, USER_ID);
+  assert.equal(binding.body.user.name, 'Verified LINE Profile');
+  assert.equal(binding.body.user.verificationStatus, 'UNVERIFIED');
+  assert.deepEqual({ ...database.get(
+    'SELECT display_name_snapshot, user_id FROM orders WHERE order_id = ?',
+    'legacy-order-snapshot'
+  ) }, {
+    display_name_snapshot: `Legacy employee ${EMPLOYEE_ID}`,
+    user_id: USER_ID
+  });
+  const summary = await call(
+    database,
+    '/api/admin/summary?date=2026-09-06',
+    { token: 'summary-admin-token' },
+    { fetchImpl: profileFetch({
+      token: 'summary-admin-token',
+      lineUserId: 'summary-admin-line',
+      displayName: 'Summary Admin'
+    }) }
+  );
+  assert.equal(summary.response.status, 200);
+  assert.equal(summary.body.todayOrders[0].name, 'Verified LINE Profile');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 2);
+});
+
+test('employee guest LINE binding succeeds when the LINE profile has no display name', async () => {
+  const database = new SqliteD1();
+  seedUser(database, {
+    userId: USER_ID,
+    employeeId: EMPLOYEE_ID,
+    lineUserId: null,
+    displayName: `Legacy employee ${EMPLOYEE_ID}`,
+    pickupFloor: '1樓',
+    verificationStatus: 'UNVERIFIED'
+  });
+  const employeeLogin = await guestLogin(database);
+  const binding = await call(database, '/api/auth/line-bind', {
+    method: 'POST',
+    token: 'line-profile-without-name-token',
+    headers: { 'X-Employee-Guest-Session': employeeLogin.body.token }
+  }, { fetchImpl: profileFetch({
+    token: 'line-profile-without-name-token',
+    lineUserId: 'line-profile-without-name',
+    displayName: ''
+  }) });
+
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.user.userId, USER_ID);
+  assert.equal(binding.body.user.name, `Legacy employee ${EMPLOYEE_ID}`);
+  assert.equal(binding.body.user.lineUserId, 'line-profile-without-name');
 });
 
 test('legacy guest-to-LINE binding creates a registered canonical user without roster gating', async () => {

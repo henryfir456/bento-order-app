@@ -192,6 +192,98 @@ test('LINE employee resolution permanently binds an eligible unbound normal User
   assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
 });
 
+test('LINE binding replaces only the matching SQL-history placeholder on an existing canonical user', async () => {
+  const database = seedNormalUser({
+    userId: 'user-legacy-profile',
+    employeeId: '001008',
+    displayName: 'Legacy employee 001008'
+  });
+  database.run(
+    "UPDATE users SET verification_status = 'UNVERIFIED' WHERE user_id = ?",
+    'user-legacy-profile'
+  );
+  const lineProfile = profileFetch({
+    token: 'legacy-profile-bind-token',
+    lineUserId: 'line-legacy-profile',
+    displayName: 'Current LINE Name'
+  });
+
+  const binding = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'legacy-profile-bind-token',
+    body: { employeeId: '001008' }
+  }, { fetchImpl: lineProfile });
+
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.user.userId, 'user-legacy-profile');
+  assert.equal(binding.body.user.name, 'Current LINE Name');
+  assert.equal(binding.body.user.verificationStatus, 'UNVERIFIED');
+  assert.deepEqual({ ...database.get(
+    'SELECT employee_id, line_user_id, display_name FROM users WHERE user_id = ?',
+    'user-legacy-profile'
+  ) }, {
+    employee_id: '001008',
+    line_user_id: 'line-legacy-profile',
+    display_name: 'Current LINE Name'
+  });
+
+  const employeeLogin = await call(database, '/api/auth/employee-guest', {
+    method: 'POST',
+    body: { employeeId: '001008' }
+  });
+  assert.equal(employeeLogin.body.user.userId, 'user-legacy-profile');
+  const lineLogin = await call(database, '/api/me', {
+    token: 'legacy-profile-bind-token'
+  }, { fetchImpl: lineProfile });
+  assert.equal(lineLogin.body.user.userId, 'user-legacy-profile');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM users').count, 1);
+});
+
+test('LINE binding preserves a real profile name on an existing canonical user', async () => {
+  const database = seedNormalUser({
+    userId: 'user-real-profile',
+    employeeId: '001009',
+    displayName: 'Saved User Name'
+  });
+  const lineProfile = profileFetch({
+    token: 'real-profile-bind-token',
+    lineUserId: 'line-real-profile',
+    displayName: 'Different LINE Name'
+  });
+
+  const binding = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'real-profile-bind-token',
+    body: { employeeId: '001009' }
+  }, { fetchImpl: lineProfile });
+
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.user.name, 'Saved User Name');
+});
+
+test('LINE employee binding succeeds when the LINE profile has no display name', async () => {
+  const database = seedNormalUser({
+    userId: 'user-legacy-no-line-name',
+    employeeId: '001010',
+    displayName: 'Legacy employee 001010'
+  });
+  const lineProfile = profileFetch({
+    token: 'legacy-no-line-name-token',
+    lineUserId: 'line-legacy-no-line-name',
+    displayName: ''
+  });
+
+  const binding = await call(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'legacy-no-line-name-token',
+    body: { employeeId: '001010' }
+  }, { fetchImpl: lineProfile });
+
+  assert.equal(binding.response.status, 200);
+  assert.equal(binding.body.user.name, 'Legacy employee 001010');
+  assert.equal(binding.body.user.lineUserId, 'line-legacy-no-line-name');
+});
+
 test('LINE employee resolution returns the existing normal canonical User on ownership conflict', async () => {
   const database = seedNormalUser({
     userId: 'user-target-001004',
