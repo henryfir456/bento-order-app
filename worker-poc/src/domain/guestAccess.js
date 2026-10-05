@@ -35,6 +35,20 @@ const profileText = (value, fallback = '') => {
   return text;
 };
 
+const legacyEmployeeDisplayName = (employeeId) => (
+  `Legacy employee ${String(employeeId ?? '').trim()}`
+);
+
+const verifiedNameForLegacyProfile = (user, lineDisplayName) => {
+  if (user?.displayName !== legacyEmployeeDisplayName(user?.employeeId)) return null;
+  const text = typeof lineDisplayName === 'string' ? lineDisplayName.trim() : '';
+  const hasControlCharacter = [...text].some((character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
+  return text && text.length <= 100 && !hasControlCharacter ? text : null;
+};
+
 const pickupFloorText = (value) => {
   if (!VALID_PICKUP_FLOORS.includes(value)) throw badRequest('INVALID_PICKUP_FLOOR');
   return value;
@@ -366,16 +380,24 @@ export const lineEmployeeBind = async (
 
   if (user && user.active && isGeneralUser(user) && !currentLineUser && !user.lineUserId) {
     const timestamp = resolveClock(clock).toISOString();
+    const replacementName = verifiedNameForLegacyProfile(user, lineDisplayName);
     try {
       const result = await database.prepare(`
         UPDATE users
-        SET line_user_id = ?, updated_at = ?
+        SET line_user_id = ?,
+            display_name = CASE
+              WHEN display_name = ? THEN COALESCE(?, display_name)
+              ELSE display_name
+            END,
+            updated_at = ?
         WHERE user_id = ?
           AND line_user_id IS NULL
           AND active = 1
           AND role = 'User'
       `).bind(
         verifiedLineUserId,
+        legacyEmployeeDisplayName(user.employeeId),
+        replacementName,
         timestamp,
         user.userId
       ).run();
@@ -657,11 +679,23 @@ export const bindLineIdentity = async (
     };
   }
 
+  const replacementName = verifiedNameForLegacyProfile(inspected.user, lineDisplayName);
   const update = prepareStatement(database, `
     UPDATE users
-    SET line_user_id = ?, updated_at = ?
+    SET line_user_id = ?,
+        display_name = CASE
+          WHEN display_name = ? THEN COALESCE(?, display_name)
+          ELSE display_name
+        END,
+        updated_at = ?
     WHERE user_id = ? AND active = 1 AND line_user_id IS NULL
-  `, [verifiedLineUserId, now, inspected.user.userId]);
+  `, [
+    verifiedLineUserId,
+    legacyEmployeeDisplayName(inspected.user.employeeId),
+    replacementName,
+    now,
+    inspected.user.userId
+  ]);
   const revoke = prepareStatement(database, `
     UPDATE employee_guest_sessions
     SET revoked_at = ?, revoked_reason = 'line_bound'
