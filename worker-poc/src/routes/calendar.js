@@ -1,6 +1,6 @@
 import { ACTIONS, assertCan, assertSelfTarget } from '../auth/permissions.js';
 import { prepareStatement, runMutationBatch, resolveClock, randomId } from '../db/transactions.js';
-import { getCalendarSetting, persistCalendarSetting } from '../domain/calendar.js';
+import { cancelCalendarGroup, getCalendarSetting, persistCalendarSetting } from '../domain/calendar.js';
 import { isDateOnly } from '../domain/deadlines.js';
 import { normalizeMenuVendor } from '../domain/menuVendors.js';
 import { badRequest } from '../http/errors.js';
@@ -93,6 +93,9 @@ export const setCalendarSetting = async (database, identity, orderDate, input, c
   const mode = text(input?.mode).toUpperCase();
   if (!['A', 'B'].includes(mode)) throw badRequest('CALENDAR_MODE_REQUIRED');
   if (vendor.length > 200) throw badRequest('CALENDAR_VENDOR_TOO_LONG');
+  if (!vendor) {
+    return cancelCalendarGroup(database, { identity, orderDate, mode }, clock);
+  }
   const auditId = randomId('audit');
   const result = await persistCalendarSetting(database, {
     orderDate,
