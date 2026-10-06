@@ -6,6 +6,18 @@
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.13] - 2026-10-06
+
+### Changed
+
+- Treat Admin 「不開團」 as a full group cancellation: all ACTIVE orders for that date are cancelled and fully refunded, including after the normal ordering cutoff.
+- Show a destructive-action confirmation before closing a group, including order count, meal quantity, total amount, and an explicit full-refund warning.
+
+### Fixed
+
+- Keep group cancellation atomic across refunds, order status history, order cancellation, calendar closure, and Admin audit logging.
+- Prevent repeated group cancellation from issuing duplicate refunds; dates with no active orders still close normally.
+
 ## [0.15.12] - 2026-10-05
 
 ### Fixed
