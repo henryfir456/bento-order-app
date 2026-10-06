@@ -2013,10 +2013,44 @@ export default function App() {
     if (!(await guardWrite('月曆設定'))) return;
     setLoading(true);
     try {
+      if (!normalizeVendorName(vendor) && apiClient.transport === 'worker') {
+        const summaryResponse = await apiClient.getAdminSummary({ targetDate: dateStr });
+        const summary = await summaryResponse.json();
+        const orderCount = new Set(
+          (summary.todayOrders || []).map((order) => order.order_id).filter(Boolean)
+        ).size;
+        const totalItems = Number(summary.totalItems || 0);
+        const totalAmount = Number(summary.totalAmount || 0);
+        const confirmation = await Swal.fire({
+          icon: orderCount > 0 ? 'warning' : 'question',
+          title: '確認取消開團？',
+          html: orderCount > 0
+            ? `<div class="text-left text-sm leading-7">
+                <p><strong>${dateStr}</strong> 目前有 <strong>${orderCount}</strong> 筆訂單、<strong>${totalItems}</strong> 份餐點，總金額 <strong>${totalAmount}</strong>。</p>
+                <p class="mt-2 text-rose-700"><strong>確認後會取消全部有效訂單，並將款項全額退回每位使用者餘額。</strong></p>
+              </div>`
+            : `<div class="text-sm">確認將 <strong>${dateStr}</strong> 設為不開團？目前沒有有效訂單需要退款。</div>`,
+          showCancelButton: true,
+          confirmButtonText: orderCount > 0 ? '取消開團並全額退款' : '確認不開團',
+          cancelButtonText: '返回',
+          confirmButtonColor: '#be123c',
+          customClass: {
+            popup: 'rounded-3xl',
+            confirmButton: 'rounded-xl',
+            cancelButton: 'rounded-xl'
+          }
+        });
+        if (!confirmation.isConfirmed) return;
+      }
+
       const res = await apiClient.setCalendarVendor({ adminUserId: authUserId, dateStr, vendor });
       const data = await res.json();
       if (data.success) {
-        await showPopup({ icon: 'success', title: '更新完成', text: '開團設定已更新！' });
+        const cancelled = data.cancellationSummary;
+        const message = cancelled?.orderCount > 0
+          ? `已取消 ${cancelled.orderCount} 筆訂單、${cancelled.totalQuantity} 份餐點，並退款 ${cancelled.totalAmount}。`
+          : '開團設定已更新！';
+        await showPopup({ icon: 'success', title: '更新完成', text: message });
         setSelectedAdminDate(null);
         fetchCalendarEvents();
       } else {
