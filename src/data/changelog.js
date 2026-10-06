@@ -11,6 +11,22 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.13': [
+    {
+      name: '變更',
+      changes: [
+        'Admin 將某日設為「不開團」時，現在會取消該日全部有效訂單並將款項全額退回使用者餘額；即使已超過一般訂餐截止時間也可執行。',
+        '取消開團前會顯示高風險確認，包含訂單筆數、餐點份數、總金額，以及「全部取消並退款」警告。'
+      ]
+    },
+    {
+      name: '修正',
+      changes: [
+        '整團取消會在同一個安全交易中完成退款、訂單狀態歷程、訂單取消、關閉開團與管理稽核，避免留下部分退款或半套狀態。',
+        '重複執行取消開團不會二次退款；沒有有效訂單的日期仍可正常設為不開團。'
+      ]
+    }
+  ],
   '0.15.12': [
     {
       name: '修正',
