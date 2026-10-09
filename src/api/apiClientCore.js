@@ -7,6 +7,7 @@ import {
   ApiNetworkError
 } from './apiErrors.js';
 import { API_TRANSPORTS, resolveApiTransportConfig } from './transportConfig.js';
+import { createDeadline } from '../auth/asyncDeadline.js';
 
 const readToken = (authClient, operation) => {
   const token = authClient?.getAccessToken?.();
@@ -74,7 +75,7 @@ const createWorkerRequest = ({ baseUrl, authClient, sessionStore, fetchImpl }) =
   operation,
   method,
   path,
-  { query, body, extraHeaders = {}, credentialMode = 'auto' } = {}
+  { query, body, extraHeaders = {}, credentialMode = 'auto', signal } = {}
 ) => {
   const credential = readWorkerCredential(authClient, sessionStore, operation, credentialMode);
   const headers = {
@@ -89,19 +90,35 @@ const createWorkerRequest = ({ baseUrl, authClient, sessionStore, fetchImpl }) =
   }
 
   let response;
+  const deadline = createDeadline({
+    timeoutMs: 15000,
+    signal,
+    error: new ApiNetworkError('API_REQUEST_TIMEOUT', '連線逾時，請按重新連線。', { operation })
+  });
+  options.signal = deadline.signal;
   try {
-    response = await fetchImpl(buildWorkerUrl(baseUrl, path, query), options);
-  } catch {
+    const networkResponse = await deadline.wait(() => fetchImpl(buildWorkerUrl(baseUrl, path, query), options));
+    // Buffer the complete body within the same request deadline. All callers,
+    // including clone().json() in startup, then read a bounded local response.
+    const text = await deadline.wait(() => networkResponse.text());
+    response = new Response(networkResponse.status === 204 ? null : text, {
+      status: networkResponse.status, statusText: networkResponse.statusText, headers: networkResponse.headers
+    });
+  } catch (error) {
+    if (error?.code === 'API_REQUEST_TIMEOUT' || signal?.aborted) throw error;
     throw new ApiNetworkError(
       'API_REQUEST_FAILED',
       'Worker API request failed.',
       { operation }
     );
+  } finally {
+    deadline.dispose();
   }
 
   if (response.status === 401) {
     const errorCode = await readWorkerErrorCode(response, 'API_AUTH_REJECTED');
-    if (errorCode === 'GUEST_SESSION_INVALID') {
+    if (errorCode === 'GUEST_SESSION_INVALID' && credential?.authMode === 'employee_guest'
+      && sessionStore?.getGuestSession?.()?.token === credential.token) {
       sessionStore?.clearGuestSession?.({ reason: 'rejected' });
     }
     throw new ApiAuthenticationError(
@@ -295,10 +312,10 @@ const createWorkerOperations = ({ workerRequest }) => ({
     }
   ),
   getIdentity: () => workerRequest('getIdentity', 'GET', '/api/me'),
-  getBootstrap: async ({ bootId, targetDate } = {}) => {
+  getBootstrap: async ({ bootId, targetDate, signal } = {}) => {
     // The formal bootstrap route is registered-only. Read canonical identity
     // first so an authenticated unregistered user reaches registration.
-    const identityResponse = await workerRequest('getIdentity', 'GET', '/api/me');
+    const identityResponse = await workerRequest('getIdentity', 'GET', '/api/me', { signal });
     let identity;
     try {
       identity = await identityResponse.clone().json();
@@ -311,7 +328,7 @@ const createWorkerOperations = ({ workerRequest }) => ({
       'getBootstrap',
       'GET',
       '/api/bootstrap',
-      { query: { bootId, targetDate } }
+      { query: { bootId, targetDate }, signal }
     );
   },
   getDeferredBootstrap: ({ bootId } = {}) => workerRequest(

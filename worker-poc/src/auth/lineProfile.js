@@ -1,4 +1,5 @@
-import { unauthorized } from '../http/errors.js';
+import { HttpError, unauthorized } from '../http/errors.js';
+import { createDeadline } from '../../../src/auth/asyncDeadline.js';
 
 const PROFILE_URL = 'https://api.line.me/v2/profile';
 
@@ -13,12 +14,18 @@ export const fetchLineProfile = async (
     throw new Error('A fetch implementation is required.');
   }
 
+  const deadline = createDeadline({
+    timeoutMs: 8000,
+    error: new HttpError(503, 'LINE_PROFILE_TIMEOUT', 'LINE verification timed out. Please retry.')
+  });
+  try {
   let response;
   try {
-    response = await fetchImpl(profileUrl, {
-      headers: { Authorization: 'Bearer ' + token }
-    });
-  } catch {
+    response = await deadline.wait(() => fetchImpl(profileUrl, {
+      headers: { Authorization: 'Bearer ' + token }, signal: deadline.signal
+    }));
+  } catch (error) {
+    if (error?.code === 'LINE_PROFILE_TIMEOUT') throw error;
     throw unauthorized('TOKEN_INVALID', 'LINE profile verification failed.');
   }
 
@@ -31,8 +38,9 @@ export const fetchLineProfile = async (
 
   let profile;
   try {
-    profile = await response.json();
-  } catch {
+    profile = await deadline.wait(() => response.json());
+  } catch (error) {
+    if (error?.code === 'LINE_PROFILE_TIMEOUT') throw error;
     throw unauthorized('TOKEN_INVALID', 'LINE profile response was invalid.');
   }
 
@@ -47,6 +55,9 @@ export const fetchLineProfile = async (
       ? profile.displayName.trim()
       : ''
   };
+  } finally {
+    deadline.dispose();
+  }
 };
 
 export { PROFILE_URL };

@@ -729,7 +729,7 @@ test('frontend bootstrap owns initial state and only uses legacy startup on INVA
   const bootstrapBranchStart = initSource.indexOf('} else {', initSource.indexOf('if (usingLegacyStartup) {'));
   const bootstrapBranch = initSource.slice(bootstrapBranchStart);
 
-  assert.match(initSource, /fetchBootstrapData\(accessToken, bootId\)/);
+  assert.match(initSource, /fetchBootstrapData\(accessToken, bootId, deadline\.signal\)/);
   assert.match(initSource, /identity\?\.code === 'INVALID_ACTION'/);
   assert.match(initSource, /identity = await fetchUserInfo\(accessToken\)/);
   assert.match(bootstrapBranch, /setCalendarEvents\(identity\.calendar\?\.events/);
@@ -835,7 +835,7 @@ test('frontend bootstrap wires the correlated Phase 3 waterfall without extra re
   assert.match(initSource, /const bootId = createBootId\(\)/);
   assert.match(initSource, /createBootTimingLogger\(bootId\)/);
   assert.match(initSource, /bootTiming\.backend\(identity\?\.observability\?\.timing, identity\?\.bootId\)/);
-  assert.match(appSource, /apiClient\.getBootstrap\(\{ bootId \}\)/);
+  assert.match(appSource, /apiClient\.getBootstrap\(\{ bootId, signal \}\)/);
   assert.match(appSource, /apiClient\.getDeferredBootstrap\(\{ bootId \}\)/);
   assert.match(appSource, /\.timing\.deferredBackend/);
   assert.match(appSource, /deferredUiGenerationRef/);
@@ -851,7 +851,7 @@ test('frontend bootstrap wires the correlated Phase 3 waterfall without extra re
   const bootstrapFetchEnd = appSource.indexOf('  const handleRegister', bootstrapFetchStart);
   const bootstrapFetchSource = appSource.slice(bootstrapFetchStart, bootstrapFetchEnd);
   assert.equal((bootstrapFetchSource.match(/apiClient\.getBootstrap\(/g) || []).length, 1);
-  assert.match(bootstrapFetchSource, /apiClient\.getBootstrap\(\{ bootId \}\)/);
+  assert.match(bootstrapFetchSource, /apiClient\.getBootstrap\(\{ bootId, signal \}\)/);
 
   const deferredFetchStart = appSource.indexOf('const fetchDeferredBootstrapData');
   const deferredFetchEnd = appSource.indexOf('const showPopup', deferredFetchStart);
@@ -2026,9 +2026,11 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
   const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
 
-  assert.equal(packageJson.version, '0.15.12');
-  assert.equal(packageLock.version, '0.15.12');
-  assert.equal(packageLock.packages[''].version, '0.15.12');
+  const latestRelease = changelogMarkdown.match(/^## \[(\d+\.\d+\.\d+)\]/m)?.[1];
+  assert.ok(latestRelease, 'a formal changelog release is required');
+  assert.equal(packageJson.version, latestRelease);
+  assert.equal(packageLock.version, latestRelease);
+  assert.equal(packageLock.packages[''].version, latestRelease);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/package\.json['"]/);
   assert.match(changelogSource, /from ['"]\.\.\/\.\.\/CHANGELOG\.md\?raw['"]/);
   assert.match(changelogSource, /parseChangelog\(changelogMarkdown\)/);

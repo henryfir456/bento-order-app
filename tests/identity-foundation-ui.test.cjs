@@ -127,7 +127,7 @@ test('Worker startup preserves explicit employee entry when LIFF is also authent
   const bootSource = appSource.match(/const initLiffAndFetchData[\s\S]*?\n  useEffect/)?.[0] || '';
   const liffCheckIndex = bootSource.indexOf("logAuthDiagnostic('LIFF_INIT_START')");
   const guestRestoreIndex = bootSource.indexOf("logAuthDiagnostic('RESTORE_GUEST_SESSION')");
-  const lineBootstrapIndex = bootSource.indexOf('fetchBootstrapData(accessToken, bootId)');
+  const lineBootstrapIndex = bootSource.indexOf('fetchBootstrapData(accessToken, bootId, deadline.signal)');
 
   assert.ok(liffCheckIndex >= 0);
   assert.ok(guestRestoreIndex > liffCheckIndex);

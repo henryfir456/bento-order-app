@@ -12,6 +12,7 @@ import {
 import { normalizeWorkerLikeResponse, restoreCalendarEvent } from './api/likeState';
 import { authClient } from './auth/liffClient';
 import { redactAuthSecrets, requireAuthoritativeIdentityState } from './auth/authRuntime';
+import { createDeadline } from './auth/asyncDeadline.js';
 import { hasPermission } from './auth/permissions';
 import {
   AUTH_BOOT_STAGES,
@@ -104,13 +105,13 @@ const fetchDeferredBootstrapData = async (accessToken, bootId) => {
   }
 };
 
-const fetchBootstrapData = async (accessToken, bootId) => {
+const fetchBootstrapData = async (accessToken, bootId, signal) => {
   try {
     if (!accessToken) {
       return { success: false, message: 'LIFF accessToken 不存在' };
     }
 
-    const res = await apiClient.getBootstrap({ bootId });
+    const res = await apiClient.getBootstrap({ bootId, signal });
     if (!res.ok) {
       return { success: false, message: `backend HTTP ${res.status}` };
     }
@@ -188,6 +189,10 @@ export default function App() {
   const authInitInFlightRef = useRef(false);
   const authBootPromiseRef = useRef(null);
   const authBootCompletedRef = useRef(false);
+  const authAttemptRef = useRef(null);
+  const authSelectionRef = useRef(0);
+  const authSelectionBusyRef = useRef(false);
+  const authResumeRef = useRef({ pending: false, lastAt: 0, timer: null, flush: null });
   const employeeGuestRequestRef = useRef(false);
   const bootRenderPendingRef = useRef(null);
   const deferredUiGenerationRef = useRef(0);
@@ -578,22 +583,23 @@ export default function App() {
     if (authBootPromiseRef.current && !force) {
       return authBootPromiseRef.current;
     }
-    if (authBootPromiseRef.current && authInitInFlightRef.current) {
-      logAuthDiagnostic('AUTH_BOOT_SKIPPED_IN_FLIGHT');
-      return authBootPromiseRef.current;
-    }
     if (authBootCompletedRef.current && !force) {
       logAuthDiagnostic('AUTH_BOOT_SKIPPED_COMPLETED');
       return Promise.resolve();
     }
 
+    authAttemptRef.current?.controller.abort(new Error('Auth attempt superseded'));
+    const attempt = { controller: new AbortController() };
+    authAttemptRef.current = attempt;
+    const ownsAttempt = () => authAttemptRef.current === attempt;
+    const deadline = createDeadline({
+      timeoutMs: 60000,
+      signal: attempt.controller.signal,
+      error: Object.assign(new Error('登入連線逾時，請按重新連線。'), { code: 'AUTH_BOOT_TIMEOUT' })
+    });
+    const wait = (task) => deadline.wait(task);
+    authInitInFlightRef.current = true;
     const run = (async () => {
-      if (authInitInFlightRef.current) {
-      logAuthDiagnostic('LIFF_INIT_SKIPPED_IN_FLIGHT');
-      return;
-      }
-
-      authInitInFlightRef.current = true;
     const bootId = createBootId();
     const bootTiming = createBootTimingLogger(bootId);
     const bootStartTime = getPerformanceNow();
@@ -633,8 +639,9 @@ export default function App() {
       const liffInitStartTime = getPerformanceNow();
       let liffAvailable = true;
       try {
-        await authClient.init();
+        await wait(() => authClient.init());
       } catch (error) {
+        if (!ownsAttempt() || deadline.signal.aborted) throw error;
         liffAvailable = false;
         if (apiClient.transport !== 'worker' || !guestSession || hasBindIntent) throw error;
         logAuthDiagnostic('LIFF_UNAVAILABLE_FALLBACK_TO_GUEST');
@@ -642,6 +649,7 @@ export default function App() {
         bootTiming.milestone('LIFF_INIT_END');
         bootTiming.metric('LIFF_INIT_MS', getPerformanceNow() - liffInitStartTime);
       }
+      if (!ownsAttempt()) return;
 
       let isLoggedIn = false;
       let accessToken = '';
@@ -683,7 +691,8 @@ export default function App() {
         currentStage = AUTH_BOOT_STAGES.RESTORE_GUEST;
         setAuthStage(currentStage);
         logAuthDiagnostic('RESTORE_GUEST_SESSION');
-        const restoredIdentity = await fetchBootstrapData(guestSession.token, bootId);
+        const restoredIdentity = await wait(() => fetchBootstrapData(guestSession.token, bootId, deadline.signal));
+        if (!ownsAttempt()) return;
         if (restoredIdentity?.success && (
           (restoredIdentity.registered && restoredIdentity.user)
           || (restoredIdentity.authMode === 'employee_guest' && restoredIdentity.user)
@@ -713,7 +722,9 @@ export default function App() {
         setAuthState(AUTH_STATES.AUTH_REQUIRED);
         setAuthStage(AUTH_STATES.AUTH_REQUIRED);
         logAuthDiagnostic('AUTH_REQUIRED');
-        if (apiClient.transport !== 'worker' || hasBindIntent) authClient.login();
+        // Automatic recovery never redirects. Only explicit login/bind actions
+        // may initiate OAuth; otherwise focus/pageshow can create login loops.
+        if (apiClient.transport !== 'worker') authClient.login();
         return;
       }
 
@@ -727,13 +738,18 @@ export default function App() {
         setAuthStage(currentStage);
         currentStage = AUTH_BOOT_STAGES.BIND_LINE;
         setAuthStage(currentStage);
-        const bindResponse = await apiClient.bindLine({
+        // Consume this explicit intent before POST. An ambiguous timeout must
+        // not silently replay a binding mutation on resume or retry.
+        guestSessionStore.clearBindIntent();
+        const bindResponse = await wait(() => apiClient.bindLine({
           guestToken: guestSession.token,
           displayName: bindIntent.displayName,
           pickupFloor: bindIntent.pickupFloor
-        });
+        }));
+        if (!ownsAttempt()) return;
         if (!bindResponse.ok) throw new Error(`LINE bind HTTP ${bindResponse.status}`);
-        const bindData = await bindResponse.json();
+        const bindData = await wait(() => bindResponse.json());
+        if (!ownsAttempt()) return;
         if (!bindData.success || !bindData.user) {
           throw new Error(bindData.error || bindData.message || 'LINE bind failed');
         }
@@ -748,7 +764,8 @@ export default function App() {
         const bootstrapRequestStartTime = getPerformanceNow();
         bootTiming.milestone('BOOTSTRAP_REQUEST_START');
         try {
-          identity = await fetchBootstrapData(accessToken, bootId);
+          identity = await wait(() => fetchBootstrapData(accessToken, bootId, deadline.signal));
+          if (!ownsAttempt()) return;
           bootTiming.backend(identity?.observability?.timing, identity?.bootId);
           usingLegacyStartup = apiClient.transport === 'gas' && identity?.code === 'INVALID_ACTION';
           if (usingLegacyStartup) {
@@ -760,6 +777,7 @@ export default function App() {
         }
       }
       }
+      if (!ownsAttempt()) return;
       if (identity?.success && identity.registered && identity.user) {
         const stateApplyStartedAt = getPerformanceNow();
         applyUserInfoData(identity);
@@ -828,18 +846,22 @@ export default function App() {
         failAuthentication('BACKEND_IDENTITY_VERIFY_FAILED', identity?.message || 'backend 未回傳有效身份狀態');
       }
     } catch (err) {
+      if (!ownsAttempt()) return;
       failAuthentication(currentStage, err);
     } finally {
-      setLoading(false);
-      if (!awaitingRender) {
-        if (typeof bootstrapNetworkMs === 'number') {
-          bootTiming.metric('BOOTSTRAP_NETWORK_MS', bootstrapNetworkMs, bootStatus, isFallback);
+      deadline.dispose();
+      if (ownsAttempt()) {
+        setLoading(false);
+        if (!awaitingRender) {
+          if (typeof bootstrapNetworkMs === 'number') {
+            bootTiming.metric('BOOTSTRAP_NETWORK_MS', bootstrapNetworkMs, bootStatus, isFallback);
+          }
+          bootTiming.metric('BOOT_TOTAL_MS', getPerformanceNow() - bootStartTime, bootStatus, isFallback);
         }
-        bootTiming.metric('BOOT_TOTAL_MS', getPerformanceNow() - bootStartTime, bootStatus, isFallback);
-      }
         authInitInFlightRef.current = false;
         authBootCompletedRef.current = true;
       }
+    }
     })();
 
     authBootPromiseRef.current = run;
@@ -852,6 +874,29 @@ export default function App() {
       }
     );
     return run;
+  };
+
+  // Explicit entry changes revoke all earlier async ownership before awaiting
+  // SDK/network work. Old boot completion must not overwrite the new choice.
+  const beginAuthSelection = () => {
+    const selection = ++authSelectionRef.current;
+    authSelectionBusyRef.current = true;
+    authResumeRef.current.pending = false;
+    clearTimeout(authResumeRef.current.timer);
+    authResumeRef.current.timer = null;
+    employeeGuestRequestRef.current = false;
+    setEmployeeGuestLoading(false);
+    setLineBindLoading(false);
+    authAttemptRef.current?.controller.abort(new Error('Auth entry changed'));
+    authAttemptRef.current = null;
+    authBootPromiseRef.current = null;
+    authInitInFlightRef.current = false;
+    authBootCompletedRef.current = false;
+    bootRenderPendingRef.current = null;
+    clearIdentityData();
+    setLoading(false);
+    setAuthState(AUTH_STATES.AUTH_REQUIRED);
+    return selection;
   };
 
   useEffect(() => {
@@ -933,6 +978,8 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = guestSessionStore.subscribe((event) => {
       if (event?.type !== 'guest-session-invalid') return;
+      beginAuthSelection();
+      authSelectionBusyRef.current = false;
       authBootCompletedRef.current = false;
       setAuthState(AUTH_STATES.AUTH_REQUIRED);
       setAuthStage(AUTH_BOOT_STAGES.RESTORE_GUEST);
@@ -943,51 +990,75 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const resume = authResumeRef.current;
     void initLiffAndFetchData();
     // initLiffAndFetchData is intentionally a render-local orchestration
     // closure; the boot must run only once on initial mount.
+    return () => {
+      clearTimeout(resume.timer);
+      resume.timer = null;
+      authSelectionRef.current += 1;
+      authAttemptRef.current?.controller.abort(new Error('App unmounted'));
+      authAttemptRef.current = null;
+      authBootPromiseRef.current = null;
+      authBootCompletedRef.current = false;
+      authInitInFlightRef.current = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (apiClient.transport !== 'worker' || authClient.isMock) return undefined;
     const resumableStates = new Set([
+      AUTH_STATES.AUTH_LOADING,
       AUTH_STATES.AUTH_REQUIRED,
-      AUTH_STATES.AUTH_FAILED,
-      AUTH_STATES.UNREGISTERED,
-      AUTH_STATES.EMPLOYEE_BIND_REQUIRED,
-      AUTH_STATES.UNVERIFIED
+      AUTH_STATES.AUTH_FAILED
     ]);
-    let lastResumeAt = 0;
-    const resumeAfterLiffReturn = () => {
-      if (loading || document.visibilityState === 'hidden' || !resumableStates.has(authState)) {
+    const resumeAfterLiffReturn = (event) => {
+      const resume = authResumeRef.current;
+      if (document.visibilityState === 'hidden' || authSelectionBusyRef.current || lineBindLoading) return;
+      if (!resumableStates.has(authState)) {
+        resume.pending = false;
+        clearTimeout(resume.timer);
+        resume.timer = null;
         return;
       }
-      let loggedIn = false;
-      try {
-        loggedIn = authClient.isLoggedIn();
-      } catch {
-        return;
-      }
-      if (!loggedIn || authInitInFlightRef.current) return;
+      if (event) resume.pending = true;
+      if (!resume.pending || loading || authInitInFlightRef.current) return;
       const now = Date.now();
-      if (now - lastResumeAt < 500) return;
-      lastResumeAt = now;
+      if (now - resume.lastAt < 1000) {
+        if (resume.timer === null) {
+          resume.timer = setTimeout(() => {
+            resume.timer = null;
+            resume.flush?.();
+          }, 1000 - (now - resume.lastAt));
+        }
+        return;
+      }
+      clearTimeout(resume.timer);
+      resume.timer = null;
+      resume.lastAt = now;
+      resume.pending = false;
       authBootCompletedRef.current = false;
       logAuthDiagnostic('LIFF_RETURN_RESUME');
       void initLiffAndFetchData({ force: true });
     };
+    authResumeRef.current.flush = resumeAfterLiffReturn;
 
     window.addEventListener('pageshow', resumeAfterLiffReturn);
     window.addEventListener('focus', resumeAfterLiffReturn);
+    window.addEventListener('online', resumeAfterLiffReturn);
     document.addEventListener('visibilitychange', resumeAfterLiffReturn);
+    // Drain one coalesced return event after the current boot settles.
+    resumeAfterLiffReturn();
     return () => {
       window.removeEventListener('pageshow', resumeAfterLiffReturn);
       window.removeEventListener('focus', resumeAfterLiffReturn);
+      window.removeEventListener('online', resumeAfterLiffReturn);
       document.removeEventListener('visibilitychange', resumeAfterLiffReturn);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authState, loading]);
+  }, [authState, loading, lineBindLoading]);
 
   const canManageAdminAnnouncements = () => (
     apiClient.transport === 'worker'
@@ -1368,6 +1439,7 @@ export default function App() {
     if (
       apiClient.transport !== 'worker'
       || employeeGuestLoading
+      || lineBindLoading
       || employeeGuestRequestRef.current
     ) return;
 
@@ -1377,6 +1449,8 @@ export default function App() {
       return;
     }
 
+    const selection = beginAuthSelection();
+    guestSessionStore.clearBindIntent();
     employeeGuestRequestRef.current = true;
     setEmployeeGuestLoading(true);
     setEmployeeGuestError('');
@@ -1385,6 +1459,7 @@ export default function App() {
     try {
       const response = await apiClient.employeeGuestLogin({ employeeId });
       const data = await response.json();
+      if (selection !== authSelectionRef.current) return;
       if (!data.success || data.authMode !== 'employee_guest' || !data.token || !data.expiresAt) {
         throw new Error(data.error || data.message || 'EMPLOYEE_GUEST_LOGIN_INVALID_RESPONSE');
       }
@@ -1402,12 +1477,17 @@ export default function App() {
       } else {
         setEmployeeGuestId('');
       }
+      authSelectionBusyRef.current = false;
       await initLiffAndFetchData({ force: true, preferGuestSession: true });
     } catch (error) {
+      if (selection !== authSelectionRef.current) return;
       setEmployeeGuestError(getApiErrorPresentation(error, '員工登入').message);
     } finally {
+      if (selection === authSelectionRef.current) {
+      authSelectionBusyRef.current = false;
       employeeGuestRequestRef.current = false;
       setEmployeeGuestLoading(false);
+      }
     }
   };
 
@@ -1425,6 +1505,7 @@ export default function App() {
       return;
     }
 
+    const selection = authSelectionRef.current;
     setLineBindLoading(true);
     setEmployeeGuestError('');
     setEmployeeGuestSuccess('');
@@ -1437,7 +1518,9 @@ export default function App() {
           displayName,
           pickupFloor
         });
+      if (selection !== authSelectionRef.current) return;
       const data = await response.json();
+      if (selection !== authSelectionRef.current) return;
       if (
         !response.ok
         || !data.success
@@ -1452,9 +1535,10 @@ export default function App() {
       authBootCompletedRef.current = false;
       await initLiffAndFetchData({ force: true, preferGuestSession: true });
     } catch (error) {
+      if (selection !== authSelectionRef.current) return;
       setEmployeeGuestError(getApiErrorPresentation(error, '完成 onboarding').message);
     } finally {
-      setLineBindLoading(false);
+      if (selection === authSelectionRef.current) setLineBindLoading(false);
     }
   };
 
@@ -1476,20 +1560,29 @@ export default function App() {
   };
 
   const handleLineLogin = async () => {
-    if (lineBindLoading || employeeGuestLoading) return;
+    if (lineBindLoading) return;
+    const selection = beginAuthSelection();
+    setEmployeeGuestLoading(false);
+    employeeGuestRequestRef.current = false;
     try {
       // An explicit LINE entry selects LINE for this session. This only
       // clears the local employee credential; it never changes LINE ownership.
       guestSessionStore.clearGuestSession({ reason: 'line-login', notify: false });
+      guestSessionStore.clearBindIntent();
       await authClient.init();
+      if (selection !== authSelectionRef.current) return;
       if (!authClient.isLoggedIn()) {
         authClient.login();
         return;
       }
       authBootCompletedRef.current = false;
+      authSelectionBusyRef.current = false;
       await initLiffAndFetchData({ force: true });
     } catch (error) {
+      if (selection !== authSelectionRef.current) return;
       failAuthentication('LIFF_LOGIN_REQUEST_FAILED', error);
+    } finally {
+      if (selection === authSelectionRef.current) authSelectionBusyRef.current = false;
     }
   };
 
@@ -1502,6 +1595,7 @@ export default function App() {
       return;
     }
 
+    const selection = beginAuthSelection();
     guestSessionStore.setBindIntent(profile);
     authBootCompletedRef.current = false;
     setLineBindLoading(true);
@@ -1509,6 +1603,7 @@ export default function App() {
     setAuthError('');
     try {
       await authClient.init();
+      if (selection !== authSelectionRef.current) return;
       if (!authClient.isLoggedIn()) {
         setAuthState(AUTH_STATES.AUTH_REQUIRED);
         setAuthStage(AUTH_BOOT_STAGES.LIFF_CHECK);
@@ -1516,24 +1611,31 @@ export default function App() {
         return;
       }
 
+      guestSessionStore.clearBindIntent();
       const response = await apiClient.bindLine({
         guestToken: guestSession.token,
         displayName: profile.displayName,
         pickupFloor: profile.pickupFloor
       });
       const data = await response.json();
+      if (selection !== authSelectionRef.current) return;
       if (!data.success || !data.user) {
         throw new Error(data.error || data.message || 'LINE_BIND_FAILED');
       }
       guestSessionStore.clearBindIntent();
       guestSessionStore.clearGuestSession({ reason: 'line-bound', notify: false });
       authBootCompletedRef.current = false;
+      authSelectionBusyRef.current = false;
       await initLiffAndFetchData({ force: true });
     } catch (error) {
+      if (selection !== authSelectionRef.current) return;
       guestSessionStore.clearBindIntent();
       setEmployeeGuestError(getApiErrorPresentation(error, '綁定 LINE').message);
     } finally {
+      if (selection === authSelectionRef.current) {
+      authSelectionBusyRef.current = false;
       setLineBindLoading(false);
+      }
     }
   };
 
@@ -1547,11 +1649,13 @@ export default function App() {
       return;
     }
 
+    const selection = authSelectionRef.current;
     setLineBindLoading(true);
     setEmployeeGuestError('');
     setAuthError('');
     try {
       await authClient.init();
+      if (selection !== authSelectionRef.current) return;
       if (!authClient.isLoggedIn()) {
         setAuthState(AUTH_STATES.AUTH_REQUIRED);
         setAuthStage(AUTH_BOOT_STAGES.LIFF_CHECK);
@@ -1564,7 +1668,9 @@ export default function App() {
         displayName,
         pickupFloor
       });
+      if (selection !== authSelectionRef.current) return;
       const data = await response.json();
+      if (selection !== authSelectionRef.current) return;
       if (!data.success || !data.user) {
         throw new Error(data.error || data.message || 'LINE_EMPLOYEE_BIND_FAILED');
       }
@@ -1576,9 +1682,10 @@ export default function App() {
         await initLiffAndFetchData({ force: true });
       }
     } catch (error) {
+      if (selection !== authSelectionRef.current) return;
       setEmployeeGuestError(getApiErrorPresentation(error, '綁定 LINE').message);
     } finally {
-      setLineBindLoading(false);
+      if (selection === authSelectionRef.current) setLineBindLoading(false);
     }
   };
 
@@ -3219,6 +3326,9 @@ export default function App() {
               }}
               onEmployeeSubmit={handleEmployeeGuestLogin}
               onLineLogin={handleLineLogin}
+              onRetry={authState === AUTH_STATES.AUTH_FAILED
+                ? () => initLiffAndFetchData({ force: true })
+                : undefined}
               loading={employeeGuestLoading || lineBindLoading}
               error={employeeGuestError || (authState === AUTH_STATES.AUTH_FAILED ? authError : '')}
             />

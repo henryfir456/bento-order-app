@@ -1,5 +1,6 @@
 import { getMockIdentityResponse } from './mockData.js';
 import { resolveAuthConfig } from './authMode.js';
+import { createDeadline } from './asyncDeadline.js';
 
 const MOCK_SESSION_CREDENTIAL = 'local-mock-session';
 
@@ -24,11 +25,17 @@ export const createAuthClient = ({ env = {}, liffClient, logger = console } = {}
       if (config.mode === 'mock') return;
       if (!config.liffId) throw new Error('Missing VITE_LIFF_ID');
       if (!liffInitPromise) {
-        liffInitPromise = Promise.resolve(liffClient.init({ liffId: config.liffId }))
+        const timeoutError = Object.assign(new Error('LINE 初始化逾時，請按重新連線。'), {
+          code: 'LIFF_INIT_TIMEOUT'
+        });
+        const deadline = createDeadline({ timeoutMs: 15000, error: timeoutError });
+        const attempt = deadline.wait(() => liffClient.init({ liffId: config.liffId }))
           .catch((error) => {
-            liffInitPromise = null;
+            if (liffInitPromise === attempt) liffInitPromise = null;
             throw error;
-          });
+          })
+          .finally(() => deadline.dispose());
+        liffInitPromise = attempt;
       }
       await liffInitPromise;
     },

@@ -6,6 +6,20 @@
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.14] - 2026-10-09
+
+### Fixed
+
+- Bound LIFF initialization, Worker request headers/body, and the complete authentication boot so a stalled startup exits loading and offers reconnect without closing the page (Issue #32).
+- Retain and coalesce OAuth/background return and online recovery events, with attempt ownership preventing old results or cleanup from replacing a newer LINE or employee entry.
+- Preserve explicit employee guest selection, avoid automatic login redirect loops, and consume explicit LINE binding intent before POST so ambiguous failures are not automatically replayed.
+- Bound the formal Worker's LINE profile verification, including its response body; timeouts fail closed with retryable HTTP 503 instead of waiting indefinitely.
+
+### Verification boundary
+
+- Automated startup simulations exercise the actual App orchestration; Android LINE first-open behavior remains pending real-device verification.
+- Frontend source is updated and merged only. Frontend deployment is excluded by user instruction; Worker deployment is reported separately.
+
 ## [0.15.13] - 2026-10-06
 
 ### Changed

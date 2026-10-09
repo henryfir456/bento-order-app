@@ -23,13 +23,15 @@ test('order page exposes previous and next configured-date navigation', () => {
   assert.match(orderPage, /disabled=\{!nextDate\}/);
 });
 
-test('0.15.11 is the current formal release', () => {
+test('current formal release is consistent and preserves the 0.15.11 entry', () => {
   const changelog = read('CHANGELOG.md');
   const pkg = JSON.parse(read('package.json'));
   const ui = read('src/data/changelog.js');
 
   assert.match(changelog, /## \[0\.15\.11\] - 2026-10-05/);
-  assert.equal(pkg.version, '0.15.11');
+  const latestRelease = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m)?.[1];
+  assert.ok(latestRelease);
+  assert.equal(pkg.version, latestRelease);
   assert.match(ui, /'0\.15\.11'/);
 });
 
