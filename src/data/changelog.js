@@ -11,6 +11,15 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.14': [
+    {
+      name: '修正',
+      changes: [
+        '登入連線逾時會顯示錯誤與重新連線按鈕，可直接重試，不必關閉網頁。',
+        '改善 LINE 返回、背景切回與網路恢復時的登入處理，避免舊回應覆蓋新選擇或重複送出綁定。'
+      ]
+    }
+  ],
   '0.15.13': [
     {
       name: '變更',

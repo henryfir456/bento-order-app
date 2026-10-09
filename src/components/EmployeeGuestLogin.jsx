@@ -5,6 +5,7 @@ export default function EmployeeGuestLogin({
   onEmployeeIdChange,
   onEmployeeSubmit,
   onLineLogin,
+  onRetry,
   loading = false,
   error = ''
 }) {
@@ -60,6 +61,16 @@ export default function EmployeeGuestLogin({
           <p role="alert" className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
             {error}
           </p>
+        )}
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={loading}
+            className="w-full rounded-2xl border border-emerald-800 py-3 text-sm font-bold text-emerald-900 disabled:opacity-50"
+          >
+            重新連線
+          </button>
         )}
       </div>
     </section>

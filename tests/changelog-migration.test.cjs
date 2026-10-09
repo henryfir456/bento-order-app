@@ -139,7 +139,9 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const parsed = parseChangelog(markdown);
   const historical = parsed.filter((release) => (
-    isFormalRelease(release) && !['0.10.0', '0.10.1', '0.11.0', '0.11.1', '0.11.2', '0.11.3', '0.12.0', '0.12.1', '0.13.0', '0.14.0', '0.14.1', '0.14.2', '0.15.0', '0.15.1', '0.15.2', '0.15.3', '0.15.4', '0.15.5', '0.15.6', '0.15.7', '0.15.8'].includes(release.version)
+    // The migration began at 0.10.0. New releases must not be mistaken for
+    // pre-migration history by an ever-growing exclusion list.
+    isFormalRelease(release) && /^0\.[0-9]\./.test(release.version)
   ));
 
   assert.deepEqual(
@@ -283,11 +285,16 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const unreleased = parsed.filter((release) => release.version === null);
   assert.equal(unreleased.length, 1);
   assert.equal(parsed[0].version, null);
-  assert.deepEqual(unreleased[0].categories, []);
-  assert.deepEqual(unreleased[0].changes, []);
+  assert.deepEqual(unreleased[0].categories, [{
+    name: 'Fixed',
+    changes: ['Align personal balance history filtering and monthly summaries with the Taipei time zone.']
+  }]);
+  assert.deepEqual(unreleased[0].changes, ['Align personal balance history filtering and monthly summaries with the Taipei time zone.']);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
-  assert.deepEqual(uiReleases.map((release) => release.version).slice(0, 5), ['0.15.8', '0.15.7', '0.15.6', '0.15.5', '0.15.4']);
+  const preservedVersions = ['0.15.8', '0.15.7', '0.15.6', '0.15.5', '0.15.4'];
+  assert.deepEqual(uiReleases.map((release) => release.version).filter((version) => preservedVersions.includes(version)), preservedVersions);
+  assert.equal(uiReleases[0].version, JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version);
   assert.equal(uiReleases.some((release) => release.version === null), false);
   assert.deepEqual(historical.map((release) => release.version), expectedHistory.map((release) => release.version));
   assert.equal(new Set(historical.map((release) => release.version)).size, expectedHistory.length);
