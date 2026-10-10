@@ -1,5 +1,17 @@
 # Issue #36 — P0 feasibility and authorization decision
 
+## Effective decision — 2026-10-10 13:32 UTC
+
+This decision supersedes the earlier same-day GO for internal MANUAL implementation and the staged Draft plan below. Retain the dated research only. Internal centralized batches, MANUAL handoff and the management UI are paused: PR #38 and PR #39 are closed without merge or deployment. Issue #36 is closed as **Not planned**, not as completed acceptance. PR #37 may merge only the research and this decision; no runtime/schema change is included.
+
+Preserve `feature/36-vendor-order-core` at `298d330f98f85e541cb82c6487c3312169464b2d` (initial implementation `d2b701471cf769dbda7504f81d9339bec2e316b5`) and `feature/36-vendor-order-ui` at `cc4ae1d7c176e8d64a7566ded85cad4076a7a9fe`. Closed PRs retain their tests and history as reference, not as features available on main or in production.
+
+Restart requires a new explicit product/implementation decision, written merchant/platform order-create/status/reconciliation permissions, an isolated sandbox and authenticated contract evidence, current branch/menu/address/fee/payment confirmation, human login/cart/pre-submit verification, and fresh RBAC/idempotency/privacy review against then-current main. ERP checkout synchronization is not order-create authorization. No deployment, production migration/D1 mutation, third-party credentials or real order/payment is authorized by repository convergence.
+
+## Historical research and superseded proposal
+
+The remainder records the original evidence and proposal as of the time below. Its GO, implementation plan and instruction to keep Issue #36 open are historical and are superseded by the effective decision above.
+
 Evidence date: 2026-10-10. Repository base: `5dd8667360f522c012a338641bd7ec584dab1ef4`.
 Delivery: staged Draft PRs only. No merge, deployment, remote migration, real order/payment, platform login, private endpoint discovery, merchant contact or credential acquisition is authorized here.
 

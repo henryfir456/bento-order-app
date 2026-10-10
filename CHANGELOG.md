@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+Repository convergence (2026-10-10): preserve dated MaiFood feasibility research and its superseding Not planned decision for Issue #36. Internal MANUAL implementation PR #38 and UI PR #39 are paused/closed without merge or deployment, retaining their branches and commits. Previously merged identity/LIFF/month-filter fixes are not reapplied; real LINE acceptance remains pending. This is repository documentation and maintenance, with no new runtime release or production data mutation.
+
 ### Fixed
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
