@@ -240,8 +240,13 @@ const resolveNormalizedRows = (rows, { vendor, targetDate }) => {
   ));
 };
 
-const normalizedProjectionRow = (row) => {
-  const identity = normalizeLegacyMenuIdentity({
+const normalizedProjectionRow = (row, { preserveExplicitVariants = false } = {}) => {
+  const code = row.item_code || row.legacy_item_id;
+  const identity = preserveExplicitVariants
+    && NORMALIZED_VARIANT_KEYS.includes(row.variant_key)
+    && !legacyCodeCannotBeUsedForNormalizedIdentity(code)
+    ? { item_code: code, variant_key: row.variant_key }
+    : normalizeLegacyMenuIdentity({
     vendor: row.vendor,
     itemCode: row.item_code || row.legacy_item_id,
     variantKey: row.variant_key,
@@ -255,7 +260,7 @@ const normalizedProjectionRow = (row) => {
   });
 };
 
-const normalizedProjectionRows = (rows) => rows.map(normalizedProjectionRow);
+const normalizedProjectionRows = (rows, options) => rows.map(row => normalizedProjectionRow(row, options));
 
 const collapseNormalizedProjectionRows = (rows) => {
   const selected = new Map();
@@ -495,17 +500,17 @@ const projectDisplayImageRows = async (database, rows) => {
 
 const applyHistoricalImageFallback = (database, rows) => projectDisplayImageRows(database, rows);
 
-export const resolveEffectiveMenuState = async (database, { vendor, targetDate } = {}) => {
+export const resolveEffectiveMenuState = async (database, { vendor, targetDate, preserveExplicitVariants = false } = {}) => {
   const changes = await resolveMenuItemChanges(database, { vendor, targetDate });
   const baseline = await getCompatibilityMenuBaseline(database, { vendor, targetDate });
   const useNormalizedIdentity = changes.authority !== 'sql_historical'
     && text(targetDate) >= NORMALIZED_MENU_START_DATE;
   const effectiveBaselineRows = useNormalizedIdentity
-    ? collapseNormalizedProjectionRows(normalizedProjectionRows(baseline.rows))
+    ? collapseNormalizedProjectionRows(normalizedProjectionRows(baseline.rows, { preserveExplicitVariants }))
     : baseline.rows;
   const effectiveChangeRows = useNormalizedIdentity
     ? [
-      ...collapseNormalizedProjectionRows(normalizedProjectionRows(changes.legacyRows || changes.rows)),
+      ...collapseNormalizedProjectionRows(normalizedProjectionRows(changes.legacyRows || changes.rows, { preserveExplicitVariants })),
       ...(changes.normalizedRows || [])
     ]
     : changes.rows;

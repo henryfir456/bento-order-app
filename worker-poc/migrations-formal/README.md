@@ -33,13 +33,17 @@ The formal chain is exactly:
 0009_topup_method.sql                # nullable structured payment method for new top-ups
 0010_vendor_metadata.sql              # canonical vendor metadata and menu snapshot links
 0011_menu_item_change_revisions.sql   # legacy/raw boundary and normalized revision ordering
+0012_vendor_daily_flavors.sql        # bounded daily-flavor source evidence
+0013_announcement_images.sql         # announcement image evidence
+0014_taiwan_government_holidays.sql  # holiday calendar
+0015_vendor_order_batches.sql        # internal MANUAL handoff, grants, mappings and permanent reservations
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all twelve files in order. Migration 0003 defaults existing users to
+all sixteen files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
