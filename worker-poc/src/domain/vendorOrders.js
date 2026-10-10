@@ -193,7 +193,9 @@ export const createVendorSnapshot=async(db,b,date,floors,now,noteReviews=[])=>{
       floor:row.floor,quantity:row.quantity,unitPrice:row.unitPrice,subtotal:row.subtotal,externalSku:mapping?.sku||null,options:mapping?JSON.parse(mapping.options):[],externalUnitPrice:mapping?.price??null};
     sourceItems.push(item);
     if(mapping){
-      const priceKey=canonicalJson([canonical.item_code,canonical.variant_key,mapping.sku,mapping.options]);
+      // The merchant sells by external SKU/options; internal aliases cannot
+      // create a second price for that same external sales identity.
+      const priceKey=canonicalJson([mapping.sku,mapping.options]);
       if(externalPrices.has(priceKey)&&externalPrices.get(priceKey)!==mapping.price)warnings.push('EXTERNAL_PRICE_CONFLICT');
       externalPrices.set(priceKey,mapping.price);
       const supplierNote=reviewed?.supplierNote||'';
@@ -250,10 +252,19 @@ export const prepareVendorBatch=async(db,identity,input,now)=>{
   return publicBatch(await loadBatch(db,identity,batchId));
 };
 export const getVendorBatch=async(db,identity,id,now)=>{
-  const row=await loadBatch(db,identity,id),b=await branch(db,row.branch_id),context=await createVendorSnapshot(db,b,row.service_date,JSON.parse(row.floors_json),now,JSON.parse(row.snapshot_json).noteReviews);
+  const row=await loadBatch(db,identity,id),b=await branch(db,row.branch_id),saved=JSON.parse(row.snapshot_json);
   const attempt=await statement(db,'SELECT attempt_id AS attemptId,external_reference AS externalReference,reported_amount AS reportedAmount,payment_status AS paymentStatus,evidence_source AS evidenceSource,platform_verified AS platformVerified FROM vendor_order_attempts WHERE batch_id=?',[id]).first();
-  return {...publicBatch(row),currentSnapshot:publicSnapshot(context.snapshot),sourceChanged:JSON.parse(row.snapshot_json).guard.source!==context.snapshot.guard.source,
-    snapshotChanged:row.snapshot_hash!==context.snapshotHash,attempt:attempt?{...attempt,platformVerified:false}:null,
+  let context=null,liveSnapshotError=null;
+  try{context=await createVendorSnapshot(db,b,row.service_date,JSON.parse(row.floors_json),now,saved.noteReviews);}
+  catch(error){if(!attempt)throw error;liveSnapshotError=error.code==='VENDOR_ORDER_SNAPSHOT_TOO_LARGE'?error.code:'VENDOR_ORDER_LIVE_SNAPSHOT_UNAVAILABLE';}
+  const live=await reconciliationSource(db,row,saved),sourceChanged=saved.guard.source!==live.source;
+  // Permanent claims made by this very handoff are not source/config drift.
+  // Full snapshot/claim checks remain mandatory before review and handoff.
+  const snapshotChanged=attempt?(!context||sourceChanged||['mappings','menu'].some(key=>saved.guard[key]!==context.snapshot.guard[key])
+    ||saved.branchRevision!==b.revision||saved.vendor!==b.vendor||saved.branchLabel!==b.label||canonicalJson(saved.policy)!==canonicalJson(b.policy)
+    ||Boolean(b.vendor_enabled)!==!saved.warnings.includes('VENDOR_DISABLED')):row.snapshot_hash!==context.snapshotHash;
+  return {...publicBatch(row),currentSnapshot:context?publicSnapshot(context.snapshot):null,liveSnapshotError,sourceChanged,
+    snapshotChanged,attempt:attempt?{...attempt,platformVerified:false}:null,
     audit:await rows(db,`SELECT action,actor_user_id AS actorUserId,snapshot_hash AS snapshotHash,metadata_json AS metadataJson,occurred_at AS occurredAt
       FROM vendor_order_audit WHERE batch_id=? ORDER BY occurred_at,audit_id LIMIT 100`,[id])};
 };
@@ -312,18 +323,26 @@ export const handoffVendorBatch=async(db,identity,id,input,key,now)=>{
   return handoffResult(await loadBatch(db,identity,id),{attempt_id:attemptId},false);
 };
 const TRANSITIONS={SUBMITTING:['SUBMITTED','UNKNOWN','FAILED'],SUBMITTED:['ACCEPTED','REJECTED','CANCELLED','UNKNOWN'],UNKNOWN:['SUBMITTED','ACCEPTED','REJECTED','CANCELLED','FAILED'],FAILED:['UNKNOWN','CANCELLED'],ACCEPTED:['CANCELLED'],REJECTED:[],CANCELLED:[]};
+// Reconciliation belongs to the frozen attempt. Live preparation limits must
+// not prevent recording its outcome. Keep a current source fingerprint so a
+// concurrent source edit still requires an explicit refresh before reporting.
+const reconciliationSource=async(db,row,saved)=>{
+  const sourceParams=[canonicalJson(compatibilityVendorCandidates(saved.vendor)),row.service_date,canonicalJson(saved.floors)];
+  const live=await statement(db,`SELECT (${SOURCE_SQL}) source,(SELECT COUNT(*) FROM vendor_item_mappings WHERE branch_id=? AND service_date=?) mappingsCount`,[...sourceParams,row.branch_id,row.service_date]).first();
+  return {...live,sourceParams,liveSnapshotError:JSON.parse(live.source).length>200||live.mappingsCount>300?'VENDOR_ORDER_SNAPSHOT_TOO_LARGE':null};
+};
 export const reportVendorBatch=async(db,identity,id,input,now)=>{
   const row=await loadBatch(db,identity,id),revision=integer(input.expectedRevision);
   if(!TRANSITIONS[row.state]?.includes(input.state))throw conflict('VENDOR_ORDER_TRANSITION_INVALID');
   if(!['UNCONFIRMED','UNPAID','PAID'].includes(input.paymentStatus))throw badRequest('VENDOR_ORDER_PAYMENT_INVALID');
   const reference=input.externalReference?boundedText(input.externalReference):null,amount=integer(input.reportedAmount);
-  const b=await branch(db,row.branch_id),context=await createVendorSnapshot(db,b,row.service_date,JSON.parse(row.floors_json),now,JSON.parse(row.snapshot_json).noteReviews);
-  const changed=JSON.parse(row.snapshot_json).guard.source!==context.snapshot.guard.source;
+  const saved=JSON.parse(row.snapshot_json),live=await reconciliationSource(db,row,saved);
+  const changed=saved.guard.source!==live.source;
   await atomic(db,identity,row.branch_id,`EXISTS(SELECT 1 FROM vendor_order_batches WHERE batch_id=? AND revision=? AND state=?)
     AND EXISTS(SELECT 1 FROM vendor_order_attempts WHERE batch_id=?) AND (${SOURCE_SQL})=?`,
-    [id,revision,row.state,id,...context.sourceParams,context.snapshot.guard.source],[statement(db,'UPDATE vendor_order_batches SET state=?,revision=revision+1,updated_at=? WHERE batch_id=?',[input.state,now.toISOString(),id]),
+    [id,revision,row.state,id,...live.sourceParams,live.source],[statement(db,'UPDATE vendor_order_batches SET state=?,revision=revision+1,updated_at=? WHERE batch_id=?',[input.state,now.toISOString(),id]),
       statement(db,'UPDATE vendor_order_attempts SET external_reference=?,reported_amount=?,payment_status=?,report_json=? WHERE batch_id=?',
-        [reference,amount,input.paymentStatus,canonicalJson({state:input.state,sourceChanged:changed,externalReference:reference,reportedAt:now.toISOString()}),id]),
-      audit(db,identity,row.branch_id,id,'MANUAL_REPORTED',row.snapshot_hash,now,{revision:revision+1,state:input.state,sourceChanged:changed,externalReference:reference,reportedAmount:amount,paymentStatus:input.paymentStatus})]);
-  return {...publicBatch(await loadBatch(db,identity,id)),sourceChanged:changed,evidenceSource:'MANUAL_REPORTED',platformVerified:false};
+        [reference,amount,input.paymentStatus,canonicalJson({state:input.state,sourceChanged:changed,liveSnapshotError:live.liveSnapshotError,externalReference:reference,reportedAt:now.toISOString()}),id]),
+      audit(db,identity,row.branch_id,id,'MANUAL_REPORTED',row.snapshot_hash,now,{revision:revision+1,state:input.state,sourceChanged:changed,liveSnapshotError:live.liveSnapshotError,externalReference:reference,reportedAmount:amount,paymentStatus:input.paymentStatus})]);
+  return {...publicBatch(await loadBatch(db,identity,id)),sourceChanged:changed,liveSnapshotError:live.liveSnapshotError,evidenceSource:'MANUAL_REPORTED',platformVerified:false};
 };

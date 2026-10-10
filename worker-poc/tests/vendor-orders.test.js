@@ -255,6 +255,37 @@ test('same external SKU across menu versions with conflicting prices cannot prod
   assert.ok(batch.snapshot.rows.every(r=>r.quantity*r.externalUnitPrice===r.subtotal));
   assert.equal((await call(db,'/batches/'+batch.batchId+'/review',{snapshotHash:batch.snapshotHash})).status,409);
 });
+test('different internal identities sharing one external SKU/options must share one confirmed price',async()=>{
+  const db=fixture();await setup(db);
+  db.run("INSERT INTO menu_items(menu_item_id,menu_version_id,legacy_item_id,variant_key,item_name,price,enabled,source_order) VALUES ('different-mi','mv','DIFFERENT','HALF','Other lunch',90,1,2)");
+  addOrder(db,'other-order','member2','1F',1);
+  db.run("UPDATE orders SET total_amount=90 WHERE order_id='other-order'");
+  db.run("UPDATE order_items SET menu_item_id='different-mi',legacy_item_id='DIFFERENT',unit_price=90,subtotal=90 WHERE order_id='other-order'");
+  assert.equal((await call(db,'/branches/b/mappings',{menuItemId:'different-mi',variantKey:'HALF',serviceDate:DATE,externalSku:'external-lunch',options:['Regular'],externalUnitPrice:90,available:true,expectedRevision:0},'admin','PUT')).status,200);
+  const preview=await prepare(db),batch=await prepare(db,['1F'],preview.snapshot.sourceNotes.map(n=>({sourceOrderId:n.sourceOrderId,sourceNoteHash:n.sourceNoteHash,reviewed:true,supplierNote:''})));
+  assert.ok(!batch.snapshot.warnings.includes('PRICE_DIFFERENCE'));
+  assert.ok(batch.snapshot.warnings.includes('EXTERNAL_PRICE_CONFLICT'));
+  assert.equal((await call(db,'/batches/'+batch.batchId+'/review',{snapshotHash:batch.snapshotHash})).status,409);
+});
+for(const domain of ['source','mapping'])test('frozen manual reconciliation remains available after '+domain+' exceeds preparation limits',async()=>{
+  const db=fixture(),batch=await ready(db),claimed=await handoff(db,batch);
+  if(domain==='source'){
+    for(let i=0;i<201;i++){seedUser(db,{lineUserId:'late-user-'+i,role:'User'});addOrder(db,'late-order-'+i,'late-user-'+i,'1F',1);}
+  }else{
+    for(let i=0;i<301;i++){
+      db.run("INSERT INTO menu_items(menu_item_id,menu_version_id,legacy_item_id,variant_key,item_name,price,enabled,source_order) VALUES (?,'mv',?,'BASE','Late',80,1,2)",'late-mi-'+i,'LATE-'+i);
+      db.run("INSERT INTO vendor_item_mappings(mapping_id,branch_id,menu_item_id,variant_key,service_date,external_sku,options_json,external_unit_price,available,updated_by,updated_at) VALUES (?,'b',?,'BASE',?,?,'[]',80,1,'admin',?)",'late-mapping-'+i,'late-mi-'+i,DATE,'late-sku-'+i,NOW.toISOString());
+    }
+  }
+  const detail=await call(db,'/batches/'+batch.batchId);
+  assert.equal(detail.status,200,JSON.stringify(detail));assert.equal(detail.liveSnapshotError,'VENDOR_ORDER_SNAPSHOT_TOO_LARGE');
+  assert.equal(detail.snapshotHash,batch.snapshotHash);assert.equal(detail.sourceChanged,domain==='source');
+  assert.equal((await call(db,'/batches/'+batch.batchId+'/sheet')).status,200);
+  const report=await call(db,'/batches/'+batch.batchId+'/report',{state:'UNKNOWN',expectedRevision:claimed.revision,reportedAmount:160,paymentStatus:'UNCONFIRMED'});
+  assert.equal(report.status,200,JSON.stringify(report));assert.equal(report.sourceChanged,domain==='source');
+  assert.equal(db.get('SELECT COUNT(*) n FROM vendor_order_attempts').n,1);
+  assert.equal((await prepare(db,['1F','2F'])).status,409);
+});
 test('two overlapping scopes reviewed before either handoff cannot both claim',async()=>{
   const db=fixture(),first=await ready(db);
   const second=await prepare(db,['1F','2F'],first.snapshot.noteReviews);
@@ -272,6 +303,14 @@ test('claim response loss after commit recovers via read-only sheet without crea
   assert.equal(db.get('SELECT COUNT(*) n FROM vendor_order_attempts').n,1);
   assert.equal((await handoff(db,batch)).replayed,true);
   assert.equal((await call(db,'/batches/'+batch.batchId+'/sheet',null,'member')).status,403);
+});
+test('own permanent reservation does not falsely mark an unchanged batch as source/config drift',async()=>{
+  const db=fixture(),batch=await ready(db);await handoff(db,batch);
+  const unchanged=await call(db,'/batches/'+batch.batchId);
+  assert.equal(unchanged.sourceChanged,false);assert.equal(unchanged.snapshotChanged,false);
+  db.run('UPDATE vendor_item_mappings SET external_unit_price=90');
+  const changed=await call(db,'/batches/'+batch.batchId);
+  assert.equal(changed.sourceChanged,false);assert.equal(changed.snapshotChanged,true);
 });
 test('report source drift race rolls back report and preserves previous external reference audit',async()=>{
   const db=fixture(),batch=await ready(db),claimed=await handoff(db,batch);

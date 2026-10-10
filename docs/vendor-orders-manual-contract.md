@@ -37,7 +37,9 @@ and audit metadata. Approved supplier notes participate in aggregation.
 
 ## Workflow and endpoints
 
-All write responses use the established `{ success, ... }` Worker envelope.
+Successful responses use the existing raw Worker domain JSON objects. The
+frontend accepts these and the optional `success` envelope used by mocks,
+while rejecting HTTP failures or explicit `success: false`.
 
 | Endpoint under `/api/vendor-orders` | Purpose |
 | --- | --- |
@@ -57,6 +59,16 @@ Preparation/review/handoff fingerprint the full source membership, canonical
 ownership, notes, menu semantics, mappings, policy and permanent reservations.
 The fingerprint is checked in the first statement of the same D1 batch as
 all writes; a failing guard rolls back attempts, claims, state and audit.
+
+After reservation, detail/report use the frozen attempt. Exceeding live
+preparation limits does not prevent manual reconciliation: the response
+reports `liveSnapshotError`, retains the frozen sheet and records live
+source drift. Report still guards its expected batch revision and a current
+source fingerprint atomically. New preparation/review/handoff keep their
+strict size/staleness gates. A reservation's own claims are excluded from
+the read-only source/config drift indicator. External price consistency is
+checked by external SKU/options within the branch/date, regardless of the
+internal code/variant aliases mapped to that sales identity.
 
 Final confirmation reserves one attempt globally per batch/snapshot and one
 idempotency key globally. Permanent source-line and owner/date/canonical
@@ -90,7 +102,7 @@ mutations are introduced by this feature.
 
 ## Verification boundary
 
-Automated core: 31 endpoint/concurrency/domain tests plus one additive
+Automated core: 35 endpoint/concurrency/domain tests plus one additive
 migration test PASS on disposable in-memory SQLite/D1 fixtures. Independent
 defect-first review PASS with no remaining core blocker. Production D1,
 real LINE, merchant availability/acceptance/payment and third-party API
@@ -101,8 +113,9 @@ with cancel-flow source-regex failures; Worker 469 tests (462 pass, 7 fail),
 with formal-cleanup sqlite_sequence inventory mismatch. Full-suite results
 remain FAIL if these reproduce; focused passing tests do not erase that debt.
 
-Core post-change full suites: root 223 (218 pass, 2 fail, 3 skipped); Worker
-501 (494 pass, 7 fail). The failing locations and sqlite_sequence mismatch
+Initial core post-change full suites: root 223 (218 pass, 2 fail, 3 skipped); Worker
+501 (494 pass, 7 fail). Latest core follow-up Worker: 505 (498 pass, 7 fail).
+The failing locations and sqlite_sequence mismatch
 match the captured pre-change baseline, and these cleanup/cancel source
 contracts are unchanged: FAIL / PRE_EXISTING_FAILURE. The new migration
 inventory expectation was updated and passes. Required identity suite:
@@ -110,3 +123,29 @@ inventory expectation was updated and passes. Required identity suite:
 no typecheck script is declared. Capability probe NOT RUN because the
 repository does not include tools/get-toolchain-capabilities.ps1; read-only
 Get-Command confirmed git, node and npm.cmd available.
+
+## Management workspace
+
+The frontend entry uses authenticated LINE Admin/ProxyAdmin role, never the
+View As effective role. Server access loads authorized branches. Branch
+selection, service date and floors define preparation; Admin can configure
+human-confirmed policy, branch grants and mappings from stable source IDs.
+After saving a mapping, prepare a fresh snapshot and acknowledge notes.
+Every edit to note acknowledgements must be frozen in another preparation
+before review/reservation. The final checkbox belongs to the exact batch,
+hash and revision, and resets when that ownership changes.
+
+Existing batch history and GET detail/sheet permit recovery after reload or
+timeout. The workflow does not automatically POST another handoff following
+a failed response, including UNKNOWN. Busy locks prevent duplicate clicks;
+generation ownership suppresses old responses after changed selection or
+unmount, including StrictMode effect cleanup. 401/403 clears protected batch,
+sheet and note data. Guest credentials keep existing credential priority;
+the workspace never silently substitutes a LINE credential for a guest.
+GAS exposes an explicit unsupported contract and cannot receive new feature
+operations. Report amount/payment/reference remain manual evidence.
+
+UI automated tests execute actual App tab handlers and React SSR plus
+deferred-promise workflow/transport tests. This is not a DOM/device or
+merchant verification. Human responsive-browser/LINE usability and actual
+merchant/manual acceptance/payment remain NOT VERIFIED.
