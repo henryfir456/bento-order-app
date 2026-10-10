@@ -20,7 +20,9 @@ Repository convergence (2026-10-10): preserve dated MaiFood feasibility research
 ### Verification boundary
 
 - Implementation and local automated verification are independent of real LINE browser validation. Windows external/local LINE OAuth and Android LINE acceptance remain NOT VERIFIED without platform evidence.
-- This release is merged as code only by explicit request: no frontend or formal Worker deployment, no production D1 mutations, and no claim that the UI/API change is live.
+- Initial merge snapshot: this release was merged as code only by explicit request, with no frontend or formal Worker deployment, no production D1 mutations, and no claim that the UI/API change was live at that stage.
+
+Subsequent deployment update (2026-10-10 00:55 UTC): [Issue #34 deployment evidence](https://github.com/henryfir456/bento-order-app/issues/34#issuecomment-6091882504) records formal `bento-api-poc` Worker version #68 `c4ea0453-5ce8-4333-b919-8a58a6b38fab` deployed from main `5dd8667360f522c012a338641bd7ec584dab1ef4` (deployment `6d98a02d-a0f5-49b4-8a7f-b3a5f614d8c2`, 100% traffic), with bounded read-only health/auth/CORS smoke PASS. The frontend remained undeployed and real Windows/Android LINE and View As acceptance remained NOT VERIFIED. Later repository convergence does not deploy or mutate production data; this note records the historical deployment rather than a new live-version check.
 
 ## [0.15.14] - 2026-10-09
 

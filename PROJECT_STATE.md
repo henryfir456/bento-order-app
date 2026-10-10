@@ -59,7 +59,9 @@ If this file conflicts with code, tests, the active Worker schema, or verified p
 
 ## Deployment and remote-write boundary
 
-Issue #34 / v0.15.15 is a code-only delivery by explicit user instruction: merge to main after verification, without formal Worker or frontend deployment. These changes must not be reported as live; Windows external/local LINE and Android LINE validation remain NOT VERIFIED until platform evidence exists. No production D1 mutation is part of this task.
+Issue #34 / v0.15.15 was initially merged as code only. Subsequent explicit Worker deployment authorization superseded that initial snapshot: the [2026-10-10 deployment evidence](https://github.com/henryfir456/bento-order-app/issues/34#issuecomment-6091882504) records formal `bento-api-poc` deployment from main `5dd8667360f522c012a338641bd7ec584dab1ef4` at `2026-10-10T00:55:06.611671Z`, Worker version #68 `c4ea0453-5ce8-4333-b919-8a58a6b38fab`, deployment `6d98a02d-a0f5-49b4-8a7f-b3a5f614d8c2`, 100% traffic and bounded read-only smoke PASS at 00:55:40 UTC. This is dated deployment evidence, not a fresh active-version or health check in repository convergence.
+
+The frontend was not deployed; Header/member-card UI effectiveness, Windows external/local LINE, Android LINE and real View As remain NOT VERIFIED. Issue #34 remains OPEN for platform acceptance. The later repository convergence performs no Worker/frontend deployment, formal migration or production D1 mutation; it does not erase the earlier Worker deployment record.
 
 Local verification can prove source-level and test-level behavior only.
 
