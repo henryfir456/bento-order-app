@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- Issue #36 Draft: Worker-only centralized vendor-order batches with explicit branch/date/variant mappings, protected source-note review, manual handoff and reconciliation. Permanent source/owner reservations and atomic authorization/snapshot guards prevent duplicate internal handoffs without changing employee orders or wallet/ledger balances.
+- Issue #36 Draft: Admin and branch-granted ProxyAdmin workspace for policy/mapping configuration, approval, read-only sheet recovery and manual status/reference audit. The official MaiFood API adapter remains OFF. Migration 0015 and this feature are not deployed.
+
 ### Fixed
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.

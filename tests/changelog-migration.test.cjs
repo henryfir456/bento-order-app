@@ -285,11 +285,15 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const unreleased = parsed.filter((release) => release.version === null);
   assert.equal(unreleased.length, 1);
   assert.equal(parsed[0].version, null);
-  assert.deepEqual(unreleased[0].categories, [{
+  const draftAdditions = [
+    'Issue #36 Draft: Worker-only centralized vendor-order batches with explicit branch/date/variant mappings, protected source-note review, manual handoff and reconciliation. Permanent source/owner reservations and atomic authorization/snapshot guards prevent duplicate internal handoffs without changing employee orders or wallet/ledger balances.',
+    'Issue #36 Draft: Admin and branch-granted ProxyAdmin workspace for policy/mapping configuration, approval, read-only sheet recovery and manual status/reference audit. The official MaiFood API adapter remains OFF. Migration 0015 and this feature are not deployed.'
+  ];
+  assert.deepEqual(unreleased[0].categories, [{name:'Added',changes:draftAdditions},{
     name: 'Fixed',
     changes: ['Align personal balance history filtering and monthly summaries with the Taipei time zone.']
   }]);
-  assert.deepEqual(unreleased[0].changes, ['Align personal balance history filtering and monthly summaries with the Taipei time zone.']);
+  assert.deepEqual(unreleased[0].changes, [...draftAdditions,'Align personal balance history filtering and monthly summaries with the Taipei time zone.']);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
   const preservedVersions = ['0.15.8', '0.15.7', '0.15.6', '0.15.5', '0.15.4'];

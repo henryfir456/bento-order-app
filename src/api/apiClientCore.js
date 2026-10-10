@@ -147,6 +147,7 @@ const createWorkerRequest = ({ baseUrl, authClient, sessionStore, fetchImpl }) =
 };
 
 const createGasOperations = ({ gasApi, authClient }) => ({
+  ...Object.fromEntries(['getVendorOrderAccess','configureVendorOrderBranch','configureVendorOrderMapping','configureVendorOrderGrant','listVendorOrderBatches','prepareVendorOrderBatch','getVendorOrderBatch','getVendorOrderSheet','reviewVendorOrderBatch','handoffVendorOrderBatch','reportVendorOrderBatch'].map(operation=>[operation,()=>{throw new ApiContractGapError('VENDOR_ORDERS_UNSUPPORTED_TRANSPORT',operation,'Manual vendor-order batches require the Worker transport.');}])),
   getIdentity: () => gasApi.post({
     action: 'getUserInfo',
     accessToken: readToken(authClient, 'getIdentity')
@@ -268,6 +269,17 @@ const createGasOperations = ({ gasApi, authClient }) => ({
 });
 
 const createWorkerOperations = ({ workerRequest }) => ({
+  getVendorOrderAccess: () => workerRequest('getVendorOrderAccess', 'GET', '/api/vendor-orders/access'),
+  configureVendorOrderBranch: (branchId, body) => workerRequest('configureVendorOrderBranch', 'PUT', `/api/vendor-orders/branches/${encodeURIComponent(branchId)}`, { body }),
+  configureVendorOrderMapping: (branchId, body) => workerRequest('configureVendorOrderMapping', 'PUT', `/api/vendor-orders/branches/${encodeURIComponent(branchId)}/mappings`, { body }),
+  configureVendorOrderGrant: (branchId, body) => workerRequest('configureVendorOrderGrant', 'PUT', `/api/vendor-orders/branches/${encodeURIComponent(branchId)}/grants`, { body }),
+  listVendorOrderBatches: branchId => workerRequest('listVendorOrderBatches', 'GET', '/api/vendor-orders/batches', { query: { branchId } }),
+  prepareVendorOrderBatch: body => workerRequest('prepareVendorOrderBatch', 'POST', '/api/vendor-orders/batches', { body }),
+  getVendorOrderBatch: id => workerRequest('getVendorOrderBatch', 'GET', `/api/vendor-orders/batches/${encodeURIComponent(id)}`),
+  getVendorOrderSheet: id => workerRequest('getVendorOrderSheet', 'GET', `/api/vendor-orders/batches/${encodeURIComponent(id)}/sheet`),
+  reviewVendorOrderBatch: (id, body) => workerRequest('reviewVendorOrderBatch', 'POST', `/api/vendor-orders/batches/${encodeURIComponent(id)}/review`, { body }),
+  handoffVendorOrderBatch: (id, body, idempotencyKey) => workerRequest('handoffVendorOrderBatch', 'POST', `/api/vendor-orders/batches/${encodeURIComponent(id)}/handoff`, { body, extraHeaders: { 'Idempotency-Key': idempotencyKey } }),
+  reportVendorOrderBatch: (id, body) => workerRequest('reportVendorOrderBatch', 'POST', `/api/vendor-orders/batches/${encodeURIComponent(id)}/report`, { body }),
   employeeGuestLogin: ({ employeeId } = {}) => workerRequest(
     'employeeGuestLogin',
     'POST',

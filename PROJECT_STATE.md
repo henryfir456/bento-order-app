@@ -16,6 +16,13 @@ If this file conflicts with code, tests, the active Worker schema, or verified p
 - GAS is retired from production. `gas/` and the explicit GAS adapter remain only as legacy regression evidence / compatibility seams.
 - The retained legacy POC is local-only and is not a production deployment target.
 
+## Issue #36 Draft boundary
+
+- P0 feasibility is Draft PR #37; internal MANUAL Worker core is stacked Draft PR #38. The management UI follows on `feature/36-vendor-order-ui`.
+- Migration 0015 is additive draft code only; no remote migration, main merge, Worker/frontend deployment, third-party login/API request, order or payment has been executed for this issue.
+- The official MaiFood adapter is unconditionally disabled. Merchant authorization/sandbox evidence remains absent; manual status is `MANUAL_REPORTED`, never platform-verified.
+- Current production architecture and original users/orders/top-ups/ledger remain unchanged. See `docs/vendor-orders-manual-contract.md` for the draft API and verification boundary.
+
 ## Identity and authorization
 
 - Worker-side canonical identity is authoritative.

@@ -36,6 +36,8 @@ import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import VendorHub from './features/vendors/VendorHub';
+import VendorOrderBatches from './features/vendorOrders/VendorOrderBatches';
+import { vendorOrderUiAllowed } from './features/vendorOrders/vendorOrderWorkflow';
 import {
   CANONICAL_VENDOR_FALLBACKS,
   normalizeVendor,
@@ -2532,6 +2534,12 @@ export default function App() {
   };
 
   const handleAdminSectionChange = (section) => {
+    if (section === 'vendorOrders') {
+      if (!vendorOrderUiAllowed({transport:apiClient.transport,role:authUser?.role,authMode,viewAs:isViewAsMode})) return;
+      setAdminSection('vendorOrders');
+      setViewMode('admin');
+      return;
+    }
     if (section === 'orders') {
       if (!can('viewAdminOrderSummary')) return;
       setAdminSection('orders');
@@ -3387,6 +3395,12 @@ export default function App() {
                 {adminManageMode ? '🔒 離開開團' : '📅 開團'}
               </button>
             )}
+            {isRegistered && vendorOrderUiAllowed({transport:apiClient.transport,role:authUser?.role,authMode,viewAs:isViewAsMode}) && (
+              <button type="button" onClick={() => handleAdminSectionChange('vendorOrders')}
+                className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-800 text-emerald-100 font-bold">
+                集中訂單轉單
+              </button>
+            )}
             {isRegistered && viewMode !== 'calendar' && (
               <button
                 onClick={['vendors', 'vendorDetail'].includes(viewMode) ? handleExitVendorHub : handleExitToCalendar}
@@ -3636,6 +3650,9 @@ export default function App() {
 
         {isRegistered && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
+            {adminSection === 'vendorOrders' && vendorOrderUiAllowed({transport:apiClient.transport,role:authUser?.role,authMode,viewAs:isViewAsMode}) && (
+              <VendorOrderBatches key={`${authUserId}:${authUser?.role}:${authMode}`} apiClient={apiClient} />
+            )}
             {adminSection === 'orders' && (
               <AdminOrderSummary
                 selectedOrderDate={selectedOrderDate}
