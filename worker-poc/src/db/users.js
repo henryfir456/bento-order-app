@@ -138,7 +138,8 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
     authSource,
     identityState,
     verificationStatus,
-    lineUserId: user.lineUserId,
+    lineBound: hasLineBinding,
+    lineUserId: isEmployeeGuest ? null : user.lineUserId,
     displayName: user.displayName,
     profileComplete: isProfileComplete(user)
   };

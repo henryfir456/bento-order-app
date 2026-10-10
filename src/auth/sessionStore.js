@@ -34,8 +34,9 @@ export const createAuthSessionStore = (storage = globalThis.sessionStorage) => {
 
   return Object.freeze({
     getGuestSession({ now = Date.now() } = {}) {
+      const hadRecord = Boolean(target?.getItem(GUEST_SESSION_STORAGE_KEY));
       const session = readSession(target, now instanceof Date ? now.getTime() : Number(now));
-      if (!session && target?.getItem(GUEST_SESSION_STORAGE_KEY)) {
+      if (!session && hadRecord) {
         notify({ type: 'guest-session-invalid', reason: 'expired-or-malformed' });
       }
       return session;

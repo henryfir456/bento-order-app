@@ -52,6 +52,7 @@ export const getMe = (identity) => {
     identityState,
     authMode: actor.authMode || null,
     user,
+    lineBound: user?.lineBound === true,
     ...(employeeBindingRequired ? {
       status: 'EMPLOYEE_BIND_REQUIRED',
       verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.VERIFIED,
@@ -65,7 +66,7 @@ export const getMe = (identity) => {
       verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.UNVERIFIED,
       capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
       employeeId: actor.employeeId || '',
-      lineUserId: actor.lineUserId || '',
+      lineUserId: '',
       displayName: actor.displayName || ''
     } : registered ? {
       status: 'VERIFIED',

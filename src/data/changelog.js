@@ -11,6 +11,15 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.15': [
+    {
+      name: '修正',
+      changes: [
+        '首頁與會員卡依會員資料顯示 LINE 綁定狀態，員編登入不再誤顯示綁定按鈕。',
+        '改善 LINE 與員編登入切換、登入失效及回到前景時的綁定狀態更新。'
+      ]
+    }
+  ],
   '0.15.14': [
     {
       name: '修正',

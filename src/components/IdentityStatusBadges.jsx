@@ -1,4 +1,5 @@
 import { getIdentityBadges } from '../features/balances/identityStatus';
+import { getLineBindingBadge } from '../auth/lineBindingState';
 
 const toneClasses = Object.freeze({
   line: 'bg-green-50 text-green-800 border-green-200',
@@ -9,8 +10,9 @@ const toneClasses = Object.freeze({
   unknown: 'bg-gray-50 text-gray-600 border-gray-200'
 });
 
-export default function IdentityStatusBadges({ authSource, identityState, fields = null }) {
-  const badges = getIdentityBadges({ authSource, identityState })
+export default function IdentityStatusBadges({ authSource, identityState, lineBound, lineUserId, fields = null }) {
+  const badges = [...getIdentityBadges({ authSource, identityState }),
+    ...(fields?.includes('lineBinding') ? [getLineBindingBadge({ lineBound, lineUserId })] : [])]
     .filter((badge) => !fields || fields.includes(badge.key));
   return (
     <span className="inline-flex max-w-full flex-wrap items-center gap-1 align-middle">
