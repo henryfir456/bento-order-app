@@ -16,6 +16,13 @@ If this file conflicts with code, tests, the active Worker schema, or verified p
 - GAS is retired from production. `gas/` and the explicit GAS adapter remain only as legacy regression evidence / compatibility seams.
 - The retained legacy POC is local-only and is not a production deployment target.
 
+## Repository convergence and Issue #36
+
+- The 2026-10-10 decision retains only dated MaiFood feasibility research via PR #37. Issue #36 is Not planned; internal MANUAL batches and the management UI are paused. See `docs/vendor-orders-p0.md` for the superseding decision and restart conditions.
+- PR #38/#39 are closed without merge/deployment. Preserve core branch `feature/36-vendor-order-core` at `298d330f98f85e541cb82c6487c3312169464b2d` and UI branch `feature/36-vendor-order-ui` at `cc4ae1d7c176e8d64a7566ded85cad4076a7a9fe`; their additive migration 0015 is not part of main or the production schema.
+- PR #35/#33/#30/#27 are already merged. Repository convergence does not reapply their older heads or deploy them. Issue #32/#34 remain pending real LINE/platform acceptance; Issue #5 remains ongoing structure work.
+- Historical integration work is preserved when unique commits or other worktree ownership prevent safe deletion. No new runtime release, production Worker/frontend deployment or remote D1 mutation is included in this convergence.
+
 ## Identity and authorization
 
 - Worker-side canonical identity is authoritative.
