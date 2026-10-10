@@ -1,6 +1,6 @@
 # PROJECT_STATE.md
 
-Last updated: 2026-09-21
+Last updated: 2026-10-10
 
 Purpose: record the **current effective state** of this repository. This is not a changelog and not a historical narrative.
 
@@ -19,6 +19,8 @@ If this file conflicts with code, tests, the active Worker schema, or verified p
 ## Identity and authorization
 
 - Worker-side canonical identity is authoritative.
+- Canonical `lineBound` is independent of current `authMode`. Header/member cards share binding state; bound employee sessions retain self-service privileges and do not expose the stored LINE ID.
+- Registered foreground identity refresh is a bounded GET, with selection ownership and no automatic bind/redirect; it preserves newer financial/profile mutations and View As subject state.
 - Bearer credentials determine authenticated identity; client-supplied user IDs, roles, balances, and display names are not authorization inputs.
 - Normal Users may enter through LINE or employee-ID based flows and both paths must resolve to the same canonical user when they refer to the same person.
 - LINE binding is not a mandatory prerequisite for normal-user access after valid employee onboarding.
@@ -49,6 +51,8 @@ If this file conflicts with code, tests, the active Worker schema, or verified p
 - Vendor/menu identity must remain isolated by vendor and effective date.
 
 ## Deployment and remote-write boundary
+
+Issue #34 / v0.15.15 is a code-only delivery by explicit user instruction: merge to main after verification, without formal Worker or frontend deployment. These changes must not be reported as live; Windows external/local LINE and Android LINE validation remain NOT VERIFIED until platform evidence exists. No production D1 mutation is part of this task.
 
 Local verification can prove source-level and test-level behavior only.
 

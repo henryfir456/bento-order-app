@@ -194,6 +194,7 @@ test('GET /api/me returns token-derived identity for an unregistered actor witho
     identityState: 'UNREGISTERED',
     authMode: 'line',
     user: null,
+    lineBound: false,
     lineUserId: 'new-user',
     displayName: 'New User'
   });

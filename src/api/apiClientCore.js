@@ -311,7 +311,7 @@ const createWorkerOperations = ({ workerRequest }) => ({
       extraHeaders: { 'X-Employee-Guest-Session': String(guestToken || '').trim() }
     }
   ),
-  getIdentity: () => workerRequest('getIdentity', 'GET', '/api/me'),
+  getIdentity: ({ signal } = {}) => workerRequest('getIdentity', 'GET', '/api/me', { signal }),
   getBootstrap: async ({ bootId, targetDate, signal } = {}) => {
     // The formal bootstrap route is registered-only. Read canonical identity
     // first so an authenticated unregistered user reaches registration.

@@ -13,6 +13,7 @@ import { normalizeWorkerLikeResponse, restoreCalendarEvent } from './api/likeSta
 import { authClient } from './auth/liffClient';
 import { redactAuthSecrets, requireAuthoritativeIdentityState } from './auth/authRuntime';
 import { createDeadline } from './auth/asyncDeadline.js';
+import { canOfferLineBinding } from './auth/lineBindingState.js';
 import { hasPermission } from './auth/permissions';
 import {
   AUTH_BOOT_STAGES,
@@ -193,6 +194,7 @@ export default function App() {
   const authSelectionRef = useRef(0);
   const authSelectionBusyRef = useRef(false);
   const authResumeRef = useRef({ pending: false, lastAt: 0, timer: null, flush: null });
+  const identityRefreshRef = useRef({ attempt: null, lastAt: 0 });
   const employeeGuestRequestRef = useRef(false);
   const bootRenderPendingRef = useRef(null);
   const deferredUiGenerationRef = useRef(0);
@@ -327,6 +329,9 @@ export default function App() {
   }, [authMode]);
 
   const clearIdentityData = () => {
+    identityRefreshRef.current.attempt?.controller.abort(new Error('Identity changed'));
+    identityRefreshRef.current.attempt = null;
+    identityRefreshRef.current.lastAt = 0;
     adminSummaryRequestRef.current += 1;
     adminAnnouncementsRequestRef.current += 1;
     adminMenuChangesRequestRef.current += 1;
@@ -977,7 +982,7 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = guestSessionStore.subscribe((event) => {
-      if (event?.type !== 'guest-session-invalid') return;
+      if (event?.type !== 'guest-session-invalid' && event?.type !== 'guest-session-cleared') return;
       beginAuthSelection();
       authSelectionBusyRef.current = false;
       authBootCompletedRef.current = false;
@@ -991,6 +996,7 @@ export default function App() {
 
   useEffect(() => {
     const resume = authResumeRef.current;
+    const identityRefresh = identityRefreshRef.current;
     void initLiffAndFetchData();
     // initLiffAndFetchData is intentionally a render-local orchestration
     // closure; the boot must run only once on initial mount.
@@ -998,6 +1004,8 @@ export default function App() {
       clearTimeout(resume.timer);
       resume.timer = null;
       authSelectionRef.current += 1;
+      identityRefresh.attempt?.controller.abort(new Error('App unmounted'));
+      identityRefresh.attempt = null;
       authAttemptRef.current?.controller.abort(new Error('App unmounted'));
       authAttemptRef.current = null;
       authBootPromiseRef.current = null;
@@ -1009,6 +1017,89 @@ export default function App() {
 
   useEffect(() => {
     if (apiClient.transport !== 'worker' || authClient.isMock) return undefined;
+    // Registered users need a read-only projection refresh, not another LIFF
+    // boot, redirect or binding POST. Keep actor and View As subject separate.
+    const refreshRegisteredIdentity = () => {
+      const refresh = identityRefreshRef.current;
+      if (typeof apiClient.getIdentity !== 'function' || refresh.attempt) return;
+      if (Date.now() - refresh.lastAt < 1000) return;
+      const selection = authSelectionRef.current;
+      const revokeRegisteredIdentity = () => {
+        beginAuthSelection();
+        authSelectionBusyRef.current = false;
+        authBootCompletedRef.current = false;
+        setAuthState(AUTH_STATES.AUTH_REQUIRED);
+        setAuthStage(AUTH_BOOT_STAGES.RESTORE_GUEST);
+        setAuthError('登入狀態已變更，請重新選擇登入方式。');
+      };
+      const currentCredential = () => {
+        try { return readCurrentCredential(); } catch { return ''; }
+      };
+      const credential = currentCredential();
+      if (selection !== authSelectionRef.current) return;
+      if (!credential) { revokeRegisteredIdentity(); return; }
+      const attempt = { controller: new AbortController() };
+      refresh.attempt = attempt;
+      refresh.lastAt = Date.now();
+      const deadline = createDeadline({ timeoutMs: 15000, signal: attempt.controller.signal, error: new Error('IDENTITY_REFRESH_TIMEOUT') });
+      const ownsAttempt = () => {
+        if (refresh.attempt !== attempt || selection !== authSelectionRef.current) return false;
+        const token = currentCredential();
+        if (refresh.attempt !== attempt || selection !== authSelectionRef.current) return false;
+        if (!token) { revokeRegisteredIdentity(); return false; }
+        return credential === token;
+      };
+      void (async () => {
+        try {
+          const response = await deadline.wait(() => apiClient.getIdentity({ signal: deadline.signal }));
+          const data = await deadline.wait(() => response.json());
+          if (!ownsAttempt()) return;
+          if (response.status === 401 || (data.success && (data.registered !== true
+            || data.user?.userId !== authUser?.userId || data.authMode !== authMode))) {
+            revokeRegisteredIdentity();
+            return;
+          }
+          if (!response.ok || !data.success || !data.registered || !data.user
+            || data.user.userId !== authUser?.userId || data.authMode !== authMode) {
+            throw new Error('IDENTITY_REFRESH_INVALID');
+          }
+          const nextIdentityState = requireAuthoritativeIdentityState(data);
+          if (data.user.role !== authUser?.role || nextIdentityState !== authUser?.identityState
+            || data.user.active === false) {
+            // A role/eligibility change invalidates protected subject caches.
+            revokeRegisteredIdentity();
+            return;
+          }
+          // Binding is display state only; the current session retains its
+          // auth mode and server-projected capabilities/role.
+          setAuthUser((current) => ({
+            ...current,
+            lineBound: data.user.lineBound,
+            lineUserId: data.user.lineUserId,
+            authSource: data.user.authSource,
+            identityState: nextIdentityState,
+            role: data.user.role || 'User',
+            active: data.user.active,
+            verificationStatus: data.user.verificationStatus,
+            capabilities: Array.isArray(data.capabilities) ? data.capabilities : []
+          }));
+          setIdentityState(nextIdentityState);
+        } catch (error) {
+          if (ownsAttempt()) {
+            if (error?.status === 401 || error?.code === 'API_AUTH_REQUIRED') {
+              revokeRegisteredIdentity();
+              return;
+            }
+            // A later foreground/online event can retry without closing LINE.
+            refresh.lastAt = 0;
+            logAuthDiagnostic('IDENTITY_REFRESH_FAILED');
+          }
+        } finally {
+          deadline.dispose();
+          if (refresh.attempt === attempt) refresh.attempt = null;
+        }
+      })();
+    };
     const resumableStates = new Set([
       AUTH_STATES.AUTH_LOADING,
       AUTH_STATES.AUTH_REQUIRED,
@@ -1017,6 +1108,10 @@ export default function App() {
     const resumeAfterLiffReturn = (event) => {
       const resume = authResumeRef.current;
       if (document.visibilityState === 'hidden' || authSelectionBusyRef.current || lineBindLoading) return;
+      if (authState === AUTH_STATES.REGISTERED) {
+        if (event) refreshRegisteredIdentity();
+        return;
+      }
       if (!resumableStates.has(authState)) {
         resume.pending = false;
         clearTimeout(resume.timer);
@@ -1058,7 +1153,7 @@ export default function App() {
       document.removeEventListener('visibilitychange', resumeAfterLiffReturn);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authState, loading, lineBindLoading]);
+  }, [authState, loading, lineBindLoading, authUser, authMode, readCurrentCredential]);
 
   const canManageAdminAnnouncements = () => (
     apiClient.transport === 'worker'
@@ -1588,6 +1683,9 @@ export default function App() {
 
   const handleBindLine = async (profile = {}) => {
     if (apiClient.transport !== 'worker' || lineBindLoading) return;
+    if (authState === AUTH_STATES.REGISTERED && !canOfferLineBinding({
+      user: authUser, registered: true, transport: apiClient.transport, authMode, isViewAsMode: Boolean(viewAsUser)
+    })) return;
     const guestSession = guestSessionStore.getGuestSession();
     if (!guestSession) {
       setEmployeeGuestError('員工登入已失效，請重新輸入員工編號。');
@@ -1678,8 +1776,12 @@ export default function App() {
       if (data.authMode === 'employee_guest' && data.token && data.expiresAt) {
         guestSessionStore.setGuestSession({ token: data.token, expiresAt: data.expiresAt });
         await initLiffAndFetchData({ force: true, preferGuestSession: true });
-      } else {
+      } else if (data.authMode === 'line') {
+        guestSessionStore.clearBindIntent();
+        guestSessionStore.clearGuestSession({ reason: 'line-bound', notify: false });
         await initLiffAndFetchData({ force: true });
+      } else {
+        throw new Error('LINE_EMPLOYEE_BIND_IDENTITY_INVALID');
       }
     } catch (error) {
       if (selection !== authSelectionRef.current) return;
@@ -3184,10 +3286,10 @@ export default function App() {
                 </span>
               </button>
             )}
-            {isRegistered
-              && apiClient.transport === 'worker'
-              && authMode === 'employee_guest'
-              && !isViewAsMode
+            {isRegistered && apiClient.transport === 'worker' && (
+              <IdentityStatusBadges fields={['lineBinding']} lineBound={authUser?.lineBound} lineUserId={authUser?.lineUserId} />
+            )}
+            {canOfferLineBinding({ user: authUser, registered: isRegistered, transport: apiClient.transport, authMode, isViewAsMode })
               && (
                 <button
                   type="button"

@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-Last updated: 2026-09-21
+Last updated: 2026-10-10
 
 Purpose: record durable architectural and operational decisions that future sessions should not casually rediscover or reverse.
 
@@ -140,6 +140,22 @@ Repo-local policy must survive future skill upgrades without being overwritten o
 
 - Put Bento-specific invariants in `AGENTS.md`, `PROJECT_STATE.md`, `DECISIONS.md`, or domain docs.
 - Do not edit shared skill contents to encode repository-specific behavior.
+
+## D-009 — LINE binding is independent of the current login channel
+
+**Decision**
+
+Use the canonical member's persisted LINE binding to project `lineBound`; use `authMode` for the authenticated session and its permissions. Registration and an `authSource` badge are not proof of binding.
+
+**Rationale**
+
+A bound member may deliberately enter through employee authentication. Showing binding from that channel mislabels the member and offers an unnecessary mutation. A LINE token without a canonical member also cannot establish persisted binding.
+
+**Boundary**
+
+- Employee sessions remain self-service even when bound, and public employee projections expose a boolean without the stored LINE ID.
+- Header and member cards share bound/unbound/unknown interpretation. Only confirmed unbound employee sessions offer registered binding.
+- Foreground reads refresh binding without replaying mutations or LIFF redirects; session/role invalidation clears protected caches, while valid same-actor reads preserve View As and newer financial/profile state.
 
 ## Maintenance rule
 

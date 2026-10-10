@@ -84,8 +84,7 @@ export const handleReadOnlyRequest = async (request, env, {
   if (url.pathname === '/api/bootstrap') {
     const announcements = [];
     return jsonResponse({
-      success: true,
-      registered: true,
+      ...getMe(identity),
       user: publicUser(subject),
       calendar: {
         events: await getCalendarEvents(env.DB, { now }),

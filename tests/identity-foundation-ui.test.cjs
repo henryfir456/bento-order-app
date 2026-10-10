@@ -471,13 +471,13 @@ test('Admin identity views render the server-authoritative employee ID with a nu
   assert.equal(formatEmployeeId(''), '未綁定');
   assert.equal(getMockMembers('admin').find((member) => member.userId === 'mock-user-id').employeeId, 'MCKUSR');
   assert.match(appSource, /員編 \{formatEmployeeId\(user\.employeeId\)\}/);
-  assert.match(balanceSource, /<th className="p-2 whitespace-nowrap">登入來源<\/th>/);
+  assert.match(balanceSource, /<th className="p-2 whitespace-nowrap">LINE 綁定<\/th>/);
   assert.match(balanceSource, /<th className="p-2 whitespace-nowrap">身份狀態<\/th>/);
   assert.match(balanceSource, /formatEmployeeId\(user\.employeeId\)/);
 
   const headerRow = balanceSource.match(/<tr>[\s\S]*?<\/tr>/)?.[0] || '';
-  assert.ok(headerRow.indexOf('姓名') < headerRow.indexOf('登入來源'));
-  assert.ok(headerRow.indexOf('登入來源') < headerRow.indexOf('身份狀態'));
+  assert.ok(headerRow.indexOf('姓名') < headerRow.indexOf('LINE 綁定'));
+  assert.ok(headerRow.indexOf('LINE 綁定') < headerRow.indexOf('身份狀態'));
   assert.ok(headerRow.indexOf('身份狀態') < headerRow.indexOf('員編'));
   assert.ok(headerRow.indexOf('員編') < headerRow.indexOf('樓層'));
   assert.ok(headerRow.indexOf('樓層') < headerRow.indexOf('餘額'));

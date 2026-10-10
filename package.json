@@ -1,14 +1,15 @@
 {
   "name": "bento-order-app",
   "private": true,
-  "version": "0.15.14",
+  "version": "0.15.15",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test:auth-recovery": "node --test tests/auth-startup-recovery.test.cjs"
+    "test:auth-recovery": "node --test tests/auth-startup-recovery.test.cjs",
+    "test:line-binding": "node --test tests/line-binding-state.test.cjs"
   },
   "dependencies": {
     "@line/liff": "^2.31.0",

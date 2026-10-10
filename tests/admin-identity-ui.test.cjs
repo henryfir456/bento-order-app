@@ -76,7 +76,7 @@ test('Admin identity UI uses Worker binding and never writes verification state 
   assert.doesNotMatch(app, /data\.targets\.filter\([\s\S]*lineUserId/);
   assert.match(app, /formatDateTime\(item\.occurredAt \|\| item\.timestamp\)/);
   assert.match(app, /setMemberBalancesLoaded\(false\);[\s\S]*?loadMemberBalances\(true\)/);
-  assert.match(member, /登入來源/);
+  assert.match(member, /LINE 綁定/);
   assert.match(member, /身份狀態/);
   assert.match(identityStatus, /負餘額/);
   assert.doesNotMatch(member, /待綁員編/);

@@ -1,13 +1,14 @@
 // Execute the actual App closures and effects with deterministic hook storage.
-// Rendering is omitted; this harness verifies orchestration, not browser/React DOM.
+// Optional JSX/SSR verifies actual display conditions; this is not a browser/React DOM mount.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const { transformSync } = require('esbuild');
+const React = require('react');
 const { flush } = require('./deferred.cjs');
 const root = path.resolve(__dirname, '../..');
 
-exports.createHarness = ({ authClient, apiClient, store, timers = globalThis }) => {
+exports.createHarness = ({ authClient, apiClient, store, timers = globalThis, renderJsx = false }) => {
   let cursor = 0, dirty = false, view;
   const slots = [], pendingEffects = [];
   const same = (a, b) => a && b && a.length === b.length && a.every((v, i) => Object.is(v, b[i]));
@@ -46,18 +47,23 @@ exports.createHarness = ({ authClient, apiClient, store, timers = globalThis }) 
   const source = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
   const entry = source.lastIndexOf('\n  return (');
   if (entry < 0) throw new Error('App render entry missing');
-  const instrumented = source.slice(0, entry) + `\n  return {
+  const renderSource = renderJsx
+    ? source.slice(entry).replace('\n  return (', '\n  const renderedTree = (').replace(/\n}\s*$/, '')
+    : '';
+  const instrumented = source.slice(0, entry) + renderSource + `\n  return {
     authState, authStage, authError, authUser, authMode, loading, employeeGuestError,
     initLiffAndFetchData, handleLineLogin, handleBindLine, handleEmployeeGuestLogin,
     handleEmployeeGuestOnboarding, handleLineEmployeeBind,
-    setEmployeeGuestId
+    setEmployeeGuestId, setViewAsUser, viewAsUser, setAuthUser,
+    ${renderJsx ? 'renderedTree,' : ''}
   };\n}`;
   const code = transformSync(instrumented, {
-    loader: 'jsx', format: 'cjs', define: { 'import.meta.env.DEV': 'false' }
+    loader: 'jsx', jsx: 'automatic', format: 'cjs', define: { 'import.meta.env.DEV': 'false' }
   }).code;
   const module = { exports: {} };
   const requireStub = (id) => {
-    if (id === 'react') return { ...hooks, default: {} };
+    if (id === 'react') return { ...React, ...hooks, default: React };
+    if (id === 'react/jsx-runtime') return require(id);
     if (id === './auth/liffClient') return { authClient };
     if (id === './api/apiClient') return { apiClient, guestSessionStore: store };
     if (id === './data/changelog') return { APP_VERSION: 'test', UI_CHANGELOG: [] };
@@ -66,7 +72,15 @@ exports.createHarness = ({ authClient, apiClient, store, timers = globalThis }) 
       createBootTimingLogger: () => ({ milestone() {}, metric() {}, backend() {}, deferredBackend() {} })
     };
     if (id === 'sweetalert2') return { fire: async () => ({ isConfirmed: false }) };
-    if (id.endsWith('.css') || id.includes('/components/') || !id.startsWith('.')) return {};
+    if (renderJsx && id === './components/IdentityStatusBadges') {
+      const file = path.join(root, 'src/components/IdentityStatusBadges.jsx');
+      const badgeModule = { exports: {} };
+      const badgeCode = transformSync(fs.readFileSync(file, 'utf8'), { loader: 'jsx', jsx: 'automatic', format: 'cjs' }).code;
+      vm.runInNewContext(badgeCode, { module: badgeModule, exports: badgeModule.exports,
+        require: (name) => name.startsWith('.') ? require(path.resolve(path.dirname(file), name + '.js')) : require(name) });
+      return badgeModule.exports;
+    }
+    if (id.endsWith('.css') || id.includes('/components/') || !id.startsWith('.')) return { __esModule: true, default: () => null };
     const base = path.resolve(root, 'src', id);
     for (const filename of [base, `${base}.js`]) {
       if (fs.existsSync(filename) && filename.endsWith('.js')) return require(filename);

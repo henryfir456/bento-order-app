@@ -6,6 +6,20 @@
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.15] - 2026-10-10
+
+### Fixed
+
+- Project canonical `lineBound` independently of login channel in Worker identity/bootstrap and guest responses, without exposing the bound LINE ID through employee sessions (Issue #34; regression coverage for Issue #1).
+- Use the same binding badge in the home header and member cards; offer LINE binding only to a confirmed unbound employee session, with unknown state shown as awaiting confirmation.
+- Clear stale employee credentials after successful LINE-first binding, and revoke expired/rejected sessions from the displayed identity.
+- Refresh registered binding state on foreground/network return using a bounded, coalesced GET; stale attempts cannot replace newer login choices, balances, profiles or View As subjects.
+
+### Verification boundary
+
+- Implementation and local automated verification are independent of real LINE browser validation. Windows external/local LINE OAuth and Android LINE acceptance remain NOT VERIFIED without platform evidence.
+- This release is merged as code only by explicit request: no frontend or formal Worker deployment, no production D1 mutations, and no claim that the UI/API change is live.
+
 ## [0.15.14] - 2026-10-09
 
 ### Fixed
