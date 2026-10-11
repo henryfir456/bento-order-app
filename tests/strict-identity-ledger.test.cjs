@@ -3370,7 +3370,7 @@ test('frontend menu change history is Worker-only, Admin-only, append-only, and 
   assert.match(componentSource, /loadCurrentMenu\(selectedCurrentVendor, currentDate\)/);
   assert.match(componentSource, /readOnly=\{draft\.item_code_locked\}/);
   assert.match(componentSource, /儲存變更/);
-  assert.match(componentSource, /loadCurrentMenu\(draft\.vendor, draft\.effective_date\)/);
+  assert.match(componentSource, /loadCurrentMenu\(submittedDraft\.vendor, submittedDraft\.effective_date\)/);
   assert.doesNotMatch(componentSource, /查詢目前菜單/);
   assert.doesNotMatch(componentSource, /onClick=\{\(\) => startDraft\(row\)\} disabled=\{isViewAsMode \|\| Boolean\(draft\)\}/);
   assert.doesNotMatch(componentSource, /onUpdate|onDelete/);
