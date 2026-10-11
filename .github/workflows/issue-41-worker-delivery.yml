@@ -39,3 +39,20 @@ jobs:
           git add worker-poc/deploy-formalWorker.js
           git commit -m "ops: stage Worker bundle from main 90538272c7a32a171dfca5e8e93350a67b71a265 [skip ci]"
           git push
+
+  baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 63514f787d5b6cea5c651fe5a4fa1a7457c1c7dd
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: worker-poc/package-lock.json
+      - run: npm ci
+        working-directory: worker-poc
+      - name: Compare full formal suite on pre-Issue-41 main
+        run: npm run test:formal
+        working-directory: worker-poc
