@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const test = require('node:test');
 
 const componentPath = path.join(
@@ -62,4 +63,69 @@ test('preview response gate rejects late Cai data after the HeShi request wins',
     }),
     true
   );
+});
+
+
+test('schema 2 drafts retain canonical H1 variant identity and all edit fields', async () => {
+  const { buildMenuChangeDraft, normalizedIdentityForRow } = await import(
+    pathToFileURL(componentPath.replace(
+      'MenuItemChangesManagement.jsx',
+      'menuItemChangesDraft.js'
+    ))
+  );
+  const sourceRow = {
+    vendor: 'Vendor A',
+    effective_date: '2026-10-01',
+    item_code: 'H1',
+    variant_key: 'HALF',
+    identity_schema_version: 2,
+    item_name: 'Half lunch',
+    price: 95,
+    enabled: false,
+    image_url: 'https://example.test/menu.png',
+    note: 'existing note',
+    display_order: 7
+  };
+
+  assert.deepEqual(normalizedIdentityForRow(sourceRow), ['H1', 'HALF']);
+  const draft = buildMenuChangeDraft(sourceRow, {
+    currentDate: '2026-10-11',
+    selectedCurrentVendor: 'Vendor B'
+  });
+  assert.deepEqual(draft, {
+    effective_date: '2026-10-01',
+    vendor: 'Vendor A',
+    item_code: 'H1',
+    item_code_locked: true,
+    variant_key: 'HALF',
+    item_name: 'Half lunch',
+    price: 95,
+    enabled: false,
+    image_url: 'https://example.test/menu.png',
+    note: 'existing note',
+    display_order: 7,
+    identity_schema_version: 2,
+    previous_variant_key: 'HALF',
+    previous_identity_schema_version: 2
+  });
+
+  const payload = Object.fromEntries(Object.entries(draft).filter(([key]) => key !== 'item_code_locked'));
+  assert.equal(payload.variant_key, 'HALF');
+  assert.equal(payload.previous_variant_key, 'HALF');
+  assert.equal(payload.identity_schema_version, 2);
+  assert.equal(payload.previous_identity_schema_version, 2);
+});
+
+test('new normalized drafts use context and context changes invalidate pending saves', () => {
+  const { buildMenuChangeDraft } = require('../src/features/admin/menuItemChangesDraft.js');
+  const draft = buildMenuChangeDraft(null, {
+    currentDate: '2026-10-11',
+    selectedCurrentVendor: 'Vendor B'
+  });
+  assert.equal(draft.vendor, 'Vendor B');
+  assert.equal(draft.effective_date, '2026-10-11');
+  assert.equal(draft.identity_schema_version, 2);
+  assert.match(componentSource, /draftRequestId\.current !== requestId/);
+  assert.match(componentSource, /draftRequestId\.current \+= 1;\s*setDraft\(null\)/);
+  assert.match(componentSource, /if \(requestId === draftRequestId\.current\) setSaving\(false\)/);
 });
