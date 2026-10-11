@@ -88,6 +88,8 @@ test('schema 2 drafts retain canonical H1 variant identity and all edit fields',
   };
 
   assert.deepEqual(normalizedIdentityForRow(sourceRow), ['H1', 'HALF']);
+  assert.deepEqual(normalizedIdentityForRow({ ...sourceRow, variant_key: 'BASE' }), ['H1', 'BASE']);
+  assert.deepEqual(normalizedIdentityForRow({ item_code: 'H1' }), ['H1', 'BASE']);
   const draft = buildMenuChangeDraft(sourceRow, {
     currentDate: '2026-10-11',
     selectedCurrentVendor: 'Vendor B'
@@ -114,6 +116,14 @@ test('schema 2 drafts retain canonical H1 variant identity and all edit fields',
   assert.equal(payload.previous_variant_key, 'HALF');
   assert.equal(payload.identity_schema_version, 2);
   assert.equal(payload.previous_identity_schema_version, 2);
+
+  const switchedToBase = { ...draft, variant_key: 'BASE' };
+  const basePayload = Object.fromEntries(Object.entries(switchedToBase).filter(([key]) => key !== 'item_code_locked'));
+  assert.equal(basePayload.variant_key, 'BASE');
+  assert.equal(basePayload.previous_variant_key, 'HALF');
+  for (const field of ['vendor', 'effective_date', 'item_code', 'item_name', 'price', 'enabled', 'image_url', 'note', 'display_order']) {
+    assert.equal(basePayload[field], payload[field], field);
+  }
 });
 
 test('new normalized drafts use context and context changes invalidate pending saves', () => {
