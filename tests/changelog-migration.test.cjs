@@ -332,10 +332,18 @@ test('every formal release has Traditional Chinese UI copy or an explicit legacy
     );
   }
 
-  assert.equal(releases[0]?.version, '0.15.16');
-  const latestTranslation = source.match(/'0\.15\.16': \[([\s\S]*?)\n  \],/);
-  assert.ok(latestTranslation, '0.15.16 needs a Traditional Chinese translation');
-  assert.match(latestTranslation[1], /name: '修正'/);
-  assert.match(latestTranslation[1], /HALF/);
-  assert.match(latestTranslation[1], /BASE/);
+  const packageVersion = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8')).version;
+  assert.equal(releases[0]?.version, packageVersion, 'Latest published release must equal package version');
+  assert.equal(new Set(translatedVersions).size, translatedVersions.length, 'Duplicate translation versions');
+  for (const version of translatedVersions) {
+    assert.ok(releases.some((release) => release.version === version), `Orphan translation: ${version}`);
+    assert.ok(!legacyVersions.includes(version), `Legacy exception must not duplicate translation: ${version}`);
+  }
+  const latestTranslation = source.match(new RegExp(`'\${packageVersion.replace(/\\./g, '\\\\.')}': \\\[([\\s\\S]*?)\\n  \\\],`));
+  assert.ok(latestTranslation, `Latest release ${packageVersion} requires Traditional Chinese UI copy`);
+  assert.match(latestTranslation[1], /name: '[^']+'/);
+  assert.match(latestTranslation[1], /changes: \\[/);
+  assert.match(latestTranslation[1], /'[^']{3,}'/);
+  assert.doesNotMatch(latestTranslation[1], /changes:\\s*\\[\\s*\\]/);
+  
 });
