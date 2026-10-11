@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateInput } from '../../dateUtils';
 import { currentMenuRowKey, shouldApplyPreviewResult } from './menuItemChangesPreview';
+import { buildMenuChangeDraft } from './menuItemChangesDraft';
 
 const inputClass = 'w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:outline-emerald-600 disabled:bg-gray-100';
 const HISTORY_MIN_DATE = '2026-09-11';
-const NORMALIZED_MENU_START_DATE = '2026-09-17';
 const NORMALIZED_VARIANT_KEYS = ['BASE', 'HALF', 'PLUS'];
-
 const rowIdentity = (row) => `${row.vendor}\u0000${row.item_code}\u0000${row.variant_key || ''}`;
 
 const errorText = (error) => {
@@ -16,33 +15,6 @@ const errorText = (error) => {
   if (error?.code === 'MENU_CHANGE_EFFECTIVE_DATE_BEFORE_CUTOFF') return '手動變更只能從 2026-09-11 起建立。';
   return error?.message || '操作失敗，請稍後再試。';
 };
-
-const normalizedIdentityForRow = (row) => {
-  const code = String(row?.item_code || '').trim();
-  const codeKey = code.toUpperCase();
-  const name = String(row?.item_name || '').trim();
-  if (['FR1', 'REVERT1'].includes(code.toUpperCase())) return null;
-  const direct = {
-    S: ['S', 'BASE'], SH: ['S', 'HALF'], S_HALF: ['S', 'HALF'],
-    C: ['C', 'BASE'], CH: ['C', 'HALF'], C95: ['C', 'BASE'], C95_HALF: ['C', 'HALF'],
-    CP: ['CM', 'BASE'], CPH: ['CM', 'HALF'], C120: ['CM', 'BASE'], C120_HALF: ['CM', 'HALF'],
-    E: ['E', 'BASE'], EP: ['E', 'PLUS'], E_PLUS: ['E', 'PLUS'],
-    A: ['A', 'BASE'], A95: ['A', 'BASE'], A95_PLUS: ['A', 'PLUS'],
-    A120: ['AM', 'BASE'], A120_PLUS: ['AM', 'PLUS'], APP: ['AM', 'PLUS'],
-    B: ['B', 'BASE'], B_HALF: ['B', 'HALF'], FR: ['FR', 'BASE'], R: ['FR', 'BASE']
-  };
-  if (codeKey === 'AP') {
-    if (name.includes('風味便當')) return ['A', 'PLUS'];
-    if (name.includes('風味會議')) return ['AM', 'BASE'];
-    return null;
-  }
-  if (/^H[1-5]H$/.test(codeKey)) return [codeKey.slice(0, -1), 'HALF'];
-  if (/^H[1-5]$/.test(codeKey)) return [codeKey, 'BASE'];
-  return direct[codeKey] || (NORMALIZED_VARIANT_KEYS.includes(String(row?.variant_key || '').toUpperCase())
-    ? [code, String(row.variant_key).toUpperCase()]
-    : [code, 'BASE']);
-};
-
 const PreviewImage = ({ url, alt }) => (
   url ? (
     <img
@@ -90,6 +62,7 @@ export default function MenuItemChangesManagement({
   const [dailyFlavorSyncError, setDailyFlavorSyncError] = useState('');
   const [dailyFlavorSyncMessage, setDailyFlavorSyncMessage] = useState('');
   const previewRequestId = useRef(0);
+  const draftRequestId = useRef(0);
 
   const normalizedVendorOptions = useMemo(() => Array.from(new Set(
     vendorOptions
@@ -168,35 +141,17 @@ export default function MenuItemChangesManagement({
   const updateDraft = (field, value) => setDraft((current) => ({ ...current, [field]: value }));
 
   const startDraft = (row = null) => {
-    const mappedIdentity = row ? normalizedIdentityForRow(row) : null;
-    const useNormalizedIdentity = !row || row.identity_schema_version === 2 || Boolean(mappedIdentity);
-    const mappedDate = row && row.effective_date >= NORMALIZED_MENU_START_DATE
-      ? row.effective_date
-      : NORMALIZED_MENU_START_DATE;
-    const itemCode = useNormalizedIdentity ? (mappedIdentity?.[0] || row?.item_code || '') : (row?.item_code || '');
-    const variantKey = useNormalizedIdentity ? (mappedIdentity?.[1] || 'BASE') : (row?.variant_key || '');
-    setDraft({
-      effective_date: row ? mappedDate : (currentDate >= NORMALIZED_MENU_START_DATE ? currentDate : NORMALIZED_MENU_START_DATE),
-      vendor: row?.vendor || selectedCurrentVendor,
-      item_code: itemCode,
-      item_code_locked: Boolean(row),
-      variant_key: variantKey,
-      item_name: row?.item_name || '',
-      price: row?.price ?? '',
-      enabled: row ? Boolean(row.enabled) : true,
-      image_url: row?.image_url || '',
-      note: row?.note || '',
-      display_order: row?.display_order || 0,
-      identity_schema_version: useNormalizedIdentity ? 2 : 1,
-      previous_variant_key: row?.identity_schema_version === 2 ? row.variant_key || '' : '',
-      previous_identity_schema_version: row?.identity_schema_version === 2 ? 2 : null
-    });
+    if (saving) return;
+    draftRequestId.current += 1;
+    setDraft(buildMenuChangeDraft(row, { currentDate, selectedCurrentVendor }));
     setDraftError('');
   };
 
   const submitDraft = async (event) => {
     event.preventDefault();
     if (!draft || isViewAsMode || saving) return;
+    const submittedDraft = draft;
+    const requestId = draftRequestId.current;
     setSaving(true);
     setDraftError('');
     try {
@@ -208,13 +163,15 @@ export default function MenuItemChangesManagement({
         price: Number(draft.price),
         display_order: Number(draft.display_order || 0)
       });
+      if (requestId !== draftRequestId.current) return;
       setDraft(null);
-      setCurrentVendor(draft.vendor);
-      setCurrentDate(draft.effective_date);
+      setCurrentVendor(submittedDraft.vendor);
+      setCurrentDate(submittedDraft.effective_date);
       if (onRefresh) await onRefresh();
-      await loadCurrentMenu(draft.vendor, draft.effective_date);
+      if (requestId !== draftRequestId.current) return;
+      await loadCurrentMenu(submittedDraft.vendor, submittedDraft.effective_date);
     } catch (requestError) {
-      setDraftError(errorText(requestError));
+      if (requestId === draftRequestId.current) setDraftError(errorText(requestError));
     } finally {
       setSaving(false);
     }
@@ -256,10 +213,16 @@ export default function MenuItemChangesManagement({
   }, [currentDate, loadCurrentMenu, selectedCurrentVendor]);
 
   const changeCurrentVendor = (value) => {
+    draftRequestId.current += 1;
+    setDraft(null);
+    setDraftError('');
     setCurrentVendor(value);
   };
 
   const changeCurrentDate = (value) => {
+    draftRequestId.current += 1;
+    setDraft(null);
+    setDraftError('');
     setCurrentDate(value);
   };
 
@@ -280,7 +243,7 @@ export default function MenuItemChangesManagement({
             <button type="button" onClick={onRefresh} disabled={loading || isViewAsMode} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50">
               重新整理
             </button>
-            <button type="button" onClick={() => startDraft()} disabled={isViewAsMode || Boolean(draft)} className="rounded-xl bg-[#2C4A3E] px-3 py-2 text-xs font-bold text-white disabled:bg-gray-300">
+            <button type="button" onClick={() => startDraft()} disabled={isViewAsMode || saving || Boolean(draft)} className="rounded-xl bg-[#2C4A3E] px-3 py-2 text-xs font-bold text-white disabled:bg-gray-300">
               新增變更列
             </button>
           </div>
@@ -353,8 +316,8 @@ export default function MenuItemChangesManagement({
         {activeView === 'current' ? (
           <div className="pt-3">
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 sm:items-end">
-              <label className="text-xs font-bold text-gray-600">供應商<select required value={selectedCurrentVendor} onChange={(event) => changeCurrentVendor(event.target.value)} className={inputClass} disabled={!normalizedVendorOptions.length || currentMenuLoading}>{normalizedVendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}</select></label>
-              <label className="text-xs font-bold text-gray-600">日期<input required type="date" value={currentDate} onChange={(event) => changeCurrentDate(event.target.value)} className={inputClass} disabled={currentMenuLoading} /></label>
+              <label className="text-xs font-bold text-gray-600">供應商<select required value={selectedCurrentVendor} onChange={(event) => changeCurrentVendor(event.target.value)} className={inputClass} disabled={saving || !normalizedVendorOptions.length || currentMenuLoading}>{normalizedVendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}</select></label>
+              <label className="text-xs font-bold text-gray-600">日期<input required type="date" value={currentDate} onChange={(event) => changeCurrentDate(event.target.value)} className={inputClass} disabled={saving || currentMenuLoading} /></label>
             </div>
             <p className="mt-2 text-xs text-gray-500">已選定 {selectedCurrentVendor || '供應商'} · {currentDate}；結果等同該日期使用者可點到的 canonical menu。</p>
             {currentMenuError && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{currentMenuError}</p>}
@@ -364,10 +327,10 @@ export default function MenuItemChangesManagement({
                 <div className="hidden overflow-hidden rounded-xl border border-gray-100 sm:block">
                   <table className="w-full table-fixed border-collapse text-xs">
                     <thead><tr className="border-b border-gray-200 bg-gray-50 text-left text-gray-500"><th className="w-[15%] p-2">品項代號</th><th className="w-[15%] p-2">variant</th><th className="w-[25%] p-2">品名</th><th className="w-[12%] p-2">價格</th><th className="w-[15%] p-2">生效日</th><th className="w-[10%] p-2">狀態</th><th className="w-[8%] p-2">操作</th></tr></thead>
-                    <tbody>{currentItems.map((row) => <tr key={currentMenuRowKey(row, selectedCurrentVendor, currentDate)} className="border-b border-gray-100 align-top last:border-0"><td className="break-words p-2 font-bold">{row.item_code}</td><td className="break-words p-2">{row.variant_key || '—'}</td><td className="break-words p-2">{row.item_name}</td><td className="p-2 font-mono">{row.price}</td><td className="break-words p-2">{row.effective_date}</td><td className="p-2"><Status enabled={row.enabled} /></td><td className="p-2"><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode} className="text-indigo-700 underline disabled:text-gray-300">建立變更</button></td></tr>)}</tbody>
+                    <tbody>{currentItems.map((row) => <tr key={currentMenuRowKey(row, selectedCurrentVendor, currentDate)} className="border-b border-gray-100 align-top last:border-0"><td className="break-words p-2 font-bold">{row.item_code}</td><td className="break-words p-2">{row.variant_key || '—'}</td><td className="break-words p-2">{row.item_name}</td><td className="p-2 font-mono">{row.price}</td><td className="break-words p-2">{row.effective_date}</td><td className="p-2"><Status enabled={row.enabled} /></td><td className="p-2"><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode || saving} className="text-indigo-700 underline disabled:text-gray-300">建立變更</button></td></tr>)}</tbody>
                   </table>
                 </div>
-                <div className="space-y-2 sm:hidden">{currentItems.map((row) => <article key={currentMenuRowKey(row, selectedCurrentVendor, currentDate)} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-gray-800">{row.item_code}{row.variant_key ? ` · ${row.variant_key}` : ''}</p><p className="mt-1 break-words text-sm text-gray-700">{row.item_name}</p></div><Status enabled={row.enabled} /></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500"><div><dt>價格</dt><dd className="font-mono text-gray-800">{row.price}</dd></div><div><dt>生效日</dt><dd className="text-gray-800">{row.effective_date}</dd></div><div className="col-span-2"><dt>來源</dt><dd className="break-words text-gray-800">{row.source_kind || '—'}</dd></div></dl><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode} className="mt-2 text-xs font-bold text-indigo-700 underline disabled:text-gray-300">建立變更</button></article>)}</div>
+                <div className="space-y-2 sm:hidden">{currentItems.map((row) => <article key={currentMenuRowKey(row, selectedCurrentVendor, currentDate)} className="rounded-xl border border-gray-100 p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words font-bold text-gray-800">{row.item_code}{row.variant_key ? ` · ${row.variant_key}` : ''}</p><p className="mt-1 break-words text-sm text-gray-700">{row.item_name}</p></div><Status enabled={row.enabled} /></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-gray-500"><div><dt>價格</dt><dd className="font-mono text-gray-800">{row.price}</dd></div><div><dt>生效日</dt><dd className="text-gray-800">{row.effective_date}</dd></div><div className="col-span-2"><dt>來源</dt><dd className="break-words text-gray-800">{row.source_kind || '—'}</dd></div></dl><button type="button" onClick={() => startDraft(row)} disabled={isViewAsMode || saving} className="mt-2 text-xs font-bold text-indigo-700 underline disabled:text-gray-300">建立變更</button></article>)}</div>
                 {currentItems.length === 0 && <p className="rounded-xl border border-dashed border-gray-200 p-6 text-center text-xs text-gray-400">該日期沒有可顯示的有效菜單列。</p>}
               </div>
             )}

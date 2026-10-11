@@ -12,6 +12,7 @@ import {
   resolveMenuItemChangesFromRows
 } from '../src/domain/menuItemChanges.js';
 import { getCustomerMenu } from '../src/domain/menu.js';
+import { buildMenuChangeDraft } from '../../src/features/admin/menuItemChangesDraft.js';
 import { getCalendarSetting } from '../src/domain/calendar.js';
 import { setCalendarSetting } from '../src/routes/calendar.js';
 import {
@@ -1312,4 +1313,70 @@ test('order validation re-resolves backdated post-cutoff changes instead of trus
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'MENU_ITEM_DISABLED' });
   assert.equal(database.get('SELECT COUNT(*) AS count FROM orders').count, 0);
+});
+
+
+test('H1 draft save and reload isolates HALF and BASE while retaining historical rows', async () => {
+  const database = new SqliteD1();
+  seedUsers(database);
+  const initial = {};
+  for (const [index, variant] of ['BASE', 'HALF'].entries()) {
+    const created = await call(database, '/api/admin/menu/changes', {
+      method: 'POST',
+      body: {
+        vendor: '禾拾', effective_date: '2026-09-17', item_code: 'H1',
+        variant_key: variant, identity_schema_version: 2,
+        item_name: 'H1 ' + variant, price: 100 - index * 10, enabled: true,
+        image_url: 'https://example.test/' + variant + '.png',
+        note: variant + ' note', display_order: index
+      }
+    });
+    assert.equal(created.response.status, 201);
+    initial[variant] = created.body.change;
+  }
+
+  const fields = (row) => ({
+    vendor: row.vendor, effective_date: row.effective_date, item_code: row.item_code,
+    variant_key: row.variant_key, item_name: row.item_name, price: row.price,
+    image_url: row.image_url, note: row.note, enabled: row.enabled
+  });
+  for (const variant of ['HALF', 'BASE']) {
+    const before = await resolveEffectiveMenuState(database, {
+      vendor: '禾拾', targetDate: '2026-09-18'
+    });
+    const selected = before.rows.find((row) => row.item_code === 'H1' && row.variant_key === variant);
+    const otherVariant = variant === 'HALF' ? 'BASE' : 'HALF';
+    const untouched = fields(before.rows.find((row) => row.variant_key === otherVariant));
+    const draft = buildMenuChangeDraft(selected, {
+      selectedCurrentVendor: '禾拾', currentDate: '2026-09-18'
+    });
+    const { item_code_locked, ...payload } = draft;
+    assert.equal(item_code_locked, true);
+    assert.equal(payload.variant_key, variant);
+    assert.equal(payload.previous_variant_key, variant);
+    const saved = await call(database, '/api/admin/menu/changes', {
+      method: 'POST',
+      body: {
+        ...payload, effective_date: '2026-09-18',
+        item_name: variant + ' revised', price: variant === 'HALF' ? 85 : 115,
+        image_url: 'https://example.test/' + variant + '-revised.png',
+        note: variant + ' revised note', enabled: variant === 'BASE'
+      }
+    });
+    assert.equal(saved.response.status, 201);
+    const after = await resolveEffectiveMenuState(database, {
+      vendor: '禾拾', targetDate: '2026-09-18'
+    });
+    assert.deepEqual(fields(after.rows.find((row) => row.variant_key === otherVariant)), untouched);
+    assert.deepEqual(fields(after.rows.find((row) => row.variant_key === variant)), {
+      vendor: '禾拾', effective_date: '2026-09-18', item_code: 'H1', variant_key: variant,
+      item_name: variant + ' revised', price: variant === 'HALF' ? 85 : 115,
+      image_url: 'https://example.test/' + variant + '-revised.png',
+      note: variant + ' revised note', enabled: variant === 'BASE'
+    });
+    const historical = await resolveEffectiveMenuState(database, {
+      vendor: '禾拾', targetDate: '2026-09-17'
+    });
+    assert.deepEqual(historical.rows.map(fields), ['BASE', 'HALF'].map((key) => fields(initial[key])));
+  }
 });
