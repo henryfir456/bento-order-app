@@ -18,6 +18,9 @@ jobs:
       - run: npm ci
       - name: Required identity tests
         run: node --test tests/strict-identity-ledger.test.cjs
+      - name: Changelog translation coverage
+        if: ${{ !cancelled() }}
+        run: node --test tests/changelog-migration.test.cjs
       - name: Menu UI regression
         if: ${{ !cancelled() }}
         run: node --test tests/menu-item-changes-ui.test.cjs
