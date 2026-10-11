@@ -5,6 +5,16 @@ import { buildMenuChangeDraft } from './menuItemChangesDraft';
 
 const inputClass = 'w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:outline-emerald-600 disabled:bg-gray-100';
 const HISTORY_MIN_DATE = '2026-09-11';
+const NORMALIZED_VARIANT_KEYS = ['BASE', 'HALF', 'PLUS'];
+const rowIdentity = (row) => `${row.vendor}\u0000${row.item_code}\u0000${row.variant_key || ''}`;
+
+const errorText = (error) => {
+  if (error?.code === 'MENU_CHANGE_DUPLICATE') return '同一生效日、供應商、品項代號與 variant 已存在。請以較晚生效日新增修正。';
+  if (error?.code === 'MENU_VARIANT_IDENTITY_CONFLICT') return '新的 variant identity 在同一生效日已存在，請先選擇其他 variant。';
+  if (error?.code === 'MENU_CHANGE_NORMALIZED_ITEM_CODE_INVALID') return '新菜單請使用 normalized 品項代號，不可再使用 legacy code。';
+  if (error?.code === 'MENU_CHANGE_EFFECTIVE_DATE_BEFORE_CUTOFF') return '手動變更只能從 2026-09-11 起建立。';
+  return error?.message || '操作失敗，請稍後再試。';
+};
 const PreviewImage = ({ url, alt }) => (
   url ? (
     <img
@@ -231,7 +241,7 @@ export default function MenuItemChangesManagement({
             <button type="button" onClick={onRefresh} disabled={loading || isViewAsMode} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-800 disabled:opacity-50">
               重新整理
             </button>
-            <button type="button" onClick={() => startDraft()} disabled={isViewAsMode || Boolean(draft)} className="rounded-xl bg-[#2C4A3E] px-3 py-2 text-xs font-bold text-white disabled:bg-gray-300">
+            <button type="button" onClick={() => startDraft()} disabled={isViewAsMode || saving || Boolean(draft)} className="rounded-xl bg-[#2C4A3E] px-3 py-2 text-xs font-bold text-white disabled:bg-gray-300">
               新增變更列
             </button>
           </div>
@@ -304,8 +314,8 @@ export default function MenuItemChangesManagement({
         {activeView === 'current' ? (
           <div className="pt-3">
             <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 sm:items-end">
-              <label className="text-xs font-bold text-gray-600">供應商<select required value={selectedCurrentVendor} onChange={(event) => changeCurrentVendor(event.target.value)} className={inputClass} disabled={!normalizedVendorOptions.length || currentMenuLoading}>{normalizedVendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}</select></label>
-              <label className="text-xs font-bold text-gray-600">日期<input required type="date" value={currentDate} onChange={(event) => changeCurrentDate(event.target.value)} className={inputClass} disabled={currentMenuLoading} /></label>
+              <label className="text-xs font-bold text-gray-600">供應商<select required value={selectedCurrentVendor} onChange={(event) => changeCurrentVendor(event.target.value)} className={inputClass} disabled={saving || !normalizedVendorOptions.length || currentMenuLoading}>{normalizedVendorOptions.map((vendor) => <option key={vendor} value={vendor}>{vendor}</option>)}</select></label>
+              <label className="text-xs font-bold text-gray-600">日期<input required type="date" value={currentDate} onChange={(event) => changeCurrentDate(event.target.value)} className={inputClass} disabled={saving || currentMenuLoading} /></label>
             </div>
             <p className="mt-2 text-xs text-gray-500">已選定 {selectedCurrentVendor || '供應商'} · {currentDate}；結果等同該日期使用者可點到的 canonical menu。</p>
             {currentMenuError && <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700">{currentMenuError}</p>}
