@@ -35,7 +35,12 @@ export const normalizedIdentityForRow = (row) => {
     : [code, 'BASE']);
 };
 
-export const buildMenuChangeDraft = (row, { currentDate, selectedCurrentVendor } = {}) => {
+/**
+ * @param {object|null} row
+ * @param {{currentDate?: string, selectedCurrentVendor?: string}} [context]
+ * @returns {Record<string, any>}
+ */
+export const buildMenuChangeDraft = (row, { currentDate = '', selectedCurrentVendor = '' } = {}) => {
   const mappedIdentity = row ? normalizedIdentityForRow(row) : null;
   const useNormalizedIdentity = !row || row.identity_schema_version === 2 || Boolean(mappedIdentity);
   const mappedDate = row && row.effective_date >= NORMALIZED_MENU_START_DATE
