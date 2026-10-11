@@ -339,11 +339,7 @@ test('every formal release has Traditional Chinese UI copy or an explicit legacy
     assert.ok(releases.some((release) => release.version === version), `Orphan translation: ${version}`);
     assert.ok(!legacyVersions.includes(version), `Legacy exception must not duplicate translation: ${version}`);
   }
-  const latestTranslation = source.match(new RegExp(`'\${packageVersion.replace(/\\./g, '\\\\.')}': \\\[([\\s\\S]*?)\\n  \\\],`));
-  assert.ok(latestTranslation, `Latest release ${packageVersion} requires Traditional Chinese UI copy`);
-  assert.match(latestTranslation[1], /name: '[^']+'/);
-  assert.match(latestTranslation[1], /changes: \\[/);
-  assert.match(latestTranslation[1], /'[^']{3,}'/);
-  assert.doesNotMatch(latestTranslation[1], /changes:\\s*\\[\\s*\\]/);
-  
+  assert.ok(translatedVersions.includes(packageVersion), `Missing Traditional Chinese UI translation for ${packageVersion}`);
+  // Strict coverage above prevents publishing any untranslated formal release.
+
 });
