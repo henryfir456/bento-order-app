@@ -1,48 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateInput } from '../../dateUtils';
 import { currentMenuRowKey, shouldApplyPreviewResult } from './menuItemChangesPreview';
+import { buildMenuChangeDraft } from './menuItemChangesDraft';
 
 const inputClass = 'w-full rounded-lg border border-gray-200 px-2 py-1.5 text-xs focus:outline-emerald-600 disabled:bg-gray-100';
 const HISTORY_MIN_DATE = '2026-09-11';
-const NORMALIZED_MENU_START_DATE = '2026-09-17';
-const NORMALIZED_VARIANT_KEYS = ['BASE', 'HALF', 'PLUS'];
-
-const rowIdentity = (row) => `${row.vendor}\u0000${row.item_code}\u0000${row.variant_key || ''}`;
-
-const errorText = (error) => {
-  if (error?.code === 'MENU_CHANGE_DUPLICATE') return '同一生效日、供應商、品項代號與 variant 已存在。請以較晚生效日新增修正。';
-  if (error?.code === 'MENU_VARIANT_IDENTITY_CONFLICT') return '新的 variant identity 在同一生效日已存在，請先選擇其他 variant。';
-  if (error?.code === 'MENU_CHANGE_NORMALIZED_ITEM_CODE_INVALID') return '新菜單請使用 normalized 品項代號，不可再使用 legacy code。';
-  if (error?.code === 'MENU_CHANGE_EFFECTIVE_DATE_BEFORE_CUTOFF') return '手動變更只能從 2026-09-11 起建立。';
-  return error?.message || '操作失敗，請稍後再試。';
-};
-
-const normalizedIdentityForRow = (row) => {
-  const code = String(row?.item_code || '').trim();
-  const codeKey = code.toUpperCase();
-  const name = String(row?.item_name || '').trim();
-  if (['FR1', 'REVERT1'].includes(code.toUpperCase())) return null;
-  const direct = {
-    S: ['S', 'BASE'], SH: ['S', 'HALF'], S_HALF: ['S', 'HALF'],
-    C: ['C', 'BASE'], CH: ['C', 'HALF'], C95: ['C', 'BASE'], C95_HALF: ['C', 'HALF'],
-    CP: ['CM', 'BASE'], CPH: ['CM', 'HALF'], C120: ['CM', 'BASE'], C120_HALF: ['CM', 'HALF'],
-    E: ['E', 'BASE'], EP: ['E', 'PLUS'], E_PLUS: ['E', 'PLUS'],
-    A: ['A', 'BASE'], A95: ['A', 'BASE'], A95_PLUS: ['A', 'PLUS'],
-    A120: ['AM', 'BASE'], A120_PLUS: ['AM', 'PLUS'], APP: ['AM', 'PLUS'],
-    B: ['B', 'BASE'], B_HALF: ['B', 'HALF'], FR: ['FR', 'BASE'], R: ['FR', 'BASE']
-  };
-  if (codeKey === 'AP') {
-    if (name.includes('風味便當')) return ['A', 'PLUS'];
-    if (name.includes('風味會議')) return ['AM', 'BASE'];
-    return null;
-  }
-  if (/^H[1-5]H$/.test(codeKey)) return [codeKey.slice(0, -1), 'HALF'];
-  if (/^H[1-5]$/.test(codeKey)) return [codeKey, 'BASE'];
-  return direct[codeKey] || (NORMALIZED_VARIANT_KEYS.includes(String(row?.variant_key || '').toUpperCase())
-    ? [code, String(row.variant_key).toUpperCase()]
-    : [code, 'BASE']);
-};
-
 const PreviewImage = ({ url, alt }) => (
   url ? (
     <img
@@ -90,6 +52,7 @@ export default function MenuItemChangesManagement({
   const [dailyFlavorSyncError, setDailyFlavorSyncError] = useState('');
   const [dailyFlavorSyncMessage, setDailyFlavorSyncMessage] = useState('');
   const previewRequestId = useRef(0);
+  const draftRequestId = useRef(0);
 
   const normalizedVendorOptions = useMemo(() => Array.from(new Set(
     vendorOptions
@@ -168,35 +131,16 @@ export default function MenuItemChangesManagement({
   const updateDraft = (field, value) => setDraft((current) => ({ ...current, [field]: value }));
 
   const startDraft = (row = null) => {
-    const mappedIdentity = row ? normalizedIdentityForRow(row) : null;
-    const useNormalizedIdentity = !row || row.identity_schema_version === 2 || Boolean(mappedIdentity);
-    const mappedDate = row && row.effective_date >= NORMALIZED_MENU_START_DATE
-      ? row.effective_date
-      : NORMALIZED_MENU_START_DATE;
-    const itemCode = useNormalizedIdentity ? (mappedIdentity?.[0] || row?.item_code || '') : (row?.item_code || '');
-    const variantKey = useNormalizedIdentity ? (mappedIdentity?.[1] || 'BASE') : (row?.variant_key || '');
-    setDraft({
-      effective_date: row ? mappedDate : (currentDate >= NORMALIZED_MENU_START_DATE ? currentDate : NORMALIZED_MENU_START_DATE),
-      vendor: row?.vendor || selectedCurrentVendor,
-      item_code: itemCode,
-      item_code_locked: Boolean(row),
-      variant_key: variantKey,
-      item_name: row?.item_name || '',
-      price: row?.price ?? '',
-      enabled: row ? Boolean(row.enabled) : true,
-      image_url: row?.image_url || '',
-      note: row?.note || '',
-      display_order: row?.display_order || 0,
-      identity_schema_version: useNormalizedIdentity ? 2 : 1,
-      previous_variant_key: row?.identity_schema_version === 2 ? row.variant_key || '' : '',
-      previous_identity_schema_version: row?.identity_schema_version === 2 ? 2 : null
-    });
+    draftRequestId.current += 1;
+    setDraft(buildMenuChangeDraft(row, { currentDate, selectedCurrentVendor }));
     setDraftError('');
   };
 
   const submitDraft = async (event) => {
     event.preventDefault();
     if (!draft || isViewAsMode || saving) return;
+    const submittedDraft = draft;
+    const requestId = draftRequestId.current;
     setSaving(true);
     setDraftError('');
     try {
@@ -208,15 +152,16 @@ export default function MenuItemChangesManagement({
         price: Number(draft.price),
         display_order: Number(draft.display_order || 0)
       });
+      if (requestId !== draftRequestId.current) return;
       setDraft(null);
-      setCurrentVendor(draft.vendor);
-      setCurrentDate(draft.effective_date);
+      setCurrentVendor(submittedDraft.vendor);
+      setCurrentDate(submittedDraft.effective_date);
       if (onRefresh) await onRefresh();
-      await loadCurrentMenu(draft.vendor, draft.effective_date);
+      await loadCurrentMenu(submittedDraft.vendor, submittedDraft.effective_date);
     } catch (requestError) {
-      setDraftError(errorText(requestError));
+      if (requestId === draftRequestId.current) setDraftError(errorText(requestError));
     } finally {
-      setSaving(false);
+      if (requestId === draftRequestId.current) setSaving(false);
     }
   };
 
@@ -256,10 +201,16 @@ export default function MenuItemChangesManagement({
   }, [currentDate, loadCurrentMenu, selectedCurrentVendor]);
 
   const changeCurrentVendor = (value) => {
+    draftRequestId.current += 1;
+    setDraft(null);
+    setDraftError('');
     setCurrentVendor(value);
   };
 
   const changeCurrentDate = (value) => {
+    draftRequestId.current += 1;
+    setDraft(null);
+    setDraftError('');
     setCurrentDate(value);
   };
 
