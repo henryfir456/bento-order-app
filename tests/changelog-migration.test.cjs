@@ -318,11 +318,11 @@ test('every formal release has Traditional Chinese UI copy or an explicit legacy
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const { isFormalRelease, parseChangelog } = await import('../src/data/changelogParser.js');
   const releases = parseChangelog(markdown).filter(isFormalRelease);
-  const translatedVersions = [...source.matchAll(/^\\s*'(\\d+\\.\\d+\\.\\d+)': \\[/gm)]
+  const translatedVersions = [...source.matchAll(/^\s*'(\d+\.\d+\.\d+)': \[/gm)]
     .map((match) => match[1]);
-  const legacyList = source.match(/const LEGACY_UI_RELEASES = new Set\\(\\[([\\s\\S]*?)\\]\\);/);
+  const legacyList = source.match(/const LEGACY_UI_RELEASES = new Set\(\[([\s\S]*?)\]\);/);
   assert.ok(legacyList, 'legacy UI release list must remain explicit');
-  const legacyVersions = [...legacyList[1].matchAll(/'(\\d+\\.\\d+\\.\\d+)'/g)]
+  const legacyVersions = [...legacyList[1].matchAll(/'(\d+\.\d+\.\d+)'/g)]
     .map((match) => match[1]);
 
   for (const release of releases) {
@@ -333,7 +333,7 @@ test('every formal release has Traditional Chinese UI copy or an explicit legacy
   }
 
   assert.equal(releases[0]?.version, '0.15.16');
-  const latestTranslation = source.match(/'0\\.15\\.16': \\[([\\s\\S]*?)\\n  \\],/);
+  const latestTranslation = source.match(/'0\.15\.16': \[([\s\S]*?)\n  \],/);
   assert.ok(latestTranslation, '0.15.16 needs a Traditional Chinese translation');
   assert.match(latestTranslation[1], /name: '修正'/);
   assert.match(latestTranslation[1], /HALF/);
