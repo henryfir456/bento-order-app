@@ -19,13 +19,18 @@ jobs:
       - name: Required identity tests
         run: node --test tests/strict-identity-ledger.test.cjs
       - name: Menu UI regression
+        if: ${{ !cancelled() }}
         run: node --test tests/menu-item-changes-ui.test.cjs
       - name: Lint
+        if: ${{ !cancelled() }}
         run: npm run lint
       - name: Draft helper type check
+        if: ${{ !cancelled() }}
         run: npx --yes --package typescript@5.9.3 tsc --allowJs --checkJs --noEmit --target es2022 --module esnext src/features/admin/menuItemChangesDraft.js
       - name: Build
+        if: ${{ !cancelled() }}
         run: npm run build
       - name: Worker menu contracts
+        if: ${{ !cancelled() }}
         working-directory: worker-poc
         run: node --test tests/menu-item-changes.test.js tests/menu-vendor-isolation.test.js
