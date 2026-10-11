@@ -11,6 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.16': [
+    {
+      name: '修正',
+      changes: [
+        '修正 Admin「目前菜單」建立菜單變更時，HALF 品項錯誤帶入 BASE 的問題，並確保兩種規格各自保存。'
+      ]
+    }
+  ],
   '0.15.15': [
     {
       name: '修正',
