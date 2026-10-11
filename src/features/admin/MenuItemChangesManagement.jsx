@@ -168,11 +168,12 @@ export default function MenuItemChangesManagement({
       setCurrentVendor(submittedDraft.vendor);
       setCurrentDate(submittedDraft.effective_date);
       if (onRefresh) await onRefresh();
+      if (requestId !== draftRequestId.current) return;
       await loadCurrentMenu(submittedDraft.vendor, submittedDraft.effective_date);
     } catch (requestError) {
       if (requestId === draftRequestId.current) setDraftError(errorText(requestError));
     } finally {
-      if (requestId === draftRequestId.current) setSaving(false);
+      setSaving(false);
     }
   };
 
