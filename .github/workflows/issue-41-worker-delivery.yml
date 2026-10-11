@@ -1,0 +1,41 @@
+name: Issue 41 formal Worker delivery bundle
+on:
+  push:
+    branches: [codex/issue-41-worker-delivery]
+    paths-ignore: [worker-poc/deploy-formalWorker.js]
+permissions:
+  contents: write
+jobs:
+  bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: worker-poc/package-lock.json
+      - name: Confirm exact merged Worker source
+        run: |
+          git diff --exit-code 90538272c7a32a171dfca5e8e93350a67b71a265 -- worker-poc/src worker-poc/wrangler.jsonc worker-poc/package.json worker-poc/package-lock.json
+          git diff --check 90538272c7a32a171dfca5e8e93350a67b71a265
+      - run: npm ci
+        working-directory: worker-poc
+      - name: Formal Worker verification
+        run: npm run test:formal
+        working-directory: worker-poc
+      - name: Build formal Worker without deploying
+        run: |
+          node scripts/require-database-id.mjs
+          npx wrangler deploy --dry-run --outdir dist-worker
+        working-directory: worker-poc
+      - name: Stage verified main bundle
+        run: |
+          cp worker-poc/dist-worker/formalWorker.js worker-poc/deploy-formalWorker.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add worker-poc/deploy-formalWorker.js
+          git commit -m "ops: stage Worker bundle from main 90538272c7a32a171dfca5e8e93350a67b71a265 [skip ci]"
+          git push
