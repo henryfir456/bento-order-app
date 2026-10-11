@@ -36,7 +36,22 @@ export const normalizedIdentityForRow = (row) => {
 };
 
 /**
- * @param {object|null} row
+ * @typedef {Object} MenuChangeRow
+ * @property {string} [item_code]
+ * @property {string} [variant_key]
+ * @property {number} [identity_schema_version]
+ * @property {string} [item_name]
+ * @property {string} [effective_date]
+ * @property {string} [vendor]
+ * @property {number|string} [price]
+ * @property {boolean|number} [enabled]
+ * @property {string} [image_url]
+ * @property {string} [note]
+ * @property {number} [display_order]
+ */
+
+/**
+ * @param {MenuChangeRow|null} row
  * @param {{currentDate?: string, selectedCurrentVendor?: string}} [context]
  * @returns {Record<string, any>}
  */
