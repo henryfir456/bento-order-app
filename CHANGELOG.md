@@ -8,6 +8,12 @@ Repository convergence (2026-10-10): preserve dated MaiFood feasibility research
 
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.16] - 2026-10-11
+
+### Fixed
+
+- Preserve the selected BASE/HALF menu variant when creating an admin menu change (Issue #41).
+
 ## [0.15.15] - 2026-10-10
 
 ### Fixed
