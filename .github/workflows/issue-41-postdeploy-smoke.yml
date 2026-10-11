@@ -1,0 +1,44 @@
+name: Issue 41 postdeploy smoke
+on:
+  push:
+    branches: [codex/issue-41-postdeploy-smoke]
+    paths: [.github/workflows/issue-41-postdeploy-smoke.yml]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 90538272c7a32a171dfca5e8e93350a67b71a265
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Production CORS and unauthenticated authorization contracts
+        working-directory: worker-poc
+        env:
+          BENTO_WORKER_BASE_URL: https://bento-api-poc.henryfir456.workers.dev
+        run: npm run smoke:cors
+      - name: Production health and protected read endpoints
+        env:
+          BENTO_WORKER_BASE_URL: https://bento-api-poc.henryfir456.workers.dev
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          const base=process.env.BENTO_WORKER_BASE_URL;
+          const health=await fetch(base+'/api/health');
+          assert.equal(health.status,200);
+          const data=await health.json();
+          assert.equal(data.ok,true);
+          assert.equal(data.database,true);
+          assert.equal(typeof data.users,'number');
+          console.log('PASS health: formal Worker and production D1 respond');
+          for(const path of ['/api/me','/api/bootstrap','/api/bootstrap/deferred?bootId=issue41-smoke','/api/order-page','/api/admin/menu/preview?vendor=smoke&targetDate=2026-09-17']){
+            const response=await fetch(base+path);
+            assert.equal(response.status,401,path);
+            const json=await response.json();
+            assert.equal(json.error,'AUTH_REQUIRED',path);
+            console.log('PASS protected read '+path);
+          }
+          NODE
