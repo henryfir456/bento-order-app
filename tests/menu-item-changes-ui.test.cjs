@@ -117,13 +117,20 @@ test('schema 2 drafts retain canonical H1 variant identity and all edit fields',
   assert.equal(payload.identity_schema_version, 2);
   assert.equal(payload.previous_identity_schema_version, 2);
 
-  const switchedToBase = { ...draft, variant_key: 'BASE' };
-  const basePayload = Object.fromEntries(Object.entries(switchedToBase).filter(([key]) => key !== 'item_code_locked'));
-  assert.equal(basePayload.variant_key, 'BASE');
-  assert.equal(basePayload.previous_variant_key, 'HALF');
+  const baseRow = {
+    ...sourceRow, variant_key: 'BASE', item_name: 'Base lunch', price: 105,
+    enabled: true, image_url: 'https://example.test/base.png', note: 'base note'
+  };
+  const baseDraft = buildMenuChangeDraft(baseRow, {
+    currentDate: '2026-10-12', selectedCurrentVendor: 'Vendor B'
+  });
+  assert.equal(baseDraft.variant_key, 'BASE');
+  assert.equal(baseDraft.previous_variant_key, 'BASE');
   for (const field of ['vendor', 'effective_date', 'item_code', 'item_name', 'price', 'enabled', 'image_url', 'note', 'display_order']) {
-    assert.equal(basePayload[field], payload[field], field);
+    assert.equal(baseDraft[field], baseRow[field], field);
   }
+  assert.deepEqual(buildMenuChangeDraft(sourceRow), draft);
+
 });
 
 test('new normalized drafts use context and context changes invalidate pending saves', () => {
@@ -135,7 +142,8 @@ test('new normalized drafts use context and context changes invalidate pending s
   assert.equal(draft.vendor, 'Vendor B');
   assert.equal(draft.effective_date, '2026-10-11');
   assert.equal(draft.identity_schema_version, 2);
-  assert.match(componentSource, /draftRequestId\.current !== requestId/);
+  assert.match(componentSource, /requestId !== draftRequestId\.current/);
   assert.match(componentSource, /draftRequestId\.current \+= 1;\s*setDraft\(null\)/);
-  assert.match(componentSource, /if \(requestId === draftRequestId\.current\) setSaving\(false\)/);
+  assert.match(componentSource, /finally\s*\{\s*setSaving\(false\)/);
+  assert.equal((componentSource.match(/startDraft\(row\)\} disabled=\{isViewAsMode \|\| saving\}/g) || []).length, 2);
 });
