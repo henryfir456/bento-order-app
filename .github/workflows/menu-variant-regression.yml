@@ -1,7 +1,7 @@
 name: Menu variant regression
 on:
   push:
-    branches: [codex/issue-41-menu-variant]
+    branches: [main, codex/issue-41-menu-variant]
   pull_request:
     branches: [main]
 permissions:
