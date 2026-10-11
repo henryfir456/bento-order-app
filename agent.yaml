@@ -27,6 +27,7 @@ project_skills: []
 commands:
   test:
     - "node --test tests/strict-identity-ledger.test.cjs"
+    - "node --test tests/changelog-migration.test.cjs"
   lint:
     - "npm run lint"
   build:
