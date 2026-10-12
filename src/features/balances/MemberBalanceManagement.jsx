@@ -78,7 +78,7 @@ export default function MemberBalanceManagement({
   const [balanceFilter, setBalanceFilter] = useState(IDENTITY_FILTERS.ALL);
   const [employeeIdFilter, setEmployeeIdFilter] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
-  const [month, setMonth] = useState(() => getTaipeiYearMonth(new Date()));
+  const [month, setMonth] = useState(() => { const { year, month } = getTaipeiYearMonth(); return `${year}-${String(month).padStart(2, '0')}`; });
   const [ledger, setLedger] = useState(null);
   const [ledgerError, setLedgerError] = useState('');
   const [ledgerLoading, setLedgerLoading] = useState(false);
