@@ -1,6 +1,6 @@
 import { getAdminSummary, getMemberBalances } from '../domain/adminSummary.js';
 import { getBalanceHistory } from '../domain/ledger.js';
-import { getUserById } from '../db/users.js';
+import { getUserById, currentBalanceProjection } from '../db/users.js';
 import { appendAuditEvent } from '../db/audit.js';
 import { notFound } from '../http/errors.js';
 import { adminBindEmployee } from '../domain/adminIdentity.js';
@@ -193,7 +193,8 @@ export const handleAdminRoute = async (request, env, {
       metadata: { month },
       occurredAt: now.toISOString()
     });
-    return jsonResponse({ ...history, userId, currentBalance: target.balance });
+    const balanceRow = await env.DB.prepare(`SELECT ${currentBalanceProjection('u')} AS balance FROM users u WHERE u.user_id = ?`).bind(userId).first();
+    return jsonResponse({ ...history, userId, currentBalance: Number(balanceRow?.balance ?? 0) });
   }
   if (isMembers) return jsonResponse(await getMemberBalances(env.DB, identity, now));
   return jsonResponse(await getAdminSummary(
