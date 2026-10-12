@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Fixed
+- Issue #32: Android LINE LIFF 首次登入返回事件在選擇登入方式或載入中時先保留待恢復訊號，避免被忙碌狀態直接丟棄；登入整體等待上限由 60 秒調整為 30 秒。Android LINE 實機驗收仍待完成，尚未正式發布。
+
 Repository convergence (2026-10-10): preserve dated MaiFood feasibility research and its superseding Not planned decision for Issue #36. Internal MANUAL implementation PR #38 and UI PR #39 are paused/closed without merge or deployment, retaining their branches and commits. Previously merged identity/LIFF/month-filter fixes are not reapplied; real LINE acceptance remains pending. This is repository documentation and maintenance, with no new runtime release or production data mutation.
 
 ### Fixed
