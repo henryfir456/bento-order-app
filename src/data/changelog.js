@@ -11,6 +11,15 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.17': [
+    {
+      name: '修正',
+      changes: [
+        '改善 Android LINE 首次登入返回時的狀態恢復，避免登入過程中返回事件遭忽略。',
+        '登入整體等待上限從 60 秒縮短為 30 秒，逾時可重新連線；Android 實機驗收仍待確認。'
+      ]
+    }
+  ],
   '0.15.16': [
     {
       name: '修正',
