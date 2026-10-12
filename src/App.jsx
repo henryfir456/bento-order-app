@@ -598,7 +598,7 @@ export default function App() {
     authAttemptRef.current = attempt;
     const ownsAttempt = () => authAttemptRef.current === attempt;
     const deadline = createDeadline({
-      timeoutMs: 60000,
+      timeoutMs: 30000,
       signal: attempt.controller.signal,
       error: Object.assign(new Error('登入連線逾時，請按重新連線。'), { code: 'AUTH_BOOT_TIMEOUT' })
     });
@@ -865,6 +865,9 @@ export default function App() {
         }
         authInitInFlightRef.current = false;
         authBootCompletedRef.current = true;
+        if (authResumeRef.current.pending) {
+          setTimeout(() => authResumeRef.current.flush?.(), 0);
+        }
       }
     }
     })();
@@ -1107,8 +1110,14 @@ export default function App() {
     ]);
     const resumeAfterLiffReturn = (event) => {
       const resume = authResumeRef.current;
-      if (document.visibilityState === 'hidden' || authSelectionBusyRef.current || lineBindLoading) return;
+      // Record foreground returns before checking busy/loading guards. Android
+      // LINE WebView may emit its only return event while an explicit login
+      // selection is still waiting for LIFF to settle.
+      if (event && document.visibilityState !== 'hidden') resume.pending = true;
+      if (document.visibilityState === 'hidden') return;
+      if (authSelectionBusyRef.current || lineBindLoading) return;
       if (authState === AUTH_STATES.REGISTERED) {
+        resume.pending = false;
         if (event) refreshRegisteredIdentity();
         return;
       }
@@ -1118,7 +1127,6 @@ export default function App() {
         resume.timer = null;
         return;
       }
-      if (event) resume.pending = true;
       if (!resume.pending || loading || authInitInFlightRef.current) return;
       const now = Date.now();
       if (now - resume.lastAt < 1000) {
@@ -1677,7 +1685,12 @@ export default function App() {
       if (selection !== authSelectionRef.current) return;
       failAuthentication('LIFF_LOGIN_REQUEST_FAILED', error);
     } finally {
-      if (selection === authSelectionRef.current) authSelectionBusyRef.current = false;
+      if (selection === authSelectionRef.current) {
+        authSelectionBusyRef.current = false;
+        // A return event may have arrived while the explicit login owned the UI.
+        // Recheck after React applies the completed boot, without another redirect.
+        if (authResumeRef.current.pending) setTimeout(() => authResumeRef.current.flush?.(), 0);
+      }
     }
   };
 
