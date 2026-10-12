@@ -65,7 +65,7 @@ test('actual App boot expires and manual retry ignores late bootstrap settlement
   const stale = deferred(); let calls = 0;
   const app = makeApp({ apiClient: { getBootstrap: () => ++calls === 1 ? stale.promise : Promise.resolve(response(identity('fresh'))) } });
   await app.settle();
-  t.mock.timers.tick(60000); await app.settle();
+  t.mock.timers.tick(30000); await app.settle();
   assert.equal(app.view.authState, 'AUTH_FAILED');
   assert.equal(app.view.loading, false);
   await app.view.initLiffAndFetchData({ force: true }); await app.settle();
@@ -89,6 +89,26 @@ test('OAuth/background return while loading is retained and recovers once', asyn
   assert.equal(calls, 2);
   await app.event('pageshow'); await app.event('focus');
   assert.equal(calls, 2);
+  app.destroy();
+});
+
+test('Android foreground return is retained while explicit LINE selection is busy', async () => {
+  const first = deferred();
+  let initCalls = 0;
+  const app = makeApp({ authClient: {
+    init: () => ++initCalls === 2 ? first.promise : Promise.resolve(),
+    isLoggedIn: () => true
+  } });
+  await app.settle();
+  const action = app.view.handleLineLogin();
+  await app.settle();
+  await app.event('pageshow');
+  await app.event('focus');
+  first.resolve();
+  await action;
+  await app.settle();
+  assert.equal(app.view.authState, 'REGISTERED');
+  assert.equal(app.view.authUser.userId, 'line-user');
   app.destroy();
 });
 
