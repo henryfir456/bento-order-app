@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { apiClient } from '../../api/apiClient';
+import { formatDateTime, getTaipeiYearMonth } from '../../dateUtils';
 import { formatBalanceAmount } from './formatters';
 import { formatEmployeeId } from '../../components/userIdentityDisplay';
 import IdentityStatusBadges from '../../components/IdentityStatusBadges';
@@ -75,6 +77,27 @@ export default function MemberBalanceManagement({
 }) {
   const [balanceFilter, setBalanceFilter] = useState(IDENTITY_FILTERS.ALL);
   const [employeeIdFilter, setEmployeeIdFilter] = useState('');
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [month, setMonth] = useState(() => getTaipeiYearMonth(new Date()));
+  const [ledger, setLedger] = useState(null);
+  const [ledgerError, setLedgerError] = useState('');
+  const [ledgerLoading, setLedgerLoading] = useState(false);
+  useEffect(() => {
+    if (!selectedUser?.userId || isViewAsMode) return undefined;
+    let active = true;
+    setLedger(null);
+    setLedgerError('');
+    setLedgerLoading(true);
+    apiClient.getAdminUserLedger({ userId: selectedUser.userId, month })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok || data?.success === false) throw new Error(data?.error || '讀取交易明細失敗');
+        if (active) setLedger(data);
+      })
+      .catch(() => { if (active) setLedgerError('無法取得交易紀錄，請確認管理權限或稍後重試。'); })
+      .finally(() => { if (active) setLedgerLoading(false); });
+    return () => { active = false; };
+  }, [selectedUser, month, isViewAsMode]);
   const adminMembers = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
   const filteredMembers = useMemo(() => {
     const identityFiltered = adminMembers.filter((member) => identityFilterMatches(member, balanceFilter));
@@ -118,6 +141,15 @@ export default function MemberBalanceManagement({
         </div>
       </div>
 
+      {selectedUser && !isViewAsMode && <section className="rounded-2xl border border-emerald-200 bg-white p-4 space-y-3" aria-label="使用者交易明細">
+        <div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{selectedUser.name || '使用者'}｜交易明細</h3><p className="text-xs text-gray-500">員編 {formatEmployeeId(selectedUser.employeeId)} · 目前名單餘額 {formatBalanceAmount(selectedUser.balance)}</p></div><button type="button" onClick={() => setSelectedUser(null)} aria-label="關閉交易明細">✕</button></div>
+        <label className="block text-sm">交易月份 <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="ml-2 rounded border p-1" /></label>
+        {ledgerLoading ? <p role="status">讀取交易明細中…</p> : ledgerError ? <p role="alert" className="text-red-700">{ledgerError}</p> : ledger && <>
+          <div className="grid grid-cols-2 gap-2 text-sm"><div>期初餘額：{formatBalanceAmount(ledger.openingBalance)}</div><div>當月期末：{formatBalanceAmount(ledger.closingBalance)}</div><div>當月入帳：+{formatBalanceAmount(ledger.totalCredit)}</div><div>當月扣款：-{formatBalanceAmount(ledger.totalDebit)}</div></div>
+          {ledger.reconciliation?.status && ledger.reconciliation.status !== 'CONSISTENT' && <p role="alert" className="text-amber-800">交易帳務存在需檢查的差異，請勿自行調整餘額。</p>}
+          {ledger.transactions?.length ? <div className="max-h-96 overflow-y-auto space-y-2">{ledger.transactions.map(tx => <div key={tx.transactionId} className="border-t py-2 text-sm"><div className="flex justify-between gap-2"><span>{tx.description || tx.type}</span><strong>{tx.amount > 0 ? '+' : ''}{formatBalanceAmount(tx.amount)}</strong></div><div className="flex flex-wrap justify-between text-xs text-gray-500 gap-2"><span>{formatDateTime(tx.occurredAt)}</span><span>交易後餘額 {formatBalanceAmount(tx.balanceAfter)}</span></div></div>)}</div> : <p className="text-sm text-gray-500">該月份沒有交易明細。</p>}
+        </>}
+      </section>}
       {memberBalancesLoading ? (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
           讀取成員餘額中...
@@ -144,6 +176,7 @@ export default function MemberBalanceManagement({
                   <th className="p-2 whitespace-nowrap">餘額</th>
                   <th className="p-2 whitespace-nowrap">角色</th>
                   {hasActions && <th className="p-2 whitespace-nowrap">操作</th>}
+                  {!isViewAsMode && <th className="p-2">交易</th>}
                 </tr>
               </thead>
               <tbody>
@@ -157,6 +190,7 @@ export default function MemberBalanceManagement({
                     <td className="p-2"><BalanceBadge balance={user.balance} /></td>
                     <td className="p-2 whitespace-nowrap">{user.role || 'User'}</td>
                     {hasActions && <td className="p-2"><MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} /></td>}
+                    {!isViewAsMode && <td className="p-2"><button type="button" className="text-emerald-800 underline" onClick={() => setSelectedUser(user)}>明細</button></td>}
                   </tr>
                 ))}
               </tbody>
@@ -170,6 +204,7 @@ export default function MemberBalanceManagement({
                   <MemberIdentity user={user} />
                   {hasActions && <MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} />}
                 </div>
+                {!isViewAsMode && <button type="button" className="text-sm font-bold text-emerald-800 underline" onClick={() => setSelectedUser(user)}>檢視交易明細</button>}
                 <div className="grid grid-cols-3 gap-2 text-xs text-gray-600">
                   <div><div className="text-[10px] text-gray-400">樓層</div><div className="truncate">{user.floor || '未設定'}</div></div>
                   <div><div className="text-[10px] text-gray-400">餘額</div><BalanceBadge balance={user.balance} /></div>
