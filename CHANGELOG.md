@@ -2,7 +2,12 @@
 
 ## [Unreleased]
 
-<!-- Issue #32: 30 秒登入上限與 Android LIFF 返回事件修補尚在 Draft PR #45 驗證；正式發布時同步記錄版本與繁中 UI 翻譯。 -->
+## [0.15.17] - 2026-10-12
+
+### Fixed
+
+- Retain Android LINE LIFF foreground-return signals during an ongoing login selection and drain them after authentication boot settles (Issue #32; Android device acceptance pending).
+- Reduce the overall authentication boot timeout from 60 seconds to 30 seconds; preserve bounded retry behavior and regression coverage.
 
 Repository convergence (2026-10-10): preserve dated MaiFood feasibility research and its superseding Not planned decision for Issue #36. Internal MANUAL implementation PR #38 and UI PR #39 are paused/closed without merge or deployment, retaining their branches and commits. Previously merged identity/LIFF/month-filter fixes are not reapplied; real LINE acceptance remains pending. This is repository documentation and maintenance, with no new runtime release or production data mutation.
 
