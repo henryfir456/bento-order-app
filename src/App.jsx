@@ -35,6 +35,7 @@ import AnnouncementModal from './components/AnnouncementModal';
 import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
+import ModernCalendar from './features/calendar/ModernCalendar';
 import VendorHub from './features/vendors/VendorHub';
 import {
   CANONICAL_VENDOR_FALLBACKS,
@@ -151,6 +152,10 @@ const getConfiguredVendor = (event) => {
 
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
+  const [calendarUi, setCalendarUi] = useState(() => {
+    try { return window.localStorage.getItem('bento-calendar-ui') === 'modern' ? 'modern' : 'classic'; }
+    catch { return 'classic'; }
+  });
   const [calendarEvents, setCalendarEvents] = useState({});
   const [vendors, setVendors] = useState([]);
   const [selectedVendor, setSelectedVendor] = useState(null);
@@ -3200,6 +3205,13 @@ export default function App() {
   const effectiveRole = effectiveUser?.role || 'User';
   const headerRoleLabel = ['Admin', 'ProxyAdmin'].includes(effectiveRole) ? effectiveRole : '';
   const isViewAsMode = Boolean(viewAsUser);
+  const canPreviewModernCalendar = isRegistered && authRole === 'Admin' && !isViewAsMode && !delegatedOrderUser;
+  const effectiveCalendarUi = canPreviewModernCalendar ? calendarUi : 'classic';
+  const selectCalendarUi = (nextUi) => {
+    const next = nextUi === 'modern' ? 'modern' : 'classic';
+    setCalendarUi(next);
+    try { window.localStorage.setItem('bento-calendar-ui', next); } catch { /* nonessential preference */ }
+  };
   const can = (permission) => isRegistered
     && hasPermission(effectiveRole, permission, authMode, isRegistered);
   const canAuth = (permission) => isRegistered
@@ -3585,7 +3597,22 @@ export default function App() {
           </div>
         )}
 
-        {isRegistered && viewMode === 'calendar' && !loading && (
+        {isRegistered && viewMode === 'calendar' && !loading && canPreviewModernCalendar && (
+          <div className="mb-3 rounded-xl border border-emerald-200 bg-white p-3" aria-label="月曆介面選擇">
+            <div className="mb-2 text-xs font-bold text-emerald-900">介面預覽 · 僅管理員可切換</div>
+            <div className="flex gap-2">
+              <button type="button" aria-pressed={effectiveCalendarUi === 'classic'} onClick={() => selectCalendarUi('classic')} className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-bold ${effectiveCalendarUi === 'classic' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>經典版</button>
+              <button type="button" aria-pressed={effectiveCalendarUi === 'modern'} onClick={() => selectCalendarUi('modern')} className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-bold ${effectiveCalendarUi === 'modern' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>新版預覽</button>
+            </div>
+          </div>
+        )}
+        {isRegistered && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (
+          <ModernCalendar currentMonth={currentMonth} events={calendarEvents} orders={userOrdersMap}
+            onSelectDate={handleSelectDate}
+            onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
+            onNextMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))} />
+        )}
+        {isRegistered && viewMode === 'calendar' && !loading && (effectiveCalendarUi === 'classic' || adminManageMode) && (
           <CalendarManagement
             currentMonth={currentMonth}
             onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}

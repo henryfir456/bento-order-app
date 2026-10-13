@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.19': [
+    { name: '新增', changes: [
+      '新增管理員專用的新版月曆預覽，日期狀態更簡潔，並可查看完整餐點資訊與下一個可訂餐日。',
+      '管理員可以切換經典版與新版介面；其他使用者仍使用經典版，訂餐及餘額資料不受影響。'
+    ] }
+  ],
   '0.15.18': [
     {
       name: '新增',

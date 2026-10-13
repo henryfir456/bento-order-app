@@ -7,6 +7,18 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.19] - 2026-10-13
+
+### Added
+
+- Add an Admin-only modern calendar preview with a compact weekday grid, full selected-day details, menu image, clearer order states, and a next-orderable-day shortcut.
+- Allow Admin to switch between classic and modern calendar experiences while retaining the classic calendar for all other users; persist only the presentation preference locally.
+
+### Verification boundary
+
+- Both views reuse the existing date-selection/order workflow and Worker/D1 identity, order and wallet contracts. Admin group-management mode uses the classic calendar.
+- Android LINE real-device acceptance, frontend deployment and automated CI evidence are separate delivery gates.
+
 ## [0.15.18] - 2026-10-13
 
 ### Added

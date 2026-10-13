@@ -1,0 +1,34 @@
+name: Dual calendar UI verification
+on:
+  pull_request:
+    paths:
+      - 'src/App.jsx'
+      - 'src/features/calendar/**'
+      - 'tests/dual-calendar-ui.test.cjs'
+      - 'src/data/changelog.js'
+      - 'CHANGELOG.md'
+      - 'package*.json'
+      - '.github/workflows/dual-calendar-ui.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/App.jsx'
+      - 'src/features/calendar/**'
+      - 'tests/dual-calendar-ui.test.cjs'
+      - 'src/data/changelog.js'
+      - 'CHANGELOG.md'
+      - 'package*.json'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/dual-calendar-ui.test.cjs
+      - run: node --test tests/changelog-migration.test.cjs
+      - run: npm run lint
+      - run: npm run build
