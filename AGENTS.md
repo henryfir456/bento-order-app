@@ -43,6 +43,12 @@
 - 有前端 UI 異動時，後端與前端交付狀態須各自確認；僅部署 Worker 不代表使用者在前端能看到新功能。
 - 對外最終交付回報須包含 main commit、Worker 版本／部署識別、部署後 smoke，以及前端部署狀態；未取得其中證據時不得宣稱完成。
 
+## Wrangler 正式後端部署（必要）
+- 凡已授權正式交付並合併至 `main` 的後端工作，必須以最新 `main` 的完整來源在 `worker-poc/` 執行 Wrangler 正式建置與部署，使用 `wrangler.jsonc`，部署目標為 `bento-api-poc`，D1 綁定必須維持 `bento-formal`。不得將 Cloudflare API 重新發布既有 Worker Version、建立 PR、合併或 CI 通過稱為「已部署最新後端」。
+- 正式指令：先以 `npm ci --prefix worker-poc` 安裝鎖定依賴，通過必要 Worker 測試後，在 `worker-poc/` 執行 `npx wrangler deploy --config wrangler.jsonc --keep-vars`；不得修改正式 D1 業務資料或洩漏部署憑證。使用已授權的執行環境或可執行 Wrangler 的 GitHub Actions，不得以工具不足時的舊版重發替代。
+- 部署成功必須核對 GitHub main Commit SHA、Cloudflare 新 Worker Version ID、Deployment ID、100% 流量，以及無副作用的 `/api/health`、授權與 CORS smoke 結果；前端 Netlify 狀態另外記錄。缺一項就標記 `WAITING_FOR_DELIVERY`，不得宣稱正式交付完成。
+- 若建置工具、GitHub Actions 觸發或 Secrets 不可用，記錄實際命令、Run ID／錯誤與阻塞點，循既有已授權路徑排除；不得反覆只回報同一問題，也不得要求使用者重複授權。
+
 ## 版本、異動紀錄與繁中翻譯關卡
 - 每項使用者可感知的功能新增、Bug 修正、行為／權限變更，在合併與正式交付前，必須評估是否需要建立正式版本；同一批發布可共用一個版本，不得為純文件、測試或內部整理虛增版本。
 - 建立正式版本時，必須於**同一 PR／同一交付範圍**同步更新 `package.json` 版本、`CHANGELOG.md` 的正式版本段落及 `src/data/changelog.js` 的對應**繁體中文** UI 文案。若存在鎖檔版本欄位，也須保持一致。
