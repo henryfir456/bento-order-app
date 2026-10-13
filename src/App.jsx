@@ -58,6 +58,7 @@ import { filterMembersByEmployeeId } from './features/admin/delegateOrderFilter.
 import AnnouncementManagement from './features/admin/AnnouncementManagement';
 import MenuItemChangesManagement from './features/admin/MenuItemChangesManagement';
 import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
+import AdminUserLedgerDetails from './features/balances/AdminUserLedgerDetails';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
 import { formatLedgerOrderDate } from './features/balances/ledgerFormatters';
 import { normalizeDeferredAnnouncements, normalizeDeferredLikes, mergeDeferredLikes } from './features/bootstrap/deferredBootstrap';
@@ -263,6 +264,7 @@ export default function App() {
   const orderTargetsRequestRef = useRef(0);
   const [showViewAsModal, setShowViewAsModal] = useState(false);
   const [viewAsModalMode, setViewAsModalMode] = useState(null);
+  const [viewAsLedgerUser, setViewAsLedgerUser] = useState(null);
   const [employeeIdFilter, setEmployeeIdFilter] = useState('');
   const [showFloorModal, setShowFloorModal] = useState(false);
   const [profileNameDraft, setProfileNameDraft] = useState('');
@@ -3926,6 +3928,7 @@ export default function App() {
                 onClick={() => {
                   setShowViewAsModal(false);
                   setViewAsModalMode(null);
+                  setViewAsLedgerUser(null);
                   setEmployeeIdFilter('');
                 }}
                 className="text-gray-400 hover:text-rose-500 text-lg font-bold bg-gray-50 hover:bg-rose-50 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
@@ -3950,7 +3953,9 @@ export default function App() {
               </label>
             )}
 
-            {(viewAsModalMode === 'view' ? memberBalancesLoading : orderTargetsLoading) ? (
+            {viewAsModalMode === 'view' && viewAsLedgerUser ? (
+              <AdminUserLedgerDetails user={viewAsLedgerUser} onBack={() => setViewAsLedgerUser(null)} />
+            ) : (viewAsModalMode === 'view' ? memberBalancesLoading : orderTargetsLoading) ? (
               <p className="text-center text-sm text-emerald-800 animate-pulse py-6">讀取成員列表中...</p>
             ) : (viewAsModalMode === 'view' ? memberBalancesError : orderTargetsError) ? (
               <div className="text-center text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">
@@ -3985,6 +3990,9 @@ export default function App() {
                         >
                           👁 檢視
                         </button>
+                      )}
+                      {viewAsModalMode === 'view' && can('viewMemberBalances') && apiClient.transport === 'worker' && user.userId && (
+                        <button type="button" onClick={() => setViewAsLedgerUser(user)} className="rounded-lg border border-emerald-700 px-2.5 py-1.5 text-xs font-bold text-emerald-800">💰 餘額與交易明細</button>
                       )}
                       {viewAsModalMode === 'delegate' && (
                         <button
