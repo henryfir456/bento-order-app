@@ -7,9 +7,6 @@ import IdentityStatusBadges from '../../components/IdentityStatusBadges';
 import { filterMembersByEmployeeId } from '../admin/delegateOrderFilter.js';
 import {
   getAdminMemberRows,
-  identityFilterMatches,
-  identityFilterOptions,
-  IDENTITY_FILTERS,
   isEligibleEmployeeBindingTarget
 } from './identityStatus';
 
@@ -75,7 +72,9 @@ export default function MemberBalanceManagement({
   onOpenTopupModal,
   onOpenEmployeeBindModal
 }) {
-  const [balanceFilter, setBalanceFilter] = useState(IDENTITY_FILTERS.ALL);
+  const [sort, setSort] = useState({ key: 'balance', direction: 'asc' });
+  const toggleSort = (key) => setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }));
+  const SortHeading = ({ field, children }) => <button type="button" className="flex items-center gap-1 whitespace-nowrap font-bold hover:text-emerald-700" onClick={() => toggleSort(field)} aria-label={`${children}排序`} aria-pressed={sort.key === field}>{children}<span aria-hidden="true">{sort.key === field ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}</span></button>;
   const [employeeIdFilter, setEmployeeIdFilter] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
   const [month, setMonth] = useState(() => { const { year, month } = getTaipeiYearMonth(); return `${year}-${String(month).padStart(2, '0')}`; });
@@ -100,9 +99,16 @@ export default function MemberBalanceManagement({
   }, [selectedUser, month, isViewAsMode]);
   const adminMembers = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
   const filteredMembers = useMemo(() => {
-    const identityFiltered = adminMembers.filter((member) => identityFilterMatches(member, balanceFilter));
-    return filterMembersByEmployeeId(identityFiltered, employeeIdFilter);
-  }, [adminMembers, balanceFilter, employeeIdFilter]);
+    const searched = filterMembersByEmployeeId(adminMembers, employeeIdFilter);
+    return [...searched].sort((a, b) => {
+      const numeric = sort.key === 'balance';
+      const difference = numeric
+        ? (Number(a.balance) || 0) - (Number(b.balance) || 0)
+        : String(a[sort.key] ?? '').localeCompare(String(b[sort.key] ?? ''), 'zh-TW', { numeric: true });
+      return (sort.direction === 'asc' ? difference : -difference)
+        || String(a.employeeId ?? '').localeCompare(String(b.employeeId ?? ''), 'zh-TW', { numeric: true });
+    });
+  }, [adminMembers, employeeIdFilter, sort]);
   const hasActions = !isViewAsMode && (canTopup || canBindEmployee);
 
   return (
@@ -124,21 +130,7 @@ export default function MemberBalanceManagement({
             className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
           />
         </label>
-        <div className="flex max-w-full flex-wrap gap-2" role="group" aria-label="餘額篩選">
-          {identityFilterOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setBalanceFilter(option.value)}
-              aria-pressed={balanceFilter === option.value}
-              className={`rounded-full border px-3 py-1.5 text-xs font-bold whitespace-nowrap transition ${balanceFilter === option.value
-                ? 'border-emerald-700 bg-emerald-700 text-white'
-                : 'border-gray-200 bg-gray-50 text-gray-600 hover:border-emerald-300 hover:bg-emerald-50'}`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        <p className="text-xs text-gray-500">預設依餘額由小到大排序，點選表格標題可切換排序。</p>
       </div>
 
       {selectedUser && !isViewAsMode && <section className="rounded-2xl border border-emerald-200 bg-white p-4 space-y-3" aria-label="使用者交易明細">
@@ -160,7 +152,7 @@ export default function MemberBalanceManagement({
         </div>
       ) : filteredMembers.length === 0 ? (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-gray-400">
-          {adminMembers.length === 0 ? '目前沒有成員餘額資料' : '目前篩選或員編搜尋沒有符合的成員'}
+          {adminMembers.length === 0 ? '目前沒有成員餘額資料' : '目前員編搜尋沒有符合的成員'}
         </div>
       ) : (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10">
@@ -168,12 +160,12 @@ export default function MemberBalanceManagement({
             <table className="w-full text-left text-xs">
               <thead className="bg-gray-100 text-gray-600">
                 <tr>
-                  <th className="p-2">姓名</th>
+                  <th className="p-2"><SortHeading field="name">姓名</SortHeading></th>
                   <th className="p-2 whitespace-nowrap">LINE 綁定</th>
-                  <th className="p-2 whitespace-nowrap">員編</th>
-                  <th className="p-2 whitespace-nowrap">樓層</th>
-                  <th className="p-2 whitespace-nowrap">餘額</th>
-                  <th className="p-2 whitespace-nowrap">角色</th>
+                  <th className="p-2 whitespace-nowrap"><SortHeading field="employeeId">員編</SortHeading></th>
+                  <th className="p-2 whitespace-nowrap"><SortHeading field="floor">樓層</SortHeading></th>
+                  <th className="p-2 whitespace-nowrap" aria-sort={sort.key === "balance" ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}><SortHeading field="balance">餘額</SortHeading></th>
+                  <th className="p-2 whitespace-nowrap"><SortHeading field="role">角色</SortHeading></th>
                   {hasActions && <th className="p-2 whitespace-nowrap">操作</th>}
                   {!isViewAsMode && <th className="p-2">交易</th>}
                 </tr>
