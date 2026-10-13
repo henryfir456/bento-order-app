@@ -462,6 +462,12 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'GET',
     '/api/admin/members/balances'
   ),
+  getAdminUserLedger: ({ userId, month } = {}) => workerRequest(
+    'getAdminUserLedger',
+    'GET',
+    `/api/admin/users/${encodeURIComponent(String(userId || '').trim())}/ledger`,
+    { query: { month }, credentialMode: 'line' }
+  ),
   adminBindEmployee: ({ userId, employeeId } = {}) => workerRequest(
     'adminBindEmployee',
     'POST',

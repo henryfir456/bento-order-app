@@ -1,0 +1,30 @@
+name: Issue 46 required verification
+on:
+  push:
+    branches:
+      - feature/issue-46-admin-user-ledger
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'worker-poc/**'
+      - 'tests/**'
+      - 'package*.json'
+      - 'agent.yaml'
+      - '.github/workflows/issue-46-verification.yml'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: node --test tests/strict-identity-ledger.test.cjs
+      - run: node --test tests/changelog-migration.test.cjs
+      - run: npm run lint
+      - run: npm run build
+      - run: npm ci --prefix worker-poc
+      - run: npm test --prefix worker-poc

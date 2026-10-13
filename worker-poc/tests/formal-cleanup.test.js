@@ -27,6 +27,12 @@ const insert = (database, sql, ...params) => database.run(sql, ...params);
 const seedCleanupFixture = () => {
   const database = new SqliteD1();
 
+  // This fixture models the reviewed 2026-09 cleanup snapshot. A later
+  // migration added an unused AUTOINCREMENT sequence for menu changes;
+  // it did not exist in that historical snapshot. Keep production baseline
+  // guards strict and normalize only this local historical test fixture.
+  database.exec("DELETE FROM sqlite_sequence WHERE name = 'menu_item_change_sequence'");
+
   // Wrangler creates this internal history table on a D1 database.  The
   // local test helper applies application migrations only, so model it here.
   database.exec(`

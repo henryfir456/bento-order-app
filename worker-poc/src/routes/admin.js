@@ -1,4 +1,8 @@
 import { getAdminSummary, getMemberBalances } from '../domain/adminSummary.js';
+import { getBalanceHistory } from '../domain/ledger.js';
+import { getUserById, currentBalanceProjection } from '../db/users.js';
+import { appendAuditEvent } from '../db/audit.js';
+import { notFound } from '../http/errors.js';
 import { adminBindEmployee } from '../domain/adminIdentity.js';
 import {
   createAnnouncement,
@@ -55,6 +59,8 @@ export const handleAdminRoute = async (request, env, {
   const url = new URL(request.url);
   const isSummary = request.method === 'GET' && url.pathname === '/api/admin/summary';
   const isMembers = request.method === 'GET' && url.pathname === '/api/admin/members/balances';
+  const ledgerMatch = request.method === 'GET' && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/ledger$/);
+  const isUserLedger = Boolean(ledgerMatch);
   const bindingMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/employee-binding$/);
   const isEmployeeBinding = request.method === 'POST' && Boolean(bindingMatch);
   const isAnnouncementList = request.method === 'GET'
@@ -83,13 +89,13 @@ export const handleAdminRoute = async (request, env, {
   const isDailyFlavorSync = request.method === 'POST'
     && url.pathname === '/api/admin/daily-flavors/sync';
   const isDailyFlavorRoute = isDailyFlavorStatus || isDailyFlavorSync;
-  if (!isSummary && !isMembers && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
+  if (!isSummary && !isMembers && !isUserLedger && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
     && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId
     && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview && !isMenuVendorList
     && !isDailyFlavorRoute) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isDailyFlavorRoute,
+    allowViewAs: !isUserLedger && !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isDailyFlavorRoute,
     now
   });
   if (isDailyFlavorRoute) {
@@ -165,6 +171,30 @@ export const handleAdminRoute = async (request, env, {
   }
   if (isMenuVendorList) {
     return jsonResponse(await listAdminMenuVendors(env.DB, identity));
+  }
+  if (isUserLedger) {
+    assertCan(identity, ACTIONS.READ_MEMBER_BALANCES);
+    // Only the authenticated canonical Admin may read another user's ledger.
+    if (identity.authorizationActor?.role !== 'Admin' || identity.viewAs) {
+      throw notFound('USER_LEDGER_NOT_FOUND');
+    }
+    let userId;
+    try { userId = decodeURIComponent(ledgerMatch[1]).trim(); }
+    catch { throw badRequest('USER_ID_INVALID'); }
+    if (!userId) throw badRequest('USER_ID_REQUIRED');
+    const target = await getUserById(env.DB, userId);
+    if (!target) throw notFound('USER_NOT_FOUND');
+    const month = url.searchParams.get('month') || '';
+    const history = await getBalanceHistory(env.DB, userId, month);
+    await appendAuditEvent(env.DB, {
+      actorUserId: identity.authorizationActor.userId,
+      targetUserId: userId,
+      action: 'ADMIN_USER_LEDGER_READ',
+      metadata: { month },
+      occurredAt: now.toISOString()
+    });
+    const balanceRow = await env.DB.prepare(`SELECT ${currentBalanceProjection('u')} AS balance FROM users u WHERE u.user_id = ?`).bind(userId).first();
+    return jsonResponse({ ...history, userId, currentBalance: Number(balanceRow?.balance ?? 0) });
   }
   if (isMembers) return jsonResponse(await getMemberBalances(env.DB, identity, now));
   return jsonResponse(await getAdminSummary(
