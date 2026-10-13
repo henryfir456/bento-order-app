@@ -70,7 +70,11 @@ export default function MemberBalanceManagement({
   canBindEmployee,
   isViewAsMode,
   onOpenTopupModal,
-  onOpenEmployeeBindModal
+  onOpenEmployeeBindModal,
+  canViewAsUser = false,
+  canDelegateOrder = false,
+  onViewAsUser,
+  onDelegateOrderUser
 }) {
   const [sort, setSort] = useState({ key: 'balance', direction: 'asc' });
   const toggleSort = (key) => setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }));
@@ -109,14 +113,18 @@ export default function MemberBalanceManagement({
         || String(a.employeeId ?? '').localeCompare(String(b.employeeId ?? ''), 'zh-TW', { numeric: true });
     });
   }, [adminMembers, employeeIdFilter, sort]);
-  const hasActions = !isViewAsMode && (canTopup || canBindEmployee);
+  const hasActions = !isViewAsMode && (canTopup || canBindEmployee || canViewAsUser || canDelegateOrder);
+  const UserNavigationActions = ({ user }) => isViewAsMode ? null : <div className="flex flex-wrap gap-1">
+    {canViewAsUser && <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">👁 檢視身分</button>}
+    {canDelegateOrder && <button type="button" onClick={() => onDelegateOrderUser(user)} className="rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-bold text-white">🍱 代點餐</button>}
+  </div>;
 
   return (
     <div className="space-y-4">
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
         <div>
-          <h3 className="font-bold text-base text-[#2C4A3E]">💰 餘額與身份管理</h3>
-          <p className="text-xs text-gray-500">LINE 綁定狀態以會員資料為準；綁定狀態不代表目前登入方式，餘額為目前帳戶總額。</p>
+          <h3 className="font-bold text-base text-[#2C4A3E]">👥 使用者管理中心</h3>
+          <p className="text-xs text-gray-500">統一搜尋使用者、查詢餘額與交易紀錄，並依管理權限檢視身分、代點餐或儲值；所有操作沿用既有授權規則。</p>
         </div>
         <label className="block max-w-sm">
           <span className="sr-only">搜尋員編</span>
@@ -179,7 +187,7 @@ export default function MemberBalanceManagement({
                     <td className="p-2 whitespace-nowrap">{user.floor || '未設定'}</td>
                     <td className="p-2"><BalanceBadge balance={user.balance} /></td>
                     <td className="p-2 whitespace-nowrap">{user.role || 'User'}</td>
-                    {hasActions && <td className="p-2"><MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} /></td>}
+                    {hasActions && <td className="p-2 space-y-1"><UserNavigationActions user={user} /><MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} /></td>}
                     {!isViewAsMode && <td className="p-2"><button type="button" className="text-emerald-800 underline" onClick={() => setSelectedUser(user)}>明細</button></td>}
                   </tr>
                 ))}
@@ -192,7 +200,7 @@ export default function MemberBalanceManagement({
               <article key={memberKey(user, idx)} className="rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2">
                 <div className="flex min-w-0 items-start justify-between gap-3">
                   <MemberIdentity user={user} />
-                  {hasActions && <MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} />}
+                  {hasActions && <div className="flex flex-col gap-1"><UserNavigationActions user={user} /><MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} /></div>}
                 </div>
                 {!isViewAsMode && <button type="button" className="text-sm font-bold text-emerald-800 underline" onClick={() => setSelectedUser(user)}>檢視交易明細</button>}
                 <div className="grid grid-cols-3 gap-2 text-xs text-gray-600">

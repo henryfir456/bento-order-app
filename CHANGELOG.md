@@ -7,6 +7,25 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.18] - 2026-10-13
+
+### Added
+
+- Add read-only Admin user balance and monthly transaction history, guarded by canonical Admin authorization and audit logging (Issue #46, PR #47).
+- Allow Admin to open a user's monthly ledger directly from the existing View As user picker, without switching identity (PR #50).
+- Add employee-number filtering to the View As user picker; reuse the same search behavior as delegated ordering (PR #51).
+- Introduce a unified user management center that shares the member search/list and surfaces existing View As, delegated ordering, top-up, LINE binding, and ledger actions according to their original permissions (first-stage coexistence, without removing legacy entrances).
+
+### Changed
+
+- Hide repetitive identity-state labels in balance management, View As, and delegated-order user listings, retaining LINE binding badges, underlying identity state and authorization (PR #51).
+- Replace the All/Negative balance chips with sortable user-management columns, defaulting to ascending balance, with the same order on mobile (PR #52).
+
+### Verification boundary
+
+- These entries retrospectively document merged Admin UI/API changes from PR #47, #50, #51 and #52 as well as the new first-stage management center.
+- New unified entry points continue to invoke existing privilege-checked handlers. Existing separate entry points remain during acceptance; this release does not claim completed production Netlify deployment or manual acceptance.
+
 ## [0.15.17] - 2026-10-12
 
 ### Fixed

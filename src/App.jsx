@@ -3676,6 +3676,10 @@ export default function App() {
                 memberBalancesError={memberBalancesError}
                 canTopup={can('topupMember')}
                 canBindEmployee={apiClient.transport === 'worker' && canAuth('bindEmployee')}
+                canViewAsUser={canAuth('viewAsUser') && !isViewAsMode}
+                canDelegateOrder={apiClient.transport === 'worker' && canAuth('delegateOrder') && !isViewAsMode}
+                onViewAsUser={handleSelectViewAs}
+                onDelegateOrderUser={handleSelectDelegatedOrder}
                 isViewAsMode={isViewAsMode}
                 onOpenTopupModal={handleOpenTopupModal}
                 onOpenEmployeeBindModal={handleOpenEmployeeBindModal}

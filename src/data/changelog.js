@@ -11,6 +11,24 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.18': [
+    {
+      name: '新增',
+      changes: [
+        '管理者可以唯讀查詢指定使用者的餘額、每月交易紀錄與交易後餘額，並記錄管理查詢稽核。',
+        '「檢視身分」的選人視窗新增員編篩選與餘額交易明細查詢，不需要切換成使用者身分。',
+        '新增「使用者管理中心」第一階段：在同一份清單提供檢視身分、代點餐、儲值及交易明細入口，保留原本權限限制。'
+      ]
+    },
+    {
+      name: '變更',
+      changes: [
+        '餘額管理取消「全部／負餘額」切換，改為點選欄位標題排序，預設餘額由小到大；手機版順序一致。',
+        '餘額管理、檢視身分及代點餐名單不再顯示重複的身份狀態標籤，LINE 綁定資訊仍保留。',
+        '舊的操作入口暫時保留，待新介面正式部署及驗收後再移除。'
+      ]
+    }
+  ],
   '0.15.17': [
     {
       name: '修正',
