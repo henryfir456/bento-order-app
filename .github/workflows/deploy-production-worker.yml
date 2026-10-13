@@ -1,0 +1,41 @@
+name: Deploy production Worker from main
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'worker-poc/**'
+      - '.github/workflows/deploy-production-worker.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: bento-production-worker
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: worker-poc/package-lock.json
+      - name: Check Cloudflare deployment credentials
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CF_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN repository secret"; exit 1; }
+          test -n "$CF_ACCOUNT" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID repository secret"; exit 1; }
+      - run: npm ci --prefix worker-poc
+      - run: npm test --prefix worker-poc
+      - name: Deploy from checked-out main source (preserving remote vars)
+        working-directory: worker-poc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.jsonc --keep-vars
+      - name: Record deployed source
+        run: echo "Deployed GitHub main commit $GITHUB_SHA"
