@@ -450,6 +450,11 @@ export default function App() {
   };
 
   const failAuthentication = (stage, error) => {
+    // A failed LIFF attempt must not be resurrected by queued foreground events.
+    const resume = authResumeRef.current;
+    resume.pending = false;
+    clearTimeout(resume.timer);
+    resume.timer = null;
     const safeMessage = redactAuthSecrets(error instanceof Error ? error.message : error);
     setAuthState(AUTH_STATES.AUTH_FAILED);
     setAuthStage(stage);
@@ -1105,8 +1110,7 @@ export default function App() {
     };
     const resumableStates = new Set([
       AUTH_STATES.AUTH_LOADING,
-      AUTH_STATES.AUTH_REQUIRED,
-      AUTH_STATES.AUTH_FAILED
+      AUTH_STATES.AUTH_REQUIRED
     ]);
     const resumeAfterLiffReturn = (event) => {
       const resume = authResumeRef.current;
@@ -1128,6 +1132,11 @@ export default function App() {
         return;
       }
       if (!resume.pending || loading || authInitInFlightRef.current) return;
+      // Do not auto-restart a settled boot. New authentication is user initiated.
+      if (authBootCompletedRef.current && authState !== AUTH_STATES.AUTH_REQUIRED) {
+        resume.pending = false;
+        return;
+      }
       const now = Date.now();
       if (now - resume.lastAt < 1000) {
         if (resume.timer === null) {
