@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
+- Align personal balance history filtering and monthly summaries with the Taipei time zone.
+
 ## [0.15.19] - 2026-10-13
 
 ### Added
@@ -13,12 +18,6 @@
 
 - Both views reuse the existing date-selection/order workflow and Worker/D1 identity, order and wallet contracts. Admin group-management mode uses the classic calendar.
 - Android LINE real-device acceptance, frontend deployment and automated CI evidence are separate delivery gates.
-
-
-### Fixed
-
-- Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
-- Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
 ## [0.15.18] - 2026-10-13
 
