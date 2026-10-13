@@ -1,0 +1,31 @@
+name: Preserve iThome 2026 final baseline
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/ithome-final-tag.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  tag-immutable-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Preserve pre-redesign contest version
+        env:
+          TAG: ithome-2026-final
+          BASELINE_SHA: b3e1a254457478cc1e4b46f7d68105d9eb7b7632
+        run: |
+          git cat-file -e "$BASELINE_SHA^{commit}" || { echo "::error::Missing baseline commit"; exit 1; }
+          remote_sha="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          if [ -n "$remote_sha" ]; then
+            echo "Tag $TAG already exists; refusing to overwrite."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" "$BASELINE_SHA" -m "iThome 2026 Bento series final snapshot before admin UX redesign"
+          git push origin "refs/tags/$TAG"
