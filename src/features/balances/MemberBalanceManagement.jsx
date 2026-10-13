@@ -60,7 +60,7 @@ const MemberIdentity = ({ user }) => (
     <div className="truncate font-medium">{user.name || '未命名使用者'}</div>
     <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-gray-500">
       <span className="whitespace-nowrap">員編 {formatEmployeeId(user.employeeId)}</span>
-      <IdentityStatusBadges fields={['lineBinding', 'identityState']} lineBound={user.lineBound} lineUserId={user.lineUserId} identityState={user.identityState} />
+      <IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} />
     </div>
   </div>
 );
@@ -110,7 +110,7 @@ export default function MemberBalanceManagement({
       <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
         <div>
           <h3 className="font-bold text-base text-[#2C4A3E]">💰 餘額與身份管理</h3>
-          <p className="text-xs text-gray-500">LINE 綁定與註冊狀態以會員資料為準；綁定狀態不代表目前登入方式，餘額為目前帳戶總額。</p>
+          <p className="text-xs text-gray-500">LINE 綁定狀態以會員資料為準；綁定狀態不代表目前登入方式，餘額為目前帳戶總額。</p>
         </div>
         <label className="block max-w-sm">
           <span className="sr-only">搜尋員編</span>
@@ -170,7 +170,6 @@ export default function MemberBalanceManagement({
                 <tr>
                   <th className="p-2">姓名</th>
                   <th className="p-2 whitespace-nowrap">LINE 綁定</th>
-                  <th className="p-2 whitespace-nowrap">身份狀態</th>
                   <th className="p-2 whitespace-nowrap">員編</th>
                   <th className="p-2 whitespace-nowrap">樓層</th>
                   <th className="p-2 whitespace-nowrap">餘額</th>
@@ -184,7 +183,6 @@ export default function MemberBalanceManagement({
                   <tr key={memberKey(user, idx)} className="border-b last:border-0">
                     <td className="p-2 font-medium">{user.name || '未命名使用者'}</td>
                     <td className="p-2"><IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} /></td>
-                    <td className="p-2"><IdentityStatusBadges fields={['identityState']} authSource={user.authSource} identityState={user.identityState} /></td>
                     <td className="p-2 whitespace-nowrap">{formatEmployeeId(user.employeeId)}</td>
                     <td className="p-2 whitespace-nowrap">{user.floor || '未設定'}</td>
                     <td className="p-2"><BalanceBadge balance={user.balance} /></td>

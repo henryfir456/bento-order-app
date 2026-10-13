@@ -3229,9 +3229,7 @@ export default function App() {
   }, [vendors, adminMenuVendors, calendarEvents]);
   const selectionRows = viewAsModalMode === 'delegate' ? orderTargetRows : adminMemberRows;
   const visibleSelectionRows = useMemo(
-    () => viewAsModalMode === 'delegate'
-      ? filterMembersByEmployeeId(selectionRows, employeeIdFilter)
-      : selectionRows,
+    () => filterMembersByEmployeeId(selectionRows, employeeIdFilter),
     [employeeIdFilter, selectionRows, viewAsModalMode]
   );
   const orderNavigationDates = useMemo(() => {
@@ -3937,7 +3935,7 @@ export default function App() {
               </button>
             </div>
 
-            {viewAsModalMode === 'delegate' && (
+            {!viewAsLedgerUser && (
               <label className="block space-y-1" htmlFor="delegate-employee-id-filter">
                 <span className="block text-xs font-bold text-gray-600">員編篩選</span>
                 <input
@@ -3963,7 +3961,7 @@ export default function App() {
               </div>
             ) : visibleSelectionRows.length === 0 ? (
               <p className="text-center text-sm text-gray-400 py-6">
-                {viewAsModalMode === 'delegate' && employeeIdFilter.trim()
+                {employeeIdFilter.trim()
                   ? '找不到符合此員編的成員'
                   : '目前沒有可檢視的成員資料'}
               </p>
@@ -3979,7 +3977,6 @@ export default function App() {
                       <span className="whitespace-nowrap">員編 {formatEmployeeId(user.employeeId)}</span>
                       <span className="whitespace-nowrap">· {user.floor || '未設定'}</span>
                       <span className="whitespace-nowrap">· {user.role || 'User'}</span>
-                      <IdentityStatusBadges authSource={user.authSource} identityState={user.identityState} />
                     </span>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {viewAsModalMode === 'view' && (
