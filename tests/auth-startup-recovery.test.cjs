@@ -74,21 +74,20 @@ test('actual App boot expires and manual retry ignores late bootstrap settlement
   app.destroy();
 });
 
-test('OAuth/background return while loading is retained and recovers once', async () => {
-  const pending = deferred(); let loggedIn = false, calls = 0;
-  const app = makeApp({ authClient: {
-    init: () => { calls++; return calls === 1 ? pending.promise : Promise.resolve(); },
-    isLoggedIn: () => loggedIn
-  } });
+test('Android foreground signals during failed LIFF init never start another SDK dialog automatically', async () => {
+  const pending = deferred(); let calls = 0;
+  const app = makeApp({ authClient: { init: () => ++calls === 1 ? pending.promise : Promise.resolve() } });
   await app.settle();
   await app.event('visibilitychange', { hidden: true });
   await app.event('pageshow'); await app.event('focus');
-  pending.reject(new Error('first init failed')); loggedIn = true;
+  pending.reject(new Error('first LIFF init failed'));
   await app.settle();
+  assert.equal(app.view.authState, 'AUTH_FAILED');
+  await app.event('focus'); await app.event('pageshow'); await app.event('online');
+  assert.equal(calls, 1);
+  await app.view.initLiffAndFetchData({ force: true }); await app.settle();
+  assert.equal(calls, 2);
   assert.equal(app.view.authState, 'REGISTERED');
-  assert.equal(calls, 2);
-  await app.event('pageshow'); await app.event('focus');
-  assert.equal(calls, 2);
   app.destroy();
 });
 
@@ -112,7 +111,7 @@ test('Android foreground return is retained while explicit LINE selection is bus
   app.destroy();
 });
 
-test('online recovery retries init even before isLoggedIn is readable', async () => {
+test('online event does not retry a failed LIFF initialization until manual retry', async () => {
   let calls = 0;
   const app = makeApp({ authClient: {
     init: async () => { if (++calls === 1) throw new Error('offline'); },
@@ -120,6 +119,8 @@ test('online recovery retries init even before isLoggedIn is readable', async ()
   } });
   await app.settle(); assert.equal(app.view.authState, 'AUTH_FAILED');
   await app.event('online');
+  assert.equal(calls, 1);
+  await app.view.initLiffAndFetchData({ force: true }); await app.settle();
   assert.equal(app.view.authState, 'REGISTERED'); assert.equal(calls, 2);
   app.destroy();
 });
@@ -240,12 +241,13 @@ test('ambiguous bind timeout never replays POST on retry or return events', asyn
   assert.equal(posts, 1); assert.equal(app.view.authMode, 'employee_guest'); app.destroy();
 });
 
-test('visibility alone recovers failed boot; hidden and rapid repeated events do not spin', async () => {
+test('visibility and focus never auto-retry a failed LIFF boot', async () => {
   let calls = 0;
-  const app = makeApp({ authClient: { init: async () => { if (++calls < 2) throw new Error('offline'); } } });
+  const app = makeApp({ authClient: { init: async () => { if (++calls === 1) throw new Error('offline'); } } });
   await app.settle(); await app.event('visibilitychange', { hidden: true });
-  assert.equal(calls, 1);
   await app.event('visibilitychange'); await app.event('focus'); await app.event('pageshow');
+  assert.equal(calls, 1); assert.equal(app.view.authState, 'AUTH_FAILED');
+  await app.view.initLiffAndFetchData({ force: true }); await app.settle();
   assert.equal(calls, 2); assert.equal(app.view.authState, 'REGISTERED'); app.destroy();
 });
 
@@ -295,15 +297,14 @@ test('guest invalidation during login readback releases the employee entry lock'
   assert.equal(app.view.authState, 'REGISTERED'); app.destroy();
 });
 
-test('throttled online event is drained after a quick failed resume', async (t) => {
+test('failure clears pending throttled resume rather than retrying on its timer', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 20000 });
   let calls = 0;
-  const app = makeApp({ authClient: { init: async () => { if (++calls < 3) throw new Error('offline'); } } });
-  await app.settle(); await app.event('focus');
-  assert.equal(calls, 2); assert.equal(app.view.authState, 'AUTH_FAILED');
-  await app.event('online'); assert.equal(calls, 2);
+  const app = makeApp({ authClient: { init: async () => { if (++calls === 1) throw new Error('offline'); } } });
+  await app.settle(); await app.event('focus'); await app.event('online');
   t.mock.timers.tick(1000); await app.settle();
-  assert.equal(calls, 3); assert.equal(app.view.authState, 'REGISTERED'); app.destroy();
+  assert.equal(calls, 1); assert.equal(app.view.authState, 'AUTH_FAILED');
+  app.destroy();
 });
 
 test('late employee binding cannot restore an old guest after session invalidation and LINE entry', async () => {
