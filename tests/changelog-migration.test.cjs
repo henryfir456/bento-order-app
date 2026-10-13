@@ -285,11 +285,15 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const unreleased = parsed.filter((release) => release.version === null);
   assert.equal(unreleased.length, 1);
   assert.equal(parsed[0].version, null);
+  const expectedUnreleasedChanges = [
+    'Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).',
+    'Align personal balance history filtering and monthly summaries with the Taipei time zone.'
+  ];
   assert.deepEqual(unreleased[0].categories, [{
     name: 'Fixed',
-    changes: ['Align personal balance history filtering and monthly summaries with the Taipei time zone.']
+    changes: expectedUnreleasedChanges
   }]);
-  assert.deepEqual(unreleased[0].changes, ['Align personal balance history filtering and monthly summaries with the Taipei time zone.']);
+  assert.deepEqual(unreleased[0].changes, expectedUnreleasedChanges);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
   const preservedVersions = ['0.15.8', '0.15.7', '0.15.6', '0.15.5', '0.15.4'];
