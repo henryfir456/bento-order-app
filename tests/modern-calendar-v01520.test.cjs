@@ -21,5 +21,5 @@ test('modern calendar shows Cai flavor only and HeShi vendor label without menu 
   assert.doesNotMatch(modern, /loadDailyMenu|calendarMenuNames|menuDetails|items\.map/);
   assert.match(modern, /getCalendarDailyFlavorImage/);
   assert.match(modern, /entry\.event\.vendor === '蔡老師'/);
-  assert.match(modern, /entry\.event\.vendor\) : '未開團'/);
+  assert.match(modern, /entry\.event\?\.dailyFlavorName \|\| '未開團'/);
 });
