@@ -316,10 +316,13 @@ and verify required migrations in order. For production-backend changes, the
 formal Worker deployment from the resulting `main` revision is the default
 delivery gate; a separate deploy request is not needed.
 
-**Production deployment is direct Wrangler CLI only. Do not deploy through GitHub
-Actions** (including automatic workflows or manual workflow dispatch). Work from
-the latest checked-out and reviewed `main`, not from an older branch or Worker
-version. From the repository root in Windows PowerShell:
+**Production deployment must never use GitHub Actions.** Two direct methods
+are allowed: (1) an already-authorized Wrangler CLI environment, or (2) the
+connected Cloudflare API uploading a **new complete compiled Worker bundle from
+the latest merged `main`**. Reusing an existing deployed version or uploading
+a partial/fabricated replacement is not an acceptable delivery.
+
+Method 1, from the repository root in Windows PowerShell:
 
 ```powershell
 npm.cmd ci --prefix worker-poc
@@ -333,13 +336,18 @@ try {
 }
 ```
 
-Apply an explicitly reviewed D1 migration **only if the task actually requires
-a migration**, prior to deployment using the existing guarded migration script.
-Never run the remote migration by default for a frontend-only or unchanged-schema
-release. The Worker target is `bento-api-poc` and formal D1 is `bento-formal`.
-After deployment, verify that Cloudflare returned a **new** Worker Version ID,
-Deployment ID and 100% traffic, matching the source `main` SHA; do not redeploy
-an existing version to cover missing build/CLI access.
+Method 2, connected Cloudflare API: only upload a **new** Worker bundle after
+independently verifying that it was built from all modules and dependencies of
+the latest `main`, required tests passed, and the existing `bento-api-poc`
+D1 `bento-formal`, secrets, scheduled triggers and runtime settings will be
+preserved. Record the upload and new deployment as `source=api`, not Wrangler.
+Never reissue an older Worker version as a substitute for a proper build.
+
+Apply an explicitly reviewed D1 migration **only if the task requires one**;
+never automatically migrate the formal database for an unchanged schema.
+Both methods require a fresh Worker Version ID, Deployment ID, 100% traffic,
+`/api/health`, authorization and CORS/contract checks. See `AGENTS.md`
+for the fail-closed verification gates and deployment status.
 
 The package guard refuses remote writes when `wrangler.jsonc` contains an
 invalid database ID. After deployment, run `npm.cmd run smoke:cors` against the

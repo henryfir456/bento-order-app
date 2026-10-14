@@ -17,7 +17,7 @@
 - `agent.yaml` 所列命令不代表已獲執行授權。
 - 任務的實作流程需要時，可以提交及推送。
 - 便當系統正式後端工作預設必須合併至 `main` 並部署正式 Cloudflare Worker，除非使用者明確要求不合併或不部署。
-- **正式後端部署禁止 GitHub Actions**：不可透過 `push`、`workflow_dispatch`、re-run、排程或任何 GitHub Actions job 執行 Cloudflare Worker 上傳、部署或版本切換。GitHub Actions 如存在，僅可用於非部署性的 CI 測試與檢查。
+- **正式後端部署禁止 GitHub Actions**：可由已授權 Cloudflare API 新 bundle 上傳或直接 Wrangler CLI 部署；不可透過 `push`、`workflow_dispatch`、re-run、排程或任何 GitHub Actions job 執行 Cloudflare Worker 上傳、部署或版本切換。GitHub Actions 如存在，僅可用於非部署性的 CI 測試與檢查。
 - 自動驗證與人工驗證必須分別記錄為 PASS、FAIL、NOT RUN 或 NOT VERIFIED。
 
 ## 交付關卡
@@ -44,12 +44,13 @@
 - 有前端 UI 異動時，後端與前端交付狀態須各自確認；僅部署 Worker 不代表使用者在前端能看到新功能。
 - 對外最終交付回報須包含 main commit、Worker 版本／部署識別、部署後 smoke，以及前端部署狀態；未取得其中證據時不得宣稱完成。
 
-## 直接 Wrangler 正式後端部署（必要；禁止 GitHub Actions）
-- **唯一預設正式發布路徑是直接執行 Wrangler，禁止 GitHub Actions 部署。** 已授權正式交付並合併至 `main` 的後端工作，必須以最新 `main` 的完整來源在 `worker-poc/` 執行 Wrangler 正式建置與部署，使用 `wrangler.jsonc`，部署目標為 `bento-api-poc`，D1 綁定必須維持 `bento-formal`。可使用已授權的本機 shell、雲端開發容器或其他可互動執行 Wrangler 的環境，但**不得**將 GitHub Actions 當作建置或正式部署的執行環境。不得將 Cloudflare API 重新發布既有 Worker Version、建立 PR、合併或 CI 通過稱為「已部署最新後端」。
-- 正式指令：從最新 `main` 取得完整來源，先以 `npm ci --prefix worker-poc` 安裝鎖定依賴，通過必要 Worker 測試後，在 `worker-poc/` 執行 `npx wrangler deploy --config wrangler.jsonc --keep-vars`；不得修改正式 D1 業務資料或洩漏部署憑證。必須在**可直接執行 Wrangler 的已授權環境**操作，不能透過 GitHub Actions 轉送；不得以工具不足時的舊版重發替代。
-- 部署成功必須核對 GitHub main Commit SHA、Cloudflare 新 Worker Version ID、Deployment ID、100% 流量，以及無副作用的 `/api/health`、授權與 CORS smoke 結果；前端 Netlify 狀態另外記錄。缺一項就標記 `WAITING_FOR_DELIVERY`，不得宣稱正式交付完成。
-- 若缺少直接命令執行環境、Wrangler 登入或 Cloudflare 部署權限，先核對當日可用的**直接部署**成功紀錄、環境與授權，優先修復或沿用該路徑；記錄嘗試的命令、錯誤、來源 Commit 與阻塞點。不可改提 GitHub Actions、要求 GitHub Actions Secrets、重跑失敗 workflow、以 Cloudflare API 重新發布舊 Worker，或要求使用者重複授權。若確實無法執行，明確標記 `WAITING_FOR_DELIVERY`，不得假稱已完成。
-- Cloudflare Deployment 的 `source=api`、`source=wrangler` 應按實際來源記錄；`source=api` 不得假稱曾執行 Wrangler。Cloudflare API 新版上傳不等於重新發布既有版本，仍須確認**原始碼對應最新 `main`、新 Worker Version ID、Deployment ID 和部署後驗證**，不得以舊版替代。
+## 正式後端直接部署（必要；禁止 GitHub Actions）
+- **正式部署禁止 GitHub Actions**（包括 push、workflow_dispatch、re-run 或工作流程代部署）。部署只允許在已授權的直接執行環境使用 Wrangler CLI，或透過已連線的 Cloudflare 外掛/API **上傳由最新 `main` 完整來源新建置的 Worker bundle**。先依當次可用能力與最近成功紀錄選擇可靠方式；不得只因無法使用 Wrangler 就跳轉 GitHub Actions。
+- 兩條直接路徑的共同前置：核對最新 GitHub `main` SHA、`worker-poc/wrangler.jsonc` 的 `bento-api-poc` 和正式 D1 `bento-formal` 綁定，使用完整來源／模組相依與鎖定依賴，通過必要 Worker 測試。保留既有 Secrets、D1 binding、排程、CORS、compatibility_date 與所有正式設定；禁止為了上傳而自行簡化或改寫 Worker 邏輯。
+- **Wrangler CLI 路徑**：`npm ci --prefix worker-poc`、`npm test --prefix worker-poc`，在 `worker-poc/` 執行 `npx wrangler deploy --config wrangler.jsonc --keep-vars`。使用本機或已授權的直接 shell，不得透過 GitHub Actions。
+- **Cloudflare 外掛/API 路徑**：取得相同最新 `main` 的完整 Worker 來源及可驗證的新建置產物，使用 Cloudflare Worker upload endpoint 上傳**新程式碼**並發布正式流量。要核對部署 bundle 真正包含這次修改、原本模組/授權/D1/Secrets/排程未遺失；以嚴格繼承或等效保留現存 bindings 的安全上傳方式執行。不能用舊版 script 回傳內容、少量補丁、拼湊缺漏模組或把既有 Worker Version 再部署一次代替新建置。Cloudflare 紀錄 `source=api` 應如實標為 API，不得假稱 Wrangler。
+- **正式驗收**：記錄來源 main SHA、新 Worker Version ID、Deployment ID、100% 流量，執行無副作用的 `/api/health`、身分授權、CORS 與此次新增 API contract smoke；Netlify 前端正式部署與手機/LINE 實機驗收分開記錄。缺任何必需證據時不得宣稱正式交付。
+- **失敗處理**：優先調查當天成功的直接 API/CLI 上傳實例及其完整原始碼建置方式；缺工具、缺 bundle、模組/設定不明時停止正式寫入，回報 `WAITING_FOR_DELIVERY` 並明列阻礙，不可改用 GitHub Actions、要求補 Actions Secrets、重發舊版本或要求使用者重複授權。
 
 ## 版本、異動紀錄與繁中翻譯關卡
 - 每項使用者可感知的功能新增、Bug 修正、行為／權限變更，在合併與正式交付前，必須評估是否需要建立正式版本；同一批發布可共用一個版本，不得為純文件、測試或內部整理虛增版本。
