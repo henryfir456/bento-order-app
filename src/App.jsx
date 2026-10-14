@@ -3349,10 +3349,8 @@ export default function App() {
     <div className="flex min-h-screen min-w-0 flex-col bg-[#F7F5F0] pb-24 text-gray-800">
       <header className="bg-[#2C4A3E] text-white p-4 shadow-md">
         <div className="max-w-xl mx-auto min-w-0">
-          <div className="flex min-w-0 items-center">
-            <h1 className="text-xl font-bold">蔬食便當預訂系統</h1>
-          </div>
-          <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-emerald-100">
+          <h1 className="sr-only">蔬食便當預訂系統</h1>
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-emerald-100">
             <span aria-hidden="true">👤</span>
             {headerRoleLabel && isRegistered && (
               <span className="rounded bg-emerald-800/80 px-1.5 py-0.5 font-bold">

@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.0': [
+    { name: '變更', changes: [
+      '新版四分頁、經典與新版介面切換、我的訂單、即時餘額與管理功能整合為 0.16.0 里程碑。',
+      '移除首頁上方可見的系統標題列，將姓名、樓層與 LINE 綁定狀態集中靠右排列；保留輔助閱讀標題。'
+    ] }
+  ],
   '0.15.27': [
     { name: '變更', changes: [
       '訂餐頁移除查看店家菜單快捷按鈕；店家專區保留於管理中心。',

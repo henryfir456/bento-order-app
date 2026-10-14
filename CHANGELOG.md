@@ -7,6 +7,14 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.16.0] - 2026-10-14
+
+### Changed
+
+- Consolidate the v0.15.24–v0.15.27 four-tab, classic/new UI switch, order history, live balance and administration experience into the next minor-version milestone without rewriting their original release history.
+- Remove the visible system-title row from the mobile header and right-align the compact user, floor and LINE status. Retain an accessible screen-reader heading and View As / delegation banners.
+- This release version is a source milestone only until the frontend is actually published and user / LINE device acceptance evidence is recorded.
+
 ## [0.15.27] - 2026-10-14
 
 ### Changed
