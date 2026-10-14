@@ -314,12 +314,31 @@ backend change requires them, after the implementation, local Worker/security
 tests, compatibility checks, root verification, and a fresh backup pass. Apply
 and verify required migrations in order. For production-backend changes, the
 formal Worker deployment from the resulting `main` revision is the default
-delivery gate; a separate deploy request is not needed:
+delivery gate; a separate deploy request is not needed.
+
+**Production deployment is direct Wrangler CLI only. Do not deploy through GitHub
+Actions** (including automatic workflows or manual workflow dispatch). Work from
+the latest checked-out and reviewed `main`, not from an older branch or Worker
+version. From the repository root in Windows PowerShell:
 
 ```powershell
-npm.cmd run db:migrations:remote
-npm.cmd run deploy
+npm.cmd ci --prefix worker-poc
+npm.cmd test --prefix worker-poc
+Push-Location worker-poc
+try {
+  npx.cmd wrangler deploy --config wrangler.jsonc --keep-vars
+} finally {
+  Pop-Location
+}
 ```
+
+Apply an explicitly reviewed D1 migration **only if the task actually requires
+a migration**, prior to deployment using the existing guarded migration script.
+Never run the remote migration by default for a frontend-only or unchanged-schema
+release. The Worker target is `bento-api-poc` and formal D1 is `bento-formal`.
+After deployment, verify that Cloudflare returned a **new** Worker Version ID,
+Deployment ID and 100% traffic, matching the source `main` SHA; do not redeploy
+an existing version to cover missing build/CLI access.
 
 The package guard refuses remote writes when `wrangler.jsonc` contains an
 invalid database ID. After deployment, run `npm.cmd run smoke:cors` against the
