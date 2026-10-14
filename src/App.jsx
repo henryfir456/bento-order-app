@@ -3020,7 +3020,7 @@ export default function App() {
         if (isUserOrdered) {
           if (eventExpired) {
             statusBg = "bg-slate-100 border-slate-300 text-slate-800 hover:bg-slate-200 cursor-pointer";
-            statusBadge = <span className="text-[9px] bg-slate-500 text-white px-1 py-0.5 rounded font-medium">已訂/截止</span>;
+            statusBadge = <span className="text-[9px] bg-slate-500 text-white px-1 py-0.5 rounded font-medium">已訂</span>;
           } else {
             statusBg = "bg-blue-50 border-blue-300 text-blue-900 hover:bg-blue-100 cursor-pointer shadow-sm";
             statusBadge = <span className="text-[9px] bg-blue-600 text-white px-1 py-0.5 rounded font-medium">已訂</span>;
@@ -3028,10 +3028,10 @@ export default function App() {
         } else {
           if (eventExpired) {
             statusBg = "bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200 cursor-pointer";
-            statusBadge = <span className="text-[9px] bg-slate-300 border border-slate-400 text-slate-700 px-1 py-0.5 rounded font-medium">已截止</span>;
+            statusBadge = <span className="text-[9px] bg-slate-300 border border-slate-400 text-slate-700 px-1 py-0.5 rounded font-medium">截止</span>;
           } else {
             statusBg = "bg-emerald-50 border-emerald-300 text-emerald-900 hover:bg-emerald-100 cursor-pointer shadow-sm";
-            statusBadge = <span className="text-[9px] bg-emerald-600 text-white px-1 py-0.5 rounded font-medium">預訂</span>;
+            statusBadge = <span className="text-[9px] bg-emerald-600 text-white px-1 py-0.5 rounded font-medium">可訂</span>;
           }
         }
       } else {
@@ -3178,7 +3178,7 @@ export default function App() {
               <div className="flex items-center gap-2 text-xs">
                 {event.likeCount > 0 && <span className="text-rose-600 font-bold">❤️ {event.likeCount}</span>}
                 <span className={eventExpired ? 'bg-slate-500 text-white px-2 py-1 rounded-lg font-bold' : 'bg-emerald-600 text-white px-2 py-1 rounded-lg font-bold'}>
-                  {eventExpired ? '已截止' : '預訂'}
+                  {eventExpired ? '截止' : '可訂'}
                 </span>
               </div>
             </div>
@@ -3797,7 +3797,12 @@ export default function App() {
               <div className="text-xl font-bold text-[#2C4A3E]">${totalAmount}</div>
             </div>
             {orderControlsOpen ? (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
+                <button type="button" onClick={handleExitToCalendar}
+                  disabled={loading || orderMutationInFlightRef.current}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  返回
+                </button>
                 {hasExistingOrder && (
                   <button
                     onClick={handleCancelOrder}
