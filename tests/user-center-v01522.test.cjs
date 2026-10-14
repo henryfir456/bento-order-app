@@ -22,7 +22,7 @@ test('member names are buttons using guarded audited Admin API, not View As', ()
 });
 test('line binding and actions use concise labels', () => {
   assert.match(badge, /shortLineLabel.*?'已綁定'/);
-  assert.match(ui, />檢視身份<\/button>/);
+  assert.match(ui, />檢視身分<\/button>/);
   assert.match(ui, />代點餐<\/button>/);
   assert.match(ui, />明細<\/button>/);
   assert.doesNotMatch(ui, /👁|🍱/);
