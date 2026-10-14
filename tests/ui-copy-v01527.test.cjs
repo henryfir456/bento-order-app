@@ -23,5 +23,5 @@ test('requested explanatory copy removed; Admin shortcuts hidden but ProxyAdmin 
   assert.doesNotMatch(app,/切換後保留偏好，返回訂餐即可看到新畫面/);
   assert.match(app,/authRole !== 'Admin' && canAuth\('viewAsUser'\)/);
   assert.match(app,/authRole !== 'Admin' && canAuth\('delegateOrder'\)/);
-  assert.match(app,/使用者管理中心 ›/);
+  assert.match(app,/使用者管理 ›/);
 });
