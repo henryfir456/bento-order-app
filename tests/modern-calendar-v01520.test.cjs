@@ -8,7 +8,7 @@ const modern = fs.readFileSync(path.join(root, 'src/features/calendar/ModernCale
 const center = fs.readFileSync(path.join(root, 'src/features/balances/MemberBalanceManagement.jsx'), 'utf8');
 
 test('existing unified user center remains wired to the entry point', () => {
-  assert.match(app, /使用者管理中心/);
+  assert.match(app, /使用者管理 ›/);
   assert.match(app, /<MemberBalanceManagement/);
   assert.match(center, /使用者管理中心/);
 });
