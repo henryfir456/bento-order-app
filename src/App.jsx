@@ -3397,7 +3397,7 @@ export default function App() {
                 onClick={() => handleAdminSectionChange('balances')}
                 className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'balances' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
               >
-                💰 餘額管理
+                👥 使用者管理中心
               </button>
             )}
             {isRegistered && apiClient.transport === 'worker' && canAuth('manageAnnouncements') && !isViewAsMode && (
