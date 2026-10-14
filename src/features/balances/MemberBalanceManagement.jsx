@@ -174,26 +174,38 @@ export default function MemberBalanceManagement({
         <p className="text-xs text-gray-500">預設依餘額由小到大排序，點選表格標題可切換排序。</p>
       </div>
 
-      {editingName && !isViewAsMode && <form onSubmit={saveName} className="rounded-2xl border border-emerald-200 bg-white p-4 space-y-3" aria-label="修改使用者姓名">
-        <h3 className="font-bold">修改姓名 · 員編 {formatEmployeeId(editingName.employeeId)}</h3>
-        <label className="block text-sm">姓名
-          <input required maxLength={100} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 p-3" />
-        </label>
-        {nameError && <p role="alert" className="text-sm text-red-700">{nameError}</p>}
-        <div className="flex gap-2">
-          <button type="submit" disabled={nameSaving} className="rounded-lg bg-emerald-800 px-4 py-2 text-white disabled:opacity-50">{nameSaving ? '儲存中…' : '儲存姓名'}</button>
-          <button type="button" onClick={() => setEditingName(null)} className="rounded-lg border px-4 py-2">取消</button>
-        </div>
-      </form>}
-      {selectedUser && !isViewAsMode && <section className="rounded-2xl border border-emerald-200 bg-white p-4 space-y-3" aria-label="使用者交易明細">
-        <div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{selectedUser.name || '使用者'}｜交易明細</h3><p className="text-xs text-gray-500">員編 {formatEmployeeId(selectedUser.employeeId)} · 目前名單餘額 {formatBalanceAmount(selectedUser.balance)}</p></div><button type="button" onClick={() => setSelectedUser(null)} aria-label="關閉交易明細">✕</button></div>
-        <label className="block text-sm">交易月份 <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="ml-2 rounded border p-1" /></label>
-        {ledgerLoading ? <p role="status">讀取交易明細中…</p> : ledgerError ? <p role="alert" className="text-red-700">{ledgerError}</p> : ledger && <>
-          <div className="grid grid-cols-2 gap-2 text-sm"><div>期初餘額：{formatBalanceAmount(ledger.openingBalance)}</div><div>當月期末：{formatBalanceAmount(ledger.closingBalance)}</div><div>當月入帳：+{formatBalanceAmount(ledger.totalCredit)}</div><div>當月扣款：-{formatBalanceAmount(ledger.totalDebit)}</div></div>
-          {ledger.reconciliation?.status && ledger.reconciliation.status !== 'CONSISTENT' && <p role="alert" className="text-amber-800">交易帳務存在需檢查的差異，請勿自行調整餘額。</p>}
-          {ledger.transactions?.length ? <div className="max-h-96 overflow-y-auto space-y-2">{ledger.transactions.map(tx => <div key={tx.transactionId} className="border-t py-2 text-sm"><div className="flex justify-between gap-2"><span>{tx.description || tx.type}</span><strong>{tx.amount > 0 ? '+' : ''}{formatBalanceAmount(tx.amount)}</strong></div><div className="flex flex-wrap justify-between text-xs text-gray-500 gap-2"><span>{formatDateTime(tx.occurredAt)}</span><span>交易後餘額 {formatBalanceAmount(tx.balanceAfter)}</span></div></div>)}</div> : <p className="text-sm text-gray-500">該月份沒有交易明細。</p>}
-        </>}
-      </section>}
+      {editingName && !isViewAsMode && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !nameSaving) setEditingName(null); }}>
+        <form onSubmit={saveName} className="w-full max-w-md rounded-2xl border border-emerald-200 bg-white p-5 shadow-2xl space-y-4" role="dialog" aria-modal="true" aria-label="修改使用者姓名">
+          <div className="flex items-start justify-between gap-3">
+            <div><h3 className="font-bold text-lg">修改姓名</h3><p className="mt-1 text-xs text-gray-500">員編 {formatEmployeeId(editingName.employeeId)}</p></div>
+            <button type="button" onClick={() => !nameSaving && setEditingName(null)} className="rounded-lg px-2 py-1 text-gray-500 hover:bg-gray-100" aria-label="關閉修改姓名">✕</button>
+          </div>
+          <label className="block text-sm">姓名
+            <input autoFocus required maxLength={100} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 p-3" />
+          </label>
+          {nameError && <p role="alert" className="text-sm text-red-700">{nameError}</p>}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditingName(null)} disabled={nameSaving} className="rounded-lg border px-4 py-2 disabled:opacity-50">取消</button>
+            <button type="submit" disabled={nameSaving} className="rounded-lg bg-emerald-800 px-4 py-2 text-white disabled:opacity-50">{nameSaving ? '儲存中…' : '儲存'}</button>
+          </div>
+        </form>
+      </div>}
+      {selectedUser && !isViewAsMode && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedUser(null); }}>
+        <section className="flex max-h-[90vh] w-full max-w-2xl flex-col rounded-2xl border border-emerald-200 bg-white p-5 shadow-2xl" role="dialog" aria-modal="true" aria-label="使用者交易明細">
+          <div className="flex items-start justify-between gap-3">
+            <div><h3 className="font-bold text-lg">{selectedUser.name || '使用者'}｜交易明細</h3><p className="mt-1 text-xs text-gray-500">員編 {formatEmployeeId(selectedUser.employeeId)} · 目前名單餘額 {formatBalanceAmount(selectedUser.balance)}</p></div>
+            <button type="button" onClick={() => setSelectedUser(null)} className="rounded-lg px-2 py-1 text-gray-500 hover:bg-gray-100" aria-label="關閉交易明細">✕</button>
+          </div>
+          <label className="mt-4 block text-sm">交易月份 <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="ml-2 rounded border p-1" /></label>
+          <div className="mt-4 min-h-0 flex-1 overflow-y-auto">
+            {ledgerLoading ? <p role="status">讀取交易明細中…</p> : ledgerError ? <p role="alert" className="text-red-700">{ledgerError}</p> : ledger && <>
+              <div className="grid grid-cols-2 gap-2 text-sm"><div>期初餘額：{formatBalanceAmount(ledger.openingBalance)}</div><div>當月期末：{formatBalanceAmount(ledger.closingBalance)}</div><div>當月入帳：+{formatBalanceAmount(ledger.totalCredit)}</div><div>當月扣款：-{formatBalanceAmount(ledger.totalDebit)}</div></div>
+              {ledger.reconciliation?.status && ledger.reconciliation.status !== 'CONSISTENT' && <p role="alert" className="mt-3 text-amber-800">交易帳務存在需檢查的差異，請勿自行調整餘額。</p>}
+              {ledger.transactions?.length ? <div className="mt-3 space-y-2">{ledger.transactions.map(tx => <div key={tx.transactionId} className="border-t py-2 text-sm"><div className="flex justify-between gap-2"><span>{tx.description || tx.type}</span><strong>{tx.amount > 0 ? '+' : ''}{formatBalanceAmount(tx.amount)}</strong></div><div className="flex flex-wrap justify-between text-xs text-gray-500 gap-2"><span>{formatDateTime(tx.occurredAt)}</span><span>交易後餘額 {formatBalanceAmount(tx.balanceAfter)}</span></div></div>)}</div> : <p className="mt-3 text-sm text-gray-500">該月份沒有交易明細。</p>}
+            </>}
+          </div>
+        </section>
+      </div>}
       {memberBalancesLoading ? (
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
           讀取成員餘額中...
