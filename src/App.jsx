@@ -2679,11 +2679,16 @@ export default function App() {
       void fetchCalendarEvents(authUserId, null);
       void fetchUserAllOrders(authUserId, null);
     }
-    setAdminSection('orders');
-    if (hasPermission(authUser?.role, 'viewAdminOrderSummary', authMode, true)) {
+    if (hasPermission(authUser?.role, 'viewMemberBalances', authMode, true)) {
+      setAdminSection('balances');
+      setViewMode('admin');
+      void loadMemberBalances(true);
+    } else if (hasPermission(authUser?.role, 'viewAdminOrderSummary', authMode, true)) {
+      setAdminSection('orders');
       setViewMode('admin');
       loadAdminSummary(selectedOrderDate, null, true);
     } else {
+      setAdminSection('orders');
       setViewMode('calendar');
     }
   };
@@ -2697,9 +2702,15 @@ export default function App() {
     setSelectedTopupUser(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
-    handleExitToCalendar();
     void fetchCalendarEvents(authUserId);
     void fetchUserAllOrders(authUserId, null, null);
+    if (hasPermission(authUser?.role, 'viewMemberBalances', authMode, true)) {
+      setAdminSection('balances');
+      setViewMode('admin');
+      void loadMemberBalances(true);
+    } else {
+      handleExitToCalendar();
+    }
   };
 
   const handleOpenFloorModal = () => {
