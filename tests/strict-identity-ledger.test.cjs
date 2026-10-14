@@ -2074,7 +2074,7 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   const balanceHeader = appSource.match(/can\('viewOwnBalance'\)[\s\S]*?formatBalanceAmount\(displayBalance\)[\s\S]*?\n            \)\}/);
   assert.ok(balanceHeader, 'header must keep the existing balance value and formatter');
   assert.doesNotMatch(balanceHeader[0], /💰\s*餘額/);
-  assert.match(appSource, /💰 餘額管理/);
+  assert.match(appSource, /👥 使用者管理中心/);
   assert.match(appSource, /目前餘額：<span className="font-bold">\{formatBalanceAmount\(selectedTopupUser\.balance\)\}<\/span>/);
   assert.match(appSource, /📅 開團/);
   assert.match(appSource, /送出訂單/);

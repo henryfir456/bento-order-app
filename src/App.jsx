@@ -2141,6 +2141,13 @@ export default function App() {
     }
   };
 
+  const loadModernDailyMenu = useCallback(async (dateStr) => {
+    const res = await apiClient.getOrderPage({ targetDate: dateStr, userId: authUser?.userId || lineUserId });
+    const data = await res.json();
+    if (!data.success || !Array.isArray(data.menu)) throw new Error('MENU_UNAVAILABLE');
+    return apiClient.transport === 'worker' ? normalizeWorkerOrderMenu(data.menu) : data.menu;
+  }, [authUser?.userId, lineUserId]);
+
   const handleSelectDate = async (dateStr) => {
     if (authState !== AUTH_STATES.REGISTERED || !authUserId) {
       await showPopup({ icon: 'warning', title: '無法訂餐', text: authError || '目前無法驗證 LINE 身份' });
@@ -3390,7 +3397,7 @@ export default function App() {
                 onClick={() => handleAdminSectionChange('balances')}
                 className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'balances' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
               >
-                💰 餘額管理
+                👥 使用者管理中心
               </button>
             )}
             {isRegistered && apiClient.transport === 'worker' && canAuth('manageAnnouncements') && !isViewAsMode && (
@@ -3608,7 +3615,7 @@ export default function App() {
         )}
         {isRegistered && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (
           <ModernCalendar currentMonth={currentMonth} events={calendarEvents} orders={userOrdersMap}
-            onSelectDate={handleSelectDate}
+            onSelectDate={handleSelectDate} loadDailyMenu={loadModernDailyMenu}
             onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
             onNextMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))} />
         )}
