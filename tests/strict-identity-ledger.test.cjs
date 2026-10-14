@@ -2072,7 +2072,7 @@ test('frontend wires floor editing, version history, modal preview, and correcte
   assert.match(appSource, /buildOrderSubmission/);
   assert.match(appSource, /aria-label="管理中心"/);
   assert.match(appSource, /balance=\{displayBalance\} balanceKnown=/);
-  assert.match(appSource, /使用者管理中心 ›/);
+  assert.match(appSource, /使用者管理 ›/);
   assert.match(appSource, /目前餘額：<span className="font-bold">\{formatBalanceAmount\(selectedTopupUser\.balance\)\}<\/span>/);
   assert.match(appSource, /開團管理 ›/);
   assert.match(appSource, /送出訂單/);

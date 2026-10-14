@@ -7,6 +7,13 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.16.2] - 2026-10-14
+
+### Changed
+
+- Group the management hub into ordering, user/account, and settings sections without altering role permissions or action handlers.
+- Rename the calendar switch section to Calendar Style and its user-management link to User Management. Retain Classic / Minimalist selector values and behavior.
+
 ## [0.16.1] - 2026-10-14
 
 ### Changed

@@ -22,7 +22,7 @@ test('management hub contains prior admin actions and persisted classic/modern s
   assert.match(app,/adminSection === 'hub'/);
   assert.match(app,/店家專區 ›/);
   assert.match(app,/訂單總覽 ›/);
-  assert.match(app,/使用者管理中心 ›/);
+  assert.match(app,/使用者管理 ›/);
   assert.match(app,/開團管理 ›/);
   assert.match(app,/選擇代點餐 ›/);
   assert.match(app,/介面切換/);
