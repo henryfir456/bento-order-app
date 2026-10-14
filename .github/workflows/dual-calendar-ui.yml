@@ -6,7 +6,7 @@ on:
       - 'src/features/calendar/**'
       - 'tests/dual-calendar-ui.test.cjs'
       - 'tests/modern-calendar-v01520.test.cjs'
-      - 'tests/user-center-compact-v01521.test.cjs tests/user-center-v01522.test.cjs'
+      - 'tests/user-center-compact-v01521.test.cjs'
       - 'tests/user-center-v01522.test.cjs'
       - 'src/components/IdentityStatusBadges.jsx'
       - 'src/features/balances/MemberBalanceManagement.jsx'
