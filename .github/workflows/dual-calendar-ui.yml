@@ -5,6 +5,7 @@ on:
       - 'src/App.jsx'
       - 'src/features/calendar/**'
       - 'tests/dual-calendar-ui.test.cjs'
+      - 'tests/modern-calendar-v01520.test.cjs'
       - 'src/data/changelog.js'
       - 'CHANGELOG.md'
       - 'package*.json'
@@ -15,6 +16,7 @@ on:
       - 'src/App.jsx'
       - 'src/features/calendar/**'
       - 'tests/dual-calendar-ui.test.cjs'
+      - 'tests/modern-calendar-v01520.test.cjs'
       - 'src/data/changelog.js'
       - 'CHANGELOG.md'
       - 'package*.json'
@@ -28,7 +30,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: node --test tests/dual-calendar-ui.test.cjs
+      - run: node --test tests/dual-calendar-ui.test.cjs tests/modern-calendar-v01520.test.cjs
       - run: node --test tests/changelog-migration.test.cjs
       - run: npm run lint
       - run: npm run build
