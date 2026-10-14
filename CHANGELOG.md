@@ -7,6 +7,14 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.23] - 2026-10-14
+
+### Changed
+
+- Open Admin member name editing and transaction details in modal dialogs so the user-management table stays in place.
+- Return Admin to the unified user management center after finishing View As or delegated ordering when member-balance permission is available.
+- In the modern calendar, unopened dates display the projected Cai Teacher daily flavor name when one exists, while status remains 未開團.
+
 ## [0.15.22] - 2026-10-14
 
 ### Changed
