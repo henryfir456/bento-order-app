@@ -13,6 +13,7 @@
 
 - Simplify the calendar status badges: ordered-and-closed displays 「已訂」, closed without an order displays 「截止」, and dates accepting orders display 「可訂」; preserve all existing status and cutoff logic.
 - Add a visible 「返回」 action to the active order footer, returning to the same calendar month using the existing safe order-editor exit handler without submitting or cancelling an order.
+- Remove the redundant My Orders refresh button; entering the My Orders tab still requests the latest data, with a retry action only after loading errors.
 
 ## [0.16.2] - 2026-10-14
 
