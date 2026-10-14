@@ -4,6 +4,7 @@ import { normalizeMenuVendor } from './menuVendors.js';
 
 const POPULARITY_VENDOR = '蔡老師';
 const PINNED_CODE = 'E';
+const INITIAL_PRIORITY = Object.freeze({ S: 0, C: 1 });
 
 const dateDaysAgo = (today, days) => {
   const date = new Date(`${today}T00:00:00.000Z`);
@@ -70,7 +71,9 @@ export const rankCaiTeacherMenu = async (database, menu, {
   const codeOrder = [...new Set(codeByIndex.filter(Boolean))].sort((a, b) => {
     if (a === 'FR' || b === 'FR') return a === 'FR' ? 1 : -1;
     if (a === PINNED_CODE || b === PINNED_CODE) return a === PINNED_CODE ? -1 : 1;
-    return weighted(b) - weighted(a) || originalOrder.get(a) - originalOrder.get(b);
+    return weighted(b) - weighted(a)
+      || (INITIAL_PRIORITY[a] ?? Number.MAX_SAFE_INTEGER) - (INITIAL_PRIORITY[b] ?? Number.MAX_SAFE_INTEGER)
+      || originalOrder.get(a) - originalOrder.get(b);
   });
   const ranks = new Map(codeOrder.map((code, index) => [code, index]));
   return menu.map((item, index) => ({
