@@ -52,9 +52,9 @@ const MemberAction = ({ user, canTopup, canBindEmployee, isViewAsMode, onOpenTop
     : <span className="text-gray-400">—</span>;
 };
 
-const MemberIdentity = ({ user }) => (
+const MemberIdentity = ({ user, onNameClick }) => (
   <div className="min-w-0 space-y-1">
-    <div className="truncate font-medium">{user.name || '未命名使用者'}</div>
+    <button type="button" className="truncate text-left font-medium text-emerald-800 underline decoration-dotted" onClick={() => onNameClick(user)}>{user.name || '未命名使用者'}</button>
     <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-gray-500">
       <span className="whitespace-nowrap">員編 {formatEmployeeId(user.employeeId)}</span>
       <IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} shortLineLabel />
@@ -148,7 +148,7 @@ export default function MemberBalanceManagement({
   }, [adminMembers, employeeIdFilter, sort]);
   const hasActions = !isViewAsMode && (canTopup || canBindEmployee || canViewAsUser || canDelegateOrder);
   const UserNavigationActions = ({ user }) => isViewAsMode ? null : <div className="flex flex-wrap gap-1">
-    {canViewAsUser && <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">檢視身份</button>}
+    {canViewAsUser && <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">檢視身分</button>}
     {canDelegateOrder && <button type="button" onClick={() => onDelegateOrderUser(user)} className="rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-bold text-white">代點餐</button>}
   </div>;
 
@@ -249,7 +249,7 @@ export default function MemberBalanceManagement({
             {filteredMembers.map((user, idx) => (
               <article key={memberKey(user, idx)} className="rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2">
                 <div className="flex min-w-0 items-start justify-between gap-3">
-                  <MemberIdentity user={user} />
+                  <MemberIdentity user={user} onNameClick={startNameEdit} />
                   {hasActions && <div className="flex flex-col gap-1"><UserNavigationActions user={user} /><MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} /></div>}
                 </div>
                 {!isViewAsMode && <button type="button" className="text-sm font-bold text-emerald-800 underline" onClick={() => setSelectedUser(user)}>檢視交易明細</button>}
