@@ -7,6 +7,14 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.21] - 2026-10-14
+
+### Changed
+
+- Consolidate the user management desktop table into five columns: employee ID/name, role/LINE binding, floor, balance, and actions; keep balance ascending by default and sortable.
+- Place the read-only transaction history action alongside each user and retain the existing Admin ledger authorization.
+- Hide duplicate Admin View As and delegate-order header shortcuts; keep ProxyAdmin delegate-order access and existing per-user privileged actions.
+
 ## [0.15.20] - 2026-10-14
 
 ### Fixed
