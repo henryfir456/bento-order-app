@@ -7,6 +7,15 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.26] - 2026-10-14
+
+### Changed
+
+- Simplify the top header to the system title and personal identity, remove duplicate top balance and management shortcuts, and keep vendor menus accessible from the order calendar.
+- Show the authorized latest known numeric balance directly in the bottom wallet tab (without the word Balance); negative amounts appear red, and tapping still opens balance history.
+- Consolidate management operations into a dedicated hub, including vendors, summaries, user center, proxy/view-as actions, announcements, menu maintenance and opening management according to role.
+- Move the persistent classic/new calendar UI switch into management; no separate conflicting UI preference storage.
+
 ## [0.15.25] - 2026-10-14
 
 ### Added
