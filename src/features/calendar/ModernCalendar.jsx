@@ -35,11 +35,11 @@ export default function ModernCalendar({ currentMonth, events, orders, onSelectD
   }, [active?.key, active?.event?.vendor, loadDailyMenu]);
   const items = menuDetails.key === active?.key ? menuDetails.items : [];
   const isCai = String(active?.event?.vendor || '').trim() === '蔡老師';
+  const imageUrl = isCai && active?.event?.dailyFlavorName ? getCalendarDailyFlavorImage(active.event, active.key) : '';
   const weekdayText = ['日', '一', '二', '三', '四', '五', '六'];
   const dateLabel = active ? `${active.key}(${weekdayText[new Date(`${active.key}T12:00:00`).getDay()]})` : '';
   const leadingBlanks = getWeekdayLeadingBlankCount(currentMonth.getFullYear(), currentMonth.getMonth());
   const statusColor = (status) => status === '可訂' ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : status === '已訂' ? 'bg-blue-50 border-blue-300 text-blue-900' : 'bg-slate-50 border-slate-200 text-slate-500';
-  const imageUrl = isCai && active?.event?.dailyFlavorName ? getCalendarDailyFlavorImage(active.event, active.key) : '';
   return (
     <section className="space-y-4" aria-label="新版訂餐月曆">
       <div className="rounded-2xl border border-emerald-900/10 bg-white p-3 shadow-sm">
