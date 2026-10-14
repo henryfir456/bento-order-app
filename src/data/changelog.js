@@ -11,6 +11,13 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.23': [
+    { name: '變更', changes: [
+      '使用者管理中心的姓名修改與交易明細改為彈跳視窗，不再把表單插入列表上方。',
+      '管理員結束檢視身分或代點餐後，回到使用者管理中心。',
+      '新版月曆未開團日期若已有蔡老師風味餐資料，顯示風味餐名稱但仍標示未開團。'
+    ] }
+  ],
   '0.15.22': [
     { name: '變更', changes: [
       '管理員可點使用者姓名修改姓名，透過管理員專用授權 API 儲存並留下稽核紀錄。',

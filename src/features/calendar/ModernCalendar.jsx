@@ -45,7 +45,7 @@ export default function ModernCalendar({ currentMonth, events, orders, onSelectD
               aria-pressed={active?.key === entry.key}
               className={`min-h-[94px] min-w-0 rounded-xl border p-1.5 text-left transition focus-visible:outline-2 focus-visible:outline-emerald-700 ${statusColor(entry.status)} ${active?.key === entry.key ? 'ring-2 ring-emerald-700' : ''}`}>
               <div className="text-base font-bold">{entry.day}</div>
-              <div className="mt-1 break-words text-[10px] leading-snug text-gray-700" title={entry.event?.vendor === "蔡老師" ? (entry.event?.dailyFlavorName || "蔡老師") : (entry.event?.vendor || "")}>{entry.event?.vendor ? (entry.event.vendor === '蔡老師' ? (entry.event.dailyFlavorName || entry.event.vendor) : entry.event.vendor) : '未開團'}</div>
+              <div className="mt-1 break-words text-[10px] leading-snug text-gray-700" title={entry.event?.vendor === "蔡老師" ? (entry.event?.dailyFlavorName || "蔡老師") : (entry.event?.vendor || entry.event?.dailyFlavorName || "")}>{entry.event?.vendor ? (entry.event.vendor === '蔡老師' ? (entry.event.dailyFlavorName || entry.event.vendor) : entry.event.vendor) : (entry.event?.dailyFlavorName || '未開團')}</div>
               <div className="mt-1 text-[10px] font-semibold leading-tight">{entry.status}</div>
             </button>
           ))}

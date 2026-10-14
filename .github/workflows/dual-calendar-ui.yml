@@ -8,6 +8,7 @@ on:
       - 'tests/modern-calendar-v01520.test.cjs'
       - 'tests/user-center-compact-v01521.test.cjs'
       - 'tests/user-center-v01522.test.cjs'
+      - 'tests/admin-return-modal-v01523.test.cjs'
       - 'src/components/IdentityStatusBadges.jsx'
       - 'src/features/balances/MemberBalanceManagement.jsx'
       - 'src/api/apiClientCore.js'
@@ -25,6 +26,7 @@ on:
       - 'tests/modern-calendar-v01520.test.cjs'
       - 'tests/user-center-compact-v01521.test.cjs'
       - 'tests/user-center-v01522.test.cjs'
+      - 'tests/admin-return-modal-v01523.test.cjs'
       - 'src/components/IdentityStatusBadges.jsx'
       - 'src/features/balances/MemberBalanceManagement.jsx'
       - 'src/api/apiClientCore.js'
@@ -42,7 +44,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: node --test tests/dual-calendar-ui.test.cjs tests/modern-calendar-v01520.test.cjs tests/user-center-compact-v01521.test.cjs
+      - run: node --test tests/dual-calendar-ui.test.cjs tests/modern-calendar-v01520.test.cjs tests/user-center-compact-v01521.test.cjs tests/user-center-v01522.test.cjs tests/admin-return-modal-v01523.test.cjs
       - run: node --test tests/changelog-migration.test.cjs
       - run: npm run lint
       - run: npm run build
