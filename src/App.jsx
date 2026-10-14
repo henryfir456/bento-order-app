@@ -2564,6 +2564,7 @@ export default function App() {
     if (section === 'orders') {
       if (!can('viewAdminOrderSummary')) return;
       setAdminSection('orders');
+      setViewMode('admin');
       loadAdminSummary(selectedOrderDate, viewAsUser?.userId || null, true);
       return;
     }
