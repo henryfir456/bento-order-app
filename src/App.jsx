@@ -3718,6 +3718,7 @@ export default function App() {
                 isViewAsMode={isViewAsMode}
                 onOpenTopupModal={handleOpenTopupModal}
                 onOpenEmployeeBindModal={handleOpenEmployeeBindModal}
+                onUserNameUpdated={() => loadMemberBalances(true)}
               />
             )}
 
