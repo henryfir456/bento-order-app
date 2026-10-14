@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { formatBalanceAmount } from '../balances/formatters';
+import { getTaipeiYearMonth } from '../../dateUtils';
 
 export default function MyOrdersPage({ orders, onRefresh, loading, error, isViewAsMode }) {
-  const [filterMonth, setFilterMonth] = useState('');
+  const [filterMonth, setFilterMonth] = useState(() => { const { year, month } = getTaipeiYearMonth(); return `${year}-${String(month).padStart(2, '0')}`; });
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const filtered = useMemo(() => (orders || []).filter((order) => !filterMonth || order.date.startsWith(filterMonth)), [orders, filterMonth]);
   const selected = filtered.find((order) => order.orderId === selectedOrderId);
@@ -11,13 +12,12 @@ export default function MyOrdersPage({ orders, onRefresh, loading, error, isView
     <header className="flex items-start justify-between gap-2">
       <div>
         <h2 className="text-xl font-bold text-[#2C4A3E]">我的訂單</h2>
-        <p className="mt-1 text-xs text-slate-500">含過去已完成和目前有效的訂餐，使用伺服器保存的餐點快照。</p>
       </div>
       <button type="button" onClick={onRefresh} disabled={loading}
         className="min-h-11 shrink-0 rounded-xl border border-emerald-700 px-3 text-sm font-bold text-emerald-800 disabled:opacity-50">重新整理</button>
     </header>
     {isViewAsMode && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">目前為唯讀檢視模式。</p>}
-    <label className="block text-sm text-slate-600">篩選月份
+    <label className="block text-sm text-slate-600"><span className="sr-only">選擇月份</span>
       <input type="month" value={filterMonth} onChange={(e) => { setFilterMonth(e.target.value); setSelectedOrderId(null); }}
         className="mt-1 block min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3" />
     </label>
