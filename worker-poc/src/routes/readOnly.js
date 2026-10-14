@@ -11,6 +11,7 @@ import { getCustomerMenu } from '../domain/menu.js';
 import { getCaiTeacherDailyFlavor } from '../domain/dailyFlavors.js';
 import {
   getHistoricalOrdersMap,
+  getHistoricalOrderSummaries,
   getReadableOrder,
   isHistoricalOrderDate
 } from '../domain/ordersRead.js';
