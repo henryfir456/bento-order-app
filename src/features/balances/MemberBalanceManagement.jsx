@@ -57,7 +57,7 @@ const MemberIdentity = ({ user }) => (
     <div className="truncate font-medium">{user.name || '未命名使用者'}</div>
     <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-gray-500">
       <span className="whitespace-nowrap">員編 {formatEmployeeId(user.employeeId)}</span>
-      <IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} />
+      <IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} shortLineLabel />
     </div>
   </div>
 );
@@ -115,8 +115,8 @@ export default function MemberBalanceManagement({
   }, [adminMembers, employeeIdFilter, sort]);
   const hasActions = !isViewAsMode && (canTopup || canBindEmployee || canViewAsUser || canDelegateOrder);
   const UserNavigationActions = ({ user }) => isViewAsMode ? null : <div className="flex flex-wrap gap-1">
-    {canViewAsUser && <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">👁 檢視身分</button>}
-    {canDelegateOrder && <button type="button" onClick={() => onDelegateOrderUser(user)} className="rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-bold text-white">🍱 代點餐</button>}
+    {canViewAsUser && <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">檢視身份</button>}
+    {canDelegateOrder && <button type="button" onClick={() => onDelegateOrderUser(user)} className="rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-bold text-white">代點餐</button>}
   </div>;
 
   return (
@@ -192,7 +192,7 @@ export default function MemberBalanceManagement({
                       <div className="flex flex-wrap gap-1">
                         <UserNavigationActions user={user} />
                         <MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} />
-                        {!isViewAsMode && <button type="button" className="rounded-lg border border-emerald-700 px-2 py-1.5 text-xs font-bold text-emerald-800" onClick={() => setSelectedUser(user)}>交易明細</button>}
+                        {!isViewAsMode && <button type="button" className="rounded-lg border border-emerald-700 px-2 py-1.5 text-xs font-bold text-emerald-800" onClick={() => setSelectedUser(user)}>明細</button>}
                       </div>
                     </td>
                   </tr>
