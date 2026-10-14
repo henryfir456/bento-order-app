@@ -3695,6 +3695,27 @@ export default function App() {
           />
         )}
 
+        {isRegistered && viewMode === 'myOrders' && !loading && (
+          <section aria-label="我的訂單" className="space-y-3 pb-8">
+            <h2 className="text-xl font-bold text-[#2C4A3E]">我的訂單</h2>
+            <p className="text-sm text-slate-500">選擇有訂餐紀錄的日期，查看餐點與明細。</p>
+            {Object.keys(userOrdersMap).filter((date) => Boolean(userOrdersMap[date])).sort().reverse().length === 0 ? (
+              <p className="rounded-xl border bg-white p-5 text-sm text-slate-500">目前沒有可顯示的訂餐紀錄。</p>
+            ) : (
+              <div className="space-y-2">
+                {Object.keys(userOrdersMap).filter((date) => Boolean(userOrdersMap[date])).sort().reverse().map((date) => (
+                  <button key={date} type="button"
+                    className="flex min-h-12 w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-emerald-700"
+                    onClick={() => { setCurrentMonth(new Date(date + 'T12:00:00')); handleSelectDate(date); }}>
+                    <span className="font-semibold text-slate-800">{date}</span>
+                    <span className="text-sm font-bold text-emerald-700">查看明細 →</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         {isRegistered && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
             {adminSection === 'orders' && (
@@ -3766,7 +3787,33 @@ export default function App() {
 
       </main>
 
-      <footer className="mx-auto mt-auto w-full max-w-xl px-4 py-5 text-center text-xs text-gray-400">
+      {/* 手機主要導覽：訂餐／我的訂單／餘額／管理。訂餐編輯中不覆蓋確認操作列。 */}
+      {isRegistered && viewMode !== 'order' && (
+        <nav aria-label="主要導覽" className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 shadow-[0_-2px_12px_rgba(0,0,0,0.05)] backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <div className="mx-auto flex max-w-xl items-stretch justify-around">
+            {[
+              { key: 'calendar', label: '訂餐', icon: '▦', onClick: () => setViewMode('calendar') },
+              { key: 'myOrders', label: '我的訂單', icon: '☷', onClick: () => setViewMode('myOrders') },
+              ...(can('viewOwnBalance') && !isViewAsMode && !delegatedOrderUser
+                ? [{ key: 'wallet', label: '餘額', icon: '▣', onClick: fetchBalanceHistory }]
+                : []),
+              ...((can('viewMemberBalances') || can('viewAdminOrderSummary')) && !isViewAsMode
+                ? [{ key: 'admin', label: '管理', icon: '⚙', onClick: () => handleAdminSectionChange(can('viewMemberBalances') ? 'balances' : 'orders') }]
+                : [])
+            ].map(({ key, label, icon, onClick }) => {
+              const selected = viewMode === key;
+              return (
+                <button key={key} type="button" onClick={onClick} aria-current={selected ? 'page' : undefined}
+                  className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 px-1 py-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-emerald-700 ${selected ? 'bg-emerald-50 text-emerald-800' : 'text-slate-600 hover:bg-slate-50'}`}>
+                  <span aria-hidden="true" className="text-lg leading-5">{icon}</span>
+                  <span>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+      )}
+      <footer className="mx-auto mt-auto mb-20 w-full max-w-xl px-4 py-5 text-center text-xs text-gray-400">
         <div>© 2026 Henry · 蔬食便當預訂系統
           <button
             type="button"
