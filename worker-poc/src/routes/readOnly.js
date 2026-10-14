@@ -11,6 +11,7 @@ import { getCustomerMenu } from '../domain/menu.js';
 import { getCaiTeacherDailyFlavor } from '../domain/dailyFlavors.js';
 import {
   getHistoricalOrdersMap,
+  getHistoricalOrderSummaries,
   getReadableOrder,
   isHistoricalOrderDate
 } from '../domain/ordersRead.js';
@@ -128,6 +129,15 @@ export const handleReadOnlyRequest = async (request, env, {
       ordersMap: await getHistoricalOrdersMap(env.DB, target.userId, now),
       ...(targetUserId ? { targetUser: publicUser(target) } : {})
     });
+  }
+
+  if (url.pathname === '/api/orders/history') {
+    const targetUserId = explicitOrderTarget(url);
+    if (viewAsAndDelegatedTarget(url, targetUserId)) throw forbidden('ORDER_TARGET_MODE_CONFLICT');
+    const target = targetUserId
+      ? (await resolveOrderPermission(env.DB, identity, { targetUserId, targetDate: getTaipeiDate(now), mode: 'A', now })).target
+      : subject;
+    return jsonResponse({ success: true, orders: await getHistoricalOrderSummaries(env.DB, target.userId, now) });
   }
 
   if (url.pathname === '/api/order-page') {

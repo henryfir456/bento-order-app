@@ -24,6 +24,9 @@ import {
 import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
 import { APP_VERSION, UI_CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
+import BottomNavigation from './components/BottomNavigation';
+import MyOrdersPage from './features/orders/MyOrdersPage';
+import WalletPage from './features/balances/WalletPage';
 import EmployeeGuestLogin from './components/EmployeeGuestLogin';
 import LineEmployeeLookup from './components/LineEmployeeLookup';
 import ProvisionalEmployeeOnboarding from './components/ProvisionalEmployeeOnboarding';
@@ -166,6 +169,11 @@ export default function App() {
   const [vendorHubUnsupported, setVendorHubUnsupported] = useState(false);
   const vendorRequestRef = useRef(0);
   const [userOrdersMap, setUserOrdersMap] = useState({});
+  const [myOrdersList, setMyOrdersList] = useState([]);
+  const [myOrdersLoading, setMyOrdersLoading] = useState(false);
+  const [myOrdersError, setMyOrdersError] = useState('');
+  const myOrdersRequestRef = useRef(0);
+  const [selectedCalendarKey, setSelectedCalendarKey] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
   const [lineUserId, setLineUserId] = useState('');
@@ -343,6 +351,10 @@ export default function App() {
     adminAnnouncementsRequestRef.current += 1;
     adminMenuChangesRequestRef.current += 1;
     historyRequestRef.current += 1;
+    myOrdersRequestRef.current += 1;
+    setMyOrdersList([]);
+    setMyOrdersError('');
+    setMyOrdersLoading(false);
     memberBalancesRequestRef.current += 1;
     orderTargetsRequestRef.current += 1;
     vendorRequestRef.current += 1;
@@ -1994,6 +2006,30 @@ export default function App() {
     }
   };
 
+  const refreshMyOrders = async () => {
+    if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    const requestId = ++myOrdersRequestRef.current;
+    setMyOrdersLoading(true);
+    setMyOrdersError('');
+    try {
+      if (apiClient.transport !== 'worker') throw new Error('WORKER_ONLY');
+      const res = await apiClient.getOrdersHistory({
+        viewAsUserId: viewAsUser?.userId || null,
+        targetUserId: delegatedOrderUser?.userId || null
+      });
+      const data = await res.json();
+      if (!res.ok || data?.success !== true || !Array.isArray(data.orders)) throw new Error('READ_FAILED');
+      if (requestId === myOrdersRequestRef.current) setMyOrdersList(data.orders);
+    } catch {
+      if (requestId === myOrdersRequestRef.current) {
+        setMyOrdersError('訂單紀錄讀取失敗，請稍後重試。');
+        setMyOrdersList([]);
+      }
+    } finally {
+      if (requestId === myOrdersRequestRef.current) setMyOrdersLoading(false);
+    }
+  };
+
   const loadBalanceHistory = async (year, month, viewAsUserId = null) => {
     if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
 
@@ -2045,6 +2081,16 @@ export default function App() {
     setHistorySummaryExpanded(false);
     setShowHistoryModal(true);
     loadBalanceHistory(currentMonth.year, currentMonth.month, viewAsUser?.userId || null);
+  };
+
+  const openWalletPage = () => {
+    if (!canAuth('viewOwnBalance') || isViewAsMode || delegatedOrderUser) return;
+    const taipeiMonth = getTaipeiYearMonth();
+    setSelectedYear(taipeiMonth.year);
+    setSelectedMonth(taipeiMonth.month);
+    setShowHistoryModal(false);
+    setViewMode('wallet');
+    void loadBalanceHistory(taipeiMonth.year, taipeiMonth.month, null);
   };
 
   const shiftHistoryMonth = (offset) => {
@@ -2564,6 +2610,7 @@ export default function App() {
     if (section === 'orders') {
       if (!can('viewAdminOrderSummary')) return;
       setAdminSection('orders');
+      setViewMode('admin');
       loadAdminSummary(selectedOrderDate, viewAsUser?.userId || null, true);
       return;
     }
@@ -2589,6 +2636,21 @@ export default function App() {
       setAdminSection('menuChanges');
       setViewMode('admin');
       void loadAdminMenuChanges(true);
+    }
+  };
+
+  const navigateBottomTab = (key) => {
+    if (key === 'calendar') {
+      setAdminManageMode(false);
+      setViewMode('calendar');
+    } else if (key === 'myOrders') {
+      setAdminManageMode(false);
+      setViewMode('myOrders');
+      void refreshMyOrders();
+    } else if (key === 'wallet') {
+      openWalletPage();
+    } else if (key === 'admin' && !isViewAsMode && !delegatedOrderUser) {
+      handleAdminSectionChange(canAuth('viewMemberBalances') ? 'balances' : 'orders');
     }
   };
 
@@ -3621,6 +3683,8 @@ export default function App() {
         {isRegistered && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (
           <ModernCalendar currentMonth={currentMonth} events={calendarEvents} orders={userOrdersMap}
             onSelectDate={handleSelectDate}
+            selectedKey={selectedCalendarKey}
+            onSelectKey={setSelectedCalendarKey}
             onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
             onNextMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))} />
         )}
@@ -3695,6 +3759,19 @@ export default function App() {
           />
         )}
 
+        {isRegistered && viewMode === 'myOrders' && !loading && (
+          <MyOrdersPage orders={myOrdersList} loading={myOrdersLoading}
+            error={myOrdersError} onRefresh={refreshMyOrders} isViewAsMode={isViewAsMode} />
+        )}
+
+        {isRegistered && viewMode === 'wallet' && !loading && canAuth('viewOwnBalance')
+          && !isViewAsMode && !delegatedOrderUser && (
+          <WalletPage balance={displayBalance} year={selectedYear} month={selectedMonth}
+            history={historyList} summary={historySummary} loading={historyLoading}
+            error={historyError} onMonthShift={shiftHistoryMonth}
+            onRefresh={() => loadBalanceHistory(selectedYear, selectedMonth, null)} />
+        )}
+
         {isRegistered && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
             {adminSection === 'orders' && (
@@ -3766,7 +3843,13 @@ export default function App() {
 
       </main>
 
-      <footer className="mx-auto mt-auto w-full max-w-xl px-4 py-5 text-center text-xs text-gray-400">
+      {isRegistered && viewMode !== 'order' && (
+        <BottomNavigation current={viewMode} onNavigate={navigateBottomTab}
+          canViewWallet={canAuth('viewOwnBalance') && !isViewAsMode && !delegatedOrderUser}
+          canManage={!isViewAsMode && !delegatedOrderUser
+            && (canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary'))} />
+      )}
+      <footer className="mx-auto mt-auto mb-20 w-full max-w-xl px-4 py-5 text-center text-xs text-gray-400">
         <div>© 2026 Henry · 蔬食便當預訂系統
           <button
             type="button"
@@ -3780,7 +3863,7 @@ export default function App() {
 
       {/* 底部導覽/操作列 */}
       {isRegistered && viewMode === 'order' && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg z-40">
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t p-4 shadow-lg z-40" style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))' }}>
           <div className="max-w-xl mx-auto flex justify-between items-center">
             <div>
               <div className="text-xs text-gray-500">

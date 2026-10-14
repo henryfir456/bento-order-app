@@ -7,6 +7,23 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.24] - 2026-10-14
+
+### Added
+
+- Replace the initial bottom-button preview with four real mobile-first destinations: calendar ordering, canonical historical order snapshots with date filtering, personal balance/ledger, and permission-checked management.
+- Add authenticated Worker order-history listing from the existing D1 orders and order-items records, including historical item names, quantity, price and status. Read-only View As and delegated target authorization reuse the current canonical identity rules.
+
+### Changed
+
+- Preserve the selected day when switching modern-calendar tabs; keep the order editor and its checkout controls separate from the tab bar.
+- Support Android/iOS bottom safe-area, keyboard navigation, accessible active-tab states and explicit refresh/error/empty states.
+- Reuse the existing Worker balance-history contract and admin center; no GAS fallback, no ledger mutation or historical rewrite.
+
+### Verification boundary
+
+- The User / Admin / ProxyAdmin and View As authorization paths require Worker contract and real-device acceptance. Frontend Netlify and backend Wrangler production deployments are independent and must be verified with external evidence.
+
 ## [0.15.23] - 2026-10-14
 
 ### Changed

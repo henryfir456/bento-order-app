@@ -1,8 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { formatDateInput, getWeekdayLeadingBlankCount } from '../../dateUtils';
 import { getCalendarDailyFlavorImage } from '../orders/dailyFlavorPresentation.js';
 
-export default function ModernCalendar({ currentMonth, events, orders, onSelectDate, onPreviousMonth, onNextMonth }) {
+export default function ModernCalendar({ currentMonth, events, orders, onSelectDate, onPreviousMonth, onNextMonth, selectedKey = '', onSelectKey }) {
   const entries = useMemo(() => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
@@ -18,7 +18,6 @@ export default function ModernCalendar({ currentMonth, events, orders, onSelectD
       return { day, key, event, status, ordered, expired };
     }).filter(Boolean);
   }, [currentMonth, events, orders]);
-  const [selectedKey, setSelectedKey] = useState('');
   const active = entries.find((entry) => entry.key === selectedKey) || entries.find((entry) => entry.status === '可訂') || entries[0];
   const isCai = String(active?.event?.vendor || '').trim() === '蔡老師';
   const imageUrl = isCai && active?.event?.dailyFlavorName ? getCalendarDailyFlavorImage(active.event, active.key) : '';
@@ -40,7 +39,7 @@ export default function ModernCalendar({ currentMonth, events, orders, onSelectD
         <div className="mt-2 grid grid-cols-5 gap-1">
           {Array.from({length: leadingBlanks},(_,index)=><div key={`blank-${index}`} aria-hidden="true" />)}
           {entries.map((entry) => (
-            <button type="button" key={entry.key} onClick={() => setSelectedKey(entry.key)}
+            <button type="button" key={entry.key} onClick={() => onSelectKey(entry.key)}
               aria-label={`${entry.key} ${entry.event?.vendor || ''} ${entry.status}`}
               aria-pressed={active?.key === entry.key}
               className={`min-h-[94px] min-w-0 rounded-xl border p-1.5 text-left transition focus-visible:outline-2 focus-visible:outline-emerald-700 ${statusColor(entry.status)} ${active?.key === entry.key ? 'ring-2 ring-emerald-700' : ''}`}>

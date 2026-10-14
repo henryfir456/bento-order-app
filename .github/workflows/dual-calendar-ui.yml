@@ -4,6 +4,10 @@ on:
     paths:
       - 'src/App.jsx'
       - 'src/features/calendar/**'
+      - 'src/components/BottomNavigation.jsx'
+      - 'src/features/orders/MyOrdersPage.jsx'
+      - 'src/features/balances/WalletPage.jsx'
+      - 'tests/bottom-navigation-v01524.test.cjs'
       - 'tests/dual-calendar-ui.test.cjs'
       - 'tests/modern-calendar-v01520.test.cjs'
       - 'tests/user-center-compact-v01521.test.cjs'
@@ -22,6 +26,10 @@ on:
     paths:
       - 'src/App.jsx'
       - 'src/features/calendar/**'
+      - 'src/components/BottomNavigation.jsx'
+      - 'src/features/orders/MyOrdersPage.jsx'
+      - 'src/features/balances/WalletPage.jsx'
+      - 'tests/bottom-navigation-v01524.test.cjs'
       - 'tests/dual-calendar-ui.test.cjs'
       - 'tests/modern-calendar-v01520.test.cjs'
       - 'tests/user-center-compact-v01521.test.cjs'
@@ -44,7 +52,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: node --test tests/dual-calendar-ui.test.cjs tests/modern-calendar-v01520.test.cjs tests/user-center-compact-v01521.test.cjs tests/user-center-v01522.test.cjs tests/admin-return-modal-v01523.test.cjs
+      - run: node --test tests/dual-calendar-ui.test.cjs tests/modern-calendar-v01520.test.cjs tests/user-center-compact-v01521.test.cjs tests/user-center-v01522.test.cjs tests/admin-return-modal-v01523.test.cjs tests/bottom-navigation-v01524.test.cjs
       - run: node --test tests/changelog-migration.test.cjs
       - run: npm run lint
       - run: npm run build

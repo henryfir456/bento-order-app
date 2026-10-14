@@ -120,3 +120,45 @@ export const getReadableOrder = async (
 export const getActiveOrder = async (database, userId, orderDate) => (
   getReadableOrder(database, userId, orderDate)
 );
+
+/** Server-authoritative historical order snapshots, including item details.
+ * Returns only orders owned by the authorized subject selected by the route.
+ */
+export const getHistoricalOrderSummaries = async (database, userId, now = new Date()) => {
+  const today = getTaipeiDate(now);
+  const result = await database.prepare(`
+    SELECT o.order_id, o.order_date, o.status, o.vendor, o.pickup_floor, o.note, o.total_amount,
+           i.line_no, i.item_name_snapshot, i.quantity, i.unit_price, i.subtotal
+    FROM orders o
+    LEFT JOIN order_items i ON i.order_id = o.order_id
+    WHERE o.user_id = ?
+      AND (o.status = 'ACTIVE' OR (o.status = 'COMPLETED' AND o.order_date < ?))
+    ORDER BY o.order_date DESC, o.order_id DESC, i.line_no ASC
+  `).bind(userId, today).all();
+  const byId = new Map();
+  for (const row of rowsFrom(result)) {
+    let order = byId.get(row.order_id);
+    if (!order) {
+      order = {
+        orderId: row.order_id,
+        date: row.order_date,
+        status: row.status,
+        vendor: row.vendor || '',
+        floor: row.pickup_floor || '',
+        note: row.note || '',
+        totalAmount: Number(row.total_amount || 0),
+        items: []
+      };
+      byId.set(row.order_id, order);
+    }
+    if (row.line_no !== null && row.line_no !== undefined) {
+      order.items.push({
+        name: row.item_name_snapshot || '',
+        quantity: Number(row.quantity || 0),
+        unitPrice: Number(row.unit_price || 0),
+        subtotal: Number(row.subtotal || 0)
+      });
+    }
+  }
+  return [...byId.values()];
+};
