@@ -11,6 +11,17 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.24': [
+    { name: '新增', changes: [
+      '首頁底部新增可操作的訂餐、我的訂單、餘額與管理導覽，支援手機底部安全區與清楚的選取狀態。',
+      '我的訂單可依月份查詢，展開正式系統保存的歷史餐點、數量與金額。',
+      '餘額頁直接查看本人目前餘額、每月收支與交易明細。'
+    ] },
+    { name: '變更', changes: [
+      '管理入口依角色與權限顯示，檢視身分不能修改他人訂單或餘額。',
+      '切換分頁保留新版月曆選取日期，保留原有訂餐、取消與管理功能。'
+    ] }
+  ],
   '0.15.23': [
     { name: '變更', changes: [
       '使用者管理中心的姓名修改與交易明細改為彈跳視窗，不再把表單插入列表上方。',
