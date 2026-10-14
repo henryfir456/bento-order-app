@@ -1,17 +1,17 @@
+# Changelog
+
 ## [0.15.25] - 2026-10-14
 
 ### Added
 
 - Automatically rank Cai Teacher menu items by confirmed order quantities: 70% recent 30-day popularity and 30% recent 90-day popularity, normalized across the active menu. Flavor Meal remains pinned ahead of the ranked items.
-- Merge current menu variants and reviewed historical codes such as C95/C95_half, C/CH, S/S_half into one parent popularity rank without modifying prices, selection IDs, historic orders or ledger.
-- Ignore cancelled orders, other vendors and synthetic fee/refund/ancillary order rows; preserve the original display sequence when there is no reliable popularity data.
+- Group post-migration normalized BASE/HALF variants (such as S and C) under one main-item popularity rank without modifying prices, selection IDs, historic orders or ledger.
+- Ignore cancelled orders, other vendors and synthetic fee/refund/ancillary order rows; seed the requested S/C display order when no post-migration sales data is available.
 
 ### Changed
 
 - Order-page Worker API includes per-item popularity ranks; React preserves the server order and keeps variants adjacent. Other vendors and historical order dates retain their existing order.
-- Popularity is computed from read-only D1 aggregation at request time; no schema change, migration or remote mutation is required.
-
-# Changelog
+- Popularity is computed only from order dates on or after the normalized menu start (2026-09-17), using read-only D1 aggregation at request time; no schema change, migration or remote mutation is required.
 
 ## [Unreleased]
 
