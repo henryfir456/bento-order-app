@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { formatDateInput, getWeekdayLeadingBlankCount } from '../../dateUtils';
 import { getCalendarDailyFlavorImage } from '../orders/dailyFlavorPresentation.js';
 
@@ -18,6 +18,32 @@ export default function ModernCalendar({ currentMonth, events, orders, onSelectD
       return { day, key, event, status, ordered, expired };
     }).filter(Boolean);
   }, [currentMonth, events, orders]);
+  const [calendarMenuNames, setCalendarMenuNames] = useState({});
+  const menuCacheRef = useRef(new Map());
+  useEffect(() => {
+    // The calendar projection includes Cai daily flavors but not HeShi menu names.
+    // Resolve only HeShi dates with an existing group and cap concurrency to two requests.
+    const pending = entries.filter((entry) => entry.event?.vendor === '禾拾'
+      && !menuCacheRef.current.has(entry.key)).map((entry) => entry.key);
+    if (!pending.length) return undefined;
+    let cancelled = false;
+    const workers = Array.from({ length: Math.min(2, pending.length) }, async () => {
+      while (!cancelled && pending.length) {
+        const key = pending.shift();
+        try {
+          const items = await loadDailyMenu(key);
+          if (cancelled) return;
+          const names = [...new Set((items || []).map((item) => item.item_name || item.name).filter(Boolean))];
+          menuCacheRef.current.set(key, names);
+          setCalendarMenuNames((previous) => ({ ...previous, [key]: names }));
+        } catch {
+          // Keep the vendor label when the read-only menu query is unavailable.
+        }
+      }
+    });
+    void Promise.all(workers);
+    return () => { cancelled = true; };
+  }, [entries, loadDailyMenu]);
   const [selectedKey, setSelectedKey] = useState('');
   const active = entries.find((entry) => entry.key === selectedKey) || entries.find((entry) => entry.status === '可訂') || entries[0];
   const [menuDetails, setMenuDetails] = useState({ key: '', items: [], loading: false, error: '' });
@@ -59,7 +85,7 @@ export default function ModernCalendar({ currentMonth, events, orders, onSelectD
               aria-pressed={active?.key === entry.key}
               className={`min-h-[94px] min-w-0 rounded-xl border p-1.5 text-left transition focus-visible:outline-2 focus-visible:outline-emerald-700 ${statusColor(entry.status)} ${active?.key === entry.key ? 'ring-2 ring-emerald-700' : ''}`}>
               <div className="text-base font-bold">{entry.day}</div>
-              <div className="mt-1 break-words text-[10px] leading-snug text-gray-700">{entry.event?.vendor ? (entry.event.vendor === '蔡老師' ? (entry.event.dailyFlavorName || entry.event.vendor) : entry.event.vendor) : '未開團'}</div>
+              <div className="mt-1 break-words text-[10px] leading-snug text-gray-700" title={calendarMenuNames[entry.key]?.join("、") || entry.event?.dailyFlavorName || entry.event?.vendor || ""}>{entry.event?.vendor ? (entry.event.vendor === '蔡老師' ? (entry.event.dailyFlavorName || entry.event.vendor) : (calendarMenuNames[entry.key]?.slice(0, 2).join('、') || entry.event.vendor)) : '未開團'}</div>
               <div className="mt-1 text-[10px] font-semibold leading-tight">{entry.status}</div>
             </button>
           ))}
