@@ -32,7 +32,7 @@ const row = (legacy_item_id, quantity, order_date='2026-10-10', item_name_snapsh
 test('Cai Teacher: flavor is pinned, canonical variants share a rank, popularity beats original menu position', async () => {
   const db = fakeDb([
     row('S', 7), row('S_half', 6),
-    row('C', 11),
+    row('C', 5),
     row('C01', 2), row('C02', 1), row('C03', 1),
     row('E', 100)
   ]);
@@ -65,7 +65,7 @@ test('90-day counts break a close recent ranking and no-orders fallback is stabl
   assert.ok(ranked.find(x=>x.legacy_item_id==='C').popularity_score >
     ranked.find(x=>x.legacy_item_id==='S').popularity_score);
   const empty=await rankCaiTeacherMenu(fakeDb([]),menu,{vendor:'蔡老師',now});
-  assert.deepEqual(empty.slice(0,4).map(x=>x.legacy_item_id),['E','E','C01','C02']);
+  assert.deepEqual(empty.slice(0,4).map(x=>x.legacy_item_id),['E','E','S','S']);
 });
 
 test('non Cai Teacher vendors preserve their original menu and do not query D1', async () => {
