@@ -18,7 +18,7 @@ const menuCode = (vendor, item) => normalizeLegacyMenuIdentity({
   itemCode: item.legacy_item_id,
   variantKey: item.variant_key,
   itemName: item.item_name
-})?.itemCode || null;
+})?.item_code || null;
 
 // Only match canonical current-menu codes. Historical synthetic fee/refund rows
 // (e.g. FR1, revert1) never affect popularity even if quantity is enormous.
@@ -49,7 +49,7 @@ export const rankCaiTeacherMenu = async (database, menu, {
       itemCode: row.legacy_item_id,
       itemName: row.item_name_snapshot
     });
-    const code = identity?.itemCode;
+    const code = identity?.item_code;
     if (!code || !eligibleCodes.has(code)) continue;
     const quantity = Number(row.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
