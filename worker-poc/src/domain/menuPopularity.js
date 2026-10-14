@@ -28,7 +28,8 @@ export const rankCaiTeacherMenu = async (database, menu, {
 } = {}) => {
   if (normalizeMenuVendor(vendor) !== POPULARITY_VENDOR || menu.length < 2) return menu;
   const codeByIndex = menu.map((item) => menuCode(vendor, item));
-  const eligibleCodes = new Set(codeByIndex.filter(Boolean));
+  const eligibleCodes = new Set(codeByIndex.filter((code, index) =>
+    code && code !== 'FR' && Number(menu[index].price) > 0));
   const today = getTaipeiDate(now);
   const since90 = dateDaysAgo(today, 89);
   const since30 = dateDaysAgo(today, 29);
@@ -71,6 +72,7 @@ export const rankCaiTeacherMenu = async (database, menu, {
     if (code && !originalOrder.has(code)) originalOrder.set(code, index);
   });
   const codeOrder = [...new Set(codeByIndex.filter(Boolean))].sort((a, b) => {
+    if (a === 'FR' || b === 'FR') return a === 'FR' ? 1 : -1;
     if (a === PINNED_CODE || b === PINNED_CODE) return a === PINNED_CODE ? -1 : 1;
     return weighted(b) - weighted(a) || originalOrder.get(a) - originalOrder.get(b);
   });
