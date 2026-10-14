@@ -1,7 +1,8 @@
 import { getAdminSummary, getMemberBalances } from '../domain/adminSummary.js';
 import { getBalanceHistory } from '../domain/ledger.js';
 import { getUserById, currentBalanceProjection } from '../db/users.js';
-import { appendAuditEvent } from '../db/audit.js';
+import { appendAuditEvent, auditStatement } from '../db/audit.js';
+import { prepareStatement, runMutationBatch } from '../db/transactions.js';
 import { notFound } from '../http/errors.js';
 import { adminBindEmployee } from '../domain/adminIdentity.js';
 import {
@@ -61,6 +62,8 @@ export const handleAdminRoute = async (request, env, {
   const isMembers = request.method === 'GET' && url.pathname === '/api/admin/members/balances';
   const ledgerMatch = request.method === 'GET' && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/ledger$/);
   const isUserLedger = Boolean(ledgerMatch);
+  const nameMatch = request.method === 'PATCH' && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/name$/);
+  const isNameUpdate = Boolean(nameMatch);
   const bindingMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/employee-binding$/);
   const isEmployeeBinding = request.method === 'POST' && Boolean(bindingMatch);
   const isAnnouncementList = request.method === 'GET'
@@ -89,13 +92,13 @@ export const handleAdminRoute = async (request, env, {
   const isDailyFlavorSync = request.method === 'POST'
     && url.pathname === '/api/admin/daily-flavors/sync';
   const isDailyFlavorRoute = isDailyFlavorStatus || isDailyFlavorSync;
-  if (!isSummary && !isMembers && !isUserLedger && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
+  if (!isSummary && !isMembers && !isUserLedger && !isNameUpdate && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
     && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId
     && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview && !isMenuVendorList
     && !isDailyFlavorRoute) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: !isUserLedger && !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isDailyFlavorRoute,
+    allowViewAs: !isUserLedger && !isNameUpdate && !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isDailyFlavorRoute,
     now
   });
   if (isDailyFlavorRoute) {
@@ -171,6 +174,40 @@ export const handleAdminRoute = async (request, env, {
   }
   if (isMenuVendorList) {
     return jsonResponse(await listAdminMenuVendors(env.DB, identity));
+  }
+  if (isNameUpdate) {
+    assertCan(identity, ACTIONS.READ_MEMBER_BALANCES);
+    if (identity.authorizationActor?.role !== 'Admin' || identity.viewAs) {
+      throw notFound('USER_NOT_FOUND');
+    }
+    let userId;
+    try { userId = decodeURIComponent(nameMatch[1]).trim(); }
+    catch { throw badRequest('USER_ID_INVALID'); }
+    if (!userId) throw badRequest('USER_ID_REQUIRED');
+    const body = await readJson(request);
+    const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : '';
+    if (!displayName || displayName.length > 100) throw badRequest('DISPLAY_NAME_INVALID');
+    const target = await getUserById(env.DB, userId);
+    if (!target) throw notFound('USER_NOT_FOUND');
+    if (target.displayName !== displayName) {
+      const occurredAt = now.toISOString();
+      await runMutationBatch(env.DB, [
+        prepareStatement(env.DB, 'UPDATE users SET display_name = ?, updated_at = ? WHERE user_id = ?', [displayName, occurredAt, userId]),
+        auditStatement(env.DB, {
+          actorUserId: identity.authorizationActor.userId,
+          actorAuthMode: identity.authorizationActor.authMode,
+          actorEmployeeIdSnapshot: identity.authorizationActor.employeeId,
+          actorLineUserIdSnapshot: identity.authorizationActor.lineUserId,
+          targetUserId: userId,
+          targetEmployeeIdSnapshot: target.employeeId,
+          targetLineUserIdSnapshot: target.lineUserId,
+          action: 'ADMIN_USER_NAME_UPDATED',
+          metadata: { previousName: target.displayName, newName: displayName },
+          occurredAt
+        })
+      ]);
+    }
+    return jsonResponse({ success: true, userId, displayName });
   }
   if (isUserLedger) {
     assertCan(identity, ACTIONS.READ_MEMBER_BALANCES);

@@ -52,12 +52,12 @@ const MemberAction = ({ user, canTopup, canBindEmployee, isViewAsMode, onOpenTop
     : <span className="text-gray-400">—</span>;
 };
 
-const MemberIdentity = ({ user }) => (
+const MemberIdentity = ({ user, onNameClick }) => (
   <div className="min-w-0 space-y-1">
-    <div className="truncate font-medium">{user.name || '未命名使用者'}</div>
+    <button type="button" className="truncate text-left font-medium text-emerald-800 underline decoration-dotted" onClick={() => onNameClick(user)}>{user.name || '未命名使用者'}</button>
     <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-gray-500">
       <span className="whitespace-nowrap">員編 {formatEmployeeId(user.employeeId)}</span>
-      <IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} />
+      <IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} shortLineLabel />
     </div>
   </div>
 );
@@ -74,13 +74,46 @@ export default function MemberBalanceManagement({
   canViewAsUser = false,
   canDelegateOrder = false,
   onViewAsUser,
-  onDelegateOrderUser
+  onDelegateOrderUser,
+  onUserNameUpdated
 }) {
   const [sort, setSort] = useState({ key: 'balance', direction: 'asc' });
   const toggleSort = (key) => setSort(current => ({ key, direction: current.key === key && current.direction === 'asc' ? 'desc' : 'asc' }));
   const SortHeading = ({ field, children }) => <button type="button" className="flex items-center gap-1 whitespace-nowrap font-bold hover:text-emerald-700" onClick={() => toggleSort(field)} aria-label={`${children}排序`} aria-pressed={sort.key === field}>{children}<span aria-hidden="true">{sort.key === field ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}</span></button>;
   const [employeeIdFilter, setEmployeeIdFilter] = useState('');
   const [selectedUser, setSelectedUser] = useState(null);
+  const [editingName, setEditingName] = useState(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
+  const [nameError, setNameError] = useState('');
+  const startNameEdit = (user) => {
+    if (isViewAsMode || !user.userId) return;
+    setEditingName(user);
+    setNameDraft(user.name || '');
+    setNameError('');
+  };
+  const saveName = async (event) => {
+    event.preventDefault();
+    const displayName = nameDraft.trim();
+    if (!editingName?.userId || nameSaving) return;
+    if (!displayName || displayName.length > 100) {
+      setNameError('姓名需為 1～100 個字元');
+      return;
+    }
+    setNameSaving(true);
+    setNameError('');
+    try {
+      const response = await apiClient.updateAdminUserName({ userId: editingName.userId, displayName });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error('UPDATE_FAILED');
+      setEditingName(null);
+      await onUserNameUpdated?.();
+    } catch {
+      setNameError('儲存失敗，請確認管理權限並重試。');
+    } finally {
+      setNameSaving(false);
+    }
+  };
   const [month, setMonth] = useState(() => { const { year, month } = getTaipeiYearMonth(); return `${year}-${String(month).padStart(2, '0')}`; });
   const [ledger, setLedger] = useState(null);
   const [ledgerError, setLedgerError] = useState('');
@@ -115,8 +148,8 @@ export default function MemberBalanceManagement({
   }, [adminMembers, employeeIdFilter, sort]);
   const hasActions = !isViewAsMode && (canTopup || canBindEmployee || canViewAsUser || canDelegateOrder);
   const UserNavigationActions = ({ user }) => isViewAsMode ? null : <div className="flex flex-wrap gap-1">
-    {canViewAsUser && <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">👁 檢視身分</button>}
-    {canDelegateOrder && <button type="button" onClick={() => onDelegateOrderUser(user)} className="rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-bold text-white">🍱 代點餐</button>}
+    {canViewAsUser && <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">檢視身分</button>}
+    {canDelegateOrder && <button type="button" onClick={() => onDelegateOrderUser(user)} className="rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-bold text-white">代點餐</button>}
   </div>;
 
   return (
@@ -141,6 +174,17 @@ export default function MemberBalanceManagement({
         <p className="text-xs text-gray-500">預設依餘額由小到大排序，點選表格標題可切換排序。</p>
       </div>
 
+      {editingName && !isViewAsMode && <form onSubmit={saveName} className="rounded-2xl border border-emerald-200 bg-white p-4 space-y-3" aria-label="修改使用者姓名">
+        <h3 className="font-bold">修改姓名 · 員編 {formatEmployeeId(editingName.employeeId)}</h3>
+        <label className="block text-sm">姓名
+          <input required maxLength={100} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} className="mt-1 w-full rounded-xl border border-gray-300 p-3" />
+        </label>
+        {nameError && <p role="alert" className="text-sm text-red-700">{nameError}</p>}
+        <div className="flex gap-2">
+          <button type="submit" disabled={nameSaving} className="rounded-lg bg-emerald-800 px-4 py-2 text-white disabled:opacity-50">{nameSaving ? '儲存中…' : '儲存姓名'}</button>
+          <button type="button" onClick={() => setEditingName(null)} className="rounded-lg border px-4 py-2">取消</button>
+        </div>
+      </form>}
       {selectedUser && !isViewAsMode && <section className="rounded-2xl border border-emerald-200 bg-white p-4 space-y-3" aria-label="使用者交易明細">
         <div className="flex items-start justify-between gap-3"><div><h3 className="font-bold">{selectedUser.name || '使用者'}｜交易明細</h3><p className="text-xs text-gray-500">員編 {formatEmployeeId(selectedUser.employeeId)} · 目前名單餘額 {formatBalanceAmount(selectedUser.balance)}</p></div><button type="button" onClick={() => setSelectedUser(null)} aria-label="關閉交易明細">✕</button></div>
         <label className="block text-sm">交易月份 <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="ml-2 rounded border p-1" /></label>
@@ -180,7 +224,7 @@ export default function MemberBalanceManagement({
                   <tr key={memberKey(user, idx)} className="border-b last:border-0 align-top">
                     <td className="p-2">
                       <div className="font-mono text-xs">{formatEmployeeId(user.employeeId)}</div>
-                      <div className="mt-1 break-words font-medium">{user.name || '未命名使用者'}</div>
+                      <button type="button" onClick={() => startNameEdit(user)} className="mt-1 break-words text-left font-medium text-emerald-800 underline decoration-dotted hover:decoration-solid" aria-label={`修改 ${user.name || '未命名使用者'} 的姓名`}>{user.name || '未命名使用者'}</button>
                     </td>
                     <td className="p-2">
                       <div className="font-medium">{user.role || 'User'}</div>
@@ -192,7 +236,7 @@ export default function MemberBalanceManagement({
                       <div className="flex flex-wrap gap-1">
                         <UserNavigationActions user={user} />
                         <MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} />
-                        {!isViewAsMode && <button type="button" className="rounded-lg border border-emerald-700 px-2 py-1.5 text-xs font-bold text-emerald-800" onClick={() => setSelectedUser(user)}>交易明細</button>}
+                        {!isViewAsMode && <button type="button" className="rounded-lg border border-emerald-700 px-2 py-1.5 text-xs font-bold text-emerald-800" onClick={() => setSelectedUser(user)}>明細</button>}
                       </div>
                     </td>
                   </tr>
@@ -205,7 +249,7 @@ export default function MemberBalanceManagement({
             {filteredMembers.map((user, idx) => (
               <article key={memberKey(user, idx)} className="rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2">
                 <div className="flex min-w-0 items-start justify-between gap-3">
-                  <MemberIdentity user={user} />
+                  <MemberIdentity user={user} onNameClick={startNameEdit} />
                   {hasActions && <div className="flex flex-col gap-1"><UserNavigationActions user={user} /><MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} /></div>}
                 </div>
                 {!isViewAsMode && <button type="button" className="text-sm font-bold text-emerald-800 underline" onClick={() => setSelectedUser(user)}>檢視交易明細</button>}

@@ -12,7 +12,7 @@ test('Admin top navigation hides duplicate identity and delegate buttons while P
 });
 test('unified user center uses five columns and ledger action', () => {
   for (const title of ['員編／姓名', '角色／LINE 綁定', '樓層', '餘額', '操作']) assert.ok(center.includes(title), title);
-  assert.match(center, /setSelectedUser\(user\)}>交易明細/);
+  assert.match(center, /setSelectedUser\(user\)}>明細/);
   assert.match(center, /getAdminUserLedger/);
   assert.match(center, /key: 'balance', direction: 'asc'/);
 });

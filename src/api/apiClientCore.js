@@ -462,6 +462,11 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'GET',
     '/api/admin/members/balances'
   ),
+  updateAdminUserName: ({ userId, displayName } = {}) => workerRequest(
+    'updateAdminUserName', 'PATCH',
+    `/api/admin/users/${encodeURIComponent(String(userId || '').trim())}/name`,
+    { credentialMode: 'line', body: { displayName } }
+  ),
   getAdminUserLedger: ({ userId, month } = {}) => workerRequest(
     'getAdminUserLedger',
     'GET',

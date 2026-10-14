@@ -7,6 +7,18 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.22] - 2026-10-14
+
+### Changed
+
+- Let Admin click an existing member name to change it via an audited, authenticated endpoint (no View As or guest mutation).
+- Shorten the user-center bound-LINE badge to 已綁定 and unify member actions to icon-free, compact labels.
+- Keep Cai Teacher's daily flavor name and image in modern calendar day details; display HeShi only by vendor name without extra menu lookups or images.
+
+### Verification boundary
+
+- User-name edit adds a formal Worker endpoint and needs Wrangler production deployment and post-deployment verification; Netlify frontend publication and Android acceptance are separate gates.
+
 ## [0.15.21] - 2026-10-14
 
 ### Changed

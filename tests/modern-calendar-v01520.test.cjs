@@ -17,10 +17,9 @@ test('modern view removes next-day banner and formats weekday', () => {
   assert.match(modern, /weekdayText/);
   assert.match(modern, /dateLabel/);
 });
-test('vendor-specific menu uses authenticated order-page response', () => {
-  assert.match(app, /loadModernDailyMenu/);
-  assert.match(app, /apiClient\.getOrderPage/);
-  assert.match(modern, /loadDailyMenu\(key\)/);
-  assert.match(modern, /item\.image_url/);
-  assert.match(modern, /const isCai/);
+test('modern calendar shows Cai flavor only and HeShi vendor label without menu API reads', () => {
+  assert.doesNotMatch(modern, /loadDailyMenu|calendarMenuNames|menuDetails|items\.map/);
+  assert.match(modern, /getCalendarDailyFlavorImage/);
+  assert.match(modern, /entry\.event\.vendor === '蔡老師'/);
+  assert.match(modern, /entry\.event\.vendor\) : '未開團'/);
 });

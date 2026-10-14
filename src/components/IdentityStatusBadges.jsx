@@ -10,7 +10,7 @@ const toneClasses = Object.freeze({
   unknown: 'bg-gray-50 text-gray-600 border-gray-200'
 });
 
-export default function IdentityStatusBadges({ authSource, identityState, lineBound, lineUserId, fields = null }) {
+export default function IdentityStatusBadges({ authSource, identityState, lineBound, lineUserId, fields = null, shortLineLabel = false }) {
   const badges = [...getIdentityBadges({ authSource, identityState }),
     ...(fields?.includes('lineBinding') ? [getLineBindingBadge({ lineBound, lineUserId })] : [])]
     .filter((badge) => !fields || fields.includes(badge.key));
@@ -22,7 +22,7 @@ export default function IdentityStatusBadges({ authSource, identityState, lineBo
           data-identity-value={badge.value || 'UNKNOWN'}
           className={`inline-flex max-w-full items-center whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[10px] font-bold leading-4 ${toneClasses[badge.tone]}`}
         >
-          {badge.label}
+          {shortLineLabel && badge.key === 'lineBinding' && badge.value === 'BOUND' ? '已綁定' : badge.label}
         </span>
       ))}
     </span>
