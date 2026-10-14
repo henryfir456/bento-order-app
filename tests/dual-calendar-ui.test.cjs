@@ -6,10 +6,10 @@ const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
 const modern = fs.readFileSync(path.join(root, 'src/features/calendar/ModernCalendar.jsx'), 'utf8');
 
-test('classic calendar remains the default and is shown to non-admin accounts', () => {
+test('classic calendar remains the default and switch is limited to real identity', () => {
   assert.match(app, /'bento-calendar-ui'\) === 'modern'/);
   assert.match(app, /catch \{ return 'classic'; \}/);
-  assert.match(app, /authRole === 'Admin' && !isViewAsMode && !delegatedOrderUser/);
+  assert.match(app, /isRegistered && !isViewAsMode && !delegatedOrderUser/);
   assert.match(app, /canPreviewModernCalendar \? calendarUi : 'classic'/);
 });
 test('calendar views share existing date selection and cannot mutate order directly', () => {
