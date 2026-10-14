@@ -11,6 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.27': [
+    { name: '變更', changes: [
+      '訂餐頁移除查看店家菜單快捷按鈕；店家專區保留於管理中心。',
+      '我的訂單預設顯示台北時區當月份，保留月份切換，移除冗長說明與篩選月份標題。',
+      '餘額頁與介面切換移除重複說明文字。',
+      'Admin 管理中心不再重複顯示檢視身分和選擇代點餐，既有授權操作與 ProxyAdmin 不變。'
+    ] }
+  ],
   '0.15.26': [
     { name: '變更', changes: [
       '首頁上方僅保留系統名稱、使用者與 LINE 狀態；移除重複的餘額與管理快捷按鈕。',
