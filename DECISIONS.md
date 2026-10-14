@@ -157,23 +157,23 @@ A bound member may deliberately enter through employee authentication. Showing b
 - Header and member cards share bound/unbound/unknown interpretation. Only confirmed unbound employee sessions offer registered binding.
 - Foreground reads refresh binding without replaying mutations or LIFF redirects; session/role invalidation clears protected caches, while valid same-actor reads preserve View As and newer financial/profile state.
 
-## D-010 — Formal Cloudflare Worker deployment must not use GitHub Actions
+## D-010 — Formal Worker deployment is direct Wrangler or new-bundle Cloudflare API, never GitHub Actions
 
-**Decision (2026-10-14)**
+**Decision (updated 2026-10-14)**
 
-Deploy the production `bento-api-poc` Worker directly from the latest merged `main` with a locally or remotely executed Wrangler CLI. **GitHub Actions is prohibited for Worker deployment** (including push-triggered workflows, `workflow_dispatch`, reruns, or other workflow jobs); remaining GitHub Actions workflows may perform tests only, not deployment.
+Production `bento-api-poc` deployment shall use an authorized direct Wrangler CLI execution or the connected Cloudflare API to upload a **fresh, complete Worker bundle built from the latest merged `main` source**. GitHub Actions cannot deploy, trigger deployments, or publish Worker versions, but non-deployment CI tests may remain.
 
 **Rationale**
 
-Recent successful Cloudflare deployment records came from direct Cloudflare operations, not GitHub Actions; the attempted Actions deployment failed before Wrangler because the repository lacked `CLOUDFLARE_API_TOKEN`. Recommending another Actions run or asking for Actions Secrets repeats an unrelated failed route.
+On 2026-10-14 the successful formal Worker upload was recorded by Cloudflare as `source=api` / `workers/triggered_by=upload` (new version `bd924008-f0ec-42dd-8760-300c6a31b1ef`, deployment `b566b8c5-4601-419d-b3c8-82a593410861`), not GitHub Actions or Wrangler. Exclusively mandating Wrangler disregards a verified successful direct route. Missing GitHub Actions Secrets has no bearing on direct Cloudflare connector authorization.
 
 **Boundary**
 
-- Build/install/test from the latest `main`, then run `npx wrangler deploy --config wrangler.jsonc --keep-vars` in `worker-poc/` using an already-authorized direct execution environment.
-- Do not create, restore, trigger, or retry GitHub Actions workflows to release a Worker; do not require repository Actions Secrets as a prerequisite for direct deployment.
-- Cloudflare's deployment `source=api` and `source=wrangler` describe different actual methods. Do not call an API deployment a Wrangler deployment; **never redeploy an existing Worker version as a substitute for deploying the new `main` source**.
-- Require new Worker Version ID, Deployment ID, 100% traffic, healthy `/api/health`, authorization and CORS smoke evidence. Netlify frontend delivery is verified separately.
-- If direct execution is unavailable, report `WAITING_FOR_DELIVERY` with the exact blocker and preserve the previous Worker. Do not silently reroute through GitHub Actions.
+- Verify latest `main` SHA and source equivalence of the **newly built** Worker bundle, all modules/dependencies, formal D1 binding `bento-formal`, Secrets, schedules, runtime configuration and behavior before upload.
+- Allowed: `npm ci --prefix worker-poc`, required tests, `npx wrangler deploy --config wrangler.jsonc --keep-vars` from `worker-poc/` using authorized direct CLI; OR authorized Cloudflare connector/API upload of a new complete compiled Worker followed by deployment verification. Both require appropriate build/test evidence.
+- Do not use GitHub Actions for deployment, ask for GitHub Actions Secrets, or redeploy/reissue an existing Worker Version to claim a new release.
+- Record actual `source=api` versus `source=wrangler` faithfully, new Version ID, Deployment ID, 100% traffic, health/D1/auth/CORS/contract smoke, and separate Netlify production status.
+- If the connected API cannot obtain/prove a **complete new bundle** or preserve bindings, do not improvise a partial bundle or alter production; keep `WAITING_FOR_DELIVERY` with the exact blocker.
 
 ## Maintenance rule
 
