@@ -8,6 +8,7 @@ import {
 } from '../domain/calendar.js';
 import { deadlineInfo, getTaipeiDate, isDateOnly } from '../domain/deadlines.js';
 import { getCustomerMenu } from '../domain/menu.js';
+import { rankCaiTeacherMenu } from '../domain/menuPopularity.js';
 import { getCaiTeacherDailyFlavor } from '../domain/dailyFlavors.js';
 import {
   getHistoricalOrdersMap,
@@ -151,7 +152,10 @@ export const handleReadOnlyRequest = async (request, env, {
     if (!setting || !setting.vendor) {
       throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
     }
-    const menu = await getCustomerMenu(env.DB, { vendor: setting.vendor, targetDate });
+    const baseMenu = await getCustomerMenu(env.DB, { vendor: setting.vendor, targetDate });
+    const menu = targetDate >= '2026-10-14'
+      ? await rankCaiTeacherMenu(env.DB, baseMenu, { vendor: setting.vendor, now })
+      : baseMenu;
     const dailyFlavor = await getCaiTeacherDailyFlavor(env.DB, {
       vendor: setting.vendor,
       targetDate,

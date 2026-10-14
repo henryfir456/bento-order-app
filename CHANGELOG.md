@@ -7,6 +7,19 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.25] - 2026-10-14
+
+### Added
+
+- Automatically rank Cai Teacher menu items by confirmed order quantities: 70% recent 30-day popularity and 30% recent 90-day popularity, normalized across the active menu. Flavor Meal remains pinned ahead of the ranked items.
+- Group post-migration normalized BASE/HALF variants (such as S and C) under one main-item popularity rank without modifying prices, selection IDs, historic orders or ledger.
+- Ignore cancelled orders, other vendors and synthetic fee/refund/ancillary order rows; seed the requested S/C display order when no post-migration sales data is available.
+
+### Changed
+
+- Order-page Worker API includes per-item popularity ranks; React preserves the server order and keeps variants adjacent. Other vendors and historical order dates retain their existing order.
+- Popularity is computed only from order dates on or after the normalized menu start (2026-09-17), using read-only D1 aggregation at request time; no schema change, migration or remote mutation is required.
+
 ## [0.15.24] - 2026-10-14
 
 ### Added

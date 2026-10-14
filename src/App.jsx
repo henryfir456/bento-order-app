@@ -3222,6 +3222,9 @@ export default function App() {
         baseName: groupKey,
         baseImageUrl: '',
         variantImageUrl: '',
+        popularityRank: Number.isFinite(Number(item.popularity_rank))
+          && item.popularity_rank !== null && item.popularity_rank !== undefined
+          ? Number(item.popularity_rank) : Number.MAX_SAFE_INTEGER,
         items: []
       };
 
@@ -3237,7 +3240,7 @@ export default function App() {
     return Array.from(groups.values()).map(group => ({
       ...group,
       imageUrl: group.baseImageUrl || group.variantImageUrl
-    }));
+    })).sort((a, b) => a.popularityRank - b.popularityRank);
   }, [dailyFlavorCard, menu]);
 
   // 修復版：精確比對 Intl 回傳的農曆日期
