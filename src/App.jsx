@@ -3767,7 +3767,7 @@ export default function App() {
 
       {isRegistered && viewMode !== 'order' && (
         <BottomNavigation current={viewMode} onNavigate={navigateBottomTab}
-          balance={displayBalance} balanceKnown={Number.isFinite(Number(effectiveUser?.balance ?? authUser?.balance))}
+          balance={displayBalance} balanceKnown={(effectiveUser?.balance ?? authUser?.balance) != null && Number.isFinite(Number(effectiveUser?.balance ?? authUser?.balance))}
           canViewWallet={canAuth('viewOwnBalance') && !isViewAsMode && !delegatedOrderUser}
           canManage={!isViewAsMode && !delegatedOrderUser
             && (canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary') || canAuth('manageMenu') || canAuth('manageAnnouncements'))} />
