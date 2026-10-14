@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.2': [
+    { name: '變更', changes: [
+      '管理中心依訂餐管理、使用者與帳務、系統設定分組，保留原有權限與功能入口。',
+      '「介面切換」改稱「月曆樣式」，選項仍為「經典／極簡」；「使用者管理中心」改稱「使用者管理」。'
+    ] }
+  ],
   '0.16.1': [
     { name: '變更', changes: [
       '管理中心「介面切換」按鈕改名為「經典」與「極簡」，既有選取狀態及介面偏好不變。'
