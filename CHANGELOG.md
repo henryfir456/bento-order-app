@@ -7,6 +7,18 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.15.20] - 2026-10-14
+
+### Fixed
+
+- Restore visible User Management Center naming on the existing balance-management entry; retain the unified member list and original authorization.
+- Remove the modern calendar next-orderable-day card, show meal/vendor labels in date cells, and display the weekday with selected dates.
+- Read vendor-specific daily menu items and images through the existing authenticated order-page API, avoiding Cai Teacher daily-flavor content for HeShi.
+
+### Verification boundary
+
+- Admin-only preview and classic fallback remain unchanged; front-end deployment and Android LINE acceptance must be verified separately.
+
 ## [0.15.19] - 2026-10-13
 
 ### Added
