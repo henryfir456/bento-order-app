@@ -252,7 +252,7 @@ export default function App() {
   const [adminSummaryLoading, setAdminSummaryLoading] = useState(false);
   const [adminSummaryError, setAdminSummaryError] = useState('');
   const adminSummaryRequestRef = useRef(0);
-  const [adminSection, setAdminSection] = useState('orders');
+  const [adminSection, setAdminSection] = useState('hub');
   const [adminAnnouncements, setAdminAnnouncements] = useState([]);
   const [adminAnnouncementsLoading, setAdminAnnouncementsLoading] = useState(false);
   const [adminAnnouncementsError, setAdminAnnouncementsError] = useState('');
@@ -2650,7 +2650,8 @@ export default function App() {
     } else if (key === 'wallet') {
       openWalletPage();
     } else if (key === 'admin' && !isViewAsMode && !delegatedOrderUser) {
-      handleAdminSectionChange(canAuth('viewMemberBalances') ? 'balances' : 'orders');
+      setAdminSection('hub');
+      setViewMode('admin');
     }
   };
 
@@ -3281,7 +3282,7 @@ export default function App() {
   const effectiveRole = effectiveUser?.role || 'User';
   const headerRoleLabel = ['Admin', 'ProxyAdmin'].includes(effectiveRole) ? effectiveRole : '';
   const isViewAsMode = Boolean(viewAsUser);
-  const canPreviewModernCalendar = isRegistered && authRole === 'Admin' && !isViewAsMode && !delegatedOrderUser;
+  const canPreviewModernCalendar = isRegistered && !isViewAsMode && !delegatedOrderUser;
   const effectiveCalendarUi = canPreviewModernCalendar ? calendarUi : 'classic';
   const selectCalendarUi = (nextUi) => {
     const next = nextUi === 'modern' ? 'modern' : 'classic';
@@ -3385,17 +3386,6 @@ export default function App() {
                 {displayFloor}
               </button>
             ))}
-            {isRegistered && !isViewAsMode && !delegatedOrderUser && can('viewOwnBalance') && (
-              <button
-                type="button"
-                onClick={fetchBalanceHistory}
-                className="inline-flex items-center gap-1 rounded text-xs text-emerald-200 hover:underline focus:outline-none"
-              >
-                <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${displayBalance < 0 ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-yellow-300'}`}>
-                  {formatBalanceAmount(displayBalance)}
-                </span>
-              </button>
-            )}
             {isRegistered && apiClient.transport === 'worker' && (
               <IdentityStatusBadges fields={['lineBinding']} lineBound={authUser?.lineBound} lineUserId={authUser?.lineUserId} />
             )}
@@ -3419,98 +3409,15 @@ export default function App() {
             onExit={handleExitViewAs}
             onExitDelegated={handleExitDelegatedOrder}
           />
-          <div aria-label="功能操作" className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-            {isRegistered && (
-              <button
-                type="button"
-                onClick={openVendorHub}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${['vendors', 'vendorDetail'].includes(viewMode) ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
-              >
-                🏪 店家專區
-              </button>
-            )}
-            {isRegistered && authRole !== 'Admin' && canAuth('viewAsUser') && !isViewAsMode && (
-              <button
-                type="button"
-                onClick={() => handleOpenViewAs('view')}
-                className="bg-emerald-800 hover:bg-emerald-700 text-emerald-100 text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold"
-              >
-                👁 檢視身分
-              </button>
-            )}
-            {isRegistered
-              && apiClient.transport === 'worker'
-              && canAuth('delegateOrder')
-              && authRole !== 'Admin'
-              && !isViewAsMode
-              && !delegatedOrderUser && (
-              <button
-                type="button"
-                onClick={() => handleOpenViewAs('delegate')}
-                className="bg-sky-800 hover:bg-sky-700 text-sky-100 text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold"
-              >
-                🍱 選擇代點餐
-              </button>
-            )}
-            {isRegistered && can('viewAdminOrderSummary') && (
-              <button
-                type="button"
-                onClick={() => handleAdminSectionChange('orders')}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'orders' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
-              >
-                📋 訂單總覽
-              </button>
-            )}
-            {isRegistered && can('viewMemberBalances') && (
-              <button
-                type="button"
-                onClick={() => handleAdminSectionChange('balances')}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'balances' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
-              >
-                👥 使用者管理中心
-              </button>
-            )}
-            {isRegistered && apiClient.transport === 'worker' && canAuth('manageAnnouncements') && !isViewAsMode && (
-              <button
-                type="button"
-                onClick={() => handleAdminSectionChange('announcements')}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'announcements' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
-              >
-                📢 公告管理
-              </button>
-            )}
-            {isRegistered && apiClient.transport === 'worker' && canAuth('manageMenu') && !isViewAsMode && (
-              <button
-                type="button"
-                onClick={() => handleAdminSectionChange('menuChanges')}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold ${viewMode === 'admin' && adminSection === 'menuChanges' ? 'bg-amber-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
-              >
-                🧾 菜單品項維護
-              </button>
-            )}
-            {isRegistered && can('manageCalendar') && (
-              <button
-                type="button"
-                onClick={adminManageMode ? handleToggleAdminManage : openAdminCalendar}
-                disabled={isViewAsMode}
-                className={`text-xs px-2.5 py-1.5 rounded-lg transition shadow-sm font-bold disabled:cursor-not-allowed disabled:opacity-50 ${adminManageMode ? 'bg-rose-600 text-white' : 'bg-emerald-800 text-emerald-100'}`}
-              >
-                {adminManageMode ? '🔒 離開開團' : '📅 開團'}
-              </button>
-            )}
-            {isRegistered && viewMode !== 'calendar' && (
-              <button
-                onClick={['vendors', 'vendorDetail'].includes(viewMode) ? handleExitVendorHub : handleExitToCalendar}
-                className="bg-emerald-700 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg transition"
-              >
-                📅 月曆
-              </button>
-            )}
-          </div>
         </div>
       </header>
 
       <main className="w-full max-w-xl min-w-0 mx-auto flex-1 p-4">
+        {isRegistered && viewMode === 'calendar' && !loading && (
+          <div className="mb-4 flex justify-end">
+            <button type="button" onClick={openVendorHub} className="min-h-11 rounded-xl border border-emerald-700 bg-white px-3 text-sm font-semibold text-emerald-800">查看店家菜單 ›</button>
+          </div>
+        )}
         {isRegistered && viewMode === 'calendar' && !loading && (
           <div className="mb-4 min-h-[3rem]">
             {announcementsLoaded && announcements[0] ? (
@@ -3674,15 +3581,6 @@ export default function App() {
           </div>
         )}
 
-        {isRegistered && viewMode === 'calendar' && !loading && canPreviewModernCalendar && (
-          <div className="mb-3 rounded-xl border border-emerald-200 bg-white p-3" aria-label="月曆介面選擇">
-            <div className="mb-2 text-xs font-bold text-emerald-900">介面預覽 · 僅管理員可切換</div>
-            <div className="flex gap-2">
-              <button type="button" aria-pressed={effectiveCalendarUi === 'classic'} onClick={() => selectCalendarUi('classic')} className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-bold ${effectiveCalendarUi === 'classic' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>經典版</button>
-              <button type="button" aria-pressed={effectiveCalendarUi === 'modern'} onClick={() => selectCalendarUi('modern')} className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-bold ${effectiveCalendarUi === 'modern' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>新版預覽</button>
-            </div>
-          </div>
-        )}
         {isRegistered && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (
           <ModernCalendar currentMonth={currentMonth} events={calendarEvents} orders={userOrdersMap}
             onSelectDate={handleSelectDate}
@@ -3777,6 +3675,27 @@ export default function App() {
 
         {isRegistered && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
+            {adminSection === 'hub' && (
+              <section aria-label="管理中心" className="space-y-3">
+                <h2 className="text-xl font-bold text-[#2C4A3E]">管理中心</h2>
+                <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
+                {canAuth('viewAdminOrderSummary') && <button type="button" onClick={() => handleAdminSectionChange('orders')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">訂單總覽 ›</button>}
+                {canAuth('viewMemberBalances') && <button type="button" onClick={() => handleAdminSectionChange('balances')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">使用者管理中心 ›</button>}
+                {canAuth('viewAsUser') && <button type="button" onClick={() => handleOpenViewAs('view')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">檢視身分 ›</button>}
+                {canAuth('delegateOrder') && <button type="button" onClick={() => handleOpenViewAs('delegate')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">選擇代點餐 ›</button>}
+                {canAuth('manageCalendar') && <button type="button" onClick={() => openAdminCalendar()} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">開團管理 ›</button>}
+                {canAuth('manageAnnouncements') && <button type="button" onClick={() => handleAdminSectionChange('announcements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">公告管理 ›</button>}
+                {canAuth('manageMenu') && <button type="button" onClick={() => handleAdminSectionChange('menuChanges')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">菜單品項維護 ›</button>}
+                <div className="rounded-xl border border-slate-200 bg-white p-4" aria-label="介面切換">
+                  <h3 className="font-semibold text-[#2C4A3E]">介面切換</h3>
+                  <p className="my-2 text-xs text-slate-500">切換後保留偏好，返回訂餐即可看到新畫面。</p>
+                  <div className="flex gap-2">
+                    <button type="button" aria-pressed={effectiveCalendarUi === 'classic'} onClick={() => selectCalendarUi('classic')} className={`min-h-11 flex-1 rounded-lg text-sm font-bold ${effectiveCalendarUi === 'classic' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>經典介面</button>
+                    <button type="button" aria-pressed={effectiveCalendarUi === 'modern'} onClick={() => selectCalendarUi('modern')} className={`min-h-11 flex-1 rounded-lg text-sm font-bold ${effectiveCalendarUi === 'modern' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>新介面</button>
+                  </div>
+                </div>
+              </section>
+            )}
             {adminSection === 'orders' && (
               <AdminOrderSummary
                 selectedOrderDate={selectedOrderDate}
@@ -3848,9 +3767,10 @@ export default function App() {
 
       {isRegistered && viewMode !== 'order' && (
         <BottomNavigation current={viewMode} onNavigate={navigateBottomTab}
+          balance={displayBalance} balanceKnown={(effectiveUser?.balance ?? authUser?.balance) != null && Number.isFinite(Number(effectiveUser?.balance ?? authUser?.balance))}
           canViewWallet={canAuth('viewOwnBalance') && !isViewAsMode && !delegatedOrderUser}
           canManage={!isViewAsMode && !delegatedOrderUser
-            && (canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary'))} />
+            && (canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary') || canAuth('manageMenu') || canAuth('manageAnnouncements'))} />
       )}
       <footer className="mx-auto mt-auto mb-20 w-full max-w-xl px-4 py-5 text-center text-xs text-gray-400">
         <div>© 2026 Henry · 蔬食便當預訂系統

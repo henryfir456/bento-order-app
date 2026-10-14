@@ -13,7 +13,7 @@ const entries = [
   { key: 'admin', label: '管理', icon: 'management' }
 ];
 
-export default function BottomNavigation({ current, onNavigate, canViewWallet, canManage }) {
+export default function BottomNavigation({ current, onNavigate, canViewWallet, canManage, balance, balanceKnown = false }) {
   const visible = entries.filter(({ key }) => (
     key === 'wallet' ? canViewWallet : key === 'admin' ? canManage : true
   ));
@@ -22,9 +22,10 @@ export default function BottomNavigation({ current, onNavigate, canViewWallet, c
       {visible.map(({ key, label, icon }) => (
         <button key={key} type="button" onClick={() => onNavigate(key)}
           aria-current={current === key ? 'page' : undefined}
+          aria-label={key === 'wallet' ? (balanceKnown ? `餘額 ${balance} 元，查看交易明細` : '餘額讀取中，查看交易明細') : label}
           className={`flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 px-1 py-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-emerald-700 ${current === key ? 'bg-emerald-50 text-emerald-800' : 'text-slate-600 hover:bg-slate-50'}`}>
           <svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{icons[icon]}</svg>
-          <span>{label}</span>
+          <span className={key === 'wallet' && balanceKnown && Number(balance) < 0 ? 'text-rose-700 tabular-nums' : 'tabular-nums'}>{key === 'wallet' ? (balanceKnown && Number.isFinite(Number(balance)) ? String(Number(balance)) : '—') : label}</span>
         </button>
       ))}
     </div>

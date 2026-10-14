@@ -18,7 +18,7 @@ test('four tabs are live routes, not placeholder buttons', () => {
   assert.match(app, /<BottomNavigation current=\{viewMode\}/);
   assert.match(app, /<MyOrdersPage orders=\{myOrdersList\}/);
   assert.match(app, /<WalletPage balance=\{displayBalance\}/);
-  assert.match(app, /handleAdminSectionChange\(canAuth\('viewMemberBalances'\) \? 'balances' : 'orders'\)/);
+  assert.match(app, /setAdminSection\('hub'\)/);
 });
 
 test('wallet uses server ledger and four-tab permissions respect real identity', () => {

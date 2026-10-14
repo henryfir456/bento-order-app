@@ -5,9 +5,9 @@ const path = require('node:path');
 const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
 const center = fs.readFileSync(path.join(root, 'src/features/balances/MemberBalanceManagement.jsx'), 'utf8');
-test('Admin top navigation hides duplicate identity and delegate buttons while ProxyAdmin retains delegate', () => {
-  assert.match(app, /authRole !== 'Admin' && canAuth\('viewAsUser'\)/);
-  assert.match(app, /canAuth\('delegateOrder'\)\s*&& authRole !== 'Admin'/);
+test('identity and delegate actions now reside in the guarded management hub', () => {
+  assert.match(app, /canAuth\('viewAsUser'\) && <button/);
+  assert.match(app, /canAuth\('delegateOrder'\) && <button/);
   assert.match(app, /🍱 選擇代點餐/);
 });
 test('unified user center uses five columns and ledger action', () => {
