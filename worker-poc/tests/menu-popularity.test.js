@@ -32,7 +32,7 @@ const row = (legacy_item_id, quantity, order_date='2026-10-10', item_name_snapsh
 test('Cai Teacher: flavor is pinned, canonical variants share a rank, popularity beats original menu position', async () => {
   const db = fakeDb([
     row('S', 7), row('S_half', 6),
-    row('C95', 4), row('C95_half', 5), row('CH', 2),
+    row('C', 11),
     row('C01', 2), row('C02', 1), row('C03', 1),
     row('E', 100)
   ]);
@@ -43,14 +43,14 @@ test('Cai Teacher: flavor is pinned, canonical variants share a rank, popularity
   assert.equal(ranked[2].popularity_rank, ranked[3].popularity_rank);
   assert.equal(ranked[4].popularity_rank, ranked[5].popularity_rank);
   assert.equal(ranked[2].price, 80);
-  assert.deepEqual(db.state.bindings, ['蔡老師','2026-07-17','2026-10-14']);
+  assert.deepEqual(db.state.bindings, ['蔡老師','2026-09-17','2026-10-14']);
   assert.match(db.state.sql, /o.status IN \('ACTIVE', 'COMPLETED'\)/);
   assert.match(db.state.sql, /o.vendor = \?/);
 });
 
 test('synthetic fee/refund rows never rank above real meals, despite exaggerated quantity', async () => {
   const db = fakeDb([row('FR1', 99999), row('revert1', 99999),
-    row('C95_half', 6), row('S', 3)]);
+    row('C', 6), row('S', 3)]);
   const ranked = await rankCaiTeacherMenu(db, menu, {vendor:'蔡老師',now});
   assert.equal(ranked[0].legacy_item_id,'E');
   assert.equal(ranked[2].legacy_item_id,'C');
@@ -59,8 +59,8 @@ test('synthetic fee/refund rows never rank above real meals, despite exaggerated
 });
 
 test('90-day counts break a close recent ranking and no-orders fallback is stable', async () => {
-  const db = fakeDb([row('S', 8,'2026-10-11'),row('C95', 8,'2026-10-11'),
-    row('C95', 20,'2026-08-01')]);
+  const db = fakeDb([row('S', 8,'2026-10-11'),row('C', 8,'2026-10-11'),
+    row('C', 20,'2026-09-21')]);
   const ranked=await rankCaiTeacherMenu(db,menu,{vendor:'蔡老師',now});
   assert.ok(ranked.find(x=>x.legacy_item_id==='C').popularity_score >
     ranked.find(x=>x.legacy_item_id==='S').popularity_score);
@@ -73,8 +73,8 @@ test('non Cai Teacher vendors preserve their original menu and do not query D1',
   assert.strictEqual(await rankCaiTeacherMenu(db,menu,{vendor:'禾拾',now}),menu);
 });
 
-test('legacy ambiguous AP requires a known name and never guesses', async () => {
-  const db=fakeDb([row('AP',90,'2026-10-11','測試雜項'),row('S',1)]);
+test('pre-migration aliases and ambiguous AP do not contribute', async () => {
+  const db=fakeDb([row('AP',90,'2026-10-11','測試雜項'),row('C95',50),row('S',1)]);
   const ranked=await rankCaiTeacherMenu(db,menu,{vendor:'蔡老師',now});
   assert.equal(ranked[2].legacy_item_id,'S');
 });
