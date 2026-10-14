@@ -165,30 +165,36 @@ export default function MemberBalanceManagement({
       ) : (
         <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10">
           <div className="hidden md:block overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full table-fixed text-left text-xs">
               <thead className="bg-gray-100 text-gray-600">
                 <tr>
-                  <th className="p-2"><SortHeading field="name">姓名</SortHeading></th>
-                  <th className="p-2 whitespace-nowrap">LINE 綁定</th>
-                  <th className="p-2 whitespace-nowrap"><SortHeading field="employeeId">員編</SortHeading></th>
-                  <th className="p-2 whitespace-nowrap"><SortHeading field="floor">樓層</SortHeading></th>
-                  <th className="p-2 whitespace-nowrap" aria-sort={sort.key === "balance" ? (sort.direction === "asc" ? "ascending" : "descending") : undefined}><SortHeading field="balance">餘額</SortHeading></th>
-                  <th className="p-2 whitespace-nowrap"><SortHeading field="role">角色</SortHeading></th>
-                  {hasActions && <th className="p-2 whitespace-nowrap">操作</th>}
-                  {!isViewAsMode && <th className="p-2">交易</th>}
+                  <th className="w-[24%] p-2"><SortHeading field="employeeId">員編／姓名</SortHeading></th>
+                  <th className="w-[20%] p-2"><SortHeading field="role">角色／LINE 綁定</SortHeading></th>
+                  <th className="w-[10%] p-2"><SortHeading field="floor">樓層</SortHeading></th>
+                  <th className="w-[15%] p-2" aria-sort={sort.key === 'balance' ? (sort.direction === 'asc' ? 'ascending' : 'descending') : undefined}><SortHeading field="balance">餘額</SortHeading></th>
+                  <th className="w-[31%] p-2">操作</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredMembers.map((user, idx) => (
-                  <tr key={memberKey(user, idx)} className="border-b last:border-0">
-                    <td className="p-2 font-medium">{user.name || '未命名使用者'}</td>
-                    <td className="p-2"><IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} /></td>
-                    <td className="p-2 whitespace-nowrap">{formatEmployeeId(user.employeeId)}</td>
-                    <td className="p-2 whitespace-nowrap">{user.floor || '未設定'}</td>
+                  <tr key={memberKey(user, idx)} className="border-b last:border-0 align-top">
+                    <td className="p-2">
+                      <div className="font-mono text-xs">{formatEmployeeId(user.employeeId)}</div>
+                      <div className="mt-1 break-words font-medium">{user.name || '未命名使用者'}</div>
+                    </td>
+                    <td className="p-2">
+                      <div className="font-medium">{user.role || 'User'}</div>
+                      <div className="mt-1"><IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} /></div>
+                    </td>
+                    <td className="p-2">{user.floor || '未設定'}</td>
                     <td className="p-2"><BalanceBadge balance={user.balance} /></td>
-                    <td className="p-2 whitespace-nowrap">{user.role || 'User'}</td>
-                    {hasActions && <td className="p-2 space-y-1"><UserNavigationActions user={user} /><MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} /></td>}
-                    {!isViewAsMode && <td className="p-2"><button type="button" className="text-emerald-800 underline" onClick={() => setSelectedUser(user)}>明細</button></td>}
+                    <td className="p-2">
+                      <div className="flex flex-wrap gap-1">
+                        <UserNavigationActions user={user} />
+                        <MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} />
+                        {!isViewAsMode && <button type="button" className="rounded-lg border border-emerald-700 px-2 py-1.5 text-xs font-bold text-emerald-800" onClick={() => setSelectedUser(user)}>交易明細</button>}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

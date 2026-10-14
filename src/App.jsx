@@ -3360,7 +3360,7 @@ export default function App() {
                 🏪 店家專區
               </button>
             )}
-            {isRegistered && canAuth('viewAsUser') && !isViewAsMode && (
+            {isRegistered && authRole !== 'Admin' && canAuth('viewAsUser') && !isViewAsMode && (
               <button
                 type="button"
                 onClick={() => handleOpenViewAs('view')}
@@ -3372,6 +3372,7 @@ export default function App() {
             {isRegistered
               && apiClient.transport === 'worker'
               && canAuth('delegateOrder')
+              && authRole !== 'Admin'
               && !isViewAsMode
               && !delegatedOrderUser && (
               <button

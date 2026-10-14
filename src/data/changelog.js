@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.21': [
+    { name: '變更', changes: [
+      '使用者管理中心桌面版整併成五欄，員編與姓名、角色與 LINE 綁定改為上下呈現。',
+      '每位使用者的操作欄加入交易明細；Admin 首頁移除重複的檢視身分與選擇代點餐入口，ProxyAdmin 仍保留代點餐入口。'
+    ] }
+  ],
   '0.15.20': [
     { name: '修正', changes: [
       '餘額管理入口明確標示使用者管理中心，保留檢視身分、代點餐、餘額與交易明細的原有權限。',
