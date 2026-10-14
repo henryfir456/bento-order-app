@@ -326,6 +326,7 @@ npm.cmd ci --prefix worker-poc
 npm.cmd test --prefix worker-poc
 Push-Location worker-poc
 try {
+  node ./scripts/require-database-id.mjs
   npx.cmd wrangler deploy --config wrangler.jsonc --keep-vars
 } finally {
   Pop-Location
