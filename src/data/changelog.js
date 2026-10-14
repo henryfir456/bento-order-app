@@ -11,6 +11,13 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.3': [
+    { name: '變更', changes: [
+      '月曆狀態精簡為「已訂」、「截止」、「可訂」，不影響原有已訂與截止判斷。',
+      '點餐畫面新增「返回」按鈕，可以直接回到月曆，不會送出或取消訂單。',
+      '「我的訂單」移除重新整理按鈕；進入分頁仍自動更新，讀取失敗時可重試。'
+    ] }
+  ],
   '0.16.2': [
     { name: '變更', changes: [
       '管理中心依訂餐管理、使用者與帳務、系統設定分組，保留原有權限與功能入口。',
