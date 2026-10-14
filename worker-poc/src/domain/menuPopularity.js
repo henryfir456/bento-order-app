@@ -1,5 +1,5 @@
 import { getTaipeiDate } from './deadlines.js';
-import { normalizeLegacyMenuIdentity } from './menuItemChanges.js';
+import { NORMALIZED_MENU_START_DATE } from './menuItemChanges.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 
 const POPULARITY_VENDOR = '蔡老師';
@@ -13,25 +13,24 @@ const dateDaysAgo = (today, days) => {
 
 const rowsFrom = (value) => Array.isArray(value?.results) ? value.results : (Array.isArray(value) ? value : []);
 
-const menuCode = (vendor, item) => normalizeLegacyMenuIdentity({
-  vendor,
-  itemCode: item.legacy_item_id,
-  variantKey: item.variant_key,
-  itemName: item.item_name
-})?.item_code || null;
+const menuCode = (item) => {
+  const code = String(item?.legacy_item_id || '').trim().toUpperCase();
+  return /^[A-Z][A-Z0-9]*$/.test(code) ? code : null;
+};
 
-// Only match canonical current-menu codes. Historical synthetic fee/refund rows
+// Only match canonical current-menu codes. Synthetic fee/refund rows
 // (e.g. FR1, revert1) never affect popularity even if quantity is enormous.
 export const rankCaiTeacherMenu = async (database, menu, {
   vendor,
   now = new Date()
 } = {}) => {
   if (normalizeMenuVendor(vendor) !== POPULARITY_VENDOR || menu.length < 2) return menu;
-  const codeByIndex = menu.map((item) => menuCode(vendor, item));
+  const codeByIndex = menu.map(menuCode);
   const eligibleCodes = new Set(codeByIndex.filter((code, index) =>
     code && code !== 'FR' && Number(menu[index].price) > 0));
   const today = getTaipeiDate(now);
-  const since90 = dateDaysAgo(today, 89);
+  const since90 = dateDaysAgo(today, 89) < NORMALIZED_MENU_START_DATE
+    ? NORMALIZED_MENU_START_DATE : dateDaysAgo(today, 89);
   const since30 = dateDaysAgo(today, 29);
   const response = await database.prepare(`
     SELECT i.legacy_item_id, i.item_name_snapshot, o.order_date, SUM(i.quantity) AS quantity
@@ -45,12 +44,9 @@ export const rankCaiTeacherMenu = async (database, menu, {
   `).bind(POPULARITY_VENDOR, since90, today).all();
   const scores = new Map();
   for (const row of rowsFrom(response)) {
-    const identity = normalizeLegacyMenuIdentity({
-      vendor: POPULARITY_VENDOR,
-      itemCode: row.legacy_item_id,
-      itemName: row.item_name_snapshot
-    });
-    const code = identity?.item_code;
+    // Post-migration canonical codes are shared by BASE/HALF variants.
+    // Historical aliases (C95, CH, S_half etc.) are deliberately ignored.
+    const code = String(row.legacy_item_id || '').trim().toUpperCase();
     if (!code || !eligibleCodes.has(code)) continue;
     const quantity = Number(row.quantity);
     if (!Number.isFinite(quantity) || quantity <= 0) continue;
