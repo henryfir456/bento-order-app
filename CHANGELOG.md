@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
+- Align personal balance history filtering and monthly summaries with the Taipei time zone.
+
 ## [0.15.25] - 2026-10-14
 
 ### Added
@@ -12,13 +19,6 @@
 
 - Order-page Worker API includes per-item popularity ranks; React preserves the server order and keeps variants adjacent. Other vendors and historical order dates retain their existing order.
 - Popularity is computed only from order dates on or after the normalized menu start (2026-09-17), using read-only D1 aggregation at request time; no schema change, migration or remote mutation is required.
-
-## [Unreleased]
-
-### Fixed
-
-- Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
-- Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
 ## [0.15.24] - 2026-10-14
 
