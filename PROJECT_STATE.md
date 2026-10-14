@@ -59,6 +59,13 @@ If this file conflicts with code, tests, the active Worker schema, or verified p
 
 ## Deployment and remote-write boundary
 
+### 2026-10-14 v0.15.25 Cai Teacher popularity — deployed backend
+
+- P0–P2 popularity ranking merged via PR #67 as main `3aed2e70cba82223038ef0e69cbba877fb56420e`. Count only normalized Cai Teacher effective orders dated **on/after 2026-09-17**, ignoring legacy migration-order rules; use 30-day and 90-day weights, pin E flavor, group S and C variants; no D1 migration or history rewrite.
+- Production `bento-api-poc` uploaded from new complete main source via connected Cloudflare API (not GitHub Actions), version **#73** `5eefcea2-bffd-4e92-a822-4a76e42cec0b`, deployment `e4125015-fdd4-44f9-ad55-1e016716135a`, **100%** traffic.
+- Production D1 `bento-formal` binding, compatibility date and three scheduled triggers remained unchanged. Live GET `/api/health` = 200 (database true, 59 users); anonymous `/api/orders/history` and `/api/order-page` = 401. GitHub CI tests/lint/build including Worker tests passed; remote authorized menu response and Origin OPTIONS remain NOT VERIFIED.
+- **Netlify production frontend was not updated** and still reports prior deploy `6acdb33bd737ed47fb8b3843`; UI delivery is `WAITING_FOR_FRONTEND` under Issue #66. Worker release alone does not show the new sorting in the browser.
+
 ### 2026-10-14 current delivery policy and status
 
 - Production Worker deployment supports **direct Wrangler CLI or connected Cloudflare API upload of a new, complete Worker bundle built from the latest main**. **Do not use GitHub Actions** to deploy, trigger, rerun, or switch Worker versions. The previously configured auto-deploy GitHub Actions workflow is being retired. GitHub Actions tests, if retained, are validation only.
