@@ -11,6 +11,15 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.25': [
+    { name: '新增', changes: [
+      '蔡老師便當依 9 月 17 日正規化菜單啟用後的有效訂單，自動計算近 30 天及 90 天熱門度，風味餐固定置頂。',
+      '小而美、特餐及其半飯規格合併熱門度，同主品項集中顯示；目前資料較少時優先顯示小而美與特餐。'
+    ] },
+    { name: '變更', changes: [
+      '排序不納入移轉前歷史訂單、取消訂單及手續費等非餐點資料；不變更價格、訂單或餘額。'
+    ] }
+  ],
   '0.15.24': [
     { name: '新增', changes: [
       '首頁底部新增可操作的訂餐、我的訂單、餘額與管理導覽，支援手機底部安全區與清楚的選取狀態。',
