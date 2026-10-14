@@ -1,4 +1,5 @@
 name: Deploy production Worker from main
+run-name: Deploy bento-api-poc from ${{ github.sha }}
 on:
   push:
     branches: [main]
