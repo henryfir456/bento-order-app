@@ -11,6 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.26': [
+    { name: '變更', changes: [
+      '首頁上方僅保留系統名稱、使用者與 LINE 狀態；移除重複的餘額與管理快捷按鈕。',
+      '底部錢包分頁直接顯示目前帳戶金額，不再出現「餘額」字樣；負數以紅色顯示，點擊仍可看交易明細。',
+      '管理分頁集中店家專區、訂單總覽、使用者管理、開團與其他權限操作，並可切換經典／新版月曆介面。',
+      '所有使用者都可由訂餐月曆的「查看店家菜單」進入店家專區。'
+    ] }
+  ],
   '0.15.25': [
     { name: '新增', changes: [
       '蔡老師便當依 9 月 17 日正規化菜單啟用後的有效訂單，自動計算近 30 天及 90 天熱門度，風味餐固定置頂。',
