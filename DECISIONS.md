@@ -1,6 +1,6 @@
 # DECISIONS.md
 
-Last updated: 2026-10-10
+Last updated: 2026-10-14
 
 Purpose: record durable architectural and operational decisions that future sessions should not casually rediscover or reverse.
 
@@ -156,6 +156,24 @@ A bound member may deliberately enter through employee authentication. Showing b
 - Employee sessions remain self-service even when bound, and public employee projections expose a boolean without the stored LINE ID.
 - Header and member cards share bound/unbound/unknown interpretation. Only confirmed unbound employee sessions offer registered binding.
 - Foreground reads refresh binding without replaying mutations or LIFF redirects; session/role invalidation clears protected caches, while valid same-actor reads preserve View As and newer financial/profile state.
+
+## D-010 — Formal Cloudflare Worker deployment must not use GitHub Actions
+
+**Decision (2026-10-14)**
+
+Deploy the production `bento-api-poc` Worker directly from the latest merged `main` with a locally or remotely executed Wrangler CLI. **GitHub Actions is prohibited for Worker deployment** (including push-triggered workflows, `workflow_dispatch`, reruns, or other workflow jobs); remaining GitHub Actions workflows may perform tests only, not deployment.
+
+**Rationale**
+
+Recent successful Cloudflare deployment records came from direct Cloudflare operations, not GitHub Actions; the attempted Actions deployment failed before Wrangler because the repository lacked `CLOUDFLARE_API_TOKEN`. Recommending another Actions run or asking for Actions Secrets repeats an unrelated failed route.
+
+**Boundary**
+
+- Build/install/test from the latest `main`, then run `npx wrangler deploy --config wrangler.jsonc --keep-vars` in `worker-poc/` using an already-authorized direct execution environment.
+- Do not create, restore, trigger, or retry GitHub Actions workflows to release a Worker; do not require repository Actions Secrets as a prerequisite for direct deployment.
+- Cloudflare's deployment `source=api` and `source=wrangler` describe different actual methods. Do not call an API deployment a Wrangler deployment; **never redeploy an existing Worker version as a substitute for deploying the new `main` source**.
+- Require new Worker Version ID, Deployment ID, 100% traffic, healthy `/api/health`, authorization and CORS smoke evidence. Netlify frontend delivery is verified separately.
+- If direct execution is unavailable, report `WAITING_FOR_DELIVERY` with the exact blocker and preserve the previous Worker. Do not silently reroute through GitHub Actions.
 
 ## Maintenance rule
 
