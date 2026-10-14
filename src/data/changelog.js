@@ -11,6 +11,13 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.15.20': [
+    { name: '修正', changes: [
+      '餘額管理入口明確標示使用者管理中心，保留檢視身分、代點餐、餘額與交易明細的原有權限。',
+      '新版月曆移除下一個可訂餐日區塊，日期格顯示便當或店家摘要，下方顯示星期與當日正式菜單。',
+      '禾拾餐點改讀取當日禾拾菜單與圖片，不再誤用蔡老師風味餐資訊。'
+    ] }
+  ],
   '0.15.19': [
     { name: '新增', changes: [
       '新增管理員專用的新版月曆預覽，日期狀態更簡潔，並可查看完整餐點資訊與下一個可訂餐日。',
