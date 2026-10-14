@@ -7,6 +7,12 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.16.1] - 2026-10-14
+
+### Changed
+
+- Rename the management UI-mode buttons from Classic Interface / New Interface to the concise labels Classic / Minimalist; keep the existing stored classic/modern mode keys and behavior unchanged.
+
 ## [0.16.0] - 2026-10-14
 
 ### Changed
