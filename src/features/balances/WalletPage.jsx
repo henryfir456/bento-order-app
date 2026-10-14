@@ -7,7 +7,6 @@ export default function WalletPage({ balance, year, month, history, summary, loa
     <header className="rounded-2xl bg-emerald-900 p-5 text-white">
       <h2 className="text-sm">目前餘額</h2>
       <p className="mt-1 text-3xl font-bold">{formatBalanceAmount(balance)}</p>
-      <p className="mt-2 text-xs">以正式帳戶資料為準</p>
     </header>
     <div className="flex items-center justify-between rounded-xl border bg-white p-3">
       <button type="button" aria-label="上個月" className="min-h-11 min-w-11 rounded-lg border" disabled={loading} onClick={() => onMonthShift(-1)}>‹</button>

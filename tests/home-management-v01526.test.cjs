@@ -29,5 +29,5 @@ test('management hub contains prior admin actions and persisted classic/modern s
   assert.match(app,/selectCalendarUi\('classic'\)/);
   assert.match(app,/selectCalendarUi\('modern'\)/);
   assert.match(app,/localStorage.setItem\('bento-calendar-ui'/);
-  assert.match(app,/查看店家菜單 ›/);
+  assert.doesNotMatch(app,/查看店家菜單 ›/);
 });
