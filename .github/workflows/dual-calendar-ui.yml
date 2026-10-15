@@ -56,3 +56,5 @@ jobs:
       - run: node --test tests/changelog-migration.test.cjs
       - run: npm run lint
       - run: npm run build
+      - name: Measure built JS and CSS sizes (raw and gzip)
+        run: node scripts/measure-build-assets.mjs
