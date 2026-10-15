@@ -32,9 +32,12 @@ test('wallet uses server ledger and four-tab permissions respect real identity',
 });
 
 test('historical detail shows server snapshots rather than inferring totals from calendar', () => {
-  assert.match(orders, /order\.items\.map/);
+  assert.match(orders, /\(order\.items \|\| \[\]\)\.map/);
   assert.match(orders, /order\.totalAmount/);
-  assert.match(orders, /aria-expanded/);
+  assert.doesNotMatch(orders, /aria-expanded|selectedOrderId|顯示所有月份|如需變更尚未截止的訂單/);
+  assert.match(orders, /領取樓層：/);
+  assert.match(orders, /order\.note/);
+  assert.match(orders, /order\.status === 'CANCELLED'/);
   assert.match(orders, /type="month"/);
   assert.doesNotMatch(orders, /localStorage|fetch\(/);
 });
