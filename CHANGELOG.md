@@ -9,6 +9,14 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.16.5] - 2026-10-15
+
+### Fixed
+
+- Show actual order date for order and refund ledger entries from existing order-linked history data, distinct from the transaction timestamp; label missing historical dates as unavailable.
+- Color positive ledger movements green and negative movements red, keeping zero neutral.
+- Localize GROUP_CANCELLED and related internal transaction-description codes without rewriting ledger data.
+
 ## [0.16.4] - 2026-10-15
 
 ### Changed
