@@ -16,8 +16,8 @@ for (const file of files) {
   const gzipped = gzipSync(await readFile(file), { level: 9 }).length;
   assets.push({ file: relative(root, file), bytes, gzipBytes: gzipped });
 }
-const javascript = assets.filter((x) => /\\.js$/.test(x.file));
-const styles = assets.filter((x) => /\\.css$/.test(x.file));
+const javascript = assets.filter((x) => x.file.endsWith('.js'));
+const styles = assets.filter((x) => x.file.endsWith('.css'));
 const sum = (items, key) => items.reduce((acc, x) => acc + x[key], 0);
 console.log(JSON.stringify({
   label: 'built-asset-size-observation-not-runtime-performance',
