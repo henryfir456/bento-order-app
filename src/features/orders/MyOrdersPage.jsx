@@ -12,7 +12,7 @@ export default function MyOrdersPage({ orders, onRefresh, loading, error, isView
     </header>
     {isViewAsMode && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">目前為唯讀檢視模式。</p>}
     <label className="block text-sm text-slate-600"><span className="sr-only">選擇月份</span>
-      <input type="month" value={filterMonth} onChange={(e) => setFilterMonth(e.target.value)}
+      <input type="month" value={filterMonth} onChange={(e) => { if (e.target.value) setFilterMonth(e.target.value); }}
         className="mt-1 block min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3" />
     </label>
     {loading ? <p role="status" className="rounded-xl bg-white p-4 text-sm">正在取得最新訂單…</p> :
