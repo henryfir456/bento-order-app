@@ -245,3 +245,32 @@ test('history follows committed ledger sequence across reversed timestamps and m
   assert.equal(user.status, 'CONSISTENT');
   assert.equal(user.difference, 0);
 });
+
+
+test('monthly history preserves cross-month order dates, refunds and canonical balances', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', balance: 100 });
+  seedOrder(database); // Meal was ordered for September 8.
+  await appendLedgerEntry(database, {
+    transactionId: 'cross-month-order', userId: 'user-1', amount: -30,
+    balanceAfter: 70, type: 'ORDER', referenceId: 'history-order',
+    occurredAt: '2026-09-08T02:00:00.000Z'
+  });
+  await appendLedgerEntry(database, {
+    transactionId: 'cross-month-refund', userId: 'user-1', amount: 30,
+    balanceAfter: 100, type: 'REFUND', referenceId: 'history-order',
+    occurredAt: '2026-10-02T02:00:00.000Z'
+  });
+  const september = await getBalanceHistory(database, 'user-1', '2026-09');
+  const october = await getBalanceHistory(database, 'user-1', '2026-10');
+  assert.equal(september.closingBalance, 70);
+  assert.equal(october.openingBalance, 70);
+  assert.equal(october.closingBalance, 100);
+  assert.equal(october.totalCredit, 30);
+  assert.equal(october.totalDebit, 0);
+  assert.equal(october.transactions.length, 1);
+  assert.equal(october.transactions[0].transactionId, 'cross-month-refund');
+  assert.equal(october.transactions[0].order?.orderDate, '2026-09-08');
+  assert.equal(october.transactions[0].businessDate, '2026-09-08');
+  assert.equal(october.reconciliation.status, 'CONSISTENT');
+});

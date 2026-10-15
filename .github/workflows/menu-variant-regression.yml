@@ -36,6 +36,18 @@ jobs:
       - name: Build
         if: ${{ !cancelled() }}
         run: npm run build
+      - name: Ledger month and cross-month refund regression
+        if: ${{ !cancelled() }}
+        working-directory: worker-poc
+        run: node --test tests/balance-history.test.js
+      - name: Full Worker regression suite before backend release
+        if: ${{ !cancelled() }}
+        working-directory: worker-poc
+        run: npm test
+      - name: Synthetic SQLite ledger detail benchmark
+        if: ${{ !cancelled() }}
+        working-directory: worker-poc
+        run: node scripts/benchmark-ledger-order-details.mjs
       - name: Worker menu contracts
         if: ${{ !cancelled() }}
         working-directory: worker-poc

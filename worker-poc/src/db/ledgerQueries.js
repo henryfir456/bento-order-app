@@ -294,6 +294,17 @@ export const appendLedgerEntry = async (database, input) => {
 };
 
 export const getLedgerRows = async (database, userId, { from, to } = {}) => {
+  const rangeConditions = [];
+  const params = [userId];
+  if (from) {
+    rangeConditions.push('bl.occurred_at >= ?');
+    params.push(from);
+  }
+  if (to) {
+    rangeConditions.push('bl.occurred_at < ?');
+    params.push(to);
+  }
+  const rangeSql = rangeConditions.length ? ` AND ${rangeConditions.join(' AND ')}` : '';
   const result = await database.prepare(`
     SELECT bl.transaction_id, bl.user_id, bl.employee_id_snapshot,
            bl.line_user_id_snapshot, bl.display_name_snapshot, bl.amount,
@@ -304,11 +315,23 @@ export const getLedgerRows = async (database, userId, { from, to } = {}) => {
     JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
     LEFT JOIN orders o ON o.order_id = bl.reference_id
       AND bl.type IN ('ORDER', 'REFUND')
-    WHERE bl.user_id = ?
-      AND (? IS NULL OR bl.occurred_at >= ?)
-      AND (? IS NULL OR bl.occurred_at < ?)
+    WHERE bl.user_id = ?${rangeSql}
     ORDER BY bls.sequence_number ASC
-  `).bind(userId, from || null, from || null, to || null, to || null).all();
+  `).bind(...params).all();
+  return Array.isArray(result) ? result : (result?.results || []);
+};
+
+// Lightweight full-history projection for immutable sequence reconciliation.
+// Monthly transactions are fetched separately with the bounded date predicate.
+export const getLedgerReconciliationRows = async (database, userId) => {
+  const result = await database.prepare(`
+    SELECT bl.transaction_id, bl.type, bl.amount, bl.balance_after,
+           bl.occurred_at, bl.note, bls.sequence_number
+    FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+    WHERE bl.user_id = ?
+    ORDER BY bls.sequence_number ASC
+  `).bind(userId).all();
   return Array.isArray(result) ? result : (result?.results || []);
 };
 

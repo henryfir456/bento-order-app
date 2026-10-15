@@ -3,7 +3,8 @@ import {
   appendLedgerEntry,
   getHistoricalOrderDetails,
   getLatestLedgerRow,
-  getLedgerRows
+  getLedgerRows,
+  getLedgerReconciliationRows
 } from '../db/ledgerQueries.js';
 import { getUserById } from '../db/users.js';
 import { buildMonthlyReconciliation } from './ledgerConsistency.js';
@@ -66,16 +67,16 @@ export const getBalanceHistory = async (database, userId, monthInput) => {
     throw conflict('OPENING_BALANCE_POLICY_REQUIRED');
   }
 
-  const allRows = await getLedgerRows(database, userId);
+  const allRows = await getLedgerReconciliationRows(database, userId);
   if (allRows.length === 0 && user.balance !== 0) {
     throw conflict('OPENING_BALANCE_POLICY_REQUIRED');
   }
-  const monthRows = allRows.filter((row) => (
-    row.occurred_at >= month.start && row.occurred_at < month.end
-  ));
+  const monthRows = await getLedgerRows(database, userId, { from: month.start, to: month.end });
   const prior = await getLatestLedgerRow(database, userId, month.start);
   const closing = await getLatestLedgerRow(database, userId, month.end);
-  const orderDetails = await getHistoricalOrderDetails(database, allRows
+  // Monthly response needs only order details referenced by the selected month.
+  // Preserve allRows for full-history reconciliation and sequence diagnostics.
+  const orderDetails = await getHistoricalOrderDetails(database, monthRows
     .filter((row) => row.type === 'ORDER' || row.type === 'REFUND')
     .map((row) => row.reference_id));
   const first = monthRows[0];
