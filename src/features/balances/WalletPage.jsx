@@ -2,6 +2,13 @@ import React from 'react';
 import { formatBalanceAmount, formatSignedAmount } from './formatters';
 import { formatDateTime } from '../../dateUtils';
 import { formatTransactionDescription } from './topupMethods';
+
+const orderDateFor = (item) => {
+  const date = item.order?.orderDate || item.businessDate;
+  return typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? date.replaceAll('-', '/')
+    : null;
+};
 export default function WalletPage({ balance, year, month, history, summary, loading, error, onMonthShift }) {
   return <section aria-label="我的餘額" className="space-y-4 pb-6">
     <header className="rounded-2xl bg-emerald-900 p-5 text-white">
@@ -23,8 +30,9 @@ export default function WalletPage({ balance, year, month, history, summary, loa
       <h3 className="font-bold">交易紀錄</h3>
       {history.length === 0 ? <p className="rounded-xl bg-white p-4 text-sm">本月沒有交易紀錄。</p>
         : history.map((item,index) => <article key={item.transactionId || index} className="rounded-xl border bg-white p-3 text-sm">
-          <div className="flex justify-between gap-3"><strong>{formatTransactionDescription(item)}</strong><strong>{formatSignedAmount(item.amount ?? item.changeAmount)}</strong></div>
-          <div className="mt-1 text-xs text-slate-500">{formatDateTime(item.occurredAt || item.timestamp)}</div>
+          <div className="flex justify-between gap-3"><strong>{formatTransactionDescription(item)}</strong><strong className={Number(item.amount ?? item.changeAmount) > 0 ? 'text-emerald-700' : Number(item.amount ?? item.changeAmount) < 0 ? 'text-rose-700' : 'text-slate-700'}>{formatSignedAmount(item.amount ?? item.changeAmount)}</strong></div>
+          {(item.type === 'ORDER' || item.type === 'REFUND') && <div className="mt-1 text-xs text-slate-700">訂餐日期：{orderDateFor(item) || '未提供'}</div>}
+          <div className="mt-1 text-xs text-slate-500">交易時間：{formatDateTime(item.occurredAt || item.timestamp)}</div>
           <div className="mt-1 text-xs">結餘 {formatBalanceAmount(item.balanceAfter ?? item.balance)}</div>
         </article>)}
     </>}
