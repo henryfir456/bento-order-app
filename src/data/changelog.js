@@ -11,6 +11,13 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.4': [
+    { name: '變更', changes: [
+      '縮減月曆頁頁尾多餘留白，保留底部導覽安全間距。',
+      '餘額交易明細移除重複的更新按鈕；進入頁面與切換月份仍會自動讀取。',
+      '沒有相關管理權限時，不再顯示空白的「使用者與帳務」分類。'
+    ] }
+  ],
   '0.16.3': [
     { name: '變更', changes: [
       '月曆狀態精簡為「已訂」、「截止」、「可訂」，不影響原有已訂與截止判斷。',
