@@ -21,11 +21,10 @@ export default function MyOrdersPage({ orders, onRefresh, loading, error, isView
       <div className="space-y-2">
         {filtered.map((order) => <article key={order.orderId} className="rounded-xl border border-slate-200 bg-white">
           <div className="flex min-h-14 items-center justify-between gap-2 px-4 py-3">
-            <span><strong className="block text-sm">{order.date}</strong><span className="text-xs text-slate-500">{order.vendor || '餐點明細'}{order.status && !['ACTIVE', 'ORDERED'].includes(order.status) ? ` · ${order.status === 'COMPLETED' ? '已完成' : order.status === 'CANCELLED' ? '已取消' : '狀態待確認'}` : ''}</span></span>
+            <span><strong className="block text-sm">{order.date}</strong><span className="text-xs text-slate-500">{order.vendor || '餐點明細'}{order.floor && <span className="ml-1 inline-flex rounded-md bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-800">{order.floor}</span>}{order.status && !['ACTIVE', 'ORDERED'].includes(order.status) ? ` · ${order.status === 'COMPLETED' ? '已完成' : order.status === 'CANCELLED' ? '已取消' : '狀態待確認'}` : ''}</span></span>
             <span className="shrink-0 font-bold text-emerald-800">{formatBalanceAmount(order.totalAmount)}</span>
           </div>
           <div className="space-y-2 border-t border-slate-100 px-4 py-3 text-sm">
-            <div>領取樓層：{order.floor || '未提供'}</div>
             {(order.items || []).map((item, index) => <div key={index} className="flex justify-between gap-2">
               <span>{item.name} × {item.quantity}</span><span>{formatBalanceAmount(item.subtotal)}</span>
             </div>)}
