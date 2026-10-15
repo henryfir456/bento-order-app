@@ -3662,8 +3662,7 @@ export default function App() {
           && !isViewAsMode && !delegatedOrderUser && (
           <WalletPage balance={displayBalance} year={selectedYear} month={selectedMonth}
             history={historyList} summary={historySummary} loading={historyLoading}
-            error={historyError} onMonthShift={shiftHistoryMonth}
-            onRefresh={() => loadBalanceHistory(selectedYear, selectedMonth, null)} />
+            error={historyError} onMonthShift={shiftHistoryMonth} />
         )}
 
         {isRegistered && viewMode === 'admin' && !loading && (
@@ -3679,12 +3678,14 @@ export default function App() {
                 {canAuth('manageAnnouncements') && <button type="button" onClick={() => handleAdminSectionChange('announcements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">公告管理 ›</button>}
                 {canAuth('manageMenu') && <button type="button" onClick={() => handleAdminSectionChange('menuChanges')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">菜單品項維護 ›</button>}
                 </div>
+                {(canAuth('viewMemberBalances') || (authRole !== 'Admin' && (canAuth('viewAsUser') || canAuth('delegateOrder')))) && (
                 <div className="space-y-2" role="group" aria-label="使用者與帳務">
                   <h3 className="text-sm font-bold text-[#2C4A3E]">使用者與帳務</h3>
                 {canAuth('viewMemberBalances') && <button type="button" onClick={() => handleAdminSectionChange('balances')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">使用者管理 ›</button>}
                 {authRole !== 'Admin' && canAuth('viewAsUser') && <button type="button" onClick={() => handleOpenViewAs('view')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">檢視身分 ›</button>}
                 {authRole !== 'Admin' && canAuth('delegateOrder') && <button type="button" onClick={() => handleOpenViewAs('delegate')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">選擇代點餐 ›</button>}
                 </div>
+                )}
                 <div className="space-y-2" role="group" aria-label="系統設定">
                   <h3 className="text-sm font-bold text-[#2C4A3E]">系統設定</h3>
                 <div className="rounded-xl border border-slate-200 bg-white p-4" aria-label="月曆樣式">
@@ -3774,7 +3775,7 @@ export default function App() {
           canManage={!isViewAsMode && !delegatedOrderUser
             && (canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary') || canAuth('manageMenu') || canAuth('manageAnnouncements'))} />
       )}
-      <footer className="mx-auto mt-auto mb-20 w-full max-w-xl px-4 py-5 text-center text-xs text-gray-400">
+      <footer className="mx-auto w-full max-w-xl px-4 py-4 text-center text-xs text-gray-400">
         <div>© 2026 Henry · 蔬食便當預訂系統
           <button
             type="button"
