@@ -33,3 +33,17 @@ test('modern calendar only renders Cai flavor image and name', () => {
   assert.match(modern, /isCai && active\.event\?\.dailyFlavorName/);
   assert.match(modern, /getCalendarDailyFlavorImage/);
 });
+
+test('mobile user management exposes the same shared sort state and action access', () => {
+  assert.match(ui, /role="group" aria-label="使用者排序"/);
+  assert.match(ui, /aria-label="排序欄位" value=\{sort\.key\}/);
+  assert.match(ui, /<option value="balance">餘額<\/option>/);
+  assert.match(ui, /<option value="employeeId">員編<\/option>/);
+  assert.match(ui, /<option value="name">姓名<\/option>/);
+  assert.match(ui, /<option value="floor">樓層<\/option>/);
+  assert.match(ui, /aria-label="切換排序方向"/);
+  assert.match(ui, /\{filteredMembers\.map\(\(user, idx\) => \(/g);
+  assert.match(ui, /const \[sort, setSort\] = useState\(\{ key: 'balance', direction: 'asc' \}\)/);
+  assert.match(ui, />明細<\/button>/);
+  assert.doesNotMatch(ui, />檢視交易明細<\/button>/);
+});
