@@ -10,7 +10,7 @@ const monthIds = [];
 for (let index = 0; index < 100; index += 1) {
   const id = 'perf-order-' + index;
   const current = index >= 92;
-  const date = current ? '2026-10-15' : '2026-09-15';
+  const date = new Date(Date.UTC(2026, 6, index + 1)).toISOString().slice(0, 10);
   database.run(`INSERT INTO orders
     (order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor, total_amount, status, created_by_user_id)
     VALUES ('${id}', 'bench-user', 'Benchmark', '${date}', 'Vendor', '1樓', 80, 'ACTIVE', 'bench-user')`);
