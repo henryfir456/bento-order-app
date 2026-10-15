@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.8': [
+    { name: '變更', changes: [
+      '「我的訂單」改成單月份直接展開所有明細，移除「顯示所有月份」及收合箭頭。',
+      '精簡重複的「已訂餐」狀態與操作提示，仍保留特殊狀態、樓層、餐點、金額及備註。'
+    ] }
+  ],
   '0.16.7': [
     { name: '變更', changes: [
       '餘額交易明細改以月份範圍查詢，減少非當月資料載入；歷史對帳與金額規則維持不變。',
