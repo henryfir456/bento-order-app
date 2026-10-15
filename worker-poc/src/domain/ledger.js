@@ -75,7 +75,9 @@ export const getBalanceHistory = async (database, userId, monthInput) => {
   ));
   const prior = await getLatestLedgerRow(database, userId, month.start);
   const closing = await getLatestLedgerRow(database, userId, month.end);
-  const orderDetails = await getHistoricalOrderDetails(database, allRows
+  // Monthly response needs only order details referenced by the selected month.
+  // Preserve allRows for full-history reconciliation and sequence diagnostics.
+  const orderDetails = await getHistoricalOrderDetails(database, monthRows
     .filter((row) => row.type === 'ORDER' || row.type === 'REFUND')
     .map((row) => row.reference_id));
   const first = monthRows[0];
