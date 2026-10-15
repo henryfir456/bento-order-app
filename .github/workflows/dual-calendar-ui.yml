@@ -58,3 +58,13 @@ jobs:
       - run: npm run build
       - name: Measure built JS and CSS sizes (raw and gzip)
         run: node scripts/measure-build-assets.mjs
+      - name: Compare baseline main build assets
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --depth=1 origin "${{ github.event.pull_request.base.sha }}"
+          git worktree add --detach /tmp/bento-base "${{ github.event.pull_request.base.sha }}"
+          cd /tmp/bento-base
+          npm ci
+          npm run build
+          cp "$GITHUB_WORKSPACE/scripts/measure-build-assets.mjs" scripts/measure-build-assets.mjs
+          node scripts/measure-build-assets.mjs
