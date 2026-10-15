@@ -66,5 +66,6 @@ jobs:
           cd /tmp/bento-base
           npm ci
           npm run build
+          mkdir -p scripts
           cp "$GITHUB_WORKSPACE/scripts/measure-build-assets.mjs" scripts/measure-build-assets.mjs
           node scripts/measure-build-assets.mjs
