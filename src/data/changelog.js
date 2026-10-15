@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.9': [
+    { name: '變更', changes: [
+      '「我的訂單」的領取樓層改為廠商旁的小標籤，移除獨立樓層文字列。'
+    ] }
+  ],
   '0.16.8': [
     { name: '變更', changes: [
       '「我的訂單」改成單月份直接展開所有明細，移除「顯示所有月份」及收合箭頭。',

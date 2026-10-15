@@ -9,6 +9,12 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.16.9] - 2026-10-15
+
+### Changed
+
+- Show the pickup floor as a compact badge beside the vendor on My Orders cards, removing the standalone floor row (Issue #95).
+
 ## [0.16.8] - 2026-10-15
 
 ### Changed

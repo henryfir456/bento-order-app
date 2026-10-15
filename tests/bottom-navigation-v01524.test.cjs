@@ -35,7 +35,9 @@ test('historical detail shows server snapshots rather than inferring totals from
   assert.match(orders, /\(order\.items \|\| \[\]\)\.map/);
   assert.match(orders, /order\.totalAmount/);
   assert.doesNotMatch(orders, /aria-expanded|selectedOrderId|顯示所有月份|如需變更尚未截止的訂單/);
-  assert.match(orders, /領取樓層：/);
+  assert.doesNotMatch(orders, /領取樓層：/);
+  assert.match(orders, /order\.floor && <span/);
+  assert.match(orders, /\{order\.floor\}<\/span>/);
   assert.match(orders, /order\.note/);
   assert.match(orders, /order\.status === 'CANCELLED'/);
   assert.match(orders, /type="month"/);
