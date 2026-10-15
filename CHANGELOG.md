@@ -9,6 +9,13 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.16.8] - 2026-10-15
+
+### Changed
+
+- Simplify My Orders to one selected month with always-visible order details, without the all-month toggle or expand/collapse controls (Issue #93).
+- Remove repetitive booked-status and change-order guidance; preserve nonstandard states, floor, items, amounts and optional notes.
+
 ## [0.16.7] - 2026-10-15
 
 ### Changed
