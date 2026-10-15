@@ -2,7 +2,7 @@ import React from 'react';
 import { formatBalanceAmount, formatSignedAmount } from './formatters';
 import { formatDateTime } from '../../dateUtils';
 import { formatTransactionDescription } from './topupMethods';
-export default function WalletPage({ balance, year, month, history, summary, loading, error, onMonthShift, onRefresh }) {
+export default function WalletPage({ balance, year, month, history, summary, loading, error, onMonthShift }) {
   return <section aria-label="我的餘額" className="space-y-4 pb-6">
     <header className="rounded-2xl bg-emerald-900 p-5 text-white">
       <h2 className="text-sm">目前餘額</h2>
@@ -13,7 +13,6 @@ export default function WalletPage({ balance, year, month, history, summary, loa
       <strong>{year} 年 {month} 月</strong>
       <button type="button" aria-label="下個月" className="min-h-11 min-w-11 rounded-lg border" disabled={loading} onClick={() => onMonthShift(1)}>›</button>
     </div>
-    <button type="button" onClick={onRefresh} disabled={loading} className="min-h-11 w-full rounded-xl border text-sm text-emerald-800">更新交易明細</button>
     {loading ? <p role="status">資料載入中…</p> : error ? <p role="alert" className="text-rose-700">{error}</p> : <>
       <div className="grid grid-cols-2 gap-2 rounded-xl bg-white p-4 text-sm">
         <p>月初：{formatBalanceAmount(summary.openingBalance)}</p>
