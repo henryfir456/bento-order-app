@@ -10,7 +10,7 @@ permissions:
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,15 +41,22 @@ jobs:
           npm run dev -- --host 127.0.0.1 --port 4174 > /tmp/preview-base.log 2>&1 &
           for i in $(seq 1 30); do curl -fsS http://127.0.0.1:4174/ >/dev/null && break; sleep 1; done
           curl -fsS http://127.0.0.1:4174/ >/dev/null
-      - name: Lighthouse headless Chrome (development-mode mock, single run per revision)
+      - name: Lighthouse repeated headless Chrome mock measurements (3 pairs)
         run: |
-          npx --yes lighthouse@12.8.2 http://127.0.0.1:4174/ --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" --quiet --output=json --output-path=/tmp/lh-before.json
-          npx --yes lighthouse@12.8.2 http://127.0.0.1:4173/ --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" --quiet --output=json --output-path=/tmp/lh-after.json
+          for iteration in 1 2 3; do
+            npx --yes lighthouse@12.8.2 http://127.0.0.1:4174/ --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" --quiet --output=json --output-path="/tmp/lh-before-${iteration}.json"
+            npx --yes lighthouse@12.8.2 http://127.0.0.1:4173/ --chrome-flags="--headless --no-sandbox --disable-dev-shm-usage" --quiet --output=json --output-path="/tmp/lh-after-${iteration}.json"
+          done
           node --input-type=module -e "
             import fs from 'node:fs';
-            const read = f => JSON.parse(fs.readFileSync(f));
-            const extract = x => Object.fromEntries(['first-contentful-paint','largest-contentful-paint','cumulative-layout-shift','total-blocking-time','speed-index'].map(k => [k, x.audits[k]?.numericValue ?? null]));
-            console.log(JSON.stringify({environment:'CI headless Chrome, Vite development mock user, one Lighthouse run per revision, not production bundle or real LIFF',before:extract(read('/tmp/lh-before.json')),after:extract(read('/tmp/lh-after.json'))},null,2));
+            const keys = ['first-contentful-paint','largest-contentful-paint','cumulative-layout-shift','total-blocking-time','speed-index'];
+            const samples = side => [1,2,3].map(i => JSON.parse(fs.readFileSync('/tmp/lh-' + side + '-' + i + '.json')));
+            const metrics = data => Object.fromEntries(keys.map(key => {
+              const values = data.map(report => report.audits[key]?.numericValue ?? null);
+              const valid = values.every(v => Number.isFinite(v));
+              return [key, { samples: values, median: valid ? [...values].sort((a,b) => a-b)[1] : null }];
+            }));
+            console.log(JSON.stringify({environment:'CI headless Chrome, Vite dev-mode mock, 3 independent runs per revision, not real LIFF or production bundle',before:metrics(samples('before')),after:metrics(samples('after'))},null,2));
           "
       - uses: actions/upload-artifact@v4
         if: always()
