@@ -171,7 +171,21 @@ export default function MemberBalanceManagement({
             className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
           />
         </label>
-        <p className="text-xs text-gray-500">預設依餘額由小到大排序，點選表格標題可切換排序。</p>
+        <p className="hidden text-xs text-gray-500 md:block">預設依餘額由小到大排序，點選表格標題可切換排序。</p>
+        <div className="flex items-end gap-2 md:hidden" role="group" aria-label="使用者排序">
+          <label className="min-w-0 flex-1 text-xs font-medium text-gray-600">排序欄位
+            <select aria-label="排序欄位" value={sort.key} onChange={(event) => setSort(current => ({ ...current, key: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800">
+              <option value="balance">餘額</option>
+              <option value="employeeId">員編</option>
+              <option value="name">姓名</option>
+              <option value="floor">樓層</option>
+              <option value="role">角色</option>
+            </select>
+          </label>
+          <button type="button" aria-label="切換排序方向" onClick={() => setSort(current => ({ ...current, direction: current.direction === 'asc' ? 'desc' : 'asc' }))} className="shrink-0 rounded-lg border border-emerald-700 px-3 py-2 text-sm font-bold text-emerald-800">
+            {sort.direction === 'asc' ? '↑ 由小到大' : '↓ 由大到小'}
+          </button>
+        </div>
       </div>
 
       {editingName && !isViewAsMode && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !nameSaving) setEditingName(null); }}>
@@ -260,11 +274,12 @@ export default function MemberBalanceManagement({
           <div className="space-y-2 md:hidden">
             {filteredMembers.map((user, idx) => (
               <article key={memberKey(user, idx)} className="rounded-2xl border border-gray-100 bg-gray-50 p-3 space-y-2">
-                <div className="flex min-w-0 items-start justify-between gap-3">
-                  <MemberIdentity user={user} onNameClick={startNameEdit} />
-                  {hasActions && <div className="flex flex-col gap-1"><UserNavigationActions user={user} /><MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} /></div>}
+                <MemberIdentity user={user} onNameClick={startNameEdit} />
+                <div className="flex flex-wrap items-center gap-1">
+                  {hasActions && <UserNavigationActions user={user} />}
+                  {hasActions && <MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} />}
+                  {!isViewAsMode && <button type="button" className="rounded-lg border border-emerald-700 px-2 py-1.5 text-xs font-bold text-emerald-800" onClick={() => setSelectedUser(user)}>明細</button>}
                 </div>
-                {!isViewAsMode && <button type="button" className="text-sm font-bold text-emerald-800 underline" onClick={() => setSelectedUser(user)}>檢視交易明細</button>}
                 <div className="grid grid-cols-3 gap-2 text-xs text-gray-600">
                   <div><div className="text-[10px] text-gray-400">樓層</div><div className="truncate">{user.floor || '未設定'}</div></div>
                   <div><div className="text-[10px] text-gray-400">餘額</div><BalanceBadge balance={user.balance} /></div>
