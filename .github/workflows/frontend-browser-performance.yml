@@ -33,7 +33,7 @@ jobs:
           VITE_AUTH_MODE: mock
           VITE_MOCK_USER: user
         run: |
-          git worktree add --detach /tmp/bento-perf-base ${{ github.event.pull_request.base.sha }}
+          git worktree add --detach /tmp/bento-perf-base "${{ github.event.pull_request.base.sha || 'main' }}"
           cd /tmp/bento-perf-base
           npm ci
           npm run build
