@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.7': [
+    { name: '變更', changes: [
+      '餘額交易明細改以月份範圍查詢，減少非當月資料載入；歷史對帳與金額規則維持不變。',
+      '優化帳務查詢索引條件，並新增跨月退款及完整後端回歸測試。'
+    ] }
+  ],
   '0.16.6': [
     { name: '變更', changes: [
       '月曆餐點縮圖延後載入並以非同步方式解碼，降低非必要圖片工作的干擾。',
