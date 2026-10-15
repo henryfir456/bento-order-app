@@ -23,3 +23,10 @@ test('modern calendar shows Cai flavor only and HeShi vendor label without menu 
   assert.match(modern, /entry\.event\.vendor === '蔡老師'/);
   assert.match(modern, /entry\.event\?\.dailyFlavorName \|\| '未開團'/);
 });
+
+test('calendar thumbnails defer offscreen loading and use asynchronous decode', () => {
+  assert.match(app, /src=\{dailyFlavorImageUrl\}[\s\S]{0,180}loading="lazy"/);
+  assert.match(app, /src=\{dailyFlavorImageUrl\}[\s\S]{0,200}decoding="async"/);
+  assert.match(modern, /loading="lazy" decoding="async"/);
+  assert.match(modern, /onError=\{\(event\) => \{ event\.currentTarget\.hidden = true/);
+});
