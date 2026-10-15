@@ -9,6 +9,14 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.16.4] - 2026-10-15
+
+### Changed
+
+- Reduce unnecessary calendar footer spacing while preserving the fixed bottom-navigation safe area.
+- Remove the redundant wallet transaction-history refresh button; opening the wallet and changing months still load the ledger automatically.
+- Hide the empty User and Accounts management section from roles with no authorized actions, without changing existing access permissions.
+
 ## [0.16.3] - 2026-10-14
 
 ### Changed
