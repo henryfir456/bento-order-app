@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.6': [
+    { name: '變更', changes: [
+      '月曆餐點縮圖延後載入並以非同步方式解碼，降低非必要圖片工作的干擾。',
+      '新增前端資源大小比較及瀏覽器效能測試；真實 LINE 手機載入速度尚需實機驗證。'
+    ] }
+  ],
   '0.16.5': [
     { name: '修正', changes: [
       '點餐及退款交易明細顯示實際訂餐日期，與交易時間分開；無關聯資料時顯示未提供。',

@@ -3096,6 +3096,8 @@ export default function App() {
                 <img
                   src={dailyFlavorImageUrl}
                   alt={`${event.dailyFlavorName}餐點`}
+                  loading="lazy"
+                  decoding="async"
                   onError={() => setCalendarFlavorImageErrors((current) => ({
                     ...current,
                     [`${dateStr}:${dailyFlavorImageUrl}`]: true

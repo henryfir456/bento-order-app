@@ -9,6 +9,13 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.16.6] - 2026-10-15
+
+### Changed
+
+- Defer offscreen calendar flavor thumbnails and decode images asynchronously without changing order/calendar behavior (Issue #89).
+- Introduce reproducible JS/CSS asset size comparisons and opt-in Chrome Lighthouse mock-browser benchmark; report measurements without claiming real-device speedups.
+
 ## [0.16.5] - 2026-10-15
 
 ### Fixed

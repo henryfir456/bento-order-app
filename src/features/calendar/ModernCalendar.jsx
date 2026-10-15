@@ -58,7 +58,7 @@ export default function ModernCalendar({ currentMonth, events, orders, onSelectD
           </div>
           <p className="text-base font-semibold">{active.event?.vendor || '當日未開團'}</p>
           {isCai && active.event?.dailyFlavorName && <p className="mt-2 break-words text-sm text-amber-800">{active.event.dailyFlavorName}</p>}
-          {imageUrl && <img src={imageUrl} alt={active.event.dailyFlavorName} loading="lazy" className="mt-3 h-44 w-full rounded-xl object-cover" onError={(event) => { event.currentTarget.hidden = true; }} />}
+          {imageUrl && <img src={imageUrl} alt={active.event.dailyFlavorName} loading="lazy" decoding="async" className="mt-3 h-44 w-full rounded-xl object-cover" onError={(event) => { event.currentTarget.hidden = true; }} />}
           {active.event?.vendor && (
             <button type="button" onClick={() => onSelectDate(active.key)}
               className="mt-4 min-h-11 w-full rounded-xl bg-[#2C4A3E] px-4 py-3 font-bold text-white">
