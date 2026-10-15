@@ -312,6 +312,20 @@ export const getLedgerRows = async (database, userId, { from, to } = {}) => {
   return Array.isArray(result) ? result : (result?.results || []);
 };
 
+// Lightweight full-history projection for immutable sequence reconciliation.
+// Monthly transactions are fetched separately with the bounded date predicate.
+export const getLedgerReconciliationRows = async (database, userId) => {
+  const result = await database.prepare(`
+    SELECT bl.transaction_id, bl.type, bl.amount, bl.balance_after,
+           bl.occurred_at, bl.note, bls.sequence_number
+    FROM balance_ledger bl
+    JOIN balance_ledger_sequence bls ON bls.transaction_id = bl.transaction_id
+    WHERE bl.user_id = ?
+    ORDER BY bls.sequence_number ASC
+  `).bind(userId).all();
+  return Array.isArray(result) ? result : (result?.results || []);
+};
+
 export const getHistoricalOrderDetails = async (database, orderIds = []) => {
   const ids = [...new Set(orderIds.map((orderId) => String(orderId || '').trim()).filter(Boolean))];
   const details = new Map();
