@@ -11,6 +11,13 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.16.5': [
+    { name: '修正', changes: [
+      '點餐及退款交易明細顯示實際訂餐日期，與交易時間分開；無關聯資料時顯示未提供。',
+      '交易金額正數改為綠字、負數為紅字、零元維持中性色。',
+      '將 GROUP_CANCELLED 等交易代碼改為易讀的繁體中文。'
+    ] }
+  ],
   '0.16.4': [
     { name: '變更', changes: [
       '縮減月曆頁頁尾多餘留白，保留底部導覽安全間距。',
