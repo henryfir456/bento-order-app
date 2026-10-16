@@ -57,8 +57,7 @@ export const handleReadOnlyRequest = async (request, env, {
 } = {}) => {
   const url = new URL(request.url);
   if (request.method !== 'GET') return null;
-  const allowViewAs = url.pathname !== '/api/me'
-    && url.pathname !== '/api/orders/statistics';
+  const allowViewAs = url.pathname !== '/api/me';
   const identity = await resolveCanonicalIdentity(request, env, fetchImpl, { allowViewAs, now });
 
   if (url.pathname === '/api/me') {
@@ -146,13 +145,14 @@ export const handleReadOnlyRequest = async (request, env, {
   if (url.pathname === '/api/orders/statistics') {
     const queryKeys = [...url.searchParams.keys()];
     const requestedPeriods = url.searchParams.getAll('period');
-    if (queryKeys.some((key) => key !== 'period')
+    if (queryKeys.some((key) => key !== 'period' && key !== 'viewAs')
       || requestedPeriods.length > 1
+      || url.searchParams.getAll('viewAs').length > 1
       || !['all', 'year', 'month'].includes(requestedPeriods[0] || 'all')) {
       throw badRequest('INVALID_QUERY');
     }
     const period = requestedPeriods[0] || 'all';
-    const statistics = await getOrderStatistics(env.DB, identity.authorizationActor.userId, { period, now });
+    const statistics = await getOrderStatistics(env.DB, subject.userId, { period, now });
     return jsonResponse({ success: true, ...statistics });
   }
 
