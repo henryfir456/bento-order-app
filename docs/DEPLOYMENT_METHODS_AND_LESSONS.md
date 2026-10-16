@@ -35,7 +35,7 @@ Cloudflare 在自己的建置環境對 Git commit 執行 Build Trigger，**不�
 3. 有具權限直接 CLI 且 clean main／完整依賴／測試通過？走 **Wrangler CLI**，按 runbook 保留設定、發布、核對結果。
 4. 沒有 CLI，但有 fresh-built 全部 modules、Cloudflare API 權限、嚴格繼承及完整讀回／部署能力？走 **API Version → gate → Deployment**；只具有實驗 uploader 時不得擅自發版。
 5. 以上都不符合 → **WAITING_FOR_DELIVERY**，記明缺的是哪個具體 capability/產物/權限；不要改用 GitHub Actions、重發舊 Version、半套 bundle、要求再輸入已授權內容或無限制掃描所有歷史。
-6. 後端完整通過後，再**獨立**核對 Netlify 前端與手機／LIFF；前端未確認時只能寫「Worker 已完成，前端 NOT VERIFIED」。
+6. 後端完整通過後，交付最新 main 的本機前端讓使用者人工驗收；Netlify 正式前端由使用者驗收通過後**自行發布**，Agent 不得主動部署。未發布時應寫「Worker 已完成、Local UAT 待使用者、Netlify USER_RELEASE_PENDING」，而非將前端未發布視為 Worker BLOCKED。參閱 [FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md](FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md)。
 
 ## 4. 踩雷逐項紀錄（原因與下次預防）
 
@@ -88,6 +88,7 @@ Netlify Published commit / LIFF 驗收：
 - `AGENTS.md`：強制規則、禁止事項、Agent 必讀入口。
 - **本文件**：方式比較、歷史教訓、決策樹；新增成功或失敗案例時按證據等級更新。
 - `docs/FORMAL_WORKER_RELEASE.md`：可執行命令、設定核對、API upload/deploy 與正式 HTTP smoke。
+- `docs/FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md`：前端 Local 驗收、Netlify 使用者發布權限、狀態模板；不以 Netlify 尚未發布阻擋 Worker 交付。
 - Issue [#104](https://github.com/henryfir456/bento-order-app/issues/104)：完整獨立版本發版器的工程驗收；**Issue 勾選項應以實際證據更新**，不要因原生 Git 流程可用而自動判定另一條 API uploader 路徑全部完成。
 - `docs/retrospectives/`：每次具體失敗與修正實證；本檔只保存可重複適用的模式。
 
