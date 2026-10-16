@@ -18,9 +18,11 @@ const out=resolve(api,'.release-evidence');
 mkdirSync(out,{recursive:true});
 const created=run('npx',['wrangler','deploy','--dry-run','--outdir',out,'--config','wrangler.jsonc'],api);
 const files=[];
-function visit(dir){for(const name of readdirSync(dir)){const p=join(dir,name);if(statSync(p).isDirectory())visit(p);else if(/\.(js|mjs|json)$/.test(name)){const bytes=readFileSync(p);files.push({path:relative(out,p).replaceAll('\\','/'),sha256:createHash('sha256').update(bytes).digest('hex'),bytes:bytes.length});}}}
+function visit(dir){for(const name of readdirSync(dir)){const p=join(dir,name);if(statSync(p).isDirectory())visit(p);else if(name !== 'release-manifest.json' && name !== 'metadata.json'){const bytes=readFileSync(p);files.push({path:relative(out,p).replaceAll('\\','/'),sha256:createHash('sha256').update(bytes).digest('hex'),bytes:bytes.length,mime:/\\.wasm$/.test(name)?'application/wasm':/\\.(js|mjs)$/.test(name)?'application/javascript+module':/\\.map$/.test(name)?'application/source-map':'application/octet-stream'});}}}
 visit(out);
 if(!files.some(f=>f.path.endsWith('.js')&&f.bytes>0))throw new Error('BLOCKED: Worker bundle missing');
-const evidence={status:'BUILT_NOT_DEPLOYED',sourceSha:sha,worker:'bento-api-poc',configuration:'worker-poc/wrangler.jsonc',files,generatedAt:new Date().toISOString(),uploadVerification:'NOT_RUN',productionDeployment:'NOT_RUN',smoke:'NOT_RUN'};
+const mainModule=files.length===1?files[0].path:null;
+if(!mainModule || !/\\.(js|mjs)$/.test(mainModule)) throw new Error('BLOCKED: ambiguous Wrangler outdir; supply a complete verified multi-module manifest');
+const evidence={mainModule,bindings:[{name:'DB',type:'d1',id:'e75bc185-afb5-4a5d-abc9-81bd79525cff'}],compatibilityDate:'2026-09-07',status:'BUILT_NOT_DEPLOYED',sourceSha:sha,worker:'bento-api-poc',configuration:'worker-poc/wrangler.jsonc',files,generatedAt:new Date().toISOString(),uploadVerification:'NOT_RUN',productionDeployment:'NOT_RUN',smoke:'NOT_RUN'};
 writeFileSync(join(out,'release-manifest.json'),JSON.stringify(evidence,null,2)+'\n');
 console.log(JSON.stringify({sourceSha:sha,bundles:files.length,evidence:join(out,'release-manifest.json'),wranglerDryRun:created.slice(-500)},null,2));
