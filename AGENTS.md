@@ -52,6 +52,12 @@
 - **正式驗收**：記錄來源 main SHA、新 Worker Version ID、Deployment ID、100% 流量，執行無副作用的 `/api/health`、身分授權、CORS 與此次新增 API contract smoke；Netlify 前端正式部署與手機/LINE 實機驗收分開記錄。缺任何必需證據時不得宣稱正式交付。
 - **失敗處理**：優先調查當天成功的直接 API/CLI 上傳實例及其完整原始碼建置方式；缺工具、缺 bundle、模組/設定不明時停止正式寫入，回報 `WAITING_FOR_DELIVERY` 並明列阻礙，不可改用 GitHub Actions、要求補 Actions Secrets、重發舊版本或要求使用者重複授權。
 
+## 正式部署方式選擇與歷史踩雷（必讀）
+- **凡涉及 Worker 正式部署、無法部署、切換部署通道或設定 Cloudflare Git 建置，開始前先讀 `docs/DEPLOYMENT_METHODS_AND_LESSONS.md`**，按其中決策樹選擇通道並查最近成功案例；完整實作步驟再讀 `docs/FORMAL_WORKER_RELEASE.md`。
+- Cloudflare **原生 Git 整合／Build Trigger 與 GitHub Actions 是不同服務**；前者並不因本專案禁止 GitHub Actions 而自動被禁止，但必須證明符合來源 main SHA、完整新 bundle、正式 bindings/Secrets 保留、100% deployment 與 runtime smoke。單純 Build Success **不得**宣稱部署完成。
+- 部署回報須記錄「採用路徑、排除其他路徑原因、來源 SHA、Version/Deployment ID、設定 before/after、smoke」；失敗原因與證據等級寫入同類 retrospective。不得反覆試用已知不適用的 Actions、舊 bundle、單模組 patch 或無授權 shell。
+- 本節是既有**禁止 GitHub Actions 正式部署與 fail-closed 安全要求**的選擇指引，不放寬任何既有交付 Gate。
+
 ## 可重複正式 Worker 交付入口（Issue #104）
 - 請先讀 `docs/FORMAL_WORKER_RELEASE.md`，依順序執行可稽核的 fresh-build、正式部署、設定保留比對與 Runtime smoke。
 - `node worker-poc/scripts/prepare-formal-release.mjs` 僅在乾淨 main checkout 上進行正式 Worker dry-run bundle 準備和 SHA-256 manifest，不會上傳或部署；完整測試與獨立 Review 仍是必需關卡。
