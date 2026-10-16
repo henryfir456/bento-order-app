@@ -44,6 +44,6 @@ test('pie chart draws after render and respects reduced motion', () => {
   const page = read('src/features/orders/MyBentoFootprintsPage.jsx');
   assert.match(page, /footprints-pie-draw/);
   assert.match(page, /prefers-reduced-motion: reduce/);
-  assert.match(page, /mask="url\\(#footprints-pie-mask\\)"/);
+  assert.ok(page.includes('mask="url(#footprints-pie-mask)"'));
   assert.match(page, /isViewAsMode/);
 });
