@@ -44,13 +44,8 @@
 - 有前端 UI 異動時，後端與前端交付狀態須各自確認；僅部署 Worker 不代表使用者在前端能看到新功能。
 - 對外最終交付回報須包含 main commit、Worker 版本／部署識別、部署後 smoke，以及前端部署狀態；未取得其中證據時不得宣稱完成。
 
-## 正式後端直接部署（必要；禁止 GitHub Actions）
-- **正式部署禁止 GitHub Actions**（包括 push、workflow_dispatch、re-run 或工作流程代部署）。部署只允許在已授權的直接執行環境使用 Wrangler CLI，或透過已連線的 Cloudflare 外掛/API **上傳由最新 `main` 完整來源新建置的 Worker bundle**。先依當次可用能力與最近成功紀錄選擇可靠方式；不得只因無法使用 Wrangler 就跳轉 GitHub Actions。
-- 兩條直接路徑的共同前置：核對最新 GitHub `main` SHA、`worker-poc/wrangler.jsonc` 的 `bento-api-poc` 和正式 D1 `bento-formal` 綁定，使用完整來源／模組相依與鎖定依賴，通過必要 Worker 測試。保留既有 Secrets、D1 binding、排程、CORS、compatibility_date 與所有正式設定；禁止為了上傳而自行簡化或改寫 Worker 邏輯。
-- **Wrangler CLI 路徑**：`npm ci --prefix worker-poc`、`npm test --prefix worker-poc`，在 `worker-poc/` 執行 `npx wrangler deploy --config wrangler.jsonc --keep-vars`。使用本機或已授權的直接 shell，不得透過 GitHub Actions。
-- **Cloudflare 外掛/API 路徑**：取得相同最新 `main` 的完整 Worker 來源及可驗證的新建置產物，使用 Cloudflare Worker upload endpoint 上傳**新程式碼**並發布正式流量。要核對部署 bundle 真正包含這次修改、原本模組/授權/D1/Secrets/排程未遺失；以嚴格繼承或等效保留現存 bindings 的安全上傳方式執行。不能用舊版 script 回傳內容、少量補丁、拼湊缺漏模組或把既有 Worker Version 再部署一次代替新建置。Cloudflare 紀錄 `source=api` 應如實標為 API，不得假稱 Wrangler。
-- **正式驗收**：記錄來源 main SHA、新 Worker Version ID、Deployment ID、100% 流量，執行無副作用的 `/api/health`、身分授權、CORS 與此次新增 API contract smoke；Netlify 前端正式部署與手機/LINE 實機驗收分開記錄。缺任何必需證據時不得宣稱正式交付。
-- **失敗處理**：優先調查當天成功的直接 API/CLI 上傳實例及其完整原始碼建置方式；缺工具、缺 bundle、模組/設定不明時停止正式寫入，回報 `WAITING_FOR_DELIVERY` 並明列阻礙，不可改用 GitHub Actions、要求補 Actions Secrets、重發舊版本或要求使用者重複授權。
+## 正式後端部署技術細則（強制）
+涉及正式 Worker 部署時必須閱讀並遵循 [docs/WORKER_DEPLOYMENT_POLICY.md](docs/WORKER_DEPLOYMENT_POLICY.md)；保留既有 GitHub Actions 禁令、完整 fresh bundle、設定不遺失、Runtime smoke 及 fail-closed 要求。
 
 ## 正式部署方式選擇與歷史踩雷（必讀）
 - **凡涉及 Worker 正式部署、無法部署、切換部署通道或設定 Cloudflare Git 建置，開始前先讀 `docs/DEPLOYMENT_METHODS_AND_LESSONS.md`**，按其中決策樹選擇通道並查最近成功案例；完整實作步驟再讀 `docs/FORMAL_WORKER_RELEASE.md`。
@@ -58,31 +53,11 @@
 - 部署回報須記錄「採用路徑、排除其他路徑原因、來源 SHA、Version/Deployment ID、設定 before/after、smoke」；失敗原因與證據等級寫入同類 retrospective。不得反覆試用已知不適用的 Actions、舊 bundle、單模組 patch 或無授權 shell。
 - 本節是既有**禁止 GitHub Actions 正式部署與 fail-closed 安全要求**的選擇指引，不放寬任何既有交付 Gate。
 
-## 可重複正式 Worker 交付入口（Issue #104）
-- 請先讀 `docs/FORMAL_WORKER_RELEASE.md`，依順序執行可稽核的 fresh-build、正式部署、設定保留比對與 Runtime smoke。
-- `node worker-poc/scripts/prepare-formal-release.mjs` 僅在乾淨 main checkout 上進行正式 Worker dry-run bundle 準備和 SHA-256 manifest，不會上傳或部署；完整測試與獨立 Review 仍是必需關卡。
-- 缺完整建置產物、API upload metadata／Secrets 保留證據、必要驗證或授權身份時應 fail closed，切勿重新發佈舊 Worker 或將 CI 測試冒充生產驗收。
+## 重複發版操作入口（強制）
+執行正式 Worker 發版，先讀 [docs/FORMAL_WORKER_RELEASE.md](docs/FORMAL_WORKER_RELEASE.md) 與 [docs/WORKER_DEPLOYMENT_POLICY.md](docs/WORKER_DEPLOYMENT_POLICY.md)。
 
-## 版本、異動紀錄與繁中翻譯關卡
-### 版本升級判定（目前 0.x 的專案自訂慣例）
-- **PATCH**（例如 `v0.16.1`）：錯字、UI 微調、Bug 修正及不擴充主要功能的相容性修補，不得因小幅修改誤升 MINOR。
-- **MINOR**（例如 `v0.17.0`）：新增完整頁面、重要操作流程、重大 UI 里程碑或使用者可感知的主要功能擴充。
-- **MAJOR**（`v1.0.0`）：首次進入正式穩定版，必須經完整功能與實機／正式環境驗收，確認核心功能、角色／權限、訂單與帳務，以及資料相容性。進入 `1.x` 後，如有破壞相容性的變更，應提升 MAJOR。
-- **注意**：上述 `0.x` PATCH／MINOR／MAJOR 使用方式是本專案明訂的管理慣例，**不是完整照搬 Semantic Versioning 對 `0.x`（初始開發階段）版本的標準語義**。若新增里程碑需判定升級幅度，應依本節並記錄理由。
-- 已發布的歷史版號與 Changelog 不得為配合新慣例而回溯重編；以新發布版本向前演進。
-
-### 單一版號與介面模式
-- 同一次正式發布，必須使 `package.json`、`package-lock.json`（根版本及 `packages[""].version`）、`CHANGELOG.md` 最新正式版本條目與 `src/data/changelog.js` 該版本的**繁體中文翻譯**完全一致。若缺任何一項，版本檢查必須失敗，禁止合併或交付。
-- `CHANGELOG.md` 是正式版本歷程來源；使用者可見的頁尾版號透過現有 `APP_VERSION` 從 CHANGELOG 取得（僅依現行邏輯回退到 package 版本），**禁止另建寫死的 UI 版號或各元件自行維護版號**。
-- **經典介面及新介面屬於同一個應用程式版本**，只改變介面顯示偏好；切換時不得更改 `APP_VERSION`、更新任何 package／Changelog 版號、產生新版本標籤，也不得讓畫面顯示兩套不同的版號。只有正式發布功能或修正時才依 PATCH／MINOR／MAJOR 決定升級。
-- 每項使用者可感知的功能新增、Bug 修正、行為／權限變更，在合併與正式交付前，必須評估是否需要建立正式版本；同一批發布可共用一個版本，不得為純文件、測試或內部整理虛增版本。
-- 建立正式版本時，必須於**同一 PR／同一交付範圍**同步更新 `package.json` 版本、`CHANGELOG.md` 的正式版本段落及 `src/data/changelog.js` 的對應**繁體中文** UI 文案。若存在鎖檔版本欄位，也須保持一致。
-- `CHANGELOG.md` 是正式版本歷程來源；`src/data/changelog.js` 是使用者介面的繁體中文翻譯，不得使用英文直出、空字串或刪除缺翻譯例外來規避驗證。
-- 正式版不得缺少繁體中文分類或異動內容；新版本不得加入歷史 `LEGACY_UI_RELEASES` 例外清單。
-- 在 PR／部署前執行 `node --test tests/changelog-migration.test.cjs`，並通過 lint、build 及必要業務回歸；CI 的版本驗證 FAIL 時不得合併、部署或宣稱完成。
-- 純文件／內部治理修改若不發布新版本，應在交付回報明確註明「不升版」及原因。
-- 涉及使用者介面的修改時，另須確認前端實際發布與快取狀態；僅部署 Worker 無法更新已部署的前端 JS。
-- 若缺少可用的前端部署方式或正式環境驗證證據，應分別回報後端及前端的部署狀態，不得宣稱整體線上問題已修復。
+## 版本與 Changelog（強制）
+任何發版、版本、Changelog 或 UI 版本變更必須遵循 [docs/RELEASE_VERSION_POLICY.md](docs/RELEASE_VERSION_POLICY.md)；包含繁中同步與必要測試。
 
 ## 作業交接
 - 可選用的建議性交接文件：`../agent-handoff/projects/80_bento-order-app/CURRENT.md`。
@@ -98,54 +73,14 @@
 - 修改任一端時，必須保留現有 LIFF 認證、access token、Worker 授權及 D1 契約。
 - 真實 LIFF 登入、View As、Worker 部署、正式 D1 行為需要人工或外部證據；不得僅靠本機靜態檢查便宣稱驗證通過。GAS 部署不是正式驗證目標。
 
-## 已退役傳輸治理
-Cloudflare Worker + D1 是身分、授權、餘額及新功能唯一正式傳輸與事實來源。前端只能將明確的 GAS adapter 保留為受限舊版回歸邊界；未提供傳輸設定時預設使用 Worker。不得為傳輸相容性重建第二套身分事實來源。
+## 退役傳輸（按任務強制）
+Worker/D1 是唯一正式傳輸及身分事實來源；任何涉及 GAS adapter 的修改都必須遵循 [docs/HISTORY_MIGRATION_POLICY.md](docs/HISTORY_MIGRATION_POLICY.md)。
 
-## 歷史遷移延續治理
-歷史遷移預設屬於執行工作，而非重新探索。除非具體驗證失敗需要，否則不得擴大成根因分析、全儲存庫分析或工作流程重設。
+## 歷史資料遷移（按任務強制）
+任何 schema migration、歷史資料匯入／修復，必須先讀 [docs/HISTORY_MIGRATION_POLICY.md](docs/HISTORY_MIGRATION_POLICY.md)，遵循 FULL/FAST preflight、來源及遠端 D1 比對。
 
-此規範補充 manifest 宣告的 `ap-safe-preflight` 與 `ap-verification-core`；不得修改 `.agents/skills/**`，因為這些是上游管理的 agent-platform 依賴，後續升級仍須能同步。
-
-### 預檢模式
-每次歷史遷移必須回報 `PREFLIGHT_MODE=FULL` 或 `PREFLIGHT_MODE=FAST`。
-
-僅在以下任一條件成立時使用 `FULL_PREFLIGHT`：
-- 此電腦第一次進行遷移工作；
-- 電腦已更換；
-- 儲存庫分支或 `HEAD` 發生非預期改變；
-- schema 或 migration 版本改變；
-- 遠端 D1 目標或 UUID 改變；
-- 宣告的治理或技能路徑／版本改變；
-- `FAST_PREFLIGHT` 發現不一致。
-
-套用新 schema migration 前，必須先執行一次 `FULL_PREFLIGHT`。FULL 可以驗證儲存庫根目錄、分支、工作樹、`AGENTS.md`、`agent.yaml`、宣告技能與版本、遠端 D1 目標及 UUID、migration／schema，以及相關的遷移契約。若 FAST 原本已足夠但仍選用 FULL，必須回報升級理由。
-
-在同一個已驗證環境與工作階段延續已核准的歷史匯入時，預設使用 `FAST_PREFLIGHT`，且只檢查：
-1. 預期儲存庫與分支；
-2. 工作樹沒有非預期修改；
-3. 遠端 D1 目標與 UUID 未變；
-4. migration／schema 版本符合預期；
-5. 目前要修改領域的遠端重疊／筆數；
-6. 此領域必要的 FK、重複與衝突檢查。
-
-FAST 必須明確略過重複的 `AGENTS.md`、`agent.yaml`、宣告技能／版本驗證、全儲存庫文件掃描、已完成領域、無關表格／領域、已核准語義計畫的重新生成，以及廣泛歷史來源重新探索。FAST 若出現不一致，停止並升級為 FULL 後才能繼續。
-
-### 已核准計畫的延續
-歷史領域的語義計畫明確核准後，必須使用凍結的語義集合執行，不得每批重跑或重新解釋 planner。來源證據或序列化形式的差異不會使核准語義失效；只有會變更寫入目標、操作、值、身分／所有權、依賴或衝突狀態的實質語義漂移才需要停止審查。
-
-### 批次與領域轉換
-同一歷史匯入批次間不得執行 FULL 或全儲存庫預檢；只做有界寫入檢查與累計核對。寫入結果不明時，停止並核對遠端狀態，才可重試。
-
-跨歷史領域（例如 Likes → Orders → Wallet）時，除非滿足 FULL 升級條件，否則對新領域執行 FAST；已完成及無關的領域不納入範圍。
-
-新 schema migration 成功套用並驗證後，對相同 schema 的後續歷史資料匯入回到 FAST。
-
-## GAS 驗證政策
-`GAS_VERIFICATION_POLICY=NON_BLOCKING_LEGACY`
-
-GAS 是 Worker/D1 現行流程已退役的傳輸。只有 GAS 的執行期與業務行為測試，不應阻擋 Worker/D1 schema migration 或歷史匯入；除非任務明確變更 GAS 執行行為，否則不得將 GAS 專屬測試列為必要關卡。未經明確要求，不得調查、建立 baseline、修正或歸因 GAS 專屬測試失敗。解析 `gas/bento_script.sql` 作為歷史遷移證據仍屬範圍且必須驗證。
-
-此規範僅限此儲存庫，與上游 agent-platform 技能併用，不得修改共用技能內容。
+## GAS 驗證（按任務強制）
+接觸 GAS 舊版檔案或驗證時，必須遵循 [docs/HISTORY_MIGRATION_POLICY.md](docs/HISTORY_MIGRATION_POLICY.md) 的 NON_BLOCKING_LEGACY 限界。
 
 ## 驗證
 命令及必要順序以 `agent.yaml` 宣告為準。專案技能可增加領域特定檢查，但不需要任何上層工作區檔案。
