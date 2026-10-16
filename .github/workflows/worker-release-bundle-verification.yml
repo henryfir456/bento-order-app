@@ -19,7 +19,7 @@ jobs:
           cache: npm
           cache-dependency-path: worker-poc/package-lock.json
       - run: npm ci --prefix worker-poc
-      - run: node --test worker-poc/tests/formal-version-upload.test.js
+      - run: node --test worker-poc/tests/formal-version-upload.test.js worker-poc/tests/formal-release-orchestrator.test.js
       - name: Inspect Wrangler dry-run output without deployment
         run: |
           cd worker-poc
