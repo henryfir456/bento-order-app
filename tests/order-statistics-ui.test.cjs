@@ -39,3 +39,11 @@ test('footprints presents a zero-record empty state', () => {
   assert.match(page, /!hasOrders/);
   assert.match(page, /這段期間還沒有可計入的便當紀錄/);
 });
+
+test('pie chart draws after render and respects reduced motion', () => {
+  const page = read('src/features/orders/MyBentoFootprintsPage.jsx');
+  assert.match(page, /footprints-pie-draw/);
+  assert.match(page, /prefers-reduced-motion: reduce/);
+  assert.match(page, /mask="url\\(#footprints-pie-mask\\)"/);
+  assert.match(page, /isViewAsMode/);
+});
