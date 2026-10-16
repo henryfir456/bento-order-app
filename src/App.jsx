@@ -2049,7 +2049,7 @@ export default function App() {
     setFootprintsData(null);
     try {
       if (apiClient.transport !== 'worker') throw new Error('WORKER_ONLY');
-      const res = await apiClient.getOrderStatistics({ period });
+      const res = await apiClient.getOrderStatistics({ period, viewAsUserId: viewAsUser?.userId || null });
       const data = await res.json();
       if (!res.ok || data?.success !== true
         || !Number.isFinite(Number(data.totalPortions))
@@ -2057,7 +2057,7 @@ export default function App() {
         || !Number.isFinite(Number(data.totalMealTypes))
         || !Array.isArray(data.vendors)
         || !Array.isArray(data.items)) throw new Error('READ_FAILED');
-      if (requestId === footprintsRequestRef.current) setFootprintsData(data);
+      if (requestId === footprintsRequestRef.current) setFootprintsData({ ...data, _subjectUserId: viewAsUser?.userId || authUserId });
     } catch {
       if (requestId === footprintsRequestRef.current) {
         setFootprintsError('便當足跡讀取失敗，請稍後重試。');
@@ -2067,6 +2067,19 @@ export default function App() {
       if (requestId === footprintsRequestRef.current) setFootprintsLoading(false);
     }
   };
+
+  useEffect(() => {
+    // A changed subject invalidates in-flight reads even if the tab is hidden.
+    footprintsRequestRef.current += 1;
+    setFootprintsData(null);
+    setFootprintsLoading(false);
+    setFootprintsError('');
+    if (viewMode === 'footprints' && authState === AUTH_STATES.REGISTERED && authUserId) {
+      void refreshBentoFootprints(footprintsPeriod);
+    }
+    // Trigger only on subject/tab changes; period changes are handled by the period control.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewAsUser?.userId, authUserId, viewMode, authState]);
 
   const loadBalanceHistory = async (year, month, viewAsUserId = null) => {
     if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
@@ -2688,7 +2701,6 @@ export default function App() {
     } else if (key === 'footprints') {
       setAdminManageMode(false);
       setViewMode('footprints');
-      void refreshBentoFootprints(footprintsPeriod);
     } else if (key === 'wallet') {
       openWalletPage();
     } else if (key === 'admin' && !isViewAsMode && !delegatedOrderUser) {
@@ -3704,7 +3716,8 @@ export default function App() {
 
         {isRegistered && viewMode === 'footprints' && !loading && (
           <MyBentoFootprintsPage
-            data={footprintsData}
+            data={footprintsData?._subjectUserId === (viewAsUser?.userId || authUserId) ? footprintsData : null}
+            isViewAsMode={isViewAsMode}
             loading={footprintsLoading}
             error={footprintsError}
             period={footprintsPeriod}
