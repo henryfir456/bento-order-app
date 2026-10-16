@@ -180,3 +180,23 @@ test('empty history returns a zeroed summary without vendor or item rows', async
   assert.deepEqual(body.vendors, []);
   assert.deepEqual(body.items, []);
 });
+
+
+test('Admin View As reads selected purchaser; normal User cannot forge View As', async () => {
+  const database = seedStatisticsDatabase();
+  const admin = { token: 'admin-token', lineUserId: 'admin-1' };
+  const own = await stats(database, '/api/orders/statistics', admin);
+  assert.equal(own.response.status, 200);
+  assert.equal(own.body.totalPortions, 0);
+  const userOne = await stats(database, '/api/orders/statistics?viewAs=user-1', admin);
+  assert.equal(userOne.response.status, 200);
+  assert.equal(userOne.body.totalPortions, 10);
+  const userTwo = await stats(database, '/api/orders/statistics?viewAs=user-2', admin);
+  assert.equal(userTwo.response.status, 200);
+  assert.equal(userTwo.body.totalPortions, 8);
+  const forbidden = await stats(database, '/api/orders/statistics?viewAs=user-2');
+  assert.equal(forbidden.response.status, 403);
+  assert.equal(forbidden.body.error, 'VIEW_AS_FORBIDDEN');
+  const ambiguous = await stats(database, '/api/orders/statistics?viewAs=user-1&viewAs=user-2', admin);
+  assert.equal(ambiguous.response.status, 400);
+});
