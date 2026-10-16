@@ -3790,12 +3790,14 @@ export default function App() {
                 canBindEmployee={apiClient.transport === 'worker' && canAuth('bindEmployee')}
                 canViewAsUser={canAuth('viewAsUser') && !isViewAsMode}
                 canDelegateOrder={apiClient.transport === 'worker' && canAuth('delegateOrder') && !isViewAsMode}
+                canTransferLineBinding={apiClient.transport === 'worker' && authMode === 'line' && authUser?.role === 'Admin' && !isViewAsMode}
                 onViewAsUser={handleSelectViewAs}
                 onDelegateOrderUser={handleSelectDelegatedOrder}
                 isViewAsMode={isViewAsMode}
                 onOpenTopupModal={handleOpenTopupModal}
                 onOpenEmployeeBindModal={handleOpenEmployeeBindModal}
                 onUserNameUpdated={() => loadMemberBalances(true)}
+                onLineBindingTransferCompleted={() => loadMemberBalances(true)}
               />
             )}
 

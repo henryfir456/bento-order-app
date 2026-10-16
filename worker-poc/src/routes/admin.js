@@ -6,6 +6,10 @@ import { prepareStatement, runMutationBatch } from '../db/transactions.js';
 import { notFound } from '../http/errors.js';
 import { adminBindEmployee } from '../domain/adminIdentity.js';
 import {
+  getLineBindingTransferPreview,
+  transferLineBinding
+} from '../domain/lineBindingTransfer.js';
+import {
   createAnnouncement,
   deleteAnnouncement,
   getAdminAnnouncements,
@@ -66,6 +70,13 @@ export const handleAdminRoute = async (request, env, {
   const isNameUpdate = Boolean(nameMatch);
   const bindingMatch = url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/employee-binding$/);
   const isEmployeeBinding = request.method === 'POST' && Boolean(bindingMatch);
+  const lineBindingTransferPreviewMatch = request.method === 'GET'
+    && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/line-binding-transfer-preview$/);
+  const isLineBindingTransferPreview = Boolean(lineBindingTransferPreviewMatch);
+  const lineBindingTransferMatch = request.method === 'POST'
+    && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/line-binding-transfer$/);
+  const isLineBindingTransfer = Boolean(lineBindingTransferMatch);
+  const isLineBindingTransferRoute = isLineBindingTransferPreview || isLineBindingTransfer;
   const isAnnouncementList = request.method === 'GET'
     && url.pathname === '/api/admin/announcements';
   const isAnnouncementCreate = request.method === 'POST'
@@ -92,13 +103,13 @@ export const handleAdminRoute = async (request, env, {
   const isDailyFlavorSync = request.method === 'POST'
     && url.pathname === '/api/admin/daily-flavors/sync';
   const isDailyFlavorRoute = isDailyFlavorStatus || isDailyFlavorSync;
-  if (!isSummary && !isMembers && !isUserLedger && !isNameUpdate && !isEmployeeBinding && !isAnnouncementList && !isAnnouncementCreate
+  if (!isSummary && !isMembers && !isUserLedger && !isNameUpdate && !isEmployeeBinding && !isLineBindingTransferRoute && !isAnnouncementList && !isAnnouncementCreate
     && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId
     && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview && !isMenuVendorList
     && !isDailyFlavorRoute) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: !isUserLedger && !isNameUpdate && !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isDailyFlavorRoute,
+    allowViewAs: !isUserLedger && !isNameUpdate && !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isLineBindingTransferRoute && !isDailyFlavorRoute,
     now
   });
   if (isDailyFlavorRoute) {
@@ -119,6 +130,29 @@ export const handleAdminRoute = async (request, env, {
       env.DB,
       identity,
       targetUserId,
+      await readJson(request),
+      now
+    ));
+  }
+  if (isLineBindingTransferPreview || isLineBindingTransfer) {
+    const match = lineBindingTransferPreviewMatch || lineBindingTransferMatch;
+    let sourceUserId;
+    try { sourceUserId = decodeURIComponent(match[1]).trim(); }
+    catch { throw badRequest('USER_ID_INVALID'); }
+    if (!sourceUserId) throw badRequest('USER_ID_REQUIRED');
+    if (isLineBindingTransferPreview) {
+      return jsonResponse(await getLineBindingTransferPreview(
+        env.DB,
+        identity,
+        sourceUserId,
+        url.searchParams.get('employeeId') || '',
+        now
+      ));
+    }
+    return jsonResponse(await transferLineBinding(
+      env.DB,
+      identity,
+      sourceUserId,
       await readJson(request),
       now
     ));

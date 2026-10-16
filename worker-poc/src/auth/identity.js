@@ -133,6 +133,7 @@ export const resolveCanonicalIdentity = async (
   const guest = await inspectGuestSession(env.DB, token, { now });
   if (isGuestToken(token)) {
     if (viewAsTarget(new URL(request.url))) throw forbidden('VIEW_AS_FORBIDDEN');
+    if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
     if (guest?.provisional) {
       const canonicalUser = await resolveGuestCanonicalUser(env.DB, guest);
       if (canonicalUser && canonicalUser.role !== 'User') {
@@ -147,10 +148,10 @@ export const resolveCanonicalIdentity = async (
         actor,
         authorizationActor: actor,
         effectiveSubject: actor,
-        viewAs: null
+        viewAs: null,
+        guestSession: guest.session
       };
     }
-    if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
     if (guest.user && guest.user.role !== 'User') {
       throw forbidden('ADMIN_LINE_AUTH_REQUIRED');
     }
@@ -159,7 +160,8 @@ export const resolveCanonicalIdentity = async (
       actor,
       authorizationActor: actor,
       effectiveSubject: actor,
-      viewAs: null
+      viewAs: null,
+      guestSession: guest.session
     };
   }
 

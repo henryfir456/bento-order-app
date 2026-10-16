@@ -487,6 +487,21 @@ const createWorkerOperations = ({ workerRequest }) => ({
     `/api/admin/users/${encodeURIComponent(String(userId || '').trim())}/employee-binding`,
     { credentialMode: 'line', body: { employeeId } }
   ),
+  previewAdminLineBindingTransfer: ({ sourceUserId, employeeId } = {}) => workerRequest(
+    'previewAdminLineBindingTransfer',
+    'GET',
+    `/api/admin/users/${encodeURIComponent(String(sourceUserId || '').trim())}/line-binding-transfer-preview`,
+    { query: { employeeId }, credentialMode: 'line' }
+  ),
+  transferAdminLineBinding: ({ sourceUserId, employeeId, previewFingerprint } = {}) => workerRequest(
+    'transferAdminLineBinding',
+    'POST',
+    `/api/admin/users/${encodeURIComponent(String(sourceUserId || '').trim())}/line-binding-transfer`,
+    {
+      credentialMode: 'line',
+      body: { employeeId, previewFingerprint }
+    }
+  ),
   toggleLike: ({ date } = {}) => workerRequest(
     'toggleLike',
     'POST',
