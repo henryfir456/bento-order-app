@@ -2074,12 +2074,12 @@ export default function App() {
     setFootprintsData(null);
     setFootprintsLoading(false);
     setFootprintsError('');
-    if (viewMode === 'footprints' && authState === AUTH_STATES.REGISTERED && authUserId) {
+    if (viewMode === 'footprints' && authState === AUTH_STATES.REGISTERED && authUser?.userId) {
       void refreshBentoFootprints(footprintsPeriod);
     }
     // Trigger only on subject/tab changes; period changes are handled by the period control.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewAsUser?.userId, authUserId, viewMode, authState]);
+  }, [viewAsUser?.userId, authUser?.userId, viewMode, authState]);
 
   const loadBalanceHistory = async (year, month, viewAsUserId = null) => {
     if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
