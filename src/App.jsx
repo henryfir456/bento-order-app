@@ -26,6 +26,7 @@ import { APP_VERSION, UI_CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
 import BottomNavigation from './components/BottomNavigation';
 import MyOrdersPage from './features/orders/MyOrdersPage';
+import MyBentoFootprintsPage from './features/orders/MyBentoFootprintsPage';
 import WalletPage from './features/balances/WalletPage';
 import EmployeeGuestLogin from './components/EmployeeGuestLogin';
 import LineEmployeeLookup from './components/LineEmployeeLookup';
@@ -173,6 +174,11 @@ export default function App() {
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [myOrdersError, setMyOrdersError] = useState('');
   const myOrdersRequestRef = useRef(0);
+  const [footprintsData, setFootprintsData] = useState(null);
+  const [footprintsLoading, setFootprintsLoading] = useState(false);
+  const [footprintsError, setFootprintsError] = useState('');
+  const [footprintsPeriod, setFootprintsPeriod] = useState('all');
+  const footprintsRequestRef = useRef(0);
   const [selectedCalendarKey, setSelectedCalendarKey] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -352,6 +358,11 @@ export default function App() {
     adminMenuChangesRequestRef.current += 1;
     historyRequestRef.current += 1;
     myOrdersRequestRef.current += 1;
+    footprintsRequestRef.current += 1;
+    setFootprintsData(null);
+    setFootprintsError('');
+    setFootprintsLoading(false);
+    setFootprintsPeriod('all');
     setMyOrdersList([]);
     setMyOrdersError('');
     setMyOrdersLoading(false);
@@ -2030,6 +2041,33 @@ export default function App() {
     }
   };
 
+  const refreshBentoFootprints = async (period = footprintsPeriod) => {
+    if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    const requestId = ++footprintsRequestRef.current;
+    setFootprintsLoading(true);
+    setFootprintsError('');
+    setFootprintsData(null);
+    try {
+      if (apiClient.transport !== 'worker') throw new Error('WORKER_ONLY');
+      const res = await apiClient.getOrderStatistics({ period });
+      const data = await res.json();
+      if (!res.ok || data?.success !== true
+        || !Number.isFinite(Number(data.totalPortions))
+        || !Number.isFinite(Number(data.totalOrderDays))
+        || !Number.isFinite(Number(data.totalMealTypes))
+        || !Array.isArray(data.vendors)
+        || !Array.isArray(data.items)) throw new Error('READ_FAILED');
+      if (requestId === footprintsRequestRef.current) setFootprintsData(data);
+    } catch {
+      if (requestId === footprintsRequestRef.current) {
+        setFootprintsError('便當足跡讀取失敗，請稍後重試。');
+        setFootprintsData(null);
+      }
+    } finally {
+      if (requestId === footprintsRequestRef.current) setFootprintsLoading(false);
+    }
+  };
+
   const loadBalanceHistory = async (year, month, viewAsUserId = null) => {
     if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
 
@@ -2647,6 +2685,10 @@ export default function App() {
       setAdminManageMode(false);
       setViewMode('myOrders');
       void refreshMyOrders();
+    } else if (key === 'footprints') {
+      setAdminManageMode(false);
+      setViewMode('footprints');
+      void refreshBentoFootprints(footprintsPeriod);
     } else if (key === 'wallet') {
       openWalletPage();
     } else if (key === 'admin' && !isViewAsMode && !delegatedOrderUser) {
@@ -3658,6 +3700,20 @@ export default function App() {
         {isRegistered && viewMode === 'myOrders' && !loading && (
           <MyOrdersPage orders={myOrdersList} loading={myOrdersLoading}
             error={myOrdersError} onRefresh={refreshMyOrders} isViewAsMode={isViewAsMode} />
+        )}
+
+        {isRegistered && viewMode === 'footprints' && !loading && (
+          <MyBentoFootprintsPage
+            data={footprintsData}
+            loading={footprintsLoading}
+            error={footprintsError}
+            period={footprintsPeriod}
+            onPeriodChange={(period) => {
+              setFootprintsPeriod(period);
+              void refreshBentoFootprints(period);
+            }}
+            onRefresh={() => void refreshBentoFootprints(footprintsPeriod)}
+          />
         )}
 
         {isRegistered && viewMode === 'wallet' && !loading && canAuth('viewOwnBalance')

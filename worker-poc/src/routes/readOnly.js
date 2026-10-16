@@ -13,6 +13,7 @@ import { getCaiTeacherDailyFlavor } from '../domain/dailyFlavors.js';
 import {
   getHistoricalOrdersMap,
   getHistoricalOrderSummaries,
+  getOrderStatistics,
   getReadableOrder,
   isHistoricalOrderDate
 } from '../domain/ordersRead.js';
@@ -56,7 +57,8 @@ export const handleReadOnlyRequest = async (request, env, {
 } = {}) => {
   const url = new URL(request.url);
   if (request.method !== 'GET') return null;
-  const allowViewAs = url.pathname !== '/api/me';
+  const allowViewAs = url.pathname !== '/api/me'
+    && url.pathname !== '/api/orders/statistics';
   const identity = await resolveCanonicalIdentity(request, env, fetchImpl, { allowViewAs, now });
 
   if (url.pathname === '/api/me') {
@@ -139,6 +141,19 @@ export const handleReadOnlyRequest = async (request, env, {
       ? (await resolveOrderPermission(env.DB, identity, { targetUserId, targetDate: getTaipeiDate(now), mode: 'A', now })).target
       : subject;
     return jsonResponse({ success: true, orders: await getHistoricalOrderSummaries(env.DB, target.userId, now) });
+  }
+
+  if (url.pathname === '/api/orders/statistics') {
+    const queryKeys = [...url.searchParams.keys()];
+    const requestedPeriods = url.searchParams.getAll('period');
+    if (queryKeys.some((key) => key !== 'period')
+      || requestedPeriods.length > 1
+      || !['all', 'year', 'month'].includes(requestedPeriods[0] || 'all')) {
+      throw badRequest('INVALID_QUERY');
+    }
+    const period = requestedPeriods[0] || 'all';
+    const statistics = await getOrderStatistics(env.DB, identity.authorizationActor.userId, { period, now });
+    return jsonResponse({ success: true, ...statistics });
   }
 
   if (url.pathname === '/api/order-page') {

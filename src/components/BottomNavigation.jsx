@@ -3,12 +3,14 @@ import React from 'react';
 const icons = {
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4M17 3v4M3 10h18" /></>,
   orders: <><rect x="5" y="4" width="14" height="17" rx="2" /><path d="M9 4.5h6M9 10h6M9 14h6M9 18h4" /></>,
+  footprints: <><path d="M4 18.5 9 13l3 2 7-8" /><path d="M14 7h5v5" /><circle cx="5" cy="7" r="1" /><circle cx="19" cy="19" r="1" /></>,
   wallet: <><rect x="3" y="6" width="18" height="15" rx="2" /><path d="M3 10h18M6 6V4h12M16 15h2" /></>,
   management: <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></>
 };
 const entries = [
   { key: 'calendar', label: '訂餐', icon: 'calendar' },
   { key: 'myOrders', label: '我的訂單', icon: 'orders' },
+  { key: 'footprints', label: '足跡', icon: 'footprints' },
   { key: 'wallet', label: '餘額', icon: 'wallet' },
   { key: 'admin', label: '管理', icon: 'management' }
 ];

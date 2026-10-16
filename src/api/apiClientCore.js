@@ -359,6 +359,10 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'getOrdersHistory', 'GET', '/api/orders/history',
     { query: { viewAs: viewAsUserId, targetUserId } }
   ),
+  getOrderStatistics: ({ period = 'all' } = {}) => workerRequest(
+    'getOrderStatistics', 'GET', '/api/orders/statistics',
+    { query: { period } }
+  ),
   getOrderPage: ({ targetDate, viewAsUserId, targetUserId } = {}) => workerRequest(
     'getOrderPage',
     'GET',
