@@ -2,6 +2,10 @@
 
 本檔僅適用於 `80_bento-order-app` 儲存庫；規則必須自足，不得依賴上層 AI 工作區。
 
+## 公開紀錄個資保護（強制）
+任何 Issue、PR、commit、review、測試資料、回顧、日誌及截圖在寫入 GitHub 前，必須遵守 [docs/PRIVACY_PUBLICATION_GATE.md](docs/PRIVACY_PUBLICATION_GATE.md)：預設使用完全虛構代號與測試資料，禁止真實姓名、完整或可反查員編、LINE 識別、憑證及關聯敏感資訊；檢查未通過時阻擋發布與合併。Agent 開發 Loop 每階段執行 PII_SCAN，Reviewer 獨立覆核，歷史殘留另作事件處理。
+
+
 ## 啟動程序
 1. 找出此儲存庫的 Git 根目錄。
 2. 修改前先讀取根目錄 `agent.yaml`。
