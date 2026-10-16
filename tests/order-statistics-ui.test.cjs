@@ -17,7 +17,7 @@ test('footprints exposes responsive period controls and the same ranked data at 
   assert.match(page, /role="img" aria-label=/);
 });
 
-test('statistics navigation and API remain authenticated and expose no identity input', () => {
+test('statistics navigation and API support authorized read-only View As', () => {
   const app = read('src/App.jsx');
   const nav = read('src/components/BottomNavigation.jsx');
   const api = read('src/api/apiClientCore.js');
@@ -27,9 +27,11 @@ test('statistics navigation and API remain authenticated and expose no identity 
   const methodStart = api.indexOf('getOrderStatistics:');
   const method = api.slice(methodStart, api.indexOf('getOrderPage:', methodStart));
   assert.match(method, /'\/api\/orders\/statistics'/);
-  assert.match(method, /query: \{ period \}/);
-  assert.doesNotMatch(method, /userId|targetUserId|viewAs/);
-  assert.match(route, /getOrderStatistics\(env\.DB, identity\.authorizationActor\.userId/);
+  assert.match(method, /query: \{ period, viewAs: viewAsUserId \}/);
+  assert.doesNotMatch(method, /targetUserId/);
+  assert.match(route, /getOrderStatistics\(env\.DB, subject\.userId/);
+  assert.match(app, /_subjectUserId/);
+  assert.match(app, /footprintsRequestRef\.current \+= 1/);
 });
 
 test('footprints presents a zero-record empty state', () => {
