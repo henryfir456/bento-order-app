@@ -31,3 +31,12 @@
 **禁止：** Actions 部署、重發舊 Worker、只補一個 JS module 的部分 bundle、重建缺失的 Secrets、使用 D1 正式資料修復來掩飾 runtime 問題。
 
 此文件是程序；實際 Cloudflare API 上傳仍需符合當前 Cloudflare API schema 及完整 source/bundle 驗證，不宣稱單憑 Runbook 即自動完成正式部署。
+
+
+## E. 完整模組 API Version Uploader（Fail closed）
+
+`worker-poc/scripts/upload-formal-version.mjs` 可讀取 `BENTO_RELEASE_MANIFEST` 指向的 bundle manifest，使用 Node `FormData` / `Blob` 原始 bytes 建構每個 module part，加上 `metadata`（main_module / bindings inherit / compatibility_date / source SHA），在送出前逐一驗證 SHA256、檔名、MIME、大小；**預設僅 dry-run，不向 Cloudflare 發出請求**。
+
+明確設定 `BENTO_UPLOAD_VERSION=true` 並提供 `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` 才允許呼叫 `POST /versions?bindings_inherit=strict` 建立**未部署**新版本。先檢查最新上傳版本是否就是目前 100% 正式版本，否則阻擋繼承；API 成功後讀回 /versions/{id}、/settings、/secrets、/schedules 並執行逐項核對。任何不符立即 BLOCKED、不建立 Deployment。**目前上傳器不包含建立正式 Deployment 的操作，因此不可能因為啟用 upload 就自動切換正式流量。**
+
+注意：Wrangler --dry-run 的實際輸出模組配置與 multipart metadata 仍應在真實環境驗證；若 dry-run 產生多個檔案但不能無歧義辨識主模組，`prepare-formal-release.mjs` 會拒絕產生可上傳 manifest。不要人工猜 main_module 或省略模組。實際 Cloudflare API 對 Version Settings 的回傳結構也需用未發布版本做實際整合驗證；在沒有這項證據前，本工具仍屬**受保護的試驗上傳器，不是已通過正式發版驗收的發布器**。
