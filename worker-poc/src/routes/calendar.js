@@ -6,6 +6,8 @@ import { normalizeMenuVendor } from '../domain/menuVendors.js';
 import { badRequest } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
+import { assertCurrentIdentity, currentIdentityPredicate } from '../auth/mutationIdentity.js';
+import { conflict } from '../http/errors.js';
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -33,15 +35,23 @@ export const toggleLike = async (database, identity, orderDate, clock = new Date
   assertSelfTarget(identity, identity.actor.userId);
   if (!isDateOnly(orderDate)) throw badRequest('INVALID_DATE');
   const occurredAt = resolveClock(clock).toISOString();
+  const identityGuard = await assertCurrentIdentity(database, identity, occurredAt);
+  const actorUserId = identity.actor.userId;
+  const identityParams = identityGuard.params;
+  const currentIdentity = currentIdentityPredicate(identity, occurredAt);
+  const assertIdentity = prepareStatement(database, `
+    UPDATE users SET updated_at = updated_at
+    WHERE user_id = ? AND active = 1 AND ${identityGuard.sql}
+  `, [actorUserId, ...identityParams]);
   const toggle = prepareStatement(database, `
     DELETE FROM likes
-    WHERE order_date = ? AND user_id = ?
-  `, [orderDate, identity.actor.userId]);
+    WHERE order_date = ? AND user_id = ? AND changes() = 1
+  `, [orderDate, actorUserId]);
   const add = prepareStatement(database, `
     INSERT INTO likes (order_date, user_id, created_at)
     SELECT ?, ?, ?
-    WHERE changes() = 0
-  `, [orderDate, identity.actor.userId, occurredAt]);
+    WHERE changes() = 0 AND ${currentIdentity.sql}
+  `, [orderDate, actorUserId, occurredAt, ...currentIdentity.params]);
   const autoOpen = prepareStatement(database, `
     INSERT INTO calendar_settings (
       order_date, vendor, mode, vendor_source, updated_by_user_id,
@@ -53,13 +63,14 @@ export const toggleLike = async (database, identity, orderDate, clock = new Date
         SELECT 1 FROM calendar_settings
         WHERE order_date = ? AND length(trim(vendor)) > 0
       )
+      AND ${currentIdentity.sql}
     ON CONFLICT(order_date) DO UPDATE SET
       vendor = '蔡老師',
       mode = 'A',
       vendor_source = 'LIKE_DEFAULT',
       updated_by_user_id = NULL,
       updated_at = excluded.updated_at
-  `, [orderDate, occurredAt, occurredAt, orderDate, orderDate]);
+  `, [orderDate, occurredAt, occurredAt, orderDate, orderDate, ...currentIdentity.params]);
   const autoClose = prepareStatement(database, `
     UPDATE calendar_settings
     SET vendor = '', mode = 'A', vendor_source = 'LIKE_DEFAULT',
@@ -70,8 +81,11 @@ export const toggleLike = async (database, identity, orderDate, clock = new Date
         SELECT 1 FROM orders
         WHERE order_date = ? AND status = 'ACTIVE'
       )
-  `, [occurredAt, orderDate, orderDate, orderDate]);
-  await runMutationBatch(database, [toggle, add, autoOpen, autoClose]);
+      AND ${currentIdentity.sql}
+  `, [occurredAt, orderDate, orderDate, orderDate, ...currentIdentity.params]);
+  const results = await runMutationBatch(database, [assertIdentity, toggle, add, autoOpen, autoClose]);
+  const identityChanges = Number(results[0]?.meta?.changes ?? results[0]?.changes ?? 0);
+  if (identityChanges !== 1) throw conflict('IDENTITY_SESSION_STALE');
   const state = await database.prepare(`
       SELECT EXISTS(
       SELECT 1 FROM likes WHERE order_date = ? AND user_id = ?

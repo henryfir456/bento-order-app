@@ -9,6 +9,7 @@ import {
 } from '../db/idempotency.js';
 import { ledgerMutationStatements } from '../db/ledgerQueries.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
+import { assertCurrentIdentity } from '../auth/mutationIdentity.js';
 import { deadlineAt, isDateOnly } from './deadlines.js';
 import {
   normalizeTargetUserId,
@@ -169,6 +170,7 @@ const assertOrderRequest = async (database, identity, input, clock) => {
     mode: setting.mode,
     now
   });
+  const identityPredicate = await assertCurrentIdentity(database, identity, now);
   if (!permission.target || !permission.target.displayName) {
     throw forbidden('PROFILE_COMPLETION_REQUIRED');
   }
@@ -197,6 +199,7 @@ const assertOrderRequest = async (database, identity, input, clock) => {
     items,
     replaceExisting,
     activeOrder,
+    identityPredicate,
     now,
     deadline: permission.timing.deadline
   };
@@ -247,7 +250,8 @@ const buildOrderStatements = (database, context, actor, details) => {
     target,
     targetUserId,
     isDelegated,
-    permission
+    permission,
+    identityPredicate
   } = context;
   const {
     orderId,
@@ -279,6 +283,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     EXISTS (
       SELECT 1 FROM users WHERE user_id = ? AND active = 1
     )
+    AND ${identityPredicate.sql}
     AND EXISTS (
       SELECT 1
       FROM calendar_settings cs
@@ -291,15 +296,26 @@ const buildOrderStatements = (database, context, actor, details) => {
       SELECT 1 FROM orders
       WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
     ))
+    ${context.activeOrder ? `AND EXISTS (
+      SELECT 1 FROM orders expected_active_order
+      WHERE expected_active_order.order_id = ?
+        AND expected_active_order.user_id = ?
+        AND expected_active_order.order_date = ?
+        AND expected_active_order.status = 'ACTIVE'
+    )` : ''}
   `;
   const validityParams = [
     targetUserId,
+    ...identityPredicate.params,
     targetDate,
     ...calendarTimingParams,
     items.length,
     replaceExisting ? 1 : 0,
     targetUserId,
-    targetDate
+    targetDate,
+    ...(context.activeOrder
+      ? [context.activeOrder.order_id, targetUserId, targetDate]
+      : [])
   ];
 
   const assertRequest = prepareStatement(database, `${menuCte(items)}
@@ -551,6 +567,7 @@ export const createOrReplaceOrder = async (database, identity, input, clock = ne
   try {
     return await runIdempotentMutation(database, {
       ...details,
+      claimPredicate: context.identityPredicate,
       responseSpec: mutationResponseSpec({
         message: 'ORDER_SAVED',
         orderId,
@@ -606,6 +623,7 @@ export const cancelOrder = async (
   if (!order) throw notFound('ORDER_NOT_FOUND');
   if (!order.mode) throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
   const now = resolveClock(clock);
+  const identityPredicate = await assertCurrentIdentity(database, identity, now);
   const actorTarget = await resolveOrderActorTarget(
     database,
     identity,
@@ -642,6 +660,7 @@ export const cancelOrder = async (
   try {
     return await runIdempotentMutation(database, {
       ...details,
+      claimPredicate: identityPredicate,
       responseSpec: mutationResponseSpec({
         message: 'ORDER_CANCELLED',
         orderId,
@@ -669,6 +688,7 @@ export const cancelOrder = async (
             WHERE o.order_id = ?
               AND o.user_id = ?
               AND o.status = 'ACTIVE'
+              AND ${identityPredicate.sql}
               AND NOT EXISTS (
                 SELECT 1 FROM balance_ledger bl
                 WHERE bl.type = 'REFUND' AND bl.reference_id = o.order_id
@@ -683,6 +703,7 @@ export const cancelOrder = async (
         `, [
           orderId,
           permission.targetUserId,
+          ...identityPredicate.params,
           ...calendarTimingParams,
           ...guardParams
         ]);

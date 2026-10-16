@@ -12,6 +12,7 @@ import {
   VERIFICATION_STATUSES
 } from '../auth/permissions.js';
 import { VALID_PICKUP_FLOORS } from './profile.js';
+import { assertCurrentIdentity } from '../auth/mutationIdentity.js';
 
 export { VALID_PICKUP_FLOORS } from './profile.js';
 
@@ -101,18 +102,22 @@ export const updatePickupFloor = async (
   assertFloor(pickupFloor);
   const nextDisplayName = displayName === undefined ? null : assertDisplayName(displayName);
   const timestamp = nowIso(clock);
+  const identityPredicate = await assertCurrentIdentity(database, identity, timestamp);
   const update = nextDisplayName === null
     ? database.prepare(`
       UPDATE users
       SET pickup_floor = ?, updated_at = ?
-      WHERE user_id = ?
-    `).bind(pickupFloor, timestamp, identity.actor.userId)
+      WHERE user_id = ? AND ${identityPredicate.sql}
+    `).bind(pickupFloor, timestamp, identity.actor.userId, ...identityPredicate.params)
     : database.prepare(`
       UPDATE users
       SET display_name = ?, pickup_floor = ?, updated_at = ?
-      WHERE user_id = ?
-    `).bind(nextDisplayName, pickupFloor, timestamp, identity.actor.userId);
-  await update.run();
+      WHERE user_id = ? AND ${identityPredicate.sql}
+    `).bind(nextDisplayName, pickupFloor, timestamp, identity.actor.userId, ...identityPredicate.params);
+  const result = await update.run();
+  if (Number(result?.meta?.changes ?? result?.changes ?? 0) !== 1) {
+    throw conflict('IDENTITY_SESSION_STALE');
+  }
   await appendAuditEvent(database, {
     actorUserId: identity.actor.userId,
     targetUserId: identity.actor.userId,

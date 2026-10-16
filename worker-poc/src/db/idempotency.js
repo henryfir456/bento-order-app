@@ -77,14 +77,30 @@ export const beginIdempotentOperation = (database, {
   idempotencyKey,
   requestHash,
   claimToken = randomId('claim'),
-  occurredAt
-}) => prepareStatement(database, `
+  occurredAt,
+  claimPredicate = null
+}) => prepareStatement(database, claimPredicate ? `
+  INSERT OR IGNORE INTO idempotency_keys (
+    actor_user_id, operation, idempotency_key, request_hash,
+    claim_token, status, created_at
+  )
+  SELECT ?, ?, ?, ?, ?, 'IN_PROGRESS', ?
+  WHERE ${claimPredicate.sql}
+` : `
   INSERT OR IGNORE INTO idempotency_keys (
     actor_user_id, operation, idempotency_key, request_hash,
     claim_token, status, created_at
   )
   VALUES (?, ?, ?, ?, ?, 'IN_PROGRESS', ?)
-`, [actorUserId, operation, idempotencyKey, requestHash, claimToken, occurredAt]);
+`, [
+  actorUserId,
+  operation,
+  idempotencyKey,
+  requestHash,
+  claimToken,
+  occurredAt,
+  ...(claimPredicate?.params || [])
+]);
 
 export const completeIdempotentOperation = (database, {
   actorUserId,
@@ -195,7 +211,8 @@ export const runIdempotentMutation = async (database, {
   occurredAt,
   responseSpec,
   buildStatements,
-  claimToken = randomId('claim')
+  claimToken = randomId('claim'),
+  claimPredicate = null
 }) => {
   const details = {
     actorUserId,
@@ -206,7 +223,8 @@ export const runIdempotentMutation = async (database, {
   };
   const statements = [beginIdempotentOperation(database, {
     ...details,
-    occurredAt
+    occurredAt,
+    claimPredicate
   })];
   const built = await buildStatements({ ...details, guard: idempotencyGuard(details) });
   if (!Array.isArray(built) || built.length === 0) {
@@ -223,7 +241,10 @@ export const runIdempotentMutation = async (database, {
   const record = await readIdempotencyRecord(database, {
     actorUserId, operation, idempotencyKey
   });
-  if (!record) throw new Error('Idempotency claim disappeared after commit.');
+  if (!record) {
+    if (claimPredicate) throw conflict('IDENTITY_SESSION_STALE');
+    throw new Error('Idempotency claim disappeared after commit.');
+  }
   if (record.request_hash !== requestHash) throw conflict('IDEMPOTENCY_CONFLICT');
   if (record.status === 'COMPLETED') return parseStoredResponse(record);
   if (record.status === 'IN_PROGRESS') throw conflict('IDEMPOTENCY_IN_PROGRESS');
