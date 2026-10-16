@@ -18,7 +18,7 @@ const out=resolve(api,'.release-evidence');
 mkdirSync(out,{recursive:true});
 const created=run('npx',['wrangler','deploy','--dry-run','--outdir',out,'--config','wrangler.jsonc'],api);
 const files=[];
-function visit(dir){for(const name of readdirSync(dir)){const p=join(dir,name);if(statSync(p).isDirectory())visit(p);else if(name !== 'release-manifest.json' && /\.(js|mjs|wasm)$/.test(name)){const bytes=readFileSync(p);files.push({path:relative(out,p).replaceAll('\\','/'),sha256:createHash('sha256').update(bytes).digest('hex'),bytes:bytes.length,mime:/\\.wasm$/.test(name)?'application/wasm':/\\.(js|mjs)$/.test(name)?'application/javascript+module':/\\.map$/.test(name)?'application/source-map':'application/octet-stream'});}}}
+function visit(dir){for(const name of readdirSync(dir)){const p=join(dir,name);if(statSync(p).isDirectory())visit(p);else if(name !== 'release-manifest.json' && /\.(js|mjs|wasm)$/.test(name)){const bytes=readFileSync(p);files.push({path:relative(out,p).replaceAll('\\','/'),sha256:createHash('sha256').update(bytes).digest('hex'),bytes:bytes.length,mime:name.endsWith('.wasm')?'application/wasm':(name.endsWith('.js')||name.endsWith('.mjs'))?'application/javascript+module':name.endsWith('.map')?'application/source-map':'application/octet-stream'});}}}
 visit(out);
 if(!files.some(f=>f.path.endsWith('.js')&&f.bytes>0))throw new Error('BLOCKED: Worker bundle missing');
 // Wrangler dry-run emits the bundle named after config.main (verified by CI).
