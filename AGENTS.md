@@ -52,6 +52,11 @@
 - **正式驗收**：記錄來源 main SHA、新 Worker Version ID、Deployment ID、100% 流量，執行無副作用的 `/api/health`、身分授權、CORS 與此次新增 API contract smoke；Netlify 前端正式部署與手機/LINE 實機驗收分開記錄。缺任何必需證據時不得宣稱正式交付。
 - **失敗處理**：優先調查當天成功的直接 API/CLI 上傳實例及其完整原始碼建置方式；缺工具、缺 bundle、模組/設定不明時停止正式寫入，回報 `WAITING_FOR_DELIVERY` 並明列阻礙，不可改用 GitHub Actions、要求補 Actions Secrets、重發舊版本或要求使用者重複授權。
 
+## 可重複正式 Worker 交付入口（Issue #104）
+- 請先讀 `docs/FORMAL_WORKER_RELEASE.md`，依順序執行可稽核的 fresh-build、正式部署、設定保留比對與 Runtime smoke。
+- `node worker-poc/scripts/prepare-formal-release.mjs` 僅在乾淨 main checkout 上進行正式 Worker dry-run bundle 準備和 SHA-256 manifest，不會上傳或部署；完整測試與獨立 Review 仍是必需關卡。
+- 缺完整建置產物、API upload metadata／Secrets 保留證據、必要驗證或授權身份時應 fail closed，切勿重新發佈舊 Worker 或將 CI 測試冒充生產驗收。
+
 ## 版本、異動紀錄與繁中翻譯關卡
 ### 版本升級判定（目前 0.x 的專案自訂慣例）
 - **PATCH**（例如 `v0.16.1`）：錯字、UI 微調、Bug 修正及不擴充主要功能的相容性修補，不得因小幅修改誤升 MINOR。

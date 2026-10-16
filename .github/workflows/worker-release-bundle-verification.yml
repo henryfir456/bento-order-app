@@ -1,0 +1,30 @@
+name: Worker release bundle verification (no deployment)
+on:
+  pull_request:
+    paths:
+      - 'worker-poc/**'
+      - 'docs/FORMAL_WORKER_RELEASE.md'
+      - '.github/workflows/worker-release-bundle-verification.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: worker-poc/package-lock.json
+      - run: npm ci --prefix worker-poc
+      - run: node --test worker-poc/tests/formal-version-upload.test.js worker-poc/tests/formal-release-orchestrator.test.js
+      - name: Inspect Wrangler dry-run output without deployment
+        run: |
+          cd worker-poc
+          npx wrangler deploy --dry-run --outdir .release-evidence --config wrangler.jsonc
+          find .release-evidence -maxdepth 2 -type f -printf '%P %s bytes\n'
+          node -e "const fs=require('node:fs');const c=fs.readFileSync('wrangler.jsonc','utf8');const m=c.match(/\\\"main\\\"\\s*:\\s*\\\"([^\\\"]+)/);if(!m)throw Error('Config main missing');const entry=m[1].split('/').at(-1);if(!fs.existsSync('.release-evidence/'+entry))throw Error('Emitted main missing: '+entry);console.log('DRY_RUN_MAIN_MODULE='+entry)"
+      - name: Explicitly prohibit publishing in CI
+        run: echo 'CI only; no API tokens, no Worker upload, no deploy'
