@@ -14,6 +14,10 @@
 | 現象／階段 | 分類 | 證據 | 已嘗試及結果 | 根因（已驗證／推測／UNKNOWN） |
 | --- | --- | --- | --- | --- |
 
+## 個資發布檢查
+- PII_SCAN：PASS / BLOCKED / NOT VERIFIED（禁止真實員編、姓名、LINE ID、可反查資料及未遮罩截圖）
+- Issue／PR／commit／測試輸出／截圖／評論均使用合成資料，確認者：
+
 ## 驗證
 - 實際命令、版本、退出碼及輸出：
 - PASS / FAIL / NOT RUN / BLOCKED：
