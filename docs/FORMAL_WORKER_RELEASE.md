@@ -19,7 +19,7 @@
 
 ## C. 有界 Runtime smoke（正式部署後）
 
-- `GET /api/health` → 200，檢查 database ready；匿名 `GET /api/me` 和 `GET /api/orders/statistics` → 401。
+- 設定 `BENTO_WORKER_BASE_URL=https://<實際 Worker hostname>` 後執行 `node worker-poc/scripts/formal-release-smoke.mjs`：`GET /api/health` → 200；匿名 `GET /api/me` 和 `GET /api/orders/statistics` → 401。若有合法專用測試 Admin 憑證，可在私有 process environment 設 `BENTO_SMOKE_ADMIN_TOKEN` 和 `BENTO_SMOKE_VIEW_AS_USER_ID`，腳本僅輸出遮蔽目標的 HTTP 證據，不輸出 token；無憑證時保留 `NOT_VERIFIED`。
 - `npm run smoke:cors --prefix worker-poc` 驗證 OPTIONS 和允許／拒絕來源。
 - 使用**合法專用測試身份**驗證本人讀取、Admin View As 目標 A/B、User 偽造 View As → 403、期間參數錯誤 → 400。不能使用任意生產用戶憑證，不能把 token 記錄到 GitHub。沒有合法授權時保留 `AUTH_VIEW_AS_NOT_VERIFIED`。
 - 前端 Netlify published commit 與 UI/LIFF 實測是**獨立交付 Gate**；不能因 Worker success 標示整體 DONE。
