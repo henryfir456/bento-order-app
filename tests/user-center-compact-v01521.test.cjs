@@ -12,7 +12,9 @@ test('identity and delegate actions now reside in the guarded management hub', (
 });
 test('unified user center uses five columns and ledger action', () => {
   for (const title of ['員編／姓名', '角色／LINE 綁定', '樓層', '餘額', '操作']) assert.ok(center.includes(title), title);
-  assert.match(center, /setSelectedUser\(user\)}>明細/);
+  assert.match(center, /const UserDetailsAction = \(\{ user, onSelect \}\)/);
+  assert.match(center, /onClick=\{\(\) => onSelect\(user\)\}/);
+  assert.equal((center.match(/<UserDetailsAction user=\{user\} onSelect=\{setSelectedUser\} \/>/g) || []).length, 2);
   assert.match(center, /getAdminUserLedger/);
   assert.match(center, /key: 'balance', direction: 'asc'/);
 });

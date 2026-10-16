@@ -296,6 +296,13 @@ const buildOrderStatements = (database, context, actor, details) => {
       SELECT 1 FROM orders
       WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
     ))
+    ${context.activeOrder ? `AND EXISTS (
+      SELECT 1 FROM orders expected_active_order
+      WHERE expected_active_order.order_id = ?
+        AND expected_active_order.user_id = ?
+        AND expected_active_order.order_date = ?
+        AND expected_active_order.status = 'ACTIVE'
+    )` : ''}
   `;
   const validityParams = [
     targetUserId,
@@ -305,7 +312,10 @@ const buildOrderStatements = (database, context, actor, details) => {
     items.length,
     replaceExisting ? 1 : 0,
     targetUserId,
-    targetDate
+    targetDate,
+    ...(context.activeOrder
+      ? [context.activeOrder.order_id, targetUserId, targetDate]
+      : [])
   ];
 
   const assertRequest = prepareStatement(database, `${menuCte(items)}
