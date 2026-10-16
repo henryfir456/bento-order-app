@@ -75,8 +75,14 @@ export async function getJson(base, token, path, method = 'GET', body) {
   if (!response.ok || !data.success) throw new Error('CF_API_' + method + '_' + path.split('?')[0] + '_' + response.status);
   return data.result;
 }
+export function versionSettings(version) {
+  const resources=version?.resources;
+  if (!resources || !Array.isArray(resources.bindings) || !resources.script_runtime) throw new Error('VERSION_RESOURCES_UNAVAILABLE');
+  const runtime=resources.script_runtime;
+  return { bindings: resources.bindings, compatibility_date: runtime.compatibility_date, usage_model: runtime.usage_model };
+}
 export async function verifyVersionSettings(before, version, secretsBefore, secretsAfter, cronsBefore, cronsAfter) {
-  assertSameSettings(before, version);
+  assertSameSettings(before, versionSettings(version));
   assertSameNames(secretsBefore, secretsAfter, 'SECRETS');
   assertSameNames(cronsBefore, cronsAfter, 'CRONS');
   assertSameNames(REQUIRED_CRONS, cronsAfter, 'REQUIRED_CRONS');
@@ -100,7 +106,7 @@ export async function main(env = process.env) {
   const deployments = await getJson(base, token, path + '/deployments');
   const currentVersion = deployments.deployments?.[0]?.versions?.find(v => v.percentage === 100)?.version_id;
   const versions = await getJson(base, token, path + '/versions');
-  const latestUploaded = versions.items?.[0]?.id ?? versions[0]?.id;
+  const latestUploaded = versions.items?.[0]?.id ?? (Array.isArray(versions) ? versions[0]?.id : null);
   if (!currentVersion || !latestUploaded || latestUploaded !== currentVersion) throw new Error('INHERITANCE_BASE_NOT_DEPLOYED');
   assertSameSettings(before, { ...before, bindings: manifest.bindings });
   const uploaded = await getJson(base, token, path + '/versions?bindings_inherit=strict', 'POST', prepared.form);
