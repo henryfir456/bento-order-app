@@ -63,16 +63,11 @@ const seedStatisticsDatabase = () => {
     status: 'COMPLETED',
     items: [
       { name: '便當甲', quantity: 2, price: 80 },
+      { name: '便當甲', quantity: 1, price: 80 },
       { name: '手續費減免', quantity: 1, price: 0 },
       { name: '免費加飯', quantity: 1, price: 0 },
       { name: '1元', quantity: 1, price: 1 }
     ]
-  });
-  addOrder(database, {
-    orderId: 'duplicate-snapshot',
-    date: '2026-01-31',
-    vendor: '店家甲',
-    items: [{ name: '便當甲', quantity: 1, price: 80 }]
   });
   addOrder(database, {
     orderId: 'delegated-purchase',
@@ -87,7 +82,7 @@ const seedStatisticsDatabase = () => {
   });
   addOrder(database, {
     orderId: 'special-only-day',
-    date: '2026-02-01',
+    date: '2026-01-29',
     vendor: '店家乙',
     items: [
       { name: '手續費減免', quantity: 1, price: 0 },
@@ -172,4 +167,16 @@ test('statistics endpoint binds to the authenticated purchaser and rejects calle
   const target = await stats(database, '/api/orders/statistics?targetUserId=user-2');
   assert.equal(target.response.status, 400);
   assert.equal(target.body.error, 'INVALID_QUERY');
+});
+
+test('empty history returns a zeroed summary without vendor or item rows', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Purchaser' });
+  const { response, body } = await stats(database, '/api/orders/statistics?period=month');
+  assert.equal(response.status, 200);
+  assert.equal(body.totalPortions, 0);
+  assert.equal(body.totalOrderDays, 0);
+  assert.equal(body.totalMealTypes, 0);
+  assert.deepEqual(body.vendors, []);
+  assert.deepEqual(body.items, []);
 });

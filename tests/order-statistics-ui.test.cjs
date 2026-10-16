@@ -31,3 +31,9 @@ test('statistics navigation and API remain authenticated and expose no identity 
   assert.doesNotMatch(method, /userId|targetUserId|viewAs/);
   assert.match(route, /getOrderStatistics\(env\.DB, identity\.authorizationActor\.userId/);
 });
+
+test('footprints presents a zero-record empty state', () => {
+  const page = read('src/features/orders/MyBentoFootprintsPage.jsx');
+  assert.match(page, /!hasOrders/);
+  assert.match(page, /這段期間還沒有可計入的便當紀錄/);
+});
