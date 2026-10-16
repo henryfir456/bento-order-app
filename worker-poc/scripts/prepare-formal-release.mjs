@@ -1,0 +1,26 @@
+// Fail-closed release preparation: no upload, no secrets, no production changes.
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
+import { resolve, relative, join } from 'node:path';
+const root=resolve(import.meta.dirname,'..','..');
+const api=resolve(root,'worker-poc');
+const run=(bin,args,cwd=root)=>execFileSync(bin,args,{cwd,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
+const sha=run('git',['rev-parse','HEAD']);
+const branch=run('git',['branch','--show-current']);
+if(branch!=='main')throw new Error('BLOCKED: release preparation requires main');
+if(run('git',['status','--porcelain']))throw new Error('BLOCKED: worktree is not clean');
+const config=readFileSync(join(api,'wrangler.jsonc'),'utf8');
+for(const value of ['"name": "bento-api-poc"','"main": "src/formalWorker.js"','"database_name": "bento-formal"','"binding": "DB"','"compatibility_date": "2026-09-07"','e75bc185-afb5-4a5d-abc9-81bd79525cff']) {
+  if(!config.includes(value))throw new Error('BLOCKED: Wrangler config mismatch: '+value);
+}
+const out=resolve(api,'.release-evidence');
+mkdirSync(out,{recursive:true});
+const created=run('npx',['wrangler','deploy','--dry-run','--outdir',out,'--config','wrangler.jsonc'],api);
+const files=[];
+function visit(dir){for(const name of readdirSync(dir)){const p=join(dir,name);if(statSync(p).isDirectory())visit(p);else if(/\.(js|mjs|json)$/.test(name)){const bytes=readFileSync(p);files.push({path:relative(out,p).replaceAll('\\','/'),sha256:createHash('sha256').update(bytes).digest('hex'),bytes:bytes.length});}}}
+visit(out);
+if(!files.some(f=>f.path.endsWith('.js')&&f.bytes>0))throw new Error('BLOCKED: Worker bundle missing');
+const evidence={status:'BUILT_NOT_DEPLOYED',sourceSha:sha,worker:'bento-api-poc',configuration:'worker-poc/wrangler.jsonc',files,generatedAt:new Date().toISOString(),uploadVerification:'NOT_RUN',productionDeployment:'NOT_RUN',smoke:'NOT_RUN'};
+writeFileSync(join(out,'release-manifest.json'),JSON.stringify(evidence,null,2)+'\n');
+console.log(JSON.stringify({sourceSha:sha,bundles:files.length,evidence:join(out,'release-manifest.json'),wranglerDryRun:created.slice(-500)},null,2));
