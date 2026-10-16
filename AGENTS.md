@@ -44,6 +44,13 @@
 - 有前端 UI 異動時，後端與前端交付狀態須各自確認；僅部署 Worker 不代表使用者在前端能看到新功能。
 - 對外最終交付回報須包含 main commit、Worker 版本／部署識別、部署後 smoke，以及前端部署狀態；未取得其中證據時不得宣稱完成。
 
+## 前端 Local 驗收與 Netlify 發布權限（強制）
+- **每次任務預設**：必要自動測試與獨立審查 → 合併 main →（有 Worker 修改時）正式部署 Worker 並 smoke → 交付使用者在本機使用最新前端驗收 → **僅由使用者自行發布 Netlify 正式前端**。不得要求使用者反覆提醒。
+- **禁止 Agent 擅自部署 Netlify 前端**：main 合併、Worker 部署成功、使用者要 Local 測試，均不構成正式前端發布授權；除非當次任務明確另行授權 Agent 代為發布。
+- Netlify 未發布應記 `USER_RELEASE_PENDING`，不得作為 Worker 已交付或 Local 人工驗收的阻塞；本機驗收尚未執行則記 `READY_FOR_LOCAL_UAT`／`NOT VERIFIED`，不得報 PASS。
+- 本機前端連正式 Worker **不代表使用測試資料庫**；正式資料寫入（含 LINE 綁定移轉）需當次明確授權，缺合法 LINE Admin session 不得直接 D1 改寫繞過。
+- 強制閱讀並遵循 [docs/FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md](docs/FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md) 的階段、環境與交付模板；任何其他文件的 Netlify Gate 敘述依此區分發布責任，不改變 Worker fail-closed 安全規則。
+
 ## 正式後端部署技術細則（強制）
 涉及正式 Worker 部署時必須閱讀並遵循 [docs/WORKER_DEPLOYMENT_POLICY.md](docs/WORKER_DEPLOYMENT_POLICY.md)；保留既有 GitHub Actions 禁令、完整 fresh bundle、設定不遺失、Runtime smoke 及 fail-closed 要求。
 
