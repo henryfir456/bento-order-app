@@ -42,10 +42,14 @@ function VendorPieChart({ vendors }) {
   return <section aria-label="店家訂購份數" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
     <h3 className="text-base font-bold text-[#2C4A3E]">店家份數分布</h3>
     <div className="mt-3 grid grid-cols-1 items-center gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+      <style>{`@keyframes footprints-pie-draw { from { stroke-dasharray: 0 302; } to { stroke-dasharray: 302 302; } }\n@media (prefers-reduced-motion: reduce) { .footprints-pie-reveal { animation: none !important; } }\n.footprints-pie-reveal { animation: footprints-pie-draw 650ms ease-out both; }`}</style>
       <svg role="img" aria-label={`店家份數圓餅圖，共 ${formatCount(total)} 份`} viewBox="0 0 100 100" className="mx-auto h-44 w-44">
-        {slices.length === 1
-          ? <circle cx="50" cy="50" r="48" fill={slices[0].color} />
-          : slices.map((slice) => <path key={slice.name} d={slice.path} fill={slice.color} stroke="white" strokeWidth="0.7" />)}
+        <defs><mask id="footprints-pie-mask"><circle className="footprints-pie-reveal" cx="50" cy="50" r="48" fill="none" stroke="white" strokeWidth="100" strokeDasharray="302 302" transform="rotate(-90 50 50)" /></mask></defs>
+        <g mask="url(#footprints-pie-mask)">
+          {slices.length === 1
+            ? <circle cx="50" cy="50" r="48" fill={slices[0].color} />
+            : slices.map((slice) => <path key={slice.name} d={slice.path} fill={slice.color} stroke="white" strokeWidth="0.7" />)}
+        </g>
       </svg>
       <ul className="space-y-2">
         {slices.map((slice) => <li key={slice.name} className="flex items-center justify-between gap-3 text-sm">
@@ -73,7 +77,8 @@ export default function MyBentoFootprintsPage({
   error,
   period,
   onPeriodChange,
-  onRefresh
+  onRefresh,
+  isViewAsMode = false
 }) {
   const hasOrders = Number(data?.totalPortions || 0) > 0;
   const periodLabel = period === 'year'
@@ -88,6 +93,7 @@ export default function MyBentoFootprintsPage({
     <header className="space-y-3">
       <div>
         <h2 className="text-xl font-bold text-[#2C4A3E]">我的便當足跡</h2>
+        {isViewAsMode && <p role="status" className="mt-1 rounded-lg bg-amber-50 p-2 text-sm text-amber-800">目前為唯讀身分檢視，顯示受檢視者的便當足跡。</p>}
         <p className="mt-1 text-sm text-slate-500">{periodLabel}</p>
       </div>
       <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-100 p-1" role="group" aria-label="統計期間">
