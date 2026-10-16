@@ -11,6 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.17.1': [
+    { name: '修正', changes: [
+      '修正管理員檢視其他使用者時，便當足跡誤顯示自己資料的問題，並避免切換身分時殘留舊統計。'
+    ] },
+    { name: '變更', changes: [
+      '店家份數圓餅圖載入後逐步繪製，尊重減少動態效果的系統設定。'
+    ] }
+  ],
   '0.17.0': [
     { name: '新增', changes: [
       '新增「我的便當足跡」統計頁，依台北日期顯示便當份數、訂購天數、餐點種類、店家分布與餐點排行。'
