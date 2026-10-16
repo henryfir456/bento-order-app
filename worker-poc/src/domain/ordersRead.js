@@ -162,3 +162,95 @@ export const getHistoricalOrderSummaries = async (database, userId, now = new Da
   }
   return [...byId.values()];
 };
+
+
+const EXCLUDED_STATISTIC_ITEM_NAMES = Object.freeze([
+  '手續費減免',
+  '免費加飯',
+  '1元'
+]);
+
+/** Aggregate only the authenticated purchaser's valid, non-refunded order snapshots. */
+export const getOrderStatistics = async (
+  database,
+  userId,
+  { period = 'all', now = new Date() } = {}
+) => {
+  if (!['all', 'year', 'month'].includes(period)) {
+    throw new TypeError('INVALID_STATISTICS_PERIOD');
+  }
+
+  const endDate = getTaipeiDate(now);
+  const startDate = period === 'year'
+    ? endDate.slice(0, 4) + '-01-01'
+    : period === 'month'
+      ? endDate.slice(0, 7) + '-01'
+      : null;
+  const rangePredicate = startDate ? '\n      AND o.order_date >= ?' : '';
+  const bindings = [
+    userId,
+    endDate,
+    ...(startDate ? [startDate] : []),
+    ...EXCLUDED_STATISTIC_ITEM_NAMES
+  ];
+  const result = await database.prepare(`
+    SELECT o.order_date,
+           COALESCE(NULLIF(TRIM(o.vendor), ''), '未命名店家') AS vendor,
+           i.item_name_snapshot AS itemName,
+           SUM(i.quantity) AS portions
+    FROM orders o
+    JOIN order_items i ON i.order_id = o.order_id
+    WHERE o.user_id = ?
+      AND o.order_date <= ?
+      AND o.status IN ('ACTIVE', 'COMPLETED')${rangePredicate}
+      AND i.item_name_snapshot NOT IN (?, ?, ?)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM balance_ledger refund
+        WHERE refund.reference_id = o.order_id
+          AND refund.type = 'REFUND'
+      )
+    GROUP BY o.order_date,
+             COALESCE(NULLIF(TRIM(o.vendor), ''), '未命名店家'),
+             i.item_name_snapshot
+    ORDER BY o.order_date ASC, vendor ASC, itemName ASC
+  `).bind(...bindings).all();
+
+  const days = new Set();
+  const mealTypes = new Set();
+  const vendorsByName = new Map();
+  const itemsByName = new Map();
+  let totalPortions = 0;
+
+  for (const row of rowsFrom(result)) {
+    const portions = Number(row.portions || 0);
+    const vendor = String(row.vendor || '未命名店家');
+    const name = String(row.itemName || '');
+    totalPortions += portions;
+    days.add(row.order_date);
+    mealTypes.add(name);
+    vendorsByName.set(vendor, (vendorsByName.get(vendor) || 0) + portions);
+    itemsByName.set(name, (itemsByName.get(name) || 0) + portions);
+  }
+
+  const byPortionsThenName = (left, right) => (
+    right.portions - left.portions || left.name.localeCompare(right.name, 'zh-TW')
+  );
+  const vendors = [...vendorsByName.entries()]
+    .map(([name, portions]) => ({ name, portions }))
+    .sort(byPortionsThenName);
+  const items = [...itemsByName.entries()]
+    .map(([name, portions]) => ({ name, portions }))
+    .sort(byPortionsThenName);
+
+  return {
+    period,
+    startDate,
+    endDate,
+    totalPortions,
+    totalOrderDays: days.size,
+    totalMealTypes: mealTypes.size,
+    vendors,
+    items
+  };
+};

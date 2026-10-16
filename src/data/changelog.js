@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.17.0': [
+    { name: '新增', changes: [
+      '新增「我的便當足跡」統計頁，依台北日期顯示便當份數、訂購天數、餐點種類、店家分布與餐點排行。'
+    ] }
+  ],
   '0.16.9': [
     { name: '變更', changes: [
       '「我的訂單」的領取樓層改為廠商旁的小標籤，移除獨立樓層文字列。'
