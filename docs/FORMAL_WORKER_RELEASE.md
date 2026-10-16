@@ -22,11 +22,11 @@
 - 設定 `BENTO_WORKER_BASE_URL=https://<實際 Worker hostname>` 後執行 `node worker-poc/scripts/formal-release-smoke.mjs`：`GET /api/health` → 200；匿名 `GET /api/me` 和 `GET /api/orders/statistics` → 401。若有合法專用測試 Admin 憑證，可在私有 process environment 設 `BENTO_SMOKE_ADMIN_TOKEN` 和 `BENTO_SMOKE_VIEW_AS_USER_ID`，腳本僅輸出遮蔽目標的 HTTP 證據，不輸出 token；無憑證時保留 `NOT_VERIFIED`。
 - `npm run smoke:cors --prefix worker-poc` 驗證 OPTIONS 和允許／拒絕來源。
 - 使用**合法專用測試身份**驗證本人讀取、Admin View As 目標 A/B、User 偽造 View As → 403、期間參數錯誤 → 400。不能使用任意生產用戶憑證，不能把 token 記錄到 GitHub。沒有合法授權時保留 `AUTH_VIEW_AS_NOT_VERIFIED`。
-- 前端 Netlify published commit 與 UI/LIFF 實測是**獨立交付 Gate**；不能因 Worker success 標示整體 DONE。
+- 前端 Local 人工驗收與 Netlify 正式發布是**獨立且依序進行的 Gate**：Worker 部署及 smoke 後先交付 Local UAT，再由使用者自行決定 Netlify 發布。Netlify 尚未發布標為 `USER_RELEASE_PENDING`，**不阻塞已完成的 Worker 交付或 Local UAT**；不能因 Worker success 宣稱整體 UI/LIFF 驗收 DONE。詳細規則見 [FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md](FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md)。
 
 ## D. 最終證據與阻塞
 
-記錄 main SHA、bundle hash/大小、測試執行及結束碼、Cloudflare Before/After 綁定比對、Version ID、Deployment ID、100% 流量、HTTP status/CORS headers、Netlify published commit、View As 實測結果；任一未取得以 **NOT VERIFIED** 標明。
+記錄 main SHA、bundle hash/大小、測試執行及結束碼、Cloudflare Before/After 綁定比對、Version ID、Deployment ID、100% 流量、HTTP status/CORS headers、Local UAT 交付／使用者實測結果、Netlify 發布狀態（未由使用者發布時 `USER_RELEASE_PENDING`）、View As 實測結果；未取得實測證據標 **NOT VERIFIED**，但不得把使用者尚未發布 Netlify 誤判為 Worker 交付失敗。
 
 **禁止：** Actions 部署、重發舊 Worker、只補一個 JS module 的部分 bundle、重建缺失的 Secrets、使用 D1 正式資料修復來掩飾 runtime 問題。
 
