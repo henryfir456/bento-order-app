@@ -90,7 +90,7 @@ does not disable, rename, rebind, or otherwise modify any individual account.
 The reviewed recovery sequence for a future controlled cutover is:
 
 ```text
-backup -> apply migration -> verify schema/counts/foreign keys -> restore backup if verification fails
+independent backup -> verify recovery in an isolated target -> apply migration -> verify schema/counts/foreign keys -> if verification fails, restore only after data reconciliation and explicit authorization
 ```
 
 The backup is an independently retained export of the exact target before any
@@ -98,7 +98,11 @@ remote write. Local verification uses a disposable SQLite database and does
 not exercise the remote path. Migration 0002 is a one-time rebuild, so this
 backup/restore procedure is the recovery boundary rather than an assumption
 that a partially completed remote D1 migration can be rolled back by rerunning
-SQL.
+SQL. Follow `../../docs/D1_BACKUP_AND_MIGRATION_RUNBOOK.md` for the storage, retention,
+readback, restore-drill, and migration gates. A failed production migration
+must stop the release; restoring production is not automatic because it may
+overwrite valid writes created after the backup. Evaluate that data difference
+and obtain explicit authorization before a production restore.
 
 Apply the chain to an empty local SQLite/D1-compatible database for
 verification. Applying a remote migration still requires the later authorized
