@@ -103,3 +103,9 @@ Worker/D1 是唯一正式傳輸及身分事實來源；任何涉及 GAS adapter 
 
 ## 開發回顧（每輪修改交付前必填）
 每次實際程式、文件、流程修正後，依 `docs/retrospectives/README.md` 建立／更新對應任務回顧，列明遇到的阻礙（無則明寫無）、嘗試與根因信心、測試命令及實際結果、遺留事項、P0/P1/P2 建議與下次預防。PR 須連結回顧。開工先查看同類回顧以避免重複踩坑；優先合併重複改善而非每次開新 Issue。回顧不取代既有安全 Gate、正式 `main` 交付規則、簽到的實機結果證據或便當的 Worker/D1 部署驗證；敏感日誌、憑證與個資不可寫入 Git。
+
+## 規範回寫評估（每輪必做）
+每輪修改、審查、部署或阻塞回顧後，依 [docs/POLICY_FEEDBACK_LOOP.md](docs/POLICY_FEEDBACK_LOOP.md) 評估經驗是否可回寫 `agent-development-loop` 或 `agent-project-template`。必須記錄結果分類、去識別化證據、目標、追蹤狀態；僅評估不自動授權跨 repo 修改、合併或部署，既有安全 Gate 不得放寬。規範同步本身不應遞迴觸發同一改善提案。
+
+## D1 schema 發布前置關卡（強制）
+涉及正式 Worker 新 schema 相依或 D1 migration 時，必須先依 [docs/D1_MIGRATION_BACKUP_GATE.md](docs/D1_MIGRATION_BACKUP_GATE.md) 核對正式 schema、核准備份位置、復原驗證及 migration 後完整性，再按既有 Worker 發布流程部署；未知備份位置時 fail closed，不得擅動正式 D1。
