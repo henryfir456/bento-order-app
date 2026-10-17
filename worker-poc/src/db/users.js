@@ -22,6 +22,7 @@ export const toUser = (row) => {
     balance: Number(row.balance),
     role: String(row.role || 'User'),
     active: Boolean(row.active),
+    invalidReason: row.invalid_reason || null,
     verificationStatus: row.verification_status || 'VERIFIED',
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
@@ -55,7 +56,7 @@ const userColumns = (alias = 'u') => `
   ${alias}.user_id, ${alias}.employee_id, ${alias}.line_user_id,
   ${alias}.display_name, ${alias}.pickup_floor,
   ${currentBalanceProjection(alias)} AS balance,
-  ${alias}.role, ${alias}.active, ${alias}.verification_status,
+  ${alias}.role, ${alias}.active, ${alias}.invalid_reason, ${alias}.verification_status,
   ${alias}.created_at, ${alias}.updated_at
 `;
 
@@ -135,6 +136,7 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
     // must never expose an elevated role obtained through employee auth.
     role: isEmployeeGuest ? 'User' : user.role,
     active: user.active,
+    invalidReason: user.invalidReason || null,
     authSource,
     identityState,
     verificationStatus,

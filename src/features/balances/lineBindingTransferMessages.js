@@ -6,6 +6,8 @@ const messages = Object.freeze({
   SOURCE_AND_TARGET_SAME: '來源與目標是同一個帳號，無法移轉。',
   SOURCE_INACTIVE: '來源帳號已停用，無法移轉。',
   TARGET_INACTIVE: '目標帳號已停用，無法移轉。',
+  SOURCE_INVALID_EMPLOYEE_ID: '來源帳號已標記為誤建員編，禁止移轉 LINE 綁定。',
+  TARGET_INVALID_EMPLOYEE_ID: '目標帳號已標記為誤建員編，禁止移轉 LINE 綁定。',
   SOURCE_EMPLOYEE_ID_MISSING: '來源帳號沒有員編，請先確認帳號資料。',
   SOURCE_LINE_NOT_BOUND: '來源帳號目前沒有 LINE 綁定，請重新整理使用者資料。',
   TARGET_LINE_ALREADY_BOUND: '目標帳號已有 LINE 綁定，為保護原身分不會覆蓋。',

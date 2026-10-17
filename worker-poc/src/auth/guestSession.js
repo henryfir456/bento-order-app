@@ -1,4 +1,4 @@
-import { unauthorized } from '../http/errors.js';
+import { forbidden, unauthorized } from '../http/errors.js';
 import { randomId, resolveClock } from '../db/transactions.js';
 import { currentBalanceProjection, toUser } from '../db/users.js';
 
@@ -37,7 +37,7 @@ const sessionRow = async (database, token) => {
            egs.created_at, egs.expires_at, egs.revoked_at, egs.revoked_reason,
            u.employee_id, u.line_user_id, u.display_name, u.pickup_floor,
            ${currentBalanceProjection('u')} AS balance,
-           u.role, u.active, u.verification_status,
+           u.role, u.active, u.invalid_reason, u.verification_status,
            u.created_at AS user_created_at,
            u.updated_at AS user_updated_at
     FROM employee_guest_sessions egs
@@ -63,11 +63,21 @@ export const createGuestSession = async (
   const createdAt = resolveClock(clock);
   const expiresAt = new Date(createdAt.getTime() + lifetimeMs);
   const token = randomToken();
-  await database.prepare(`
+  const result = await database.prepare(`
     INSERT INTO employee_guest_sessions (
       session_id, token_hash, user_id, employee_id, auth_mode, status,
       created_at, expires_at
-    ) VALUES (?, ?, ?, ?, 'employee_guest', ?, ?, ?)
+    )
+    SELECT ?, ?, ?, ?, 'employee_guest', ?, ?, ?
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM users invalid_user
+      WHERE invalid_user.invalid_reason = 'INVALID_EMPLOYEE_ID'
+        AND (
+          (invalid_user.user_id = ? AND ? IS NOT NULL)
+          OR (UPPER(trim(invalid_user.employee_id)) = UPPER(trim(?)) AND ? IS NOT NULL)
+        )
+    )
   `).bind(
     randomId('guest'),
     await hashGuestToken(token),
@@ -75,8 +85,14 @@ export const createGuestSession = async (
     employeeId,
     status,
     createdAt.toISOString(),
-    expiresAt.toISOString()
+    expiresAt.toISOString(),
+    userId,
+    userId,
+    employeeId,
+    employeeId
   ).run();
+  const changes = Number(result?.meta?.changes ?? result?.changes ?? 0);
+  if (changes !== 1) throw forbidden('INVALID_EMPLOYEE_ID');
   return { token, expiresAt: expiresAt.toISOString() };
 };
 
@@ -89,7 +105,8 @@ export const inspectGuestSession = async (
   if (!row) return null;
   const nowIso = resolveClock(now).toISOString();
   const expired = row.expires_at <= nowIso;
-  const active = row.user_id ? Boolean(row.active) : true;
+  const invalidEmployee = row.invalid_reason === 'INVALID_EMPLOYEE_ID';
+  const active = row.user_id ? Boolean(row.active) && !invalidEmployee : true;
   const lineBound = Boolean(String(row.line_user_id ?? '').trim());
   // Employee authentication is intentionally independent from LINE
   // ownership. A valid employee session remains usable for the same
@@ -122,6 +139,7 @@ export const inspectGuestSession = async (
       balance: row.balance,
       role: row.role,
       active: row.active,
+      invalid_reason: row.invalid_reason,
       verification_status: row.verification_status,
       created_at: row.user_created_at,
       updated_at: row.user_updated_at
@@ -130,6 +148,7 @@ export const inspectGuestSession = async (
     replay,
     expired,
     active,
+    invalidReason: invalidEmployee ? 'INVALID_EMPLOYEE_ID' : null,
     lineBound,
     provisional: row.session_status === 'UNVERIFIED_EMPLOYEE',
     employeeId: row.session_employee_id || row.employee_id || null,

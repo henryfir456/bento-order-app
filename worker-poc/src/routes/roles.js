@@ -7,7 +7,7 @@ import {
   publicUser
 } from '../db/users.js';
 import { prepareStatement, runMutationBatch, resolveClock, randomId } from '../db/transactions.js';
-import { badRequest, notFound } from '../http/errors.js';
+import { badRequest, conflict, forbidden, notFound } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
 
@@ -33,10 +33,14 @@ export const assignRole = async (database, identity, targetUserInput, input, clo
     || await getUserByEmployeeId(database, targetKey)
     || await getUserByLineId(database, targetKey);
   if (!existing) throw notFound('ROLE_TARGET_NOT_FOUND');
+  if (existing.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   const occurredAt = resolveClock(clock).toISOString();
   const auditId = randomId('audit');
   const update = prepareStatement(database, `
-    UPDATE users SET role = ?, updated_at = ? WHERE user_id = ?
+    UPDATE users SET role = ?, updated_at = ?
+    WHERE user_id = ? AND invalid_reason IS NULL
   `, [role, occurredAt, existing.userId]);
   const audit = auditStatement(database, {
     auditId,
@@ -49,9 +53,17 @@ export const assignRole = async (database, identity, targetUserInput, input, clo
     targetLineUserIdSnapshot: existing.lineUserId,
     action: 'ROLE_UPDATED',
     metadata: { fromRole: existing.role, toRole: role },
-    occurredAt
+    occurredAt,
+    onlyIfPriorMutation: true
   });
-  await runMutationBatch(database, [update, audit]);
+  const [result] = await runMutationBatch(database, [update, audit]);
+  if (Number(result?.meta?.changes ?? result?.changes ?? 0) !== 1) {
+    const current = await getUserById(database, existing.userId);
+    if (current?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+      throw forbidden('INVALID_EMPLOYEE_ID');
+    }
+    throw conflict('ROLE_UPDATE_STALE');
+  }
   return {
     success: true,
     message: 'ROLE_UPDATED',

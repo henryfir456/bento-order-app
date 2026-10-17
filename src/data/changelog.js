@@ -11,6 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.17.2': [
+    { name: '新增', changes: [
+      '使用者明細新增誤建員編修復預覽、覆寫姓名二次確認、來源停用及管理員稽核查詢；目標帳號資料與 LINE 綁定會保留。'
+    ] },
+    { name: '修正', changes: [
+      '訂單總覽與便當足跡依店家、日期、品項及規格同步有效餐點名稱；無法唯一配對時保留原名稱，不更動訂單或帳務。'
+    ] }
+  ],
   '0.17.1': [
     { name: '修正', changes: [
       '修正管理員檢視其他使用者時，便當足跡誤顯示自己資料的問題，並避免切換身分時殘留舊統計。'

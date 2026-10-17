@@ -502,6 +502,27 @@ const createWorkerOperations = ({ workerRequest }) => ({
       body: { employeeId, previewFingerprint }
     }
   ),
+  previewInvalidEmployeeRepair: ({ sourceUserId, targetUserId } = {}) => workerRequest(
+    'previewInvalidEmployeeRepair',
+    'GET',
+    `/api/admin/users/${encodeURIComponent(String(sourceUserId || '').trim())}/invalid-employee-repair-preview`,
+    { query: { targetUserId }, credentialMode: 'line' }
+  ),
+  repairInvalidEmployee: ({ sourceUserId, targetUserId, expectedSourceUpdatedAt, expectedTargetUpdatedAt, expectedSourceDisplayName, expectedSourceEmployeeId, expectedTargetEmployeeId, expectedSourceBalance, expectedTargetBalance, confirmTargetDisplayName } = {}) => workerRequest(
+    'repairInvalidEmployee',
+    'POST',
+    `/api/admin/users/${encodeURIComponent(String(sourceUserId || '').trim())}/invalid-employee-repair`,
+    {
+      credentialMode: 'line',
+      body: { targetUserId, expectedSourceUpdatedAt, expectedTargetUpdatedAt, expectedSourceDisplayName, expectedSourceEmployeeId, expectedTargetEmployeeId, expectedSourceBalance, expectedTargetBalance, confirmTargetDisplayName }
+    }
+  ),
+  getInvalidEmployeeRepairAudit: () => workerRequest(
+    'getInvalidEmployeeRepairAudit',
+    'GET',
+    '/api/admin/invalid-employee-repairs',
+    { credentialMode: 'line' }
+  ),
   toggleLike: ({ date } = {}) => workerRequest(
     'toggleLike',
     'POST',

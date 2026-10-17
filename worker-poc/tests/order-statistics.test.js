@@ -137,7 +137,12 @@ test('all-time statistics exclude exact special snapshots, cancelled/refunded/fu
     店家甲: 3,
     店家乙: 3
   });
-  assert.deepEqual(body.items.find(({ name }) => name === '便當甲'), { name: '便當甲', portions: 3 });
+  const topItem = body.items.find(({ name }) => name === '便當甲');
+  assert.equal(topItem.name, '便當甲');
+  assert.equal(topItem.portions, 3);
+  assert.equal(topItem.vendor, '店家甲');
+  assert.equal(topItem.variantKey, '');
+  assert.ok(topItem.identityKey);
   assert.ok(!body.items.some(({ name }) => ['手續費減免', '免費加飯', '1元', '退款餐點', '未來餐點', '取消餐點', '其他人的便當'].includes(name)));
 });
 

@@ -89,6 +89,9 @@ export const adminBindEmployee = async (
   const timestamp = resolveClock(clock).toISOString();
   const target = await getUserById(database, targetId);
   if (!target) throw notFound('USER_NOT_FOUND');
+  if (target.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   if (!target.active) throw conflict('EMPLOYEE_INACTIVE');
   const employeeIdDigest = await digestEmployeeId(employeeId);
 
@@ -112,6 +115,7 @@ export const adminBindEmployee = async (
     UPDATE users
     SET employee_id = ?, updated_at = ?
     WHERE user_id = ? AND employee_id IS NULL AND active = 1
+      AND invalid_reason IS NULL
   `, [employeeId, timestamp, target.userId]);
   const audit = auditStatement(database, auditInput({
     identity,

@@ -108,6 +108,8 @@ const inspectTransfer = async (database, sourceUserId, employeeIdInput, now) => 
   const addConflict = (code, shouldAdd) => { if (shouldAdd) conflicts.push(code); };
 
   addConflict('SOURCE_AND_TARGET_SAME', source.userId === target.userId);
+  addConflict('SOURCE_INVALID_EMPLOYEE_ID', source.invalidReason === 'INVALID_EMPLOYEE_ID');
+  addConflict('TARGET_INVALID_EMPLOYEE_ID', target.invalidReason === 'INVALID_EMPLOYEE_ID');
   addConflict('SOURCE_INACTIVE', !source.active);
   addConflict('TARGET_INACTIVE', !target.active);
   addConflict('SOURCE_EMPLOYEE_ID_MISSING', !String(source.employeeId || '').trim());
@@ -183,6 +185,7 @@ const transferStatements = ({ database, actor, source, target, timestamp, reques
       AND employee_id = ?
       AND line_user_id = ?
       AND active = 1
+      AND invalid_reason IS NULL
       AND COALESCE((
         SELECT bl.balance_after
         FROM balance_ledger bl
@@ -204,6 +207,7 @@ const transferStatements = ({ database, actor, source, target, timestamp, reques
         WHERE target_user.user_id = ?
           AND UPPER(trim(target_user.employee_id)) = UPPER(trim(?))
           AND target_user.active = 1
+          AND target_user.invalid_reason IS NULL
           AND target_user.line_user_id IS NULL
       )
   `, [timestamp, source.userId, source.employeeId, source.lineUserId, target.userId, target.employeeId]);
@@ -214,6 +218,7 @@ const transferStatements = ({ database, actor, source, target, timestamp, reques
     WHERE user_id = ?
       AND UPPER(trim(employee_id)) = UPPER(trim(?))
       AND active = 1
+      AND invalid_reason IS NULL
       AND line_user_id IS NULL
       AND changes() = 1
   `, [source.lineUserId, timestamp, target.userId, target.employeeId]);

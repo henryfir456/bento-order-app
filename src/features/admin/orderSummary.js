@@ -16,6 +16,13 @@ export const compareFloors = (left, right) => {
   return String(left).localeCompare(String(right), 'zh-Hant');
 };
 
+const itemIdentity = (order) => order?.item_identity_key
+  || JSON.stringify([order?.item_vendor || order?.vendor || '', order?.item_name || '', order?.item_variant_key || '']);
+
+export const formatOrderItemLabel = ({ itemName, vendor, variantKey } = {}) => (
+  `${itemName || '未命名品項'}${vendor ? ` · ${vendor}` : ''}${variantKey ? ` · ${variantKey}` : ''}`
+);
+
 export const groupOrdersByFloor = (orders = []) => {
   const groups = new Map();
   (Array.isArray(orders) ? orders : []).forEach((order) => {
@@ -36,11 +43,20 @@ export const aggregateOrdersByFloor = (orders = []) => (
       const itemName = String(order?.item_name || '未命名品項').trim() || '未命名品項';
       const quantity = Number(order?.quantity || 0);
       if (!Number.isFinite(quantity)) return;
-      items.set(itemName, (items.get(itemName) || 0) + quantity);
+      const identityKey = itemIdentity(order);
+      const item = items.get(identityKey) || {
+        itemName,
+        identityKey,
+        vendor: order?.item_vendor || order?.vendor || '',
+        variantKey: order?.item_variant_key || '',
+        quantity: 0
+      };
+      item.quantity += quantity;
+      items.set(identityKey, item);
     });
     return {
       floor,
-      items: Array.from(items.entries()).map(([itemName, quantity]) => ({ itemName, quantity }))
+      items: Array.from(items.values())
     };
   })
 );
@@ -51,8 +67,17 @@ export const aggregateOrdersByItem = (orders = []) => {
     const itemName = String(order?.item_name || '未命名品項').trim() || '未命名品項';
     const quantity = Number(order?.quantity || 0);
     if (!Number.isFinite(quantity)) return;
-    items.set(itemName, (items.get(itemName) || 0) + quantity);
+    const identityKey = itemIdentity(order);
+    const item = items.get(identityKey) || {
+      itemName,
+      identityKey,
+      vendor: order?.item_vendor || order?.vendor || '',
+      variantKey: order?.item_variant_key || '',
+      quantity: 0
+    };
+    item.quantity += quantity;
+    items.set(identityKey, item);
   });
 
-  return Array.from(items.entries()).map(([itemName, quantity]) => ({ itemName, quantity }));
+  return Array.from(items.values());
 };

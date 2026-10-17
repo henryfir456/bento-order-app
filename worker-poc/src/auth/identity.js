@@ -87,6 +87,9 @@ export const resolveLineIdentity = async (
   if (!token) throw unauthorized();
   const profile = await fetchLineProfile(token, fetchImpl);
   const user = await getUserByLineId(database, profile.lineUserId);
+  if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   return {
     token,
     profile,
@@ -111,6 +114,9 @@ const viewAsTarget = (url) => (
 const resolveGuestCanonicalUser = async (database, guest) => {
   if (!guest?.provisional || guest.user || !guest.employeeId) return guest?.user || null;
   const user = await getUserByEmployeeId(database, guest.employeeId);
+  if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   if (!user
     || !user.active) {
     return null;

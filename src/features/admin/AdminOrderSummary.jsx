@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatSignedAmount } from '../orders/amountFormat.js';
 import { shiftDateInput } from '../../dateUtils';
-import { aggregateOrdersByItem, groupOrdersByFloor, ORDER_SUMMARY_TABS } from './orderSummary.js';
+import { aggregateOrdersByItem, formatOrderItemLabel, groupOrdersByFloor, ORDER_SUMMARY_TABS } from './orderSummary.js';
 
 export default function AdminOrderSummary({
   selectedOrderDate,
@@ -109,7 +109,7 @@ export default function AdminOrderSummary({
                                         {o.note && <span className="ml-2 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-normal shadow-sm">📝 {o.note}</span>}
                                       </div>
                                       <div className="text-gray-600 mt-1">
-                                        {o.item_name} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
+                                        {formatOrderItemLabel({ itemName: o.item_name, vendor: o.item_vendor || o.vendor, variantKey: o.item_variant_key })} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
                                       </div>
                                     </div>
                                     <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">
@@ -134,9 +134,9 @@ export default function AdminOrderSummary({
                               <section key={floor} className="space-y-2">
                                 <h4 className="text-sm font-bold text-emerald-800 border-b border-emerald-100 pb-1">{floor} 訂單</h4>
                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                  {items.map(({ itemName, quantity }) => (
-                                    <div key={`${floor}-${itemName}`} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
-                                      <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{itemName}</span>
+                                  {items.map(({ itemName, identityKey, vendor, variantKey, quantity }) => (
+                                    <div key={`${floor}-${identityKey}`} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
+                                      <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor, variantKey })}</span>
                                       <span className="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-xs font-extrabold text-emerald-700 shadow-sm">
                                         × {quantity}
                                       </span>
@@ -157,9 +157,9 @@ export default function AdminOrderSummary({
                         ) : (
                           <>
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                              {totalOrdersByItem.map(({ itemName, quantity }) => (
-                                <div key={itemName} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
-                                  <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{itemName}</span>
+                              {totalOrdersByItem.map(({ itemName, identityKey, vendor, variantKey, quantity }) => (
+                                <div key={identityKey} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
+                                  <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor, variantKey })}</span>
                                   <span className="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-xs font-extrabold text-emerald-700 shadow-sm">
                                     × {quantity}
                                   </span>

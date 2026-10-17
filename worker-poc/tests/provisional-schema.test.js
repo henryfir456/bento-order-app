@@ -26,7 +26,7 @@ test('0003 adds verification state and a backward-compatible provisional session
   const database = openDatabase();
   assert.deepEqual([...columns(database, 'users').keys()].sort(), [
     'user_id', 'employee_id', 'line_user_id', 'display_name', 'pickup_floor',
-    'balance', 'role', 'active', 'created_at', 'updated_at', 'verification_status'
+    'balance', 'role', 'active', 'created_at', 'updated_at', 'verification_status', 'invalid_reason'
   ].sort());
   assert.deepEqual([...columns(database, 'employee_guest_sessions').keys()], [
     'session_id', 'token_hash', 'user_id', 'employee_id', 'auth_mode', 'status',
