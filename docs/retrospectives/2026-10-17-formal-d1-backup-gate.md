@@ -26,3 +26,17 @@
 ## 下一輪預防
 - 觸發條件：任何正式 D1 schema migration。
 - 應追加的前置檢查／測試／規範：依 `docs/D1_BACKUP_AND_MIGRATION_RUNBOOK.md` 驗證備份儲存、保留、讀回、隔離復原及 migration 前後聚合不變；未通過即停止。
+
+## 後續輪次 — 唯讀正式發布閘門檢查
+
+- 狀態：BLOCKED（`BACKUP_NOT_VERIFIED`）。本輪依最新 main 規範進行唯讀檢查，並保留先前輪次紀錄。
+- R2 檢查：專用候選 bucket 為私有、沒有公開入口；所需保留鎖定與 lifecycle 設定通過唯讀檢查。未記錄 bucket、物件或路徑識別資訊。
+- 未通過的 Gate：儲存 jurisdiction 顯示為預設值，但專案政策沒有可核對的核准項目，因此核准狀態為 NOT VERIFIED。現有連線可查控制面設定，無法證明專用 bucket 的 S3 物件讀寫權限；執行環境沒有可用的 scoped S3 access。
+- D1 檢查只讀取 migration、schema 與外鍵檢查結果。所需 migration 尚未套用、目標 schema 欄位尚不存在，foreign-key check 沒有違規。
+- 停止結果：未匯出或讀回正式 D1、未做隔離復原、未讀寫正式資料、未套用 migration、未部署 Worker、未發布 Netlify。
+- PII_SCAN：PASS；本回顧沒有個別資料、憑證、備份內容或簽名 URL。
+- 後續：由專案負責人確認允許的儲存 jurisdiction，並在安全執行環境提供限於專用 bucket 的 S3 讀寫能力；通過備份讀回與隔離復原驗證後，才可繼續正式 migration 與 Worker release。
+
+## 下一輪預防補充
+
+- 將「jurisdiction 有明確核准依據」和「bucket-scoped S3 object Read/Write 能力可實測」列為備份作業的先決條件。控制面讀取或物件清單權限不能代替這兩項證據。
