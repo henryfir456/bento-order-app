@@ -13,6 +13,13 @@
 4. 驗證支援的 schema，僅解析 `agent.yaml` 明確宣告的儲存庫相對技能路徑。
 5. 遵循宣告的 `ap-safe-preflight` 與 `ap-verification-core` 技能流程。
 
+## GitHub 遠端開發模式（REMOTE_GITHUB；採用待共用 Skill 同步）
+- 當 Agent 只有 GitHub API／Connector、沒有本機 worktree 時，可使用遠端 SHA、PR diff、檔案 blob SHA 與 compare-and-swap 取代本機 git status/diff 的證據蒐集；不得虛構本機工作樹狀態。
+- 確認 repository、main/head SHA、目標分支所有權、既有 PR 與目標檔案版本；僅寫入專用分支並在寫後重新讀取 commit/diff，禁止覆寫並行修改。
+- 缺乏執行環境不妨礙安全的分支開發與 Draft PR，但所有未實際執行的測試、lint、build 必須標記 NOT RUN，不能視為 PASS，也不放寬合併與正式 Worker 部署 Gate。
+- **版本過渡限制**：本 repo 的 agent.yaml 目前仍綁定既有快照（ap-safe-preflight 0.2.0、ap-verification-core 0.4.0）；在 agent-platform 上游變更經審查發版並由正式同步流程更新 agent.yaml／Skill 快照之前，舊 Skill 的強制程序仍有效；本節不得作為繞過既有 preflight 的授權。
+- 共用上游實作來源：henryfir456/agent-platform 的 remote GitHub Skill 變更 PR；禁止單獨修改消費端的共用 Skill 快照假冒完成同步。
+
 ## 安全底線
 - 保護任務開始前所有已暫存、未暫存與未追蹤的修改。
 - 不得重設、還原、覆寫或清除無關的使用者工作。
