@@ -126,10 +126,10 @@ export default function MyBentoFootprintsPage({
       <section aria-label="餐點份數排行" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="text-base font-bold text-[#2C4A3E]">餐點份數排行</h3>
         <ol className="mt-3 divide-y divide-slate-100">
-          {(data.items || []).map((item, index) => <li key={item.name} className="flex min-h-12 items-center justify-between gap-3 py-2 text-sm">
+          {(data.items || []).map((item, index) => <li key={item.identityKey || `${item.vendor || ''}-${item.name}-${item.variantKey || ''}`} className="flex min-h-12 items-center justify-between gap-3 py-2 text-sm">
             <span className="flex min-w-0 items-center gap-3">
               <span className="w-6 shrink-0 text-center font-semibold tabular-nums text-slate-500">{index + 1}</span>
-              <span className="truncate font-medium text-slate-800">{item.name}</span>
+              <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{item.name}</span><span className="block truncate text-xs text-slate-500">{[item.vendor, item.variantKey].filter(Boolean).join(' · ')}</span></span>
             </span>
             <span className="shrink-0 font-semibold tabular-nums text-emerald-800">{formatCount(item.portions)} 份</span>
           </li>)}

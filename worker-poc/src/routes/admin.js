@@ -6,6 +6,11 @@ import { prepareStatement, runMutationBatch } from '../db/transactions.js';
 import { notFound } from '../http/errors.js';
 import { adminBindEmployee } from '../domain/adminIdentity.js';
 import {
+  getInvalidEmployeeRepairPreview,
+  listInvalidEmployeeRepairs,
+  repairInvalidEmployeeIdentity
+} from '../domain/invalidEmployeeRepair.js';
+import {
   getLineBindingTransferPreview,
   transferLineBinding
 } from '../domain/lineBindingTransfer.js';
@@ -64,6 +69,15 @@ export const handleAdminRoute = async (request, env, {
   const url = new URL(request.url);
   const isSummary = request.method === 'GET' && url.pathname === '/api/admin/summary';
   const isMembers = request.method === 'GET' && url.pathname === '/api/admin/members/balances';
+  const invalidRepairPreviewMatch = request.method === 'GET'
+    && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/invalid-employee-repair-preview$/);
+  const invalidRepairMatch = request.method === 'POST'
+    && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/invalid-employee-repair$/);
+  const isInvalidRepairPreview = Boolean(invalidRepairPreviewMatch);
+  const isInvalidRepair = Boolean(invalidRepairMatch);
+  const isInvalidRepairAudit = request.method === 'GET'
+    && url.pathname === '/api/admin/invalid-employee-repairs';
+  const isInvalidRepairRoute = isInvalidRepairPreview || isInvalidRepair || isInvalidRepairAudit;
   const ledgerMatch = request.method === 'GET' && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/ledger$/);
   const isUserLedger = Boolean(ledgerMatch);
   const nameMatch = request.method === 'PATCH' && url.pathname.match(/^\/api\/admin\/users\/([^/]+)\/name$/);
@@ -103,15 +117,40 @@ export const handleAdminRoute = async (request, env, {
   const isDailyFlavorSync = request.method === 'POST'
     && url.pathname === '/api/admin/daily-flavors/sync';
   const isDailyFlavorRoute = isDailyFlavorStatus || isDailyFlavorSync;
-  if (!isSummary && !isMembers && !isUserLedger && !isNameUpdate && !isEmployeeBinding && !isLineBindingTransferRoute && !isAnnouncementList && !isAnnouncementCreate
+  if (!isSummary && !isMembers && !isInvalidRepairRoute && !isUserLedger && !isNameUpdate && !isEmployeeBinding && !isLineBindingTransferRoute && !isAnnouncementList && !isAnnouncementCreate
     && !isAnnouncementUpdate && !isAnnouncementDelete && !isAnnouncementMissingId
     && !isMenuChangeList && !isMenuChangeCreate && !isMenuPreview && !isMenuVendorList
     && !isDailyFlavorRoute) return null;
   const identity = await requireIdentity(request, env, {
     fetchImpl,
-    allowViewAs: !isUserLedger && !isNameUpdate && !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isLineBindingTransferRoute && !isDailyFlavorRoute,
+    allowViewAs: !isUserLedger && !isNameUpdate && !isAnnouncementRoute && !isMenuRoute && !isEmployeeBinding && !isLineBindingTransferRoute && !isInvalidRepairRoute && !isDailyFlavorRoute,
     now
   });
+  if (isInvalidRepairAudit) {
+    return jsonResponse(await listInvalidEmployeeRepairs(env.DB, identity, now));
+  }
+  if (isInvalidRepairPreview || isInvalidRepair) {
+    const match = invalidRepairPreviewMatch || invalidRepairMatch;
+    let sourceUserId;
+    try { sourceUserId = decodeURIComponent(match[1]).trim(); }
+    catch { throw badRequest('USER_ID_INVALID'); }
+    if (!sourceUserId) throw badRequest('USER_ID_REQUIRED');
+    if (isInvalidRepairPreview) {
+      return jsonResponse(await getInvalidEmployeeRepairPreview(
+        env.DB,
+        identity,
+        sourceUserId,
+        url.searchParams.get('targetUserId') || ''
+      ));
+    }
+    return jsonResponse(await repairInvalidEmployeeIdentity(
+      env.DB,
+      identity,
+      sourceUserId,
+      await readJson(request),
+      now
+    ));
+  }
   if (isDailyFlavorRoute) {
     assertCan(identity, ACTIONS.ADMIN_MENU_CHANGES);
     if (isDailyFlavorStatus) return jsonResponse(await getDailyFlavorSyncStatus(env.DB, now));

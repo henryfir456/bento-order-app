@@ -92,7 +92,8 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_vendors_enabled_name',
     'idx_vendor_daily_flavors_date',
     'idx_vendor_daily_flavor_sync_runs_started',
-    'idx_taiwan_government_holidays_year'
+    'idx_taiwan_government_holidays_year',
+    'idx_users_invalid_reason'
   ];
   const actual = new Set(rows(database, `
     SELECT name
@@ -100,6 +101,27 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     WHERE type = 'index'
   `).map((row) => row.name));
   for (const indexName of expected) assert.equal(actual.has(indexName), true, indexName);
+});
+
+test('0015 adds a constrained invalid employee marker without rewriting existing user rows', () => {
+  const database = new DatabaseSync(':memory:');
+  const migrationIndex = migrationSql.findIndex((sql) => sql.includes('ADD COLUMN invalid_reason'));
+  assert.ok(migrationIndex > 0);
+  migrationSql.slice(0, migrationIndex).forEach((sql) => database.exec(sql));
+  database.prepare(`
+    INSERT INTO users (user_id, employee_id, line_user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run('user-migration-synthetic', 'SYNTHETIC-EMPLOYEE-MIGRATION', 'synthetic-line-migration', '合成使用者', '9樓', 42, 'User');
+  const before = database.prepare('SELECT * FROM users WHERE user_id = ?').get('user-migration-synthetic');
+  database.exec(migrationSql[migrationIndex]);
+  const after = database.prepare('SELECT * FROM users WHERE user_id = ?').get('user-migration-synthetic');
+  assert.equal(after.invalid_reason, null);
+  for (const column of ['user_id', 'employee_id', 'line_user_id', 'display_name', 'pickup_floor', 'balance', 'role', 'active']) {
+    assert.equal(after[column], before[column], column);
+  }
+  database.prepare('UPDATE users SET invalid_reason = ? WHERE user_id = ?').run('INVALID_EMPLOYEE_ID', 'user-migration-synthetic');
+  assert.equal(database.prepare('SELECT invalid_reason FROM users WHERE user_id = ?').get('user-migration-synthetic').invalid_reason, 'INVALID_EMPLOYEE_ID');
+  assert.throws(() => database.prepare('UPDATE users SET invalid_reason = ? WHERE user_id = ?').run('SYNTHETIC_OTHER_REASON', 'user-migration-synthetic'), /CHECK|constraint/i);
 });
 
 test('0010 backfills canonical vendors without duplicating historical aliases', () => {
@@ -463,7 +485,7 @@ test('formal migration exposes canonical relational identity columns', () => {
     [...tableColumns(database, 'users').keys()].sort(),
     [
       'user_id', 'employee_id', 'line_user_id', 'display_name', 'pickup_floor',
-      'balance', 'role', 'active', 'created_at', 'updated_at', 'verification_status'
+      'balance', 'role', 'active', 'created_at', 'updated_at', 'verification_status', 'invalid_reason'
     ].sort()
   );
   assert.equal(tableColumns(database, 'orders').has('user_id'), true);

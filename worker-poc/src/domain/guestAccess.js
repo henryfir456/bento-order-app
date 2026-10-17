@@ -107,6 +107,9 @@ export const employeeGuestLogin = async (
 ) => {
   const employeeId = employeeIdText(employeeIdInput);
   const user = await getUserByEmployeeId(database, employeeId);
+  if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   if (!user) {
     const session = await createGuestSession(database, {
       employeeId,
@@ -164,6 +167,10 @@ export const completeEmployeeGuestOnboarding = async (
   }
   const now = resolveClock(clock).toISOString();
   const inspected = await inspectGuestSession(database, guestToken, { now });
+  if (inspected?.invalidReason === 'INVALID_EMPLOYEE_ID'
+    || inspected?.user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   if (!inspected || !inspected.normal || !inspected.employeeId) {
     throw unauthorized('GUEST_SESSION_INVALID');
   }
@@ -185,6 +192,9 @@ export const completeEmployeeGuestOnboarding = async (
   const onboardingName = profileText(displayName);
   const onboardingFloor = pickupFloorText(pickupFloor);
   const existing = await getUserByEmployeeId(database, employeeId);
+  if (existing?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   if (existing) throw conflict('EMPLOYEE_ONBOARDING_CONFLICT');
   const decision = await resolveEmployeeVerification(database, employeeId);
 
@@ -265,6 +275,9 @@ export const lineEmployeeLookup = async (
   const employeeId = employeeIdText(employeeIdInput);
   const verifiedLineUserId = lineIdText(lineUserId);
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
+  if (currentLineUser?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   if (currentLineUser) {
     if (!currentLineUser.active) throw forbidden('EMPLOYEE_INACTIVE');
     if (
@@ -277,6 +290,9 @@ export const lineEmployeeLookup = async (
   }
 
   const user = await getUserByEmployeeId(database, employeeId);
+  if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   if (!user) {
     return {
       success: true,
@@ -377,6 +393,10 @@ export const lineEmployeeBind = async (
   const verifiedLineUserId = lineIdText(lineUserId);
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
   const user = await getUserByEmployeeId(database, employeeId);
+  if (currentLineUser?.invalidReason === 'INVALID_EMPLOYEE_ID'
+    || user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
 
   if (user && user.active && isGeneralUser(user) && !currentLineUser && !user.lineUserId) {
     const timestamp = resolveClock(clock).toISOString();
@@ -394,6 +414,7 @@ export const lineEmployeeBind = async (
           AND line_user_id IS NULL
           AND active = 1
           AND role = 'User'
+          AND invalid_reason IS NULL
       `).bind(
         verifiedLineUserId,
         legacyEmployeeDisplayName(user.employeeId),
@@ -483,6 +504,7 @@ export const lineEmployeeBind = async (
           AND line_user_id = ?
           AND employee_id IS NULL
           AND active = 1
+          AND invalid_reason IS NULL
       `).bind(
         employeeId,
         timestamp,
@@ -591,8 +613,15 @@ export const bindLineIdentity = async (
     allowRevokedLineBindReplay: true
   });
   if (!inspected) throw unauthorized('GUEST_SESSION_INVALID');
+  if (inspected.invalidReason === 'INVALID_EMPLOYEE_ID'
+    || inspected.user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
 
   const existingLineUser = await getUserByLineId(database, verifiedLineUserId);
+  if (existingLineUser?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('INVALID_EMPLOYEE_ID');
+  }
   if (inspected.replay) {
     if (inspected.user.lineUserId === verifiedLineUserId) {
       return {
@@ -627,6 +656,11 @@ export const bindLineIdentity = async (
   if (inspected.provisional && !inspected.user) {
     const timestamp = now;
     const employeeId = employeeIdText(inspected.employeeId);
+    const existingEmployee = await getUserByEmployeeId(database, employeeId);
+    if (existingEmployee?.invalidReason === 'INVALID_EMPLOYEE_ID') {
+      throw forbidden('INVALID_EMPLOYEE_ID');
+    }
+    if (existingEmployee) throw conflict('EMPLOYEE_BIND_CONFLICT');
     const onboardingName = profileText(displayName || lineDisplayName);
     const onboardingFloor = pickupFloorText(pickupFloor);
     const userId = randomId('user');
@@ -689,6 +723,7 @@ export const bindLineIdentity = async (
         END,
         updated_at = ?
     WHERE user_id = ? AND active = 1 AND line_user_id IS NULL
+      AND invalid_reason IS NULL
   `, [
     verifiedLineUserId,
     legacyEmployeeDisplayName(inspected.user.employeeId),

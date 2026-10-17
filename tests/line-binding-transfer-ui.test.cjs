@@ -65,6 +65,8 @@ test('transfer UI gives specific messages for blocked source accounts', async ()
   assert.match(getLineBindingTransferMessage('SOURCE_HAS_TRANSACTIONS'), /帳務交易紀錄/);
   assert.match(getLineBindingTransferMessage({ code: 'TARGET_LINE_ALREADY_BOUND' }), /不會覆蓋/);
   assert.match(getLineBindingTransferMessage('LINE_BINDING_TRANSFER_STALE'), /重新取得移轉預覽/);
+  assert.match(getLineBindingTransferMessage('SOURCE_INVALID_EMPLOYEE_ID'), /來源帳號已標記為誤建員編/);
+  assert.match(getLineBindingTransferMessage('TARGET_INVALID_EMPLOYEE_ID'), /目標帳號已標記為誤建員編/);
 });
 
 test('desktop and mobile user cards share the same view and transfer actions', () => {

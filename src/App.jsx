@@ -3791,6 +3791,8 @@ export default function App() {
                 canViewAsUser={canAuth('viewAsUser') && !isViewAsMode}
                 canDelegateOrder={apiClient.transport === 'worker' && canAuth('delegateOrder') && !isViewAsMode}
                 canTransferLineBinding={apiClient.transport === 'worker' && authMode === 'line' && authUser?.role === 'Admin' && !isViewAsMode}
+                canRepairInvalidEmployee={apiClient.transport === 'worker' && authMode === 'line' && authUser?.role === 'Admin' && !isViewAsMode}
+                onInvalidEmployeeRepairCompleted={() => loadMemberBalances(true)}
                 onViewAsUser={handleSelectViewAs}
                 onDelegateOrderUser={handleSelectDelegatedOrder}
                 isViewAsMode={isViewAsMode}

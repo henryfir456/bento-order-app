@@ -1,5 +1,6 @@
 import { getTaipeiDate, isDateOnly } from './deadlines.js';
 import { HISTORICAL_MENU_ITEM_CODE_ALIASES } from './menu.js';
+import { createEffectiveOrderItemNameResolver } from './effectiveOrderItemNames.js';
 
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
@@ -190,47 +191,67 @@ export const getOrderStatistics = async (
   const bindings = [
     userId,
     endDate,
-    ...(startDate ? [startDate] : []),
-    ...EXCLUDED_STATISTIC_ITEM_NAMES
+    ...(startDate ? [startDate] : [])
   ];
   const result = await database.prepare(`
-    SELECT o.order_date,
+    SELECT o.order_id, o.order_date,
            COALESCE(NULLIF(TRIM(o.vendor), ''), '未命名店家') AS vendor,
-           i.item_name_snapshot AS itemName,
-           SUM(i.quantity) AS portions
+           i.line_no, i.menu_item_id, i.legacy_item_id, i.item_name_snapshot,
+           i.quantity, i.unit_price
     FROM orders o
     JOIN order_items i ON i.order_id = o.order_id
     WHERE o.user_id = ?
       AND o.order_date <= ?
       AND o.status IN ('ACTIVE', 'COMPLETED')${rangePredicate}
-      AND i.item_name_snapshot NOT IN (?, ?, ?)
       AND NOT EXISTS (
         SELECT 1
         FROM balance_ledger refund
         WHERE refund.reference_id = o.order_id
           AND refund.type = 'REFUND'
       )
-    GROUP BY o.order_date,
-             COALESCE(NULLIF(TRIM(o.vendor), ''), '未命名店家'),
-             i.item_name_snapshot
-    ORDER BY o.order_date ASC, vendor ASC, itemName ASC
+    ORDER BY o.order_date ASC, vendor ASC, o.order_id ASC, i.line_no ASC
   `).bind(...bindings).all();
 
   const days = new Set();
   const mealTypes = new Set();
   const vendorsByName = new Map();
-  const itemsByName = new Map();
+  const itemsByIdentity = new Map();
   let totalPortions = 0;
+  const resolveName = createEffectiveOrderItemNameResolver(database);
 
   for (const row of rowsFrom(result)) {
-    const portions = Number(row.portions || 0);
-    const vendor = String(row.vendor || '未命名店家');
-    const name = String(row.itemName || '');
+    const effectiveItem = await resolveName({
+      vendor: row.vendor,
+      orderDate: row.order_date,
+      item: {
+        menu_item_id: row.menu_item_id,
+        legacy_item_id: row.legacy_item_id,
+        item_name_snapshot: row.item_name_snapshot,
+        unit_price: row.unit_price,
+        fallbackKey: `${row.order_id}:${row.line_no}`
+      }
+    });
+    if (EXCLUDED_STATISTIC_ITEM_NAMES.includes(String(row.item_name_snapshot || ''))
+      || EXCLUDED_STATISTIC_ITEM_NAMES.includes(effectiveItem.itemName)) continue;
+    const portions = Number(row.quantity || 0);
+    const vendor = String(effectiveItem.vendor || row.vendor || '未命名店家');
+    const name = String(effectiveItem.itemName || '');
     totalPortions += portions;
     days.add(row.order_date);
-    mealTypes.add(name);
+    mealTypes.add(effectiveItem.identityKey);
     vendorsByName.set(vendor, (vendorsByName.get(vendor) || 0) + portions);
-    itemsByName.set(name, (itemsByName.get(name) || 0) + portions);
+    const existing = itemsByIdentity.get(effectiveItem.identityKey) || {
+      name,
+      identityKey: effectiveItem.identityKey,
+      vendor: effectiveItem.vendor,
+      variantKey: effectiveItem.variantKey,
+      portions: 0
+    };
+    // Rows are ordered by effective order date, so retain the latest menu
+    // label when the same stable meal identity was renamed over time.
+    existing.name = name;
+    existing.portions += portions;
+    itemsByIdentity.set(effectiveItem.identityKey, existing);
   }
 
   const byPortionsThenName = (left, right) => (
@@ -239,9 +260,10 @@ export const getOrderStatistics = async (
   const vendors = [...vendorsByName.entries()]
     .map(([name, portions]) => ({ name, portions }))
     .sort(byPortionsThenName);
-  const items = [...itemsByName.entries()]
-    .map(([name, portions]) => ({ name, portions }))
-    .sort(byPortionsThenName);
+  const items = [...itemsByIdentity.values()]
+    .sort((left, right) => byPortionsThenName(left, right)
+      || left.vendor.localeCompare(right.vendor, 'zh-TW')
+      || left.variantKey.localeCompare(right.variantKey, 'zh-TW'));
 
   return {
     period,

@@ -4,6 +4,7 @@ import { currentBalanceProjection, publicUser } from '../db/users.js';
 import { badRequest } from '../http/errors.js';
 import { isDateOnly } from './deadlines.js';
 import { isHistoricalOrderDate, orderStatusPredicate } from './ordersRead.js';
+import { createEffectiveOrderItemNameResolver } from './effectiveOrderItemNames.js';
 
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
@@ -13,8 +14,9 @@ const memberRows = async (database) => {
   const result = await database.prepare(`
     SELECT u.user_id, u.employee_id, u.line_user_id, u.display_name, u.pickup_floor,
            ${currentBalanceProjection('u')} AS balance,
-           u.role, u.active, u.verification_status, u.created_at, u.updated_at
+           u.role, u.active, u.invalid_reason, u.verification_status, u.created_at, u.updated_at
     FROM users u
+    WHERE u.invalid_reason IS NULL
     ORDER BY u.display_name ASC, u.user_id ASC
   `).all();
   return rowsFrom(result).map((row) => publicUser({
@@ -26,6 +28,7 @@ const memberRows = async (database) => {
     balance: Number(row.balance),
     role: row.role,
     active: Boolean(row.active),
+    invalidReason: row.invalid_reason,
     verificationStatus: row.verification_status,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -42,10 +45,10 @@ export const getAdminSummary = async (
   if (!isDateOnly(targetDate)) throw badRequest('INVALID_DATE');
   const includeCompleted = isHistoricalOrderDate(targetDate, now);
   const result = await database.prepare(`
-    SELECT o.order_id, o.order_date, o.pickup_floor, o.note, o.created_at,
+    SELECT o.order_id, o.order_date, o.vendor, o.pickup_floor, o.note, o.created_at,
            o.status,
            u.display_name,
-           oi.legacy_item_id, oi.item_name_snapshot, oi.quantity,
+           oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot, oi.quantity,
            oi.unit_price, oi.subtotal
     FROM orders o
     JOIN users u ON u.user_id = o.user_id
@@ -54,29 +57,52 @@ export const getAdminSummary = async (
       AND ${orderStatusPredicate({ alias: 'o', includeCompleted })}
     ORDER BY o.pickup_floor ASC, o.order_id ASC, oi.line_no ASC
   `).bind(targetDate).all();
-  const todayOrders = rowsFrom(result).map((row) => ({
-    order_id: row.order_id,
-    name: row.display_name,
-    pickup_floor: row.pickup_floor,
-    item_id: row.legacy_item_id || '',
-    item_name: row.item_name_snapshot,
-    quantity: Number(row.quantity),
-    unit_price: Number(row.unit_price),
-    subtotal: Number(row.subtotal),
-    status: row.status,
-    readOnly: row.status === 'COMPLETED',
-    created_at: row.created_at,
-    note: row.note || ''
-  }));
+  const resolveName = createEffectiveOrderItemNameResolver(database);
+  const todayOrders = [];
+  for (const row of rowsFrom(result)) {
+    const effectiveItem = await resolveName({
+      vendor: row.vendor,
+      orderDate: row.order_date,
+      item: {
+        menu_item_id: row.menu_item_id,
+        legacy_item_id: row.legacy_item_id,
+        item_name_snapshot: row.item_name_snapshot,
+        unit_price: row.unit_price,
+        fallbackKey: `${row.order_id}:${row.line_no}`
+      }
+    });
+    todayOrders.push({
+      order_id: row.order_id,
+      name: row.display_name,
+      vendor: row.vendor,
+      pickup_floor: row.pickup_floor,
+      item_id: row.legacy_item_id || '',
+      item_name: effectiveItem.itemName,
+      item_identity_key: effectiveItem.identityKey,
+      item_vendor: effectiveItem.vendor,
+      item_variant_key: effectiveItem.variantKey,
+      item_name_resolved: effectiveItem.resolved,
+      quantity: Number(row.quantity),
+      unit_price: Number(row.unit_price),
+      subtotal: Number(row.subtotal),
+      status: row.status,
+      readOnly: row.status === 'COMPLETED',
+      created_at: row.created_at,
+      note: row.note || ''
+    });
+  }
   const itemMap = new Map();
   const pickupSummary = {};
   let totalItems = 0;
   let totalAmount = 0;
   for (const order of todayOrders) {
-    const key = order.item_id || order.item_name;
+    const key = order.item_identity_key;
     const item = itemMap.get(key) || {
       item_id: order.item_id,
+      item_identity_key: key,
       item_name: order.item_name,
+      item_vendor: order.item_vendor,
+      item_variant_key: order.item_variant_key,
       quantity: 0,
       totalAmount: 0
     };

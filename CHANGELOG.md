@@ -9,6 +9,16 @@
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
 
+## [0.17.2] - 2026-10-17
+
+### Added
+
+- 管理端使用者明細新增誤建員編修復預覽、姓名二次確認、來源停用與管理員稽核查詢；保留目標帳號綁定與歷史資料（Issue #111）。
+
+### Fixed
+
+- 訂單總覽三個頁籤及便當足跡統一依店家、有效日期、穩定品項與規格解析餐點名稱；歧義時保留原快照，不改寫訂單、價格或帳務（Issues #103、#108）。
+
 ## [0.17.1] - 2026-10-16
 
 ### Fixed
