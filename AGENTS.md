@@ -103,3 +103,17 @@ Worker/D1 是唯一正式傳輸及身分事實來源；任何涉及 GAS adapter 
 
 ## 開發回顧（每輪修改交付前必填）
 每次實際程式、文件、流程修正後，依 `docs/retrospectives/README.md` 建立／更新對應任務回顧，列明遇到的阻礙（無則明寫無）、嘗試與根因信心、測試命令及實際結果、遺留事項、P0/P1/P2 建議與下次預防。PR 須連結回顧。開工先查看同類回顧以避免重複踩坑；優先合併重複改善而非每次開新 Issue。回顧不取代既有安全 Gate、正式 `main` 交付規則、簽到的實機結果證據或便當的 Worker/D1 部署驗證；敏感日誌、憑證與個資不可寫入 Git。
+
+## 外部服務 Readiness 與證據分級 Gate（強制；2026-10-18）
+- 對網路、Secrets、身分／憑證、工具能力、外部 API 操作分別記錄 `PASS`、`FAIL`、`UNKNOWN`、`BLOCKED` 或 `NOT RUN`，每項附觀測來源、時間／revision、實際命令或請求結果。不得將 `UNKNOWN`、未執行、快照存在、設定已保存或工具缺席寫成 `PASS`／憑證失敗。
+- 觀測狀態 `unknown`、環境變數 `unknown` 代表**沒有足夠當前證據**，不等於已失效；只有有界的已執行認證請求遭明確拒絕，才能判定相應憑證驗證 `FAIL`。過去 `ready` 不可直接替代最新 `unknown`。
+- 對控制面政策需確認觀測仍為 current、spec/observed revision 一致及所需 `restricted/enforced` 狀態；執行器快照顯示 `restricted` 或 allowlist 有目的地主機，不等於已確認控制面 `enforced`。無法確認時 Gate 保持 `BLOCKED`，只做安全唯讀診斷，不得放寬為 Unrestricted、使用萬用字元或擴大代理／網域權限。
+- 先辨識必要能力及可替代工具。缺 AWS CLI／boto3 並不等於無法驗證 S3，也不等於憑證錯誤；可評估既有 `rclone` 等 S3 相容工具。工具不存在、不能執行或能力不足，分類為 `TOOLING_BLOCKED`，列出安全備援與實際證據，不偽造 API 結果。
+- **前置 Gate fail-closed**：尚未證明變數可用、網路策略符合政策、精確目的地主機獲允許及工具可用之前，不得進入具狀態的外部驗證。通過後仍先使用不含個資的合成資料，在授權範圍內執行寫入、讀回、完整性比對與有界清理；各步分別判定，不能以「沒有建立物件」冒稱刪除操作成功。
+- Secret 只能透過受控環境注入；禁止將密鑰、簽名請求、完整敏感主機識別、個資或可還原識別資料寫入 GitHub Issue／PR／log／回顧。必須保留既有 PII_SCAN、Reviewer 獨立審查、Required Checks、權限、合併及部署政策。新增驗證規則不授權正式資料匯出、migration、資料刪除或生產部署。
+- 遇 `UNKNOWN` 應報「待證實的觀測」與最小補證動作；遇 `BLOCKED` 應報具體阻塞、責任端及安全解阻途徑；只有實際執行且取得明確結果才可升格 `PASS`／`FAIL`。將重複出現的阻塞、替代工具決策及預防措施回寫既有 retrospective，並評估同步 ADL 與共用範本，避免孤立補丁。
+
+## R2 備份與正式 D1 變更前置 Gate（強制）
+- 任何正式 D1 匯出、R2 正式備份、schema migration 或 Worker 正式發布前，先完成上述 Readiness Gate 並遵守既有備份、正式部署與維護窗口授權要求；此節不覆蓋其他文件較嚴格的規則。
+- R2 S3 驗證必須精確確認授權 endpoint 主機、restricted/enforced 網路與現行注入觀測；以獨立且不受 Bucket Lock 保護的測試前綴（若存在）執行合成物件上傳、讀回、SHA-256 比對及清理，不得為清理測試物件放寬 90 天保護或 lifecycle。
+- Bucket Lock 若使清理不可行，記錄 `CLEANUP_BLOCKED`、物件處置與保存期限，不得聲稱已刪除或逕行變更鎖定；正式備份與發布仍遵循既有核准與 fail-closed 規範。
