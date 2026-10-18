@@ -117,3 +117,13 @@ Worker/D1 是唯一正式傳輸及身分事實來源；任何涉及 GAS adapter 
 - 任何正式 D1 匯出、R2 正式備份、schema migration 或 Worker 正式發布前，先完成上述 Readiness Gate 並遵守既有備份、正式部署與維護窗口授權要求；此節不覆蓋其他文件較嚴格的規則。
 - R2 S3 驗證必須精確確認授權 endpoint 主機、restricted/enforced 網路與現行注入觀測；以獨立且不受 Bucket Lock 保護的測試前綴（若存在）執行合成物件上傳、讀回、SHA-256 比對及清理，不得為清理測試物件放寬 90 天保護或 lifecycle。
 - Bucket Lock 若使清理不可行，記錄 `CLEANUP_BLOCKED`、物件處置與保存期限，不得聲稱已刪除或逕行變更鎖定；正式備份與發布仍遵循既有核准與 fail-closed 規範。
+
+## PR 證據補齊與有限解阻流程（強制；2026-10-19）
+- **先修復可修復阻塞**：遇到回顧缺漏、PR 缺連結、文件檢查未執行、CI 未觸發或外部服務異常，不得只回報 BLOCKED 就停止；應在既有授權內依序蒐證、補件、執行適用測試、要求獨立重新審查。每輪記錄精確 PR head SHA、證據 URL、命令／退出碼、觀測時間、責任端；同一根因最多三次有新證據的嘗試，禁止無效輪詢。
+- **回顧自動補件**：有實際修改但缺少 retrospective 時，依本庫 `docs/retrospectives/README.md` 建立／更新該輪文件，在 PR 說明連結；不得以空白模板、推測根因或虛構測試結果充數。回顧為合併前 Gate，補件本身不能取代測試或審查。
+- **分清檢查狀態**：將 GitHub Required Checks、Actions workflow、Commit Status、外部 Preview Build、本地／備援測試分別列帳，使用 PASS／FAIL／UNKNOWN／BLOCKED／NOT RUN／NOT APPLICABLE；沒有 Actions run、路徑篩選未觸發、GitHub API 沒有 statuses，都不是 CI PASS 或 FAIL。僅在核對實際設定與本次變更影響面後才能記 NOT APPLICABLE。
+- **GitHub 規則查詢受限**：Rulesets 或 Branch Protection API 回傳 403，記錄原始錯誤類型（權限不足、功能方案限制等），改由有權限的 GitHub Settings 畫面、管理員／可稽核的設定輸出確認現行合併政策；無法取得時保留 UNKNOWN 與具體補證要求。不得因 API 403 直接推定沒有 Required Checks，也不得為解阻擅自更改保護政策、Repo 可見度、方案或權限。
+- **外部 Preview／Build 失敗**：先取得失敗 build ID、來源 commit、完整可安全公開的診斷摘要，確認與本 PR 的關聯及該檢查是否為必需。相關則修復並重驗；無關的既存失敗也須有可重現證據與獨立 Reviewer 核准，只有合併政策允許才可記錄不阻擋。不得以「只有文件變更」逕行忽略真正的 Required Check；正式部署另遵守原授權與 Gate。
+- **CI 額度與備援**：只有明確的額度錯誤才記 QUOTA_BLOCKED；得使用已核准、可重現的 Codex／本地備援進行相同範圍驗證，記錄其執行環境及證據，但不得冒充 GitHub Required Check 通過、規避計費或訂閱限制，亦不得減少既有必要測試。
+- **精確 head 與合併**：任何提交改變 PR head 後，所有受影響 Gate 重新對最新 SHA 執行；獨立 Reviewer 檢查新 diff、原規範不弱化、PII_SCAN 與權限證據。只有適用必要測試、真實 Required Checks、獨立審查及本庫合併授權均滿足時，才可標記 Ready／合併；禁止因 GitHub 顯示 mergeable 就宣稱可安全合併。未授權正式資料、Secrets、Worker／Netlify 部署一律不執行。
+- **解阻回報格式**：逐項列「Gate／狀態／精確證據／本輪已採取的解阻動作／仍缺什麼／有權處理者」；未知與未執行不得寫為 PASS。若仍阻擋，留下下一個可執行且最小授權的步驟，而非泛稱重試。對跨專案共通根因，評估同步 ADL 與 Template，保留差異化部署政策。
