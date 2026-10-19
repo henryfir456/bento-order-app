@@ -180,3 +180,21 @@ On 2026-10-14 the successful formal Worker upload was recorded by Cloudflare as 
 Add a new entry only when a choice is durable enough that a future Agent might otherwise reopen or reverse it.
 
 Do not duplicate release notes, one-off implementation details, or temporary task status here.
+
+
+## D-011 — GitHub branch protection state is time-scoped and must be rediscovered
+
+**Decision (2026-10-19 snapshot)**
+
+The maintainer confirmed that agent-development-loop, agent-project-template, and bento-order-app currently have no Branch Protection or Rulesets. For this snapshot, both are NOT CONFIGURED; GitHub Required Checks configured through those protections are also NOT CONFIGURED, never PASS.
+
+**Rationale**
+
+Rulesets API reads are restricted for some private repositories, which previously caused a false, indefinite UNKNOWN blocker. The same-day main branch summary reports protected=false and no required status contexts/checks. The maintainer confirmation resolves the current snapshot; a 403 remains an API visibility limitation, not proof that a rule exists.
+
+**Boundary**
+
+- This fact expires as a default at the next PR task: rediscover Branch Protection, inherited Rulesets, and Required Checks for the current target branch, and honor any newly configured rule.
+- Repo internal Parser, Lint, Test, Build, PII_SCAN, independent Reviewer, authorization, merge, and deployment gates remain mandatory regardless of GitHub Required Checks configuration.
+- Treat allow_auto_merge as a GitHub feature setting, Agent authorization as a task/policy decision, and manual merge permission as a current GitHub role check. None substitutes for the others. Do not enable Auto-merge without explicit authorization.
+- This decision does not authorize production D1, Worker, or Netlify actions.
