@@ -6,6 +6,7 @@ import {
   getMockIdentityResponse,
   getMockMembers,
   getMockOrderPageData,
+  getMockOrderStatistics,
   getMockOrdersMap,
   getMockSessionState,
   getMockVendor,
@@ -24,8 +25,8 @@ const hasMockPermission = (user, permission) => hasPermission(
   user?.registered !== false
 );
 
-const jsonResponse = (data) => new Response(JSON.stringify(data), {
-  status: 200,
+const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data), {
+  status,
   headers: { 'Content-Type': 'application/json' }
 });
 
@@ -34,7 +35,24 @@ const parseQuery = (query) => {
   return new URLSearchParams(rawQuery);
 };
 
-const errorResponse = (message) => jsonResponse({ success: false, message });
+const errorResponse = (message, status = 200) => jsonResponse({ success: false, message }, status);
+
+const isMockLineAdmin = (user) => user?.role === 'Admin'
+  && (user?.authMode || (user?.authSource === 'EMPLOYEE_GUEST' ? 'employee_guest' : 'line')) === 'line'
+  && user?.registered !== false;
+
+const mockRepairUser = (member) => ({
+  userId: member.userId,
+  employeeId: member.employeeId,
+  displayName: member.name,
+  pickupFloor: member.floor,
+  role: member.role,
+  active: member.active !== false,
+  invalidReason: member.invalidReason || null,
+  lineBound: Boolean(member.lineBound),
+  balance: Number(member.balance || 0),
+  updatedAt: member.updatedAt
+});
 
 const getMockCoreIdentityResponse = (mockUser) => {
   const identity = getMockIdentityResponse(mockUser);
@@ -113,6 +131,12 @@ export const createMockGasApi = ({ mockUser }) => {
       return vendor ? jsonResponse(vendor) : errorResponse('VENDOR_NOT_FOUND');
     }
 
+    if (action === 'getOrderStatistics') {
+      return getUser()
+        ? jsonResponse({ success: true, ...getMockOrderStatistics(params.get('period') || 'all') })
+        : errorResponse('Mock user is not registered.');
+    }
+
     return errorResponse(MOCK_API_UNSUPPORTED);
   };
 
@@ -157,6 +181,26 @@ export const createMockGasApi = ({ mockUser }) => {
         return errorResponse('Mock user does not have admin summary permission.');
       }
       const todayOrders = getMockAdminOrders(payload.targetDate);
+      const itemMap = new Map();
+      todayOrders.forEach((order) => {
+        const identityKey = order.item_identity_key || order.item_id || order.display_item_name;
+        const existing = itemMap.get(identityKey);
+        if (existing) {
+          existing.quantity += order.quantity;
+          existing.totalAmount += order.subtotal;
+        } else {
+          itemMap.set(identityKey, {
+            item_id: order.item_id,
+            item_identity_key: identityKey,
+            item_name: order.item_name,
+            display_item_name: order.display_item_name || order.item_name,
+            item_vendor: order.item_vendor || order.vendor,
+            item_variant_key: order.item_variant_key || 'BASE',
+            quantity: order.quantity,
+            totalAmount: order.subtotal
+          });
+        }
+      });
       return jsonResponse({
         success: true,
         requesterRole: user.role,
@@ -165,21 +209,7 @@ export const createMockGasApi = ({ mockUser }) => {
         todayOrders,
         totalItems: todayOrders.reduce((total, order) => total + order.quantity, 0),
         totalAmount: todayOrders.reduce((total, order) => total + order.subtotal, 0),
-        items: todayOrders.reduce((items, order) => {
-          const existing = items.find((item) => item.item_id === order.item_id);
-          if (existing) {
-            existing.quantity += order.quantity;
-            existing.totalAmount += order.subtotal;
-          } else {
-            items.push({
-              item_id: order.item_id,
-              item_name: order.item_name,
-              quantity: order.quantity,
-              totalAmount: order.subtotal
-            });
-          }
-          return items;
-        }, []),
+        items: [...itemMap.values()],
         pickupSummary: todayOrders.reduce((summary, order) => {
           const current = summary[order.pickup_floor] || { totalItems: 0, totalAmount: 0 };
           current.totalItems += order.quantity;
@@ -190,10 +220,139 @@ export const createMockGasApi = ({ mockUser }) => {
       });
     }
 
+    if (action === 'getOrderStatistics') {
+      return jsonResponse({ success: true, ...getMockOrderStatistics(payload.period || 'all') });
+    }
+
     if (action === 'getMemberBalances') {
+      const includeInvalid = payload.includeInvalid === true;
+      if (includeInvalid && !isMockLineAdmin(user)) {
+        return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      }
       return hasMockPermission(user, 'viewMemberBalances')
-        ? jsonResponse({ success: true, requesterRole: user.role, members: getMockMembers(mockUser) })
+        ? jsonResponse({ success: true, requesterRole: user.role, includeInvalid, members: getMockMembers(mockUser, { includeInvalid }) })
         : errorResponse('Mock user does not have member balance permission.');
+    }
+
+    if (action === 'previewInvalidEmployeeRepair') {
+      if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      const source = state.members.find((member) => member.userId === String(payload.sourceUserId || ''));
+      const target = state.members.find((member) => member.userId === String(payload.targetUserId || ''));
+      if (!source) return errorResponse('SOURCE_USER_NOT_FOUND', 404);
+      if (!target) return errorResponse('TARGET_USER_NOT_FOUND', 404);
+      const conflicts = [];
+      if (source.userId === target.userId) conflicts.push('SOURCE_AND_TARGET_SAME');
+      if (source.invalidReason === 'INVALID_EMPLOYEE_ID') conflicts.push('SOURCE_ALREADY_INVALID');
+      if (source.active === false) conflicts.push('SOURCE_INACTIVE');
+      if (source.role !== 'User') conflicts.push('SOURCE_ROLE_NOT_REPAIRABLE');
+      if (!String(source.employeeId || '').trim()) conflicts.push('SOURCE_EMPLOYEE_ID_MISSING');
+      if (!String(source.name || '').trim()) conflicts.push('SOURCE_NAME_REQUIRED');
+      if (target.invalidReason === 'INVALID_EMPLOYEE_ID') conflicts.push('TARGET_ALREADY_INVALID');
+      if (target.active === false) conflicts.push('TARGET_INACTIVE');
+      if (!String(target.employeeId || '').trim()) conflicts.push('TARGET_EMPLOYEE_ID_MISSING');
+      if (!String(target.name || '').trim()) conflicts.push('TARGET_NAME_REQUIRED');
+      if (state.invalidEmployeeRepairs.some((entry) => entry.sourceUserId === source.userId)) {
+        conflicts.push('REPAIR_ALREADY_RECORDED');
+      }
+      return jsonResponse({
+        success: true,
+        readyToRepair: conflicts.length === 0,
+        conflicts,
+        source: mockRepairUser(source),
+        target: mockRepairUser(target),
+        changes: {
+          sourceInvalidReason: 'INVALID_EMPLOYEE_ID',
+          sourceActive: false,
+          targetDisplayName: source.name,
+          targetLineBindingPreserved: true,
+          targetRolePreserved: true,
+          targetEmployeeIdPreserved: true,
+          targetPickupFloorPreserved: true,
+          targetOrdersAndAccountingPreserved: true,
+          lineBindingTransferPerformed: false
+        }
+      });
+    }
+
+    if (action === 'repairInvalidEmployee') {
+      if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      const source = state.members.find((member) => member.userId === String(payload.sourceUserId || ''));
+      const target = state.members.find((member) => member.userId === String(payload.targetUserId || ''));
+      if (!source) return errorResponse('SOURCE_USER_NOT_FOUND', 404);
+      if (!target) return errorResponse('TARGET_USER_NOT_FOUND', 404);
+      const hasRepair = state.invalidEmployeeRepairs.some((entry) => entry.sourceUserId === source.userId);
+      const stale = source.updatedAt !== payload.expectedSourceUpdatedAt
+        || target.updatedAt !== payload.expectedTargetUpdatedAt
+        || source.name !== payload.expectedSourceDisplayName
+        || source.employeeId !== payload.expectedSourceEmployeeId
+        || target.employeeId !== payload.expectedTargetEmployeeId
+        || Number(source.balance) !== Number(payload.expectedSourceBalance)
+        || Number(target.balance) !== Number(payload.expectedTargetBalance);
+      if (hasRepair || stale || source.invalidReason || source.active === false
+        || source.role !== 'User' || target.invalidReason || target.active === false) {
+        return errorResponse('INVALID_EMPLOYEE_REPAIR_STALE', 409);
+      }
+      if (payload.confirmTargetDisplayName !== target.name) {
+        return errorResponse('TARGET_NAME_CONFIRMATION_REQUIRED', 409);
+      }
+      const occurredAt = new Date().toISOString();
+      const audit = {
+        auditId: `mock-audit-${state.invalidEmployeeRepairs.length + 1}`,
+        requestId: `mock-request-${state.invalidEmployeeRepairs.length + 1}`,
+        sourceUserId: source.userId,
+        sourceEmployeeId: source.employeeId,
+        sourceDisplayName: source.name,
+        sourceBalance: Number(source.balance),
+        sourceActive: false,
+        sourceInvalidReason: 'INVALID_EMPLOYEE_ID',
+        targetUserId: target.userId,
+        targetEmployeeId: target.employeeId,
+        targetOriginalDisplayName: target.name,
+        targetDisplayName: source.name,
+        targetRole: target.role,
+        targetPickupFloor: target.floor,
+        targetLineBound: Boolean(target.lineBound),
+        targetBalance: Number(target.balance),
+        actorUserId: user.userId,
+        occurredAt
+      };
+      source.active = false;
+      source.invalidReason = 'INVALID_EMPLOYEE_ID';
+      source.updatedAt = occurredAt;
+      target.name = source.name;
+      target.updatedAt = occurredAt;
+      state.invalidEmployeeRepairs.push(audit);
+      return jsonResponse({
+        success: true,
+        source: mockRepairUser(source),
+        target: mockRepairUser(target),
+        requestId: audit.requestId,
+        auditRecorded: true
+      });
+    }
+
+    if (action === 'getInvalidEmployeeRepairAudit') {
+      return isMockLineAdmin(user)
+        ? jsonResponse({ success: true, repairs: [...state.invalidEmployeeRepairs].reverse() })
+        : errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+    }
+
+    if (action === 'getAdminUserLedger') {
+      if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      const member = state.members.find((entry) => entry.userId === String(payload.userId || ''));
+      if (!member) return errorResponse('USER_NOT_FOUND', 404);
+      const balance = Number(member.balance) || 0;
+      return jsonResponse({
+        success: true,
+        userId: member.userId,
+        month: payload.month,
+        openingBalance: balance,
+        closingBalance: balance,
+        totalCredit: 0,
+        totalDebit: 0,
+        transactions: [],
+        reconciliation: { status: 'CONSISTENT' }
+      });
     }
 
     if (action === 'getBalanceHistoryByMonth') {

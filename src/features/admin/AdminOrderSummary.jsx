@@ -109,7 +109,7 @@ export default function AdminOrderSummary({
                                         {o.note && <span className="ml-2 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-normal shadow-sm">📝 {o.note}</span>}
                                       </div>
                                       <div className="text-gray-600 mt-1">
-                                        {formatOrderItemLabel({ itemName: o.item_name, vendor: o.item_vendor || o.vendor, variantKey: o.item_variant_key })} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
+                                        {formatOrderItemLabel({ itemName: o.display_item_name || o.item_name, vendor: o.item_vendor || o.vendor, variantKey: o.item_variant_key })} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
                                       </div>
                                     </div>
                                     <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">

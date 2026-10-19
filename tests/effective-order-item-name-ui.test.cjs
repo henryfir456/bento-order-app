@@ -49,3 +49,49 @@ test('order summary and statistics share the Worker effective-name resolver', ()
   assert.match(statistics, /createEffectiveOrderItemNameResolver/);
   assert.match(resolver, /EFFECTIVE_ORDER_ITEM_NAME_ALIASES/);
 });
+
+test('order summary preserves snapshot item_name and renders display_item_name in all tabs', async () => {
+  const grouping = read('src/features/admin/orderSummary.js');
+  const summaryView = read('src/features/admin/AdminOrderSummary.jsx');
+  const workerSummary = read('worker-poc/src/domain/adminSummary.js');
+  assert.match(workerSummary, /item_name: row\.item_name_snapshot/);
+  assert.match(workerSummary, /display_item_name: effectiveItem\.itemName/);
+  assert.match(grouping, /display_item_name/);
+  assert.match(summaryView, /display_item_name/);
+
+  const { aggregateOrdersByFloor, aggregateOrdersByItem } = await import('../src/features/admin/orderSummary.js');
+  const orders = [
+    { item_name: '舊合成快照', display_item_name: '統一合成餐點', item_identity_key: 'stable-synthetic-item', item_vendor: '合成店家', item_variant_key: 'BASE', pickup_floor: '1樓', quantity: 1 },
+    { item_name: '新合成快照', display_item_name: '統一合成餐點', item_identity_key: 'stable-synthetic-item', item_vendor: '合成店家', item_variant_key: 'BASE', pickup_floor: '1樓', quantity: 2 }
+  ];
+  assert.equal(aggregateOrdersByFloor(orders)[0].items[0].itemName, '統一合成餐點');
+  assert.equal(aggregateOrdersByItem(orders)[0].itemName, '統一合成餐點');
+});
+
+test('local mock exposes resolved #103 summary rows and merged #108 alias statistics', async () => {
+  const { createApiClient } = await import('../src/api/apiClientCore.js');
+  const { createMockGasApi } = await import('../src/api/mockGasApi.js');
+  const authClient = { isMock: true, getAccessToken: () => 'local-mock-session' };
+  const api = createApiClient({
+    env: { DEV: true, VITE_AUTH_MODE: 'mock' },
+    authClient,
+    gasApi: createMockGasApi({ mockUser: 'admin' })
+  });
+
+  const summary = await (await api.getAdminSummary({ targetDate: '2026-10-19' })).json();
+  assert.equal(summary.success, true);
+  assert.ok(summary.todayOrders.some((order) => order.item_name === '風味餐'
+    && order.display_item_name === 'E.風味餐'));
+  const displayNames = new Set(summary.todayOrders.map((order) => order.display_item_name));
+  assert.ok(displayNames.has('S.小而美'));
+  assert.ok(displayNames.has('C.特餐(半飯)'));
+
+  const statisticsResponse = await api.getOrderStatistics({ period: 'all' });
+  const statistics = await statisticsResponse.json();
+  assert.equal(statistics.success, true);
+  assert.equal(statistics.totalMealTypes, 3);
+  assert.equal(statistics.totalPortions, 7);
+  assert.equal(statistics.items.find((item) => item.name === 'C.特餐').portions, 3);
+  assert.equal(statistics.items.find((item) => item.name === '蕃茄鷹豆泥').portions, 3);
+  assert.equal(statistics.items.find((item) => item.name === 'A.風味便當').portions, 1);
+});

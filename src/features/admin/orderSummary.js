@@ -17,7 +17,9 @@ export const compareFloors = (left, right) => {
 };
 
 const itemIdentity = (order) => order?.item_identity_key
-  || JSON.stringify([order?.item_vendor || order?.vendor || '', order?.item_name || '', order?.item_variant_key || '']);
+  || JSON.stringify([order?.item_vendor || order?.vendor || '', order?.display_item_name || order?.item_name || '', order?.item_variant_key || '']);
+
+const itemDisplayName = (order) => order?.display_item_name || order?.item_name;
 
 export const formatOrderItemLabel = ({ itemName, vendor, variantKey } = {}) => (
   `${itemName || '未命名品項'}${vendor ? ` · ${vendor}` : ''}${variantKey ? ` · ${variantKey}` : ''}`
@@ -40,7 +42,7 @@ export const aggregateOrdersByFloor = (orders = []) => (
   groupOrdersByFloor(orders).map(({ floor, orders: floorOrders }) => {
     const items = new Map();
     floorOrders.forEach((order) => {
-      const itemName = String(order?.item_name || '未命名品項').trim() || '未命名品項';
+      const itemName = String(itemDisplayName(order) || '未命名品項').trim() || '未命名品項';
       const quantity = Number(order?.quantity || 0);
       if (!Number.isFinite(quantity)) return;
       const identityKey = itemIdentity(order);
@@ -64,7 +66,7 @@ export const aggregateOrdersByFloor = (orders = []) => (
 export const aggregateOrdersByItem = (orders = []) => {
   const items = new Map();
   (Array.isArray(orders) ? orders : []).forEach((order) => {
-    const itemName = String(order?.item_name || '未命名品項').trim() || '未命名品項';
+    const itemName = String(itemDisplayName(order) || '未命名品項').trim() || '未命名品項';
     const quantity = Number(order?.quantity || 0);
     if (!Number.isFinite(quantity)) return;
     const identityKey = itemIdentity(order);

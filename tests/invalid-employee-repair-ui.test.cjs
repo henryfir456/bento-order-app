@@ -6,6 +6,37 @@ const { test } = require('node:test');
 const root = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
 
+test('mock account fixtures use synthetic employee IDs only', () => {
+  const mockData = read('src/auth/mockData.js');
+  assert.doesNotMatch(mockData, /employeeId:\s*['"]\d{5,}['"]/);
+});
+
+test('mock member ledger supports Admin detail view with synthetic read-only data', async () => {
+  const { createApiClient } = await import('../src/api/apiClientCore.js');
+  const { createMockGasApi } = await import('../src/api/mockGasApi.js');
+  const createMockClient = (mockUser) => createApiClient({
+    env: { DEV: true, VITE_AUTH_MODE: 'mock' },
+    authClient: { isMock: true, getAccessToken: () => 'local-mock-session' },
+    gasApi: createMockGasApi({ mockUser })
+  });
+
+  const response = await createMockClient('admin').getAdminUserLedger({
+    userId: 'mock-repair-source-id', month: '2026-10'
+  });
+  const ledger = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(ledger.success, true);
+  assert.equal(ledger.closingBalance, 0);
+  assert.deepEqual(ledger.transactions, []);
+  assert.equal(ledger.reconciliation.status, 'CONSISTENT');
+
+  const denied = await createMockClient('user').getAdminUserLedger({
+    userId: 'mock-repair-source-id', month: '2026-10'
+  });
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).message, 'ADMIN_LINE_AUTH_REQUIRED');
+});
+
 test('repair API uses LINE credentials and sends exact preview concurrency fields', async () => {
   const clientSource = read('src/api/apiClientCore.js');
   assert.match(clientSource, /previewInvalidEmployeeRepair:[\s\S]*?invalid-employee-repair-preview/);
@@ -48,6 +79,9 @@ test('repair API uses LINE credentials and sends exact preview concurrency field
   });
   assert.equal(calls[1].options.headers.Authorization, 'Bearer synthetic-line-admin-token');
   assert.equal(calls[2].options.headers.Authorization, 'Bearer synthetic-line-admin-token');
+
+  await api.getMemberBalances({ includeInvalid: true });
+  assert.equal(new URL(calls[3].url).searchParams.get('includeInvalid'), 'true');
 });
 
 test('repair detail exposes source and target preview, typed name confirmation, and audit query on desktop and mobile', () => {
@@ -82,4 +116,88 @@ test('App only exposes repair and audit to a LINE Admin outside View As and relo
   const app = read('src/App.jsx');
   assert.match(app, /canRepairInvalidEmployee=\{[\s\S]*?authMode === 'line'[\s\S]*?authUser\?\.role === 'Admin'[\s\S]*?!isViewAsMode[\s\S]*?\}/);
   assert.match(app, /onInvalidEmployeeRepairCompleted=\{\(\) => loadMemberBalances\(true\)\}/);
+  const identityReset = app.slice(app.indexOf('const clearIdentityData ='), app.indexOf('\n  const ', app.indexOf('const clearIdentityData =') + 1));
+  assert.match(identityReset, /setIncludeInvalidMembers\(false\)/);
+});
+
+test('Admin can opt into disabled/invalid rows and the mock repair stays in local memory', async () => {
+  const member = read('src/features/balances/MemberBalanceManagement.jsx');
+  const app = read('src/App.jsx');
+  assert.match(member, /包含停用／誤建帳號/);
+  assert.match(app, /getMemberBalances\(\{ includeInvalid: canIncludeInvalid \}\)/);
+  assert.match(app, /includeInvalidMembers/);
+  assert.match(app, /apiClient\.transport === 'mock'/);
+
+  const { createApiClient } = await import('../src/api/apiClientCore.js');
+  const { createMockGasApi } = await import('../src/api/mockGasApi.js');
+  const authClient = { isMock: true, getAccessToken: () => 'local-mock-session' };
+  const api = createApiClient({
+    env: { DEV: true, VITE_AUTH_MODE: 'mock' },
+    authClient,
+    gasApi: createMockGasApi({ mockUser: 'admin' })
+  });
+
+  const sourceUserId = 'mock-repair-source-id';
+  const targetUserId = 'mock-repair-target-id';
+  const before = await (await api.getMemberBalances()).json();
+  const source = before.members.find((memberRow) => memberRow.userId === sourceUserId);
+  const target = before.members.find((memberRow) => memberRow.userId === targetUserId);
+  assert.equal(before.members.some((memberRow) => memberRow.userId === 'mock-disabled-synthetic-id'), false);
+  assert.ok(source);
+  assert.ok(target);
+  const includedBefore = await (await api.getMemberBalances({ includeInvalid: true })).json();
+  const disabledBefore = includedBefore.members.find((memberRow) => memberRow.userId === 'mock-disabled-synthetic-id');
+  assert.equal(disabledBefore.active, false);
+  assert.equal(disabledBefore.invalidReason, null);
+  const preservedTarget = {
+    employeeId: target.employeeId,
+    lineBound: target.lineBound,
+    role: target.role,
+    floor: target.floor,
+    balance: target.balance
+  };
+
+  const preview = await (await api.previewInvalidEmployeeRepair({ sourceUserId, targetUserId })).json();
+  assert.equal(preview.readyToRepair, true);
+  assert.equal(preview.changes.targetDisplayName, source.name);
+  const repaired = await (await api.repairInvalidEmployee({
+    sourceUserId,
+    targetUserId,
+    expectedSourceUpdatedAt: preview.source.updatedAt,
+    expectedTargetUpdatedAt: preview.target.updatedAt,
+    expectedSourceDisplayName: preview.source.displayName,
+    expectedSourceEmployeeId: preview.source.employeeId,
+    expectedTargetEmployeeId: preview.target.employeeId,
+    expectedSourceBalance: preview.source.balance,
+    expectedTargetBalance: preview.target.balance,
+    confirmTargetDisplayName: preview.target.displayName
+  })).json();
+  assert.equal(repaired.success, true);
+  assert.equal(repaired.auditRecorded, true);
+
+  const defaultAfter = await (await api.getMemberBalances()).json();
+  assert.equal(defaultAfter.members.some((memberRow) => memberRow.userId === sourceUserId), false);
+  const includedAfter = await (await api.getMemberBalances({ includeInvalid: true })).json();
+  const invalidSource = includedAfter.members.find((memberRow) => memberRow.userId === sourceUserId);
+  const updatedTarget = includedAfter.members.find((memberRow) => memberRow.userId === targetUserId);
+  assert.equal(invalidSource.active, false);
+  assert.equal(invalidSource.invalidReason, 'INVALID_EMPLOYEE_ID');
+  assert.equal(updatedTarget.name, preview.source.displayName);
+  assert.deepEqual({
+    employeeId: updatedTarget.employeeId,
+    lineBound: updatedTarget.lineBound,
+    role: updatedTarget.role,
+    floor: updatedTarget.floor,
+    balance: updatedTarget.balance
+  }, preservedTarget);
+  assert.equal((await (await api.getInvalidEmployeeRepairAudit()).json()).repairs.length, 1);
+
+  const userApi = createApiClient({
+    env: { DEV: true, VITE_AUTH_MODE: 'mock' },
+    authClient: { isMock: true, getAccessToken: () => 'local-mock-session' },
+    gasApi: createMockGasApi({ mockUser: 'user' })
+  });
+  assert.equal((await userApi.getMemberBalances({ includeInvalid: true })).status, 403);
+  assert.equal((await userApi.previewInvalidEmployeeRepair({ sourceUserId, targetUserId })).status, 403);
+  assert.equal((await userApi.getInvalidEmployeeRepairAudit()).status, 403);
 });

@@ -91,6 +91,8 @@ export default function MemberBalanceManagement({
   canTransferLineBinding = false,
   onLineBindingTransferCompleted,
   canRepairInvalidEmployee = false,
+  includeInvalidMembers = false,
+  onIncludeInvalidMembersChange,
   onInvalidEmployeeRepairCompleted
 }) {
   const [sort, setSort] = useState({ key: 'balance', direction: 'asc' });
@@ -359,6 +361,16 @@ export default function MemberBalanceManagement({
           <p className="text-xs text-gray-500">統一搜尋使用者、查詢餘額與交易紀錄，並依管理權限檢視身分、代點餐或儲值；所有操作沿用既有授權規則。</p>
         </div>
         {canRepairInvalidEmployee && !isViewAsMode && <button type="button" onClick={openInvalidEmployeeRepairAudit} className="min-h-11 rounded-xl border border-rose-300 px-4 py-2 text-sm font-bold text-rose-800 hover:bg-rose-50">查詢誤建員編修復稽核</button>}
+        {canRepairInvalidEmployee && !isViewAsMode && <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-rose-900">
+          <input
+            type="checkbox"
+            checked={includeInvalidMembers}
+            disabled={memberBalancesLoading}
+            onChange={(event) => onIncludeInvalidMembersChange?.(event.target.checked)}
+            className="size-4 accent-rose-800"
+          />
+          包含停用／誤建帳號
+        </label>}
         <label className="block max-w-sm">
           <span className="sr-only">搜尋員編</span>
           <input

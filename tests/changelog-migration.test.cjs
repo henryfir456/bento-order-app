@@ -288,13 +288,17 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   const expectedUnreleasedChanges = [
     'Restore mobile user-management sort field and direction controls using the same ordering state as desktop, and compact mobile actions including the ledger-details entry (Issue #82).',
     'Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).',
-    'Align personal balance history filtering and monthly summaries with the Taipei time zone.'
+    'Align personal balance history filtering and monthly summaries with the Taipei time zone.',
+    'Preserve the original `item_name` order snapshot in Admin summaries while rendering the shared effective label through `display_item_name` across detail, floor, and total tabs (Issue #103).',
+    'Hide all inactive and explicitly invalid employee rows from the default Admin member list; allow only a LINE Admin outside View As to include them (Issue #111).'
+  ];
+  const expectedUnreleasedAdded = [
+    'Add an isolated browser-memory mock fixture and Windows local UAT steps for #103, #108, and #111. Mock repair changes are discarded on reload.'
   ];
   assert.deepEqual(unreleased[0].categories, [{
-    name: 'Fixed',
-    changes: expectedUnreleasedChanges
-  }]);
-  assert.deepEqual(unreleased[0].changes, expectedUnreleasedChanges);
+    name: 'Fixed', changes: expectedUnreleasedChanges
+  }, { name: 'Added', changes: expectedUnreleasedAdded }]);
+  assert.deepEqual(unreleased[0].changes, [...expectedUnreleasedChanges, ...expectedUnreleasedAdded]);
   assert.deepEqual(unreleased[0].commits, []);
   const uiReleases = parsed.filter(isFormalRelease);
   const preservedVersions = ['0.15.8', '0.15.7', '0.15.6', '0.15.5', '0.15.4'];
