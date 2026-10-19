@@ -54,7 +54,7 @@ const MOCK_USER_FIXTURES = Object.freeze({
   }),
   'admin-unverified': Object.freeze({
     userId: 'mock-admin-unverified-id',
-    employeeId: '139653',
+    employeeId: 'MCKUNV',
     name: 'Mock Admin Pending Legacy Status',
     floor: '9樓',
     defaultFloor: '9樓',
@@ -82,7 +82,7 @@ const MOCK_USER_FIXTURES = Object.freeze({
   }),
   'guest-admin': Object.freeze({
     userId: 'mock-guest-admin-id',
-    employeeId: '139653',
+    employeeId: 'MCKGST',
     name: 'Mock Guest Admin Row',
     floor: '1樓',
     defaultFloor: '1樓',
@@ -108,6 +108,54 @@ const MOCK_USER_FIXTURES = Object.freeze({
   }),
   unregistered: null
 });
+
+const MOCK_INVALID_REPAIR_MEMBERS = Object.freeze([
+  Object.freeze({
+    userId: 'mock-repair-source-id',
+    employeeId: 'MCKSRC',
+    name: 'Mock Source Name',
+    floor: '1樓',
+    defaultFloor: '1樓',
+    balance: 0,
+    role: 'User',
+    authSource: 'EMPLOYEE',
+    authMode: 'employee',
+    active: true,
+    invalidReason: null,
+    lineBound: false,
+    updatedAt: '2026-10-19T09:00:00.000Z'
+  }),
+  Object.freeze({
+    userId: 'mock-repair-target-id',
+    employeeId: 'MCKTGT',
+    name: 'Mock Target Name',
+    floor: '9樓',
+    defaultFloor: '9樓',
+    balance: 350,
+    role: 'User',
+    authSource: 'LINE',
+    authMode: 'line',
+    active: true,
+    invalidReason: null,
+    lineBound: true,
+    updatedAt: '2026-10-19T09:00:00.000Z'
+  }),
+  Object.freeze({
+    userId: 'mock-disabled-synthetic-id',
+    employeeId: 'MCKDIS',
+    name: 'Mock Disabled Account',
+    floor: '1樓',
+    defaultFloor: '1樓',
+    balance: 0,
+    role: 'User',
+    authSource: 'LINE',
+    authMode: 'line',
+    active: false,
+    invalidReason: null,
+    lineBound: false,
+    updatedAt: '2026-10-19T09:00:00.000Z'
+  })
+]);
 
 const sessionStates = new Map();
 
@@ -155,6 +203,8 @@ const createSessionState = (mockUser) => {
     members: Object.values(MOCK_USER_FIXTURES)
       .filter(Boolean)
       .map(clone)
+      .concat(MOCK_INVALID_REPAIR_MEMBERS.map(clone)),
+    invalidEmployeeRepairs: []
   };
 };
 
@@ -352,27 +402,77 @@ export const getMockAdminOrders = (targetDate) => {
   const date = String(targetDate || getPrimaryDate());
   return [
     {
-      order_id: 'MOCK-ADMIN-ORDER',
+      order_id: 'MOCK-ISSUE-103-E-BASE-1',
       name: 'Mock Admin',
-      pickup_floor: '9樓',
-      item_id: 'MOCK-001',
-      item_name: 'Mock Bento',
+      vendor: 'Mock Bento A',
+      pickup_floor: '1樓',
+      item_id: 'MOCK-E-BASE',
+      item_name: '風味餐',
+      display_item_name: 'E.風味餐',
+      item_identity_key: 'mock-vendor-a:E:BASE',
+      item_vendor: 'Mock Bento A',
+      item_variant_key: 'BASE',
+      item_name_resolved: true,
       quantity: 2,
-      unit_price: 80,
-      subtotal: 160,
+      unit_price: 120,
+      subtotal: 240,
       created_at: '2099-01-01 09:00:00',
       note: 'mock fixture',
       date
     },
     {
-      order_id: 'MOCK-USER-ORDER',
+      order_id: 'MOCK-ISSUE-103-E-BASE-2',
       name: 'Mock User',
-      pickup_floor: '1樓',
-      item_id: 'MOCK-002',
-      item_name: 'Mock Vegetarian Bento',
+      vendor: 'Mock Bento A',
+      pickup_floor: '9樓',
+      item_id: 'MOCK-E-BASE',
+      item_name: 'E 風味餐',
+      display_item_name: 'E.風味餐',
+      item_identity_key: 'mock-vendor-a:E:BASE',
+      item_vendor: 'Mock Bento A',
+      item_variant_key: 'BASE',
+      item_name_resolved: true,
       quantity: 1,
-      unit_price: 95,
-      subtotal: 95,
+      unit_price: 120,
+      subtotal: 120,
+      created_at: '2099-01-01 09:05:00',
+      note: '',
+      date
+    },
+    {
+      order_id: 'MOCK-ISSUE-103-S-BASE',
+      name: 'Mock User',
+      vendor: 'Mock Bento A',
+      pickup_floor: '1樓',
+      item_id: 'MOCK-S-BASE',
+      item_name: '小而美',
+      display_item_name: 'S.小而美',
+      item_identity_key: 'mock-vendor-a:S:BASE',
+      item_vendor: 'Mock Bento A',
+      item_variant_key: 'BASE',
+      item_name_resolved: true,
+      quantity: 1,
+      unit_price: 100,
+      subtotal: 100,
+      created_at: '2099-01-01 09:10:00',
+      note: '',
+      date
+    },
+    {
+      order_id: 'MOCK-ISSUE-103-C-HALF',
+      name: 'Mock Admin',
+      vendor: 'Mock Bento B',
+      pickup_floor: '9樓',
+      item_id: 'MOCK-C-HALF',
+      item_name: '特餐(半飯)',
+      display_item_name: 'C.特餐(半飯)',
+      item_identity_key: 'mock-vendor-b:C:HALF',
+      item_vendor: 'Mock Bento B',
+      item_variant_key: 'HALF',
+      item_name_resolved: true,
+      quantity: 1,
+      unit_price: 150,
+      subtotal: 150,
       created_at: '2099-01-01 09:05:00',
       note: '',
       date
@@ -380,9 +480,60 @@ export const getMockAdminOrders = (targetDate) => {
   ];
 };
 
-export const getMockMembers = (mockUser) => {
+export const getMockOrderStatistics = (period = 'all') => {
+  const endDate = getPrimaryDate();
+  const startDate = period === 'year'
+    ? `${endDate.slice(0, 4)}-01-01`
+    : period === 'month'
+      ? `${endDate.slice(0, 7)}-01`
+      : null;
+  const items = [
+    {
+      name: '蕃茄鷹豆泥',
+      identityKey: 'mock-vendor-a:hummus:BASE',
+      vendor: 'Mock Bento A',
+      variantKey: 'BASE',
+      portions: 3
+    },
+    {
+      name: 'C.特餐',
+      identityKey: 'mock-vendor-a:daily-special:BASE',
+      vendor: 'Mock Bento A',
+      variantKey: 'BASE',
+      portions: 3
+    },
+    {
+      name: 'A.風味便當',
+      identityKey: 'mock-vendor-b:flavor-bento:BASE',
+      vendor: 'Mock Bento B',
+      variantKey: 'BASE',
+      portions: 1
+    }
+  ];
+  return {
+    period,
+    startDate,
+    endDate,
+    totalPortions: 7,
+    totalOrderDays: 2,
+    totalMealTypes: items.length,
+    vendors: [
+      { name: 'Mock Bento A', portions: 6 },
+      { name: 'Mock Bento B', portions: 1 }
+    ],
+    items
+  };
+};
+
+export const getMockMembers = (mockUser, { includeInvalid = false } = {}) => {
   const state = getMockSessionState(mockUser);
-  return state.members.map(clone);
+  return state.members
+    .filter((member) => includeInvalid || (member.active !== false && !member.invalidReason))
+    .map((member) => ({
+      ...clone(member),
+      active: member.active !== false,
+      lineBound: Boolean(member.lineBound ?? member.authSource === 'LINE')
+    }));
 };
 
 export const getMockBalanceHistory = (mockUser, year, month) => {

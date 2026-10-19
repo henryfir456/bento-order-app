@@ -191,6 +191,9 @@ test('admin summary API resolves the effective name consistently and keeps quant
   assert.equal(summary.totalItems, 3);
   assert.equal(summary.totalAmount, 240);
   assert.deepEqual(summary.todayOrders.map((order) => order.item_name), [
+    '番茄鷹豆泥', '番茄鷹豆泥', '番茄鷹豆泥'
+  ]);
+  assert.deepEqual(summary.todayOrders.map((order) => order.display_item_name), [
     '蕃茄鷹豆泥', '蕃茄鷹豆泥', '蕃茄鷹豆泥'
   ]);
   assert.equal(new Set(summary.todayOrders.map((order) => order.item_identity_key)).size, 3);

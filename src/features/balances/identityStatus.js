@@ -54,6 +54,10 @@ export const isActiveProvisionalEmployeeGuest = (member) => (
   member?.active === true && isProvisionalEmployeeGuest(member)
 );
 
+export const isActiveValidMember = (member) => (
+  member?.active !== false && !member?.invalidReason
+);
+
 export const isEligibleEmployeeBindingTarget = (member) => Boolean(
   member?.userId
   && member?.active === true
@@ -67,9 +71,9 @@ const projectAdminMember = (member) => (
     : member
 );
 
-export const getAdminMemberRows = (members = []) => (
+export const getAdminMemberRows = (members = [], { includeInvalid = false } = {}) => (
   (Array.isArray(members) ? members : [])
-    .filter((member) => !isHistoricalProvisionalMember(member))
+    .filter((member) => includeInvalid || !isHistoricalProvisionalMember(member))
     .map(projectAdminMember)
 );
 

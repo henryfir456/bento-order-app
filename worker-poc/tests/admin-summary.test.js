@@ -186,6 +186,54 @@ test('member balances are Admin-only, token-derived, and mapped to public member
   assert.deepEqual(await unauthenticatedResponse.json(), { error: 'AUTH_REQUIRED' });
 });
 
+test('invalid employee rows stay hidden by default and only a LINE Admin outside View As can include them', async () => {
+  const database = seedSummary();
+  seedUser(database, {
+    userId: 'user-disabled-synthetic',
+    employeeId: 'SYNTHETIC-DISABLED',
+    lineUserId: 'synthetic-line-disabled',
+    displayName: 'Synthetic disabled user',
+    active: 0
+  });
+  database.run(`UPDATE users SET active = 0, invalid_reason = 'INVALID_EMPLOYEE_ID' WHERE user_id = 'user-2'`);
+
+  const defaultList = await call(
+    database,
+    '/api/admin/members/balances',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(defaultList.response.status, 200);
+  assert.equal(defaultList.body.members.some((member) => member.userId === 'user-2'), false);
+  assert.equal(defaultList.body.members.some((member) => member.userId === 'user-disabled-synthetic'), false);
+
+  const includedList = await call(
+    database,
+    '/api/admin/members/balances?includeInvalid=true',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(includedList.response.status, 200);
+  const invalidMember = includedList.body.members.find((member) => member.userId === 'user-2');
+  assert.equal(invalidMember.active, false);
+  assert.equal(invalidMember.invalidReason, 'INVALID_EMPLOYEE_ID');
+  const disabledMember = includedList.body.members.find((member) => member.userId === 'user-disabled-synthetic');
+  assert.equal(disabledMember.active, false);
+  assert.equal(disabledMember.invalidReason, null);
+
+  const nonAdmin = await call(
+    database,
+    '/api/admin/members/balances?includeInvalid=true',
+    { token: 'user-token', lineUserId: 'user-1' }
+  );
+  assert.equal(nonAdmin.response.status, 403);
+
+  const viewAs = await call(
+    database,
+    '/api/admin/members/balances?includeInvalid=true&viewAs=user-1',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(viewAs.response.status, 403);
+});
+
 test('member balance reads use latest sequenced ledger state with users.balance fallback', async () => {
   const database = seedSummary();
   database.run(`UPDATE users SET balance = 37 WHERE user_id = 'user-2'`);

@@ -8,6 +8,12 @@
 
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
+- Preserve the original `item_name` order snapshot in Admin summaries while rendering the shared effective label through `display_item_name` across detail, floor, and total tabs (Issue #103).
+- Hide all inactive and explicitly invalid employee rows from the default Admin member list; allow only a LINE Admin outside View As to include them (Issue #111).
+
+### Added
+
+- Add an isolated browser-memory mock fixture and Windows local UAT steps for #103, #108, and #111. Mock repair changes are discarded on reload.
 
 ## [0.17.2] - 2026-10-17
 

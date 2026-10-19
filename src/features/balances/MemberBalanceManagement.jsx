@@ -9,6 +9,7 @@ import { getLineBindingTransferMessage } from './lineBindingTransferMessages.js'
 import { getInvalidEmployeeRepairMessage } from './invalidEmployeeRepairMessages.js';
 import {
   getAdminMemberRows,
+  isActiveValidMember,
   isEligibleEmployeeBindingTarget
 } from './identityStatus';
 
@@ -23,7 +24,7 @@ const BalanceBadge = ({ balance }) => (
 );
 
 const MemberAction = ({ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }) => {
-  if (isViewAsMode) return <span className="text-gray-400">—</span>;
+  if (isViewAsMode || !isActiveValidMember(user)) return <span className="text-gray-400">—</span>;
   const actions = [];
   if (canBindEmployee && isEligibleEmployeeBindingTarget(user)) {
     actions.push(
@@ -56,7 +57,9 @@ const MemberAction = ({ user, canTopup, canBindEmployee, isViewAsMode, onOpenTop
 
 const MemberIdentity = ({ user, onNameClick }) => (
   <div className="min-w-0 space-y-1">
-    <button type="button" className="truncate text-left font-medium text-emerald-800 underline decoration-dotted" onClick={() => onNameClick(user)}>{user.name || '未命名使用者'}</button>
+    {isActiveValidMember(user)
+      ? <button type="button" className="truncate text-left font-medium text-emerald-800 underline decoration-dotted" onClick={() => onNameClick(user)}>{user.name || '未命名使用者'}</button>
+      : <span className="block truncate font-medium text-gray-700">{user.name || '未命名使用者'}</span>}
     <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-gray-500">
       <span className="whitespace-nowrap">員編 {formatEmployeeId(user.employeeId)}</span>
       <IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} shortLineLabel />
@@ -91,6 +94,8 @@ export default function MemberBalanceManagement({
   canTransferLineBinding = false,
   onLineBindingTransferCompleted,
   canRepairInvalidEmployee = false,
+  includeInvalidMembers = false,
+  onIncludeInvalidMembersChange,
   onInvalidEmployeeRepairCompleted
 }) {
   const [sort, setSort] = useState({ key: 'balance', direction: 'asc' });
@@ -124,7 +129,7 @@ export default function MemberBalanceManagement({
   const [repairAuditLoading, setRepairAuditLoading] = useState(false);
   const [repairAuditError, setRepairAuditError] = useState('');
   const startNameEdit = (user) => {
-    if (isViewAsMode || !user.userId) return;
+    if (isViewAsMode || !user.userId || !isActiveValidMember(user)) return;
     setEditingName(user);
     setNameDraft(user.name || '');
     setNameError('');
@@ -152,7 +157,7 @@ export default function MemberBalanceManagement({
     }
   };
   const startLineBindingTransfer = (user) => {
-    if (!canTransferLineBinding || isViewAsMode || !user?.userId) return;
+    if (!canTransferLineBinding || isViewAsMode || !user?.userId || !isActiveValidMember(user)) return;
     setSelectedUser(null);
     setTransferSource(user);
     setTransferTargetEmployeeId('');
@@ -216,7 +221,7 @@ export default function MemberBalanceManagement({
     }
   };
   const startInvalidEmployeeRepair = (user) => {
-    if (!canRepairInvalidEmployee || isViewAsMode || !user?.userId) return;
+    if (!canRepairInvalidEmployee || isViewAsMode || !user?.userId || !isActiveValidMember(user)) return;
     setSelectedUser(null);
     setRepairSource(user);
     setRepairTargetUserId('');
@@ -331,7 +336,10 @@ export default function MemberBalanceManagement({
       .finally(() => { if (active) setLedgerLoading(false); });
     return () => { active = false; };
   }, [selectedUser, month, isViewAsMode]);
-  const adminMembers = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
+  const adminMembers = useMemo(
+    () => getAdminMemberRows(memberBalances, { includeInvalid: includeInvalidMembers }),
+    [includeInvalidMembers, memberBalances]
+  );
   const filteredMembers = useMemo(() => {
     const searched = filterMembersByEmployeeId(adminMembers, employeeIdFilter);
     return [...searched].sort((a, b) => {
@@ -344,10 +352,12 @@ export default function MemberBalanceManagement({
     });
   }, [adminMembers, employeeIdFilter, sort]);
   const hasActions = !isViewAsMode && (canTopup || canBindEmployee || canViewAsUser || canDelegateOrder);
-  const UserNavigationActions = ({ user }) => isViewAsMode ? null : <div className="flex flex-wrap gap-1">
+  const UserNavigationActions = ({ user }) => (
+    isViewAsMode || !isActiveValidMember(user) ? null : <div className="flex flex-wrap gap-1">
     {canViewAsUser && <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">檢視身分</button>}
     {canDelegateOrder && <button type="button" onClick={() => onDelegateOrderUser(user)} className="rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-bold text-white">代點餐</button>}
-  </div>;
+  </div>
+  );
 
   return (
     <div className="space-y-4">
@@ -359,6 +369,16 @@ export default function MemberBalanceManagement({
           <p className="text-xs text-gray-500">統一搜尋使用者、查詢餘額與交易紀錄，並依管理權限檢視身分、代點餐或儲值；所有操作沿用既有授權規則。</p>
         </div>
         {canRepairInvalidEmployee && !isViewAsMode && <button type="button" onClick={openInvalidEmployeeRepairAudit} className="min-h-11 rounded-xl border border-rose-300 px-4 py-2 text-sm font-bold text-rose-800 hover:bg-rose-50">查詢誤建員編修復稽核</button>}
+        {canRepairInvalidEmployee && !isViewAsMode && <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-rose-900">
+          <input
+            type="checkbox"
+            checked={includeInvalidMembers}
+            disabled={memberBalancesLoading}
+            onChange={(event) => onIncludeInvalidMembersChange?.(event.target.checked)}
+            className="size-4 accent-rose-800"
+          />
+          包含停用／誤建帳號
+        </label>}
         <label className="block max-w-sm">
           <span className="sr-only">搜尋員編</span>
           <input
@@ -416,12 +436,12 @@ export default function MemberBalanceManagement({
             <div><div className="text-xs text-gray-500">角色</div><div>{selectedUser.role || 'User'}</div></div>
             <div><div className="text-xs text-gray-500">LINE 綁定</div><div>{selectedUser.lineBound ? '已綁定' : '未綁定'}</div></div>
           </div>
-          {canTransferLineBinding && <button
+          {canTransferLineBinding && isActiveValidMember(selectedUser) && <button
             type="button"
             onClick={() => startLineBindingTransfer(selectedUser)}
             className="mt-3 min-h-11 w-full rounded-xl bg-amber-700 px-4 py-2 text-sm font-bold text-white hover:bg-amber-600 sm:w-auto"
           >修正 LINE 綁定</button>}
-          {canRepairInvalidEmployee && !isViewAsMode && <button
+          {canRepairInvalidEmployee && isActiveValidMember(selectedUser) && !isViewAsMode && <button
             type="button"
             onClick={() => startInvalidEmployeeRepair(selectedUser)}
             className="mt-3 min-h-11 w-full rounded-xl bg-rose-800 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700 sm:ml-2 sm:w-auto"
@@ -618,7 +638,9 @@ export default function MemberBalanceManagement({
                   <tr key={memberKey(user, idx)} className="border-b last:border-0 align-top">
                     <td className="p-2">
                       <div className="font-mono text-xs">{formatEmployeeId(user.employeeId)}</div>
-                      <button type="button" onClick={() => startNameEdit(user)} className="mt-1 break-words text-left font-medium text-emerald-800 underline decoration-dotted hover:decoration-solid" aria-label={`修改 ${user.name || '未命名使用者'} 的姓名`}>{user.name || '未命名使用者'}</button>
+                      {isActiveValidMember(user)
+                        ? <button type="button" onClick={() => startNameEdit(user)} className="mt-1 break-words text-left font-medium text-emerald-800 underline decoration-dotted hover:decoration-solid" aria-label={`修改 ${user.name || '未命名使用者'} 的姓名`}>{user.name || '未命名使用者'}</button>
+                        : <span className="mt-1 block break-words font-medium text-gray-700">{user.name || '未命名使用者'}</span>}
                     </td>
                     <td className="p-2">
                       <div className="font-medium">{user.role || 'User'}</div>

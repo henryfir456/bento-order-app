@@ -188,10 +188,72 @@ const createGasOperations = ({ gasApi, authClient }) => ({
     targetDate,
     includeMemberBalances
   }),
-  getMemberBalances: () => gasApi.post({
+  getAdminUserLedger: ({ userId, month } = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'getAdminUserLedger',
+      accessToken: readToken(authClient, 'getAdminUserLedger'),
+      userId,
+      month
+    });
+    throw new ApiContractGapError(
+      'ADMIN_USER_LEDGER_UNSUPPORTED_TRANSPORT',
+      'getAdminUserLedger',
+      'Admin user ledger is not implemented for the GAS transport.'
+    );
+  },
+  getOrderStatistics: ({ period = 'all' } = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'getOrderStatistics',
+      accessToken: readToken(authClient, 'getOrderStatistics'),
+      period
+    });
+    throw new ApiContractGapError(
+      'ORDER_STATISTICS_UNSUPPORTED_TRANSPORT',
+      'getOrderStatistics',
+      'Order statistics are not implemented for the GAS transport.'
+    );
+  },
+  getMemberBalances: ({ includeInvalid = false } = {}) => gasApi.post({
     action: 'getMemberBalances',
-    accessToken: readToken(authClient, 'getMemberBalances')
+    accessToken: readToken(authClient, 'getMemberBalances'),
+    ...(includeInvalid ? { includeInvalid: true } : {})
   }),
+  previewInvalidEmployeeRepair: ({ sourceUserId, targetUserId } = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'previewInvalidEmployeeRepair',
+      accessToken: readToken(authClient, 'previewInvalidEmployeeRepair'),
+      sourceUserId,
+      targetUserId
+    });
+    throw new ApiContractGapError(
+      'INVALID_EMPLOYEE_REPAIR_UNSUPPORTED_TRANSPORT',
+      'previewInvalidEmployeeRepair',
+      'Invalid employee repair is not implemented for the GAS transport.'
+    );
+  },
+  repairInvalidEmployee: (payload = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'repairInvalidEmployee',
+      accessToken: readToken(authClient, 'repairInvalidEmployee'),
+      ...payload
+    });
+    throw new ApiContractGapError(
+      'INVALID_EMPLOYEE_REPAIR_UNSUPPORTED_TRANSPORT',
+      'repairInvalidEmployee',
+      'Invalid employee repair is not implemented for the GAS transport.'
+    );
+  },
+  getInvalidEmployeeRepairAudit: () => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'getInvalidEmployeeRepairAudit',
+      accessToken: readToken(authClient, 'getInvalidEmployeeRepairAudit')
+    });
+    throw new ApiContractGapError(
+      'INVALID_EMPLOYEE_REPAIR_UNSUPPORTED_TRANSPORT',
+      'getInvalidEmployeeRepairAudit',
+      'Invalid employee repair audit is not implemented for the GAS transport.'
+    );
+  },
   getVendors: () => {
     if (authClient?.isMock) return gasApi.get(`?action=getVendors&t=${Date.now()}`);
     throw new ApiContractGapError(
@@ -465,10 +527,11 @@ const createWorkerOperations = ({ workerRequest }) => ({
     `/api/admin/vendors/${encodeURIComponent(String(vendorId || '').trim())}`,
     { body: payload }
   ),
-  getMemberBalances: () => workerRequest(
+  getMemberBalances: ({ includeInvalid = false } = {}) => workerRequest(
     'getMemberBalances',
     'GET',
-    '/api/admin/members/balances'
+    '/api/admin/members/balances',
+    { query: { includeInvalid: includeInvalid ? 'true' : undefined } }
   ),
   updateAdminUserName: ({ userId, displayName } = {}) => workerRequest(
     'updateAdminUserName', 'PATCH',

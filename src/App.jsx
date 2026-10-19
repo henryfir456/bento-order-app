@@ -274,6 +274,7 @@ export default function App() {
   const [memberBalancesLoading, setMemberBalancesLoading] = useState(false);
   const [memberBalancesError, setMemberBalancesError] = useState('');
   const [memberBalancesLoaded, setMemberBalancesLoaded] = useState(false);
+  const [includeInvalidMembers, setIncludeInvalidMembers] = useState(false);
   const memberBalancesRequestRef = useRef(0);
   const adminMemberRows = useMemo(() => getAdminMemberRows(memberBalances), [memberBalances]);
   const [orderTargetRows, setOrderTargetRows] = useState([]);
@@ -367,6 +368,7 @@ export default function App() {
     setMyOrdersError('');
     setMyOrdersLoading(false);
     memberBalancesRequestRef.current += 1;
+    setIncludeInvalidMembers(false);
     orderTargetsRequestRef.current += 1;
     vendorRequestRef.current += 1;
     deferredUiGenerationRef.current += 1;
@@ -1433,10 +1435,15 @@ export default function App() {
     }
   };
 
-  const loadMemberBalances = async (force = false) => {
+  const loadMemberBalances = async (force = false, includeInvalid = includeInvalidMembers) => {
     const visibleRole = viewAsUser?.role || authUser?.role;
     if (!authUser?.userId || !hasPermission(visibleRole, 'viewMemberBalances', authMode, true)) return;
     if (!force && memberBalancesLoaded) return;
+    const canIncludeInvalid = includeInvalid
+      && authMode === 'line'
+      && authUser?.role === 'Admin'
+      && !viewAsUser
+      && (apiClient.transport === 'worker' || (apiClient.transport === 'mock' && import.meta.env.DEV));
 
     const requestId = ++memberBalancesRequestRef.current;
     setMemberBalancesLoading(true);
@@ -1448,7 +1455,7 @@ export default function App() {
         setMemberBalancesError('目前無法驗證身份，請重新登入後再試。');
         return;
       }
-      const res = await apiClient.getMemberBalances();
+      const res = await apiClient.getMemberBalances({ includeInvalid: canIncludeInvalid });
       const data = await res.json();
       if (requestId !== memberBalancesRequestRef.current) return;
 
@@ -2048,7 +2055,6 @@ export default function App() {
     setFootprintsError('');
     setFootprintsData(null);
     try {
-      if (apiClient.transport !== 'worker') throw new Error('WORKER_ONLY');
       const res = await apiClient.getOrderStatistics({ period, viewAsUserId: viewAsUser?.userId || null });
       const data = await res.json();
       if (!res.ok || data?.success !== true
@@ -3783,7 +3789,7 @@ export default function App() {
 
             {adminSection === 'balances' && can('viewMemberBalances') && (
               <MemberBalanceManagement
-                memberBalances={adminMemberRows}
+                memberBalances={memberBalances}
                 memberBalancesLoading={memberBalancesLoading}
                 memberBalancesError={memberBalancesError}
                 canTopup={can('topupMember')}
@@ -3791,7 +3797,12 @@ export default function App() {
                 canViewAsUser={canAuth('viewAsUser') && !isViewAsMode}
                 canDelegateOrder={apiClient.transport === 'worker' && canAuth('delegateOrder') && !isViewAsMode}
                 canTransferLineBinding={apiClient.transport === 'worker' && authMode === 'line' && authUser?.role === 'Admin' && !isViewAsMode}
-                canRepairInvalidEmployee={apiClient.transport === 'worker' && authMode === 'line' && authUser?.role === 'Admin' && !isViewAsMode}
+                canRepairInvalidEmployee={((apiClient.transport === 'worker' && authMode === 'line') || (apiClient.transport === 'mock' && import.meta.env.DEV)) && authUser?.role === 'Admin' && !isViewAsMode}
+                includeInvalidMembers={includeInvalidMembers}
+                onIncludeInvalidMembersChange={(includeInvalid) => {
+                  setIncludeInvalidMembers(includeInvalid);
+                  return loadMemberBalances(true, includeInvalid);
+                }}
                 onInvalidEmployeeRepairCompleted={() => loadMemberBalances(true)}
                 onViewAsUser={handleSelectViewAs}
                 onDelegateOrderUser={handleSelectDelegatedOrder}

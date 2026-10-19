@@ -24,7 +24,7 @@ test('statistics navigation and API support authorized read-only View As', () =>
   const route = read('worker-poc/src/routes/readOnly.js');
   assert.match(app, /key === 'footprints'/);
   assert.match(nav, /label: '足跡'/);
-  const methodStart = api.indexOf('getOrderStatistics:');
+  const methodStart = api.lastIndexOf('getOrderStatistics:');
   const method = api.slice(methodStart, api.indexOf('getOrderPage:', methodStart));
   assert.match(method, /'\/api\/orders\/statistics'/);
   assert.match(method, /query: \{ period, viewAs: viewAsUserId \}/);
@@ -32,6 +32,29 @@ test('statistics navigation and API support authorized read-only View As', () =>
   assert.match(route, /getOrderStatistics\(env\.DB, subject\.userId/);
   assert.match(app, /_subjectUserId/);
   assert.match(app, /footprintsRequestRef\.current \+= 1/);
+});
+
+test('mock footprints load synthetic statistics without requiring Worker transport', async () => {
+  const app = read('src/App.jsx');
+  const methodStart = app.indexOf('const refreshBentoFootprints = async');
+  const methodEnd = app.indexOf('\n  useEffect', methodStart);
+  const refreshMethod = app.slice(methodStart, methodEnd);
+  assert.doesNotMatch(refreshMethod, /apiClient\.transport/);
+  assert.match(refreshMethod, /apiClient\.getOrderStatistics\(/);
+
+  const { createApiClient } = await import('../src/api/apiClientCore.js');
+  const { createMockGasApi } = await import('../src/api/mockGasApi.js');
+  const api = createApiClient({
+    env: { DEV: true, VITE_AUTH_MODE: 'mock' },
+    authClient: { isMock: true, getAccessToken: () => 'local-mock-session' },
+    gasApi: createMockGasApi({ mockUser: 'admin' })
+  });
+  const statistics = await (await api.getOrderStatistics({ period: 'all' })).json();
+  assert.equal(statistics.success, true);
+  assert.deepEqual(
+    [statistics.totalPortions, statistics.totalOrderDays, statistics.totalMealTypes],
+    [7, 2, 3]
+  );
 });
 
 test('footprints presents a zero-record empty state', () => {

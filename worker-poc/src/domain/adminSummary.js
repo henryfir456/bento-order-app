@@ -1,7 +1,7 @@
 import { ACTIONS, assertCan } from '../auth/permissions.js';
 import { appendAuditEvent } from '../db/audit.js';
 import { currentBalanceProjection, publicUser } from '../db/users.js';
-import { badRequest } from '../http/errors.js';
+import { badRequest, forbidden } from '../http/errors.js';
 import { isDateOnly } from './deadlines.js';
 import { isHistoricalOrderDate, orderStatusPredicate } from './ordersRead.js';
 import { createEffectiveOrderItemNameResolver } from './effectiveOrderItemNames.js';
@@ -10,15 +10,15 @@ const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
 );
 
-const memberRows = async (database) => {
+const memberRows = async (database, { includeInvalid = false } = {}) => {
   const result = await database.prepare(`
     SELECT u.user_id, u.employee_id, u.line_user_id, u.display_name, u.pickup_floor,
            ${currentBalanceProjection('u')} AS balance,
            u.role, u.active, u.invalid_reason, u.verification_status, u.created_at, u.updated_at
     FROM users u
-    WHERE u.invalid_reason IS NULL
+    WHERE (? = 1 OR (u.active = 1 AND u.invalid_reason IS NULL))
     ORDER BY u.display_name ASC, u.user_id ASC
-  `).all();
+  `).bind(includeInvalid ? 1 : 0).all();
   return rowsFrom(result).map((row) => publicUser({
     userId: row.user_id,
     employeeId: row.employee_id,
@@ -77,7 +77,8 @@ export const getAdminSummary = async (
       vendor: row.vendor,
       pickup_floor: row.pickup_floor,
       item_id: row.legacy_item_id || '',
-      item_name: effectiveItem.itemName,
+      item_name: row.item_name_snapshot,
+      display_item_name: effectiveItem.itemName,
       item_identity_key: effectiveItem.identityKey,
       item_vendor: effectiveItem.vendor,
       item_variant_key: effectiveItem.variantKey,
@@ -101,6 +102,7 @@ export const getAdminSummary = async (
       item_id: order.item_id,
       item_identity_key: key,
       item_name: order.item_name,
+      display_item_name: order.display_item_name,
       item_vendor: order.item_vendor,
       item_variant_key: order.item_variant_key,
       quantity: 0,
@@ -146,8 +148,20 @@ export const getAdminSummary = async (
   };
 };
 
-export const getMemberBalances = async (database, identity, now = new Date()) => {
+export const getMemberBalances = async (
+  database,
+  identity,
+  now = new Date(),
+  { includeInvalid = false } = {}
+) => {
   assertCan(identity, ACTIONS.READ_MEMBER_BALANCES);
+  if (includeInvalid && (identity.viewAs
+    || identity.authorizationActor?.authMode !== 'line'
+    || identity.authorizationActor?.role !== 'Admin'
+    || identity.authorizationActor?.active !== true
+    || identity.authorizationActor?.userId !== identity.actor?.userId)) {
+    throw forbidden('ADMIN_LINE_AUTH_REQUIRED');
+  }
   await appendAuditEvent(database, {
     actorUserId: identity.authorizationActor.userId,
     actorAuthMode: identity.authorizationActor.authMode,
@@ -157,13 +171,14 @@ export const getMemberBalances = async (database, identity, now = new Date()) =>
     targetEmployeeIdSnapshot: identity.viewAs ? identity.effectiveSubject.employeeId : null,
     targetLineUserIdSnapshot: identity.viewAs ? identity.effectiveSubject.lineUserId : null,
     action: identity.viewAs ? 'VIEW_AS_MEMBER_BALANCES_READ' : 'MEMBER_BALANCES_READ',
-    metadata: {},
+    metadata: { includeInvalid },
     occurredAt: now.toISOString()
   });
-  const members = await memberRows(database);
+  const members = await memberRows(database, { includeInvalid });
   return {
     success: true,
     requesterRole: identity.authorizationActor.role,
+    includeInvalid,
     members,
     users: members
   };
