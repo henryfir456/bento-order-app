@@ -127,3 +127,9 @@ Worker/D1 是唯一正式傳輸及身分事實來源；任何涉及 GAS adapter 
 - **CI 額度與備援**：只有明確的額度錯誤才記 QUOTA_BLOCKED；得使用已核准、可重現的 Codex／本地備援進行相同範圍驗證，記錄其執行環境及證據，但不得冒充 GitHub Required Check 通過、規避計費或訂閱限制，亦不得減少既有必要測試。
 - **精確 head 與合併**：任何提交改變 PR head 後，所有受影響 Gate 重新對最新 SHA 執行；獨立 Reviewer 檢查新 diff、原規範不弱化、PII_SCAN 與權限證據。只有適用必要測試、真實 Required Checks、獨立審查及本庫合併授權均滿足時，才可標記 Ready／合併；禁止因 GitHub 顯示 mergeable 就宣稱可安全合併。未授權正式資料、Secrets、Worker／Netlify 部署一律不執行。
 - **解阻回報格式**：逐項列「Gate／狀態／精確證據／本輪已採取的解阻動作／仍缺什麼／有權處理者」；未知與未執行不得寫為 PASS。若仍阻擋，留下下一個可執行且最小授權的步驟，而非泛稱重試。對跨專案共通根因，評估同步 ADL 與 Template，保留差異化部署政策。
+
+## GitHub 保護規則、Required Checks 與合併授權（強制；目前狀態確認 2026-10-19）
+- 維護者於 2026-10-19 明確確認 agent-development-loop、agent-project-template、bento-order-app 目前都沒有 Branch Protection 或 Rulesets。對本次 PR 核驗，兩者均記為 NOT CONFIGURED。同日 main 分支摘要亦顯示 protected=false、Required Status Checks enforcement 為 off 且 contexts/checks 為空；Rulesets API 回傳空清單或因方案限制 403 的差異要如實保留。403 是該 API 的可觀測限制，不與本次維護者確認矛盾，也不得再單獨造成無限期 BLOCKED；若出現其他有效且較新的相反政策證據，先釐清後再合併。
+- 透過 GitHub 保護規則設定的 Required Checks 狀態為 NOT CONFIGURED，絕不能記成 PASS。它與 Repo 內部必要 Gate 分開列帳；適用 Parser、Lint、Test、Build、PII_SCAN、獨立 Reviewer、權限、合併及部署安全規則仍然強制，任一必要 Gate 未通過仍阻擋合併。
+- 此政策事實只代表 2026-10-19 的確認快照，不是永久假設。每個未來 PR 任務都要重新查詢目標分支 Branch Protection、包含 inherited rules 的 Rulesets、實際 Required Checks 與目前 Repo 設定；新發現的規則立即適用。若查詢回 403，記錄錯誤且最多做一次有意義的替代唯讀查核；本次有效維護者確認適用時依確認分類，否則保留 UNKNOWN 並列最小補證方式，不得由 403 推論 PASS 或規則存在。
+- 必須分開記錄三件事：Repo 的 allow_auto_merge 只是 GitHub Auto-merge 功能是否啟用；Agent 是否獲准合併取決於本次明確的使用者授權及專案政策；手動合併另需目前 GitHub 身分具備 merge 權限。設定、授權或權限任一項都不能代替另外兩項。手動合併只在本次授權涵蓋、權限可查證且所有 Gate 通過時執行；不得因 mergeable、Auto-merge 設定或 reviewer 通過而推定授權，也不得自行啟用 Auto-merge。
