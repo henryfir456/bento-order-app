@@ -2,9 +2,17 @@
 
 > Build UUID 與 commit SHA 以四碼分組並用 `:` 隔開，僅為避免 PII_SCAN 將技術識別碼誤判為個資；移除分隔符即可還原原值。
 
-- Repository、分支、PR、Commit SHA：`henryfir456/bento-order-app`；`issue/117-cloudflare-preview-policy`；[PR #118](https://github.com/henryfir456/bento-order-app/pull/118)；初始 evidence commit SHA `5ea2:f2bb:eb29:a471:489a:cd26:e7fa:fc68:8065:f659`。最終審查 head 以 PR 頁目前值為準。
+- Repository、分支、PR、Commit SHA：`henryfir456/bento-order-app`；`issue/117-cloudflare-preview-policy`；[PR #118](https://github.com/henryfir456/bento-order-app/pull/118)；初始 evidence commit SHA `5ea2:f2bb:eb29:a471:489a:cd26:e7fa:fc68:8065:f659`。本節記錄本輪證據提交前的精確 PR head；後續 head 與 Reviewer 結論保存於 PR conversation/review。
 - 本輪目標／實際修改：釐清 Cloudflare Workers Builds Preview 失敗與必要性；記錄隔離規則；停用目前未隔離的 Preview Builds。沒有修改 Worker 程式、正式 D1、正式 Worker、Secrets、Netlify 或 GitHub 權限。
 - 交付狀態：PARTIAL；repo 內部 Gate 可完成；真正 Worker Preview 尚無已驗證的專用非正式 D1 與隔離 Worker environment。
+
+## PR head 與驗證證據
+
+- 2026-10-19 03:01 UTC，PR metadata API 讀回：[PR #118](https://github.com/henryfir456/bento-order-app/pull/118) head `4a3f:df4e:3a18:e50d:2de1:ac01:323e:a342:3da1`，base/main `b431:0159:a1c1:eb74:c17a:c3d9:b80b:bd99:0c02:2cf3`；PR diff 是本回顧與部署方法文件兩項 Markdown 變更。API 回傳 open、draft、mergeable，這些欄位不代表 Gate 通過。
+- 執行測試時本機唯讀 checkout 為 `39e9:c007:d770:93de:c662:36f7:b826:9477:5c77:a61c`。GitHub compare API 顯示它比當時 main 少一個提交；該提交只修改 `AGENTS.md`、`DECISIONS.md`、PR #116 retrospective，沒有改 `agent.yaml`、package lock、程式或測試來源。核對入口：[main commit history](https://github.com/henryfir456/bento-order-app/commits/main)。因此下列程式 Gate 在驗證時的程式碼與 PR base/head 相同；新 PR 本身亦為 docs-only。
+- 2026-10-19 03:00 UTC 以該 checkout 執行：`node scripts/check-agent-policy.mjs` PASS；`node --test tests/strict-identity-ledger.test.cjs tests/changelog-migration.test.cjs` 2/2 PASS；`node worker-poc/tests/invalid-employee-repair.test.js && node worker-poc/tests/effective-order-item-name.test.js && node worker-poc/tests/line-binding-transfer.test.js && node worker-poc/tests/roles.test.js` 9/9、5/5、14/14、2/2 PASS；`npm test --prefix worker-poc` 67/67 PASS；UI tests 3/3 PASS；`npm run lint` exit 0（23 warnings 均在未修改檔案）；`npm run build` exit 0（Vite 8.2.2，135 modules）。完整命令列於下方驗證節。
+- Branch Protection／Rulesets／Required Checks：依 main `AGENTS.md` 和 `DECISIONS.md` 中 2026-10-19 維護者確認，記 `NOT CONFIGURED`；branch summary `protected=false`、required checks enforcement off、contexts/checks 空，Rulesets 回空清單。Branch Protection API 403 是 connector 觀測限制，未據此推定通過或規則存在。證據入口：[main policy](https://github.com/henryfir456/bento-order-app/blob/main/AGENTS.md)、[PR checks](https://github.com/henryfir456/bento-order-app/pull/118/checks)。
+- Cloudflare fail evidence 入口：[PR #116 conversation/build link](https://github.com/henryfir456/bento-order-app/pull/116)；最新讀到的 fail log source 是 PR #116 head `469d:ce88:dc0b:e6a2:8561:0f2b:9222:6e9c:3af3:09d1`，first failing build observed 2026-10-19 01:26 UTC。Cloudflare Preview configuration read-back 於本輪觀測為 disabled；production settings unchanged。獨立 Reviewer 對最終 PR head 的結論待 PR review 記錄。
 
 ## 本輪阻礙
 
