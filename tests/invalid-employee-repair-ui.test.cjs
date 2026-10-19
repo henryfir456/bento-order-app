@@ -11,6 +11,25 @@ test('mock account fixtures use synthetic employee IDs only', () => {
   assert.doesNotMatch(mockData, /employeeId:\s*['"]\d{5,}['"]/);
 });
 
+test('inactive or invalid members remain read-only when included in admin management', async () => {
+  const { isActiveValidMember } = await import('../src/features/balances/identityStatus.js');
+  const activeMember = { userId: 'synthetic-active-member', active: true, invalidReason: null };
+  const invalidSource = {
+    userId: 'synthetic-invalid-source',
+    active: false,
+    invalidReason: 'INVALID_EMPLOYEE_ID',
+    authSource: 'EMPLOYEE',
+    lineBound: false
+  };
+  assert.equal(isActiveValidMember(activeMember), true);
+  assert.equal(isActiveValidMember(invalidSource), false);
+
+  const member = read('src/features/balances/MemberBalanceManagement.jsx');
+  assert.match(member, /if \(isViewAsMode \|\| !isActiveValidMember\(user\)\) return/);
+  assert.match(member, /isViewAsMode \|\| !isActiveValidMember\(user\)/);
+  assert.match(member, /canRepairInvalidEmployee && isActiveValidMember\(selectedUser\)/);
+});
+
 test('mock member ledger supports Admin detail view with synthetic read-only data', async () => {
   const { createApiClient } = await import('../src/api/apiClientCore.js');
   const { createMockGasApi } = await import('../src/api/mockGasApi.js');

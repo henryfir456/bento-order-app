@@ -1932,7 +1932,7 @@ test('frontend separates auth/view-as identity, guards writes, and keeps date ch
 });
 
 test('admin identity list hides inactive employee guests and only exposes eligible binding targets', async () => {
-  const { getAdminMemberRows, isEligibleEmployeeBindingTarget } = await import(
+  const { getAdminMemberRows, isActiveValidMember, isEligibleEmployeeBindingTarget } = await import(
     pathToFileURL(path.join(__dirname, '..', 'src', 'features', 'balances', 'identityStatus.js')).href
   );
   const canonical = {
@@ -1984,6 +1984,14 @@ test('admin identity list hides inactive employee guests and only exposes eligib
     employeeId: '139655',
     identityState: 'UNREGISTERED'
   };
+  const inactiveInvalidEmployee = {
+    userId: 'invalid-employee-source-synthetic',
+    authSource: 'EMPLOYEE',
+    active: false,
+    employeeId: 'SYNTHETIC-INVALID-SOURCE',
+    invalidReason: 'INVALID_EMPLOYEE_ID',
+    lineBound: false
+  };
 
   const projected = getAdminMemberRows([
     canonical,
@@ -1991,7 +1999,8 @@ test('admin identity list hides inactive employee guests and only exposes eligib
     activeProvisional,
     inactiveProvisional,
     inactiveLine,
-    inactiveCanonical
+    inactiveCanonical,
+    inactiveInvalidEmployee
   ]);
   assert.deepEqual(projected.map(({ userId }) => userId), [
     'line-canonical',
@@ -2008,6 +2017,16 @@ test('admin identity list hides inactive employee guests and only exposes eligib
   assert.equal(isEligibleEmployeeBindingTarget(activeProvisional), true);
   assert.equal(isEligibleEmployeeBindingTarget(inactiveProvisional), false);
   assert.equal(isEligibleEmployeeBindingTarget(inactiveLine), false);
+  assert.equal(isActiveValidMember(canonical), true);
+  assert.equal(isActiveValidMember(inactiveInvalidEmployee), false);
+  assert.deepEqual(
+    getAdminMemberRows([inactiveInvalidEmployee], { includeInvalid: true }).map(({ userId }) => userId),
+    ['invalid-employee-source-synthetic']
+  );
+  assert.deepEqual(
+    getAdminMemberRows([inactiveInvalidEmployee]).map(({ userId }) => userId),
+    []
+  );
 
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
   const bindingHandler = appSource.match(/const handleOpenEmployeeBindModal = \(user\) => \{[\s\S]*?\n  \};/);

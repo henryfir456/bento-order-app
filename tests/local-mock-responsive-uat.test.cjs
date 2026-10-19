@@ -220,6 +220,11 @@ test('local mock UAT #103, #108, and #111 works at phone and desktop widths', {
       assert.equal(hiddenByDefault, true, 'The repaired source should be hidden by default.');
       await evaluate('document.querySelector("input[type=checkbox]").click()');
       await waitFor('[...document.querySelectorAll("button[aria-label*=MCKSRC]")].some(button=>button.getBoundingClientRect().width>0)', '#111 include-invalid toggle');
+      const invalidSourceButtons = JSON.parse(await evaluate('(()=>{const details=[...document.querySelectorAll("button[aria-label*=MCKSRC]")].find(button=>button.getBoundingClientRect().width>0);const row=details?.closest("tr,article");return JSON.stringify(row?[...row.querySelectorAll("button")].map(button=>button.innerText.trim()):[])})()'));
+      assert.equal(invalidSourceButtons.includes('儲值'), false, 'An inactive invalid account must not expose a balance top-up action.');
+      assert.equal(invalidSourceButtons.includes('檢視身分'), false, 'An inactive invalid account must not expose View As.');
+      assert.equal(invalidSourceButtons.includes('代點餐'), false, 'An inactive invalid account must not expose delegated ordering.');
+      assert.equal(invalidSourceButtons.includes('Mock Source Name'), false, 'An inactive invalid account must not expose name editing.');
     }
   } finally {
     devtools?.close();

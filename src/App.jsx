@@ -3789,7 +3789,7 @@ export default function App() {
 
             {adminSection === 'balances' && can('viewMemberBalances') && (
               <MemberBalanceManagement
-                memberBalances={adminMemberRows}
+                memberBalances={memberBalances}
                 memberBalancesLoading={memberBalancesLoading}
                 memberBalancesError={memberBalancesError}
                 canTopup={can('topupMember')}
