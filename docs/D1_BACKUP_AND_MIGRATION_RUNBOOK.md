@@ -27,7 +27,7 @@ D1 Time Travel bookmark 可用於追蹤同一 D1 的時間點，但 restore 會�
 
 1. 從 R2 以備份讀取權限取回該物件，重新計算 SHA-256，與上傳時結果相符；記錄大小與雜湊到受限營運紀錄，不公開 dump 或下載 URL。
 2. 重新讀取 bucket 公開存取、custom domain、lock 與 lifecycle 設定。確認備份仍為私有、lock 規則涵蓋該物件，且 lifecycle 不會提早刪除。
-3. 將同一備份匯入隔離的暫存 D1/SQLite，不接正式流量、不連正式 Worker。執行 `PRAGMA integrity_check`（結果必須為 `ok`）、`PRAGMA foreign_key_check`（結果必須為零列），核對預期 schema/migration 版本及各受影響資料表的聚合筆數。只保留 PASS/FAIL 與必要聚合數值，不輸出資料列。
+3. 將同一備份匯入隔離的暫存 SQLite，不接正式流量、不連正式 Worker。執行完整 `PRAGMA integrity_check`（結果必須為 `ok`）、`PRAGMA foreign_key_check`（結果必須為零列），核對預期 schema/migration 版本及各受影響資料表的聚合筆數。若另使用暫存 D1，也不能省略這次 SQLite 完整檢查。只保留 PASS/FAIL 與必要聚合數值，不輸出資料列。
 4. 保留復原演練的時間、執行環境、版本、結果及清理狀態；不得把還原資料庫或 SQL dump 當成公開測試 fixture。
 
 任何檢查失敗、物件讀取權限不明、備份被 lifecycle 覆蓋，或無法在隔離目標完成復原，都代表 **BACKUP_NOT_VERIFIED**；停止，不得執行正式 migration。
@@ -43,7 +43,7 @@ npm run db:migrations:remote --prefix worker-poc
 完成後確認：
 
 - `d1_migrations` 僅新增預期 migration，且 `users.invalid_reason` 欄位與 check constraint、lookup index 符合 migration SQL。
-- `PRAGMA integrity_check` 為 `ok`、`PRAGMA foreign_key_check` 為零列。
+- 正式 D1 執行 `PRAGMA quick_check` 為 `ok`、`PRAGMA foreign_key_check` 為零列。Cloudflare [支援的 PRAGMA 文件](https://developers.cloudflare.com/d1/sql-api/sql-statements/#compatible-pragma-statements)列有這兩項；本次 API 對 `PRAGMA integrity_check` 回傳 `SQLITE_AUTH`，不得將拒絕結果記為 PASS 或持續重試。`quick_check` 與完整 `integrity_check` 分別記錄；本節不能取代第 3 節對同一正式備份的隔離 SQLite 完整檢查。
 - migration 涉及資料表的聚合筆數與 migration 前相同；此 migration 只變更 schema，不應改寫任何個別身份、訂單或帳務資料。
 - 所有結果均以遮蔽或聚合方式記錄，沒有個別使用者值。
 
