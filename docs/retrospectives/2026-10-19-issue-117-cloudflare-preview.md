@@ -69,6 +69,8 @@
 
 ## 2026-10-19 follow-up — current Cloudflare control-plane verification
 
+- Follow-up PR: [PR #119](https://github.com/henryfir456/bento-order-app/pull/119).
+
 - Observation time: 2026-10-19 05:10 UTC. Latest remote main was b127:de21:522f:5114:4039:1c84:b54f:e1f0:59b0:b44c ([main history](https://github.com/henryfir456/bento-order-app/commits/main)). This is a fresh read after PR #118 merged.
 - Policy inputs re-read: [AGENTS.md](https://github.com/henryfir456/bento-order-app/blob/main/AGENTS.md), [agent.yaml](https://github.com/henryfir456/bento-order-app/blob/main/agent.yaml), [deployment and Preview policy](https://github.com/henryfir456/bento-order-app/blob/main/docs/DEPLOYMENT_METHODS_AND_LESSONS.md), and [current Wrangler config](https://github.com/henryfir456/bento-order-app/blob/main/worker-poc/wrangler.jsonc). The manifest requires internal test, lint, and build; Cloudflare Preview is a separate optional runtime preview.
 - Cloudflare Workers Builds read-only API, 2026-10-19 05:10 UTC: GET Worker build configuration returned HTTP 200 with previews_enabled=false, auto_build_enabled=true, repository henryfir456/bento-order-app, production branch main. Production root is /worker-poc, build command is npm ci && npm test && npx wrangler deploy --dry-run --outdir .release-evidence --config wrangler.jsonc, and deploy command is the existing no-op. These production fields were read only and were not changed.
