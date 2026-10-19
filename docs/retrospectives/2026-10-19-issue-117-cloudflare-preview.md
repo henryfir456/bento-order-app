@@ -2,7 +2,7 @@
 
 > Build UUID 與 commit SHA 以四碼分組並用 `:` 隔開，僅為避免 PII_SCAN 將技術識別碼誤判為個資；移除分隔符即可還原原值。
 
-- Repository、分支、PR、Commit SHA：`henryfir456/bento-order-app`；`issue/117-cloudflare-preview-policy`；PR 與最終 head SHA 待建立後填入。
+- Repository、分支、PR、Commit SHA：`henryfir456/bento-order-app`；`issue/117-cloudflare-preview-policy`；[PR #118](https://github.com/henryfir456/bento-order-app/pull/118)；初始 evidence commit SHA `5ea2:f2bb:eb29:a471:489a:cd26:e7fa:fc68:8065:f659`。最終審查 head 以 PR 頁目前值為準。
 - 本輪目標／實際修改：釐清 Cloudflare Workers Builds Preview 失敗與必要性；記錄隔離規則；停用目前未隔離的 Preview Builds。沒有修改 Worker 程式、正式 D1、正式 Worker、Secrets、Netlify 或 GitHub 權限。
 - 交付狀態：PARTIAL；repo 內部 Gate 可完成；真正 Worker Preview 尚無已驗證的專用非正式 D1 與隔離 Worker environment。
 
@@ -40,7 +40,8 @@
 - `node --test tests/invalid-employee-repair-ui.test.cjs tests/effective-order-item-name-ui.test.cjs tests/line-binding-transfer-ui.test.cjs`：PASS，3/3，exit 0。
 - `npm run lint`：PASS，exit 0；有 23 個既有 warnings，位於未修改的程式檔。
 - `npm run build`：PASS，exit 0；Vite `8.2.2` 建置 135 modules，JS bundle `739.76 kB`。
-- `git diff --check`、changed Markdown relative link validation：待 final PR diff 完成後重跑。
+- `git diff --check`：PASS，exit 0。
+- changed Markdown relative link validation：PASS，2 個變更 Markdown 檔的相對連結均可解析；外部 Cloudflare 文件與 PR 連結均從官方文件工具及 GitHub API 讀取確認。
 - Cloudflare historical Preview：FAIL（四筆記錄的 Vite build PASS，Wrangler Preview FAIL；無 Preview URL）。
 - Cloudflare current Preview configuration：DISABLED；這不是 Preview PASS。
 - GitHub Required Checks：NOT CONFIGURED。GitHub Actions workflow run 與 Cloudflare Preview Build 分開記錄；沒有 run 不代表 PASS。
