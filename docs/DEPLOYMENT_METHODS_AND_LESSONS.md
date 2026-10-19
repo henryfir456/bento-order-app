@@ -28,6 +28,14 @@
 
 Cloudflare 在自己的建置環境對 Git commit 執行 Build Trigger，**不等於**在 GitHub-hosted Actions runner 執行 workflow。兩者應分別記錄觸發方式、來源 SHA、實際命令、憑證保護、產物及發版回執。Cloudflare 原生整合是否可以滿足本專案的完整設定保留及驗收，取決於該次實際部署證據，不能只靠「Git 已連接」推定。
 
+### Cloudflare Workers Preview builds（Issue #117）
+
+- Cloudflare Worker Preview 是分支上的外部執行環境，不是 GitHub Required Check，也不是正式 Worker 部署。`agent.yaml` 的內部 test、lint、build 仍各自強制；沒有 Preview 不會把這些 Gate 降級。
+- 只有在 Wrangler 設定已將 Preview Worker、D1 bindings 與任何 runtime secrets 完全隔離正式資源時，才啟用 Preview Builds。D1 必須使用明確的非正式資料庫；不能沿用頂層正式 D1，也不能把正式 Secrets 複製到 Preview。若沒有這些資源，停用 Preview Builds 並標記 `NOT APPLICABLE`／`BLOCKED`，保留 build failure 證據；不得用空白 `previews` 區塊、永遠成功命令或 `wrangler deploy --dry-run` 冒充真正的 Preview。
+- Wrangler 官方目前要求 Worker Previews 使用 `4.135.0` 或更新版本。Cloudflare Workers Builds 的 root directory、package manager 與 Preview command 必須指向實際 Worker 專案及其鎖定 Wrangler 版本；Vite 前端 build 成功不代表 Worker Preview 可建立。
+- 若未來重新啟用，先使用獨立命名的 Worker environment 與專用非正式 D1，確認 Preview config 只綁定該 D1、沒有正式 Secrets／routes／cron，並以 dry-run 檢查實際目標。接著才可執行 `wrangler preview`；成功需有來源 SHA、build log、Preview URL、綁定證據及無個資的有界 smoke。未取得這些證據時不得報 Preview PASS。
+- 2026-10-19 Issue #117 調查發現目前 Preview Builds 缺少上述隔離；本次已停用 Cloudflare Preview Builds，正式 `main` 的 build/test/dry-run 與 no-op deploy command 維持原設定。見 [Issue #117 retrospective](retrospectives/2026-10-19-issue-117-cloudflare-preview.md)。未來每次任務仍須重新查詢目前 Cloudflare 與 Wrangler 設定；本次停用狀態不是永久假設。
+
 ## 3. Agent 直接採用的決策樹
 
 1. **先讀本檔、AGENTS、FORMAL_WORKER_RELEASE 和最新同類 retrospective**；查 main SHA、Cloudflare 當前版本/部署、相關 Issue 的最新回執。**先查最近真正成功的方式**，禁止先重建另一套 pipeline。
