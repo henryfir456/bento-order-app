@@ -3,6 +3,7 @@ import {
   getMockAdminOrders,
   getMockBalanceHistory,
   getMockCalendarEvents,
+  getMockAnnouncements,
   getMockIdentityResponse,
   getMockMembers,
   getMockOrderPageData,
@@ -175,6 +176,31 @@ export const createMockGasApi = ({ mockUser }) => {
     }
 
     if (!user) return errorResponse('Mock user is not registered.');
+
+    if (action === 'getMyAnnouncements') {
+      const announcements = getMockAnnouncements(mockUser);
+      return jsonResponse({
+        success: true,
+        announcements,
+        unreadCount: announcements.filter((announcement) => !announcement.readAt).length
+      });
+    }
+
+    if (['markAnnouncementRead', 'dismissAnnouncementAutoPopup'].includes(action)) {
+      const announcementId = String(payload.announcementId || '').trim();
+      if (!['mock-announcement-1', 'mock-announcement-2', 'mock-announcement-legacy'].includes(announcementId)) {
+        return errorResponse('ANNOUNCEMENT_NOT_FOUND', 404);
+      }
+      const preference = state.announcementPreferences[announcementId] || {};
+      if (action === 'markAnnouncementRead') {
+        preference.readAt ||= new Date().toISOString();
+        state.announcementPreferences[announcementId] = preference;
+        return jsonResponse({ success: true, announcementId, readAt: preference.readAt });
+      }
+      preference.dismissAutoPopupAt ||= new Date().toISOString();
+      state.announcementPreferences[announcementId] = preference;
+      return jsonResponse({ success: true, announcementId, dismissAutoPopupAt: preference.dismissAutoPopupAt });
+    }
 
     if (action === 'getAdminSummary') {
       if (!hasMockPermission(user, 'viewAdminOrderSummary')) {

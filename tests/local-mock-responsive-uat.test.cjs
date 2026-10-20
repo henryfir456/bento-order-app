@@ -63,7 +63,7 @@ const connectDevTools = (url) => new Promise((resolve, reject) => {
   };
 });
 
-test('local mock UAT #103, #108, and #111 works at phone and desktop widths', {
+test('local mock UAT #103, #108, #111, and #121 works at phone and desktop widths', {
   skip: browserPath ? false : 'Chromium/Chrome is unavailable; manual viewport UAT remains required.',
   timeout: milliseconds(90_000)
 }, async () => {
@@ -172,6 +172,27 @@ test('local mock UAT #103, #108, and #111 works at phone and desktop widths', {
         screenWidth: width, screenHeight: height
       });
       assert.equal(await evaluate('window.innerWidth'), width);
+
+      await waitFor('document.querySelector("[role=dialog]")?.innerText.includes("Mock 新公告二")', '#121 first eligible popup');
+      assert.equal(await evaluate('document.querySelector("[role=dialog] input[type=checkbox]")?.checked'), false);
+      await evaluate('document.querySelector("[role=dialog] input[type=checkbox]").click()');
+      await clickVisibleButton({ text: '確認不再顯示' });
+      await waitFor('document.querySelector("[role=dialog]")?.innerText.includes("Mock 新公告一")', '#121 serial second popup');
+      await clickVisibleButton({ ariaLabel: '關閉視窗' });
+      await waitFor('!document.querySelector("[role=dialog]")', '#121 ordinary popup close');
+      await evaluate('window.dispatchEvent(new Event("pageshow"))');
+      await delay(250);
+      assert.equal(await evaluate('Boolean(document.querySelector("[role=dialog]"))'), false, 'LIFF resume events must not duplicate an entry popup.');
+      const calendarBeforeInbox = await evaluate('document.querySelector("main")?.innerText || ""');
+      await clickVisibleButton({ ariaLabel: '公告通知，1 則未讀' });
+      await waitFor('document.querySelector("[role=dialog]")?.innerText.includes("Mock 既有公告")', '#121 inbox retains the non-popup legacy notice');
+      const legacyClicked = await evaluate('(()=>{const button=[...document.querySelectorAll("[role=dialog] button")].find(item=>item.innerText.includes("Mock 既有公告"));if(!button)return false;button.click();return true})()');
+      assert.equal(legacyClicked, true, 'The legacy notice should open from the inbox.');
+      await waitFor('document.querySelector("[role=dialog]")?.innerText.includes("既有公告保留在收件匣")', '#121 announcement detail');
+      await clickVisibleButton({ text: '← 返回公告列表' });
+      await clickVisibleButton({ ariaLabel: '關閉視窗' });
+      await waitFor('document.querySelector("button[aria-label=公告通知]")', '#121 inbox read state');
+      assert.equal(await evaluate('document.querySelector("main")?.innerText || ""'), calendarBeforeInbox, 'Closing the inbox should return to the same order/calendar state.');
 
       await clickVisibleButton({ ariaLabel: '管理' });
       await clickVisibleButton({ text: '訂單總覽' });

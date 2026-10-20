@@ -34,8 +34,6 @@ import ProvisionalEmployeeOnboarding from './components/ProvisionalEmployeeOnboa
 import PickupFloorModal from './components/PickupFloorModal';
 import ViewAsBanner from './components/ViewAsBanner';
 import DevAuthBadge from './components/DevAuthBadge';
-import AnnouncementBar from './components/AnnouncementBar';
-import AnnouncementModal from './components/AnnouncementModal';
 import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
@@ -66,7 +64,10 @@ import MemberBalanceManagement from './features/balances/MemberBalanceManagement
 import AdminUserLedgerDetails from './features/balances/AdminUserLedgerDetails';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
 import { formatLedgerOrderDate } from './features/balances/ledgerFormatters';
-import { normalizeDeferredAnnouncements, normalizeDeferredLikes, mergeDeferredLikes } from './features/bootstrap/deferredBootstrap';
+import { normalizeAnnouncementInbox, normalizeDeferredLikes, mergeDeferredLikes } from './features/bootstrap/deferredBootstrap';
+import AnnouncementBell from './features/announcements/AnnouncementBell';
+import AnnouncementInbox from './features/announcements/AnnouncementInbox';
+import AnnouncementPopup from './features/announcements/AnnouncementPopup';
 import { formatTransactionDescription, TOPUP_METHOD_OPTIONS } from './features/balances/topupMethods';
 import {
   getAdminMemberRows,
@@ -298,6 +299,16 @@ export default function App() {
   const likeMutationInFlightRef = useRef(false);
   const [announcementsLoaded, setAnnouncementsLoaded] = useState(false);
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
+  const [announcementInboxLoading, setAnnouncementInboxLoading] = useState(false);
+  const [announcementInboxError, setAnnouncementInboxError] = useState('');
+  const [announcementUnreadCount, setAnnouncementUnreadCount] = useState(0);
+  const [announcementPopupQueue, setAnnouncementPopupQueue] = useState([]);
+  const [announcementPopup, setAnnouncementPopup] = useState(null);
+  const [announcementPopupDismissLoading, setAnnouncementPopupDismissLoading] = useState(false);
+  const [announcementPopupDismissError, setAnnouncementPopupDismissError] = useState('');
+  const announcementInboxRequestRef = useRef(0);
+  const announcementPopupSessionRef = useRef({ key: '', shownIds: new Set() });
+  const announcementReadMutationsRef = useRef(new Set());
   const [imagePreview, setImagePreview] = useState(null);
   const [calendarFlavorImageErrors, setCalendarFlavorImageErrors] = useState({});
 
@@ -458,10 +469,20 @@ export default function App() {
     setFloorDraft('');
     setFloorError('');
     setShowChangelogModal(false);
+    announcementInboxRequestRef.current += 1;
+    announcementPopupSessionRef.current = { key: '', shownIds: new Set() };
+    announcementReadMutationsRef.current.clear();
     setAnnouncements([]);
     setLikesLoaded(false);
     setAnnouncementsLoaded(false);
     setShowAnnouncementModal(false);
+    setAnnouncementInboxLoading(false);
+    setAnnouncementInboxError('');
+    setAnnouncementUnreadCount(0);
+    setAnnouncementPopupQueue([]);
+    setAnnouncementPopup(null);
+    setAnnouncementPopupDismissLoading(false);
+    setAnnouncementPopupDismissError('');
     setImagePreview(null);
     setAdminManageMode(false);
     setSelectedAdminDate(null);
@@ -988,37 +1009,26 @@ export default function App() {
 
           pendingBoot.timing.deferredBackend(data?.observability?.timing, data?.bootId);
           if (data?.bootId !== pendingBoot.bootId) {
-            setAnnouncementsLoaded(true);
             logAuthDiagnostic('DEFERRED_UI_RESPONSE_MISMATCH');
             return;
           }
           if (!data?.success) {
-            setAnnouncementsLoaded(true);
             logAuthDiagnostic('DEFERRED_UI_REQUEST_FAILED');
             return;
           }
 
           const nextLikes = normalizeDeferredLikes(data.likes);
-          const nextAnnouncements = normalizeDeferredAnnouncements(data.announcements);
           if (nextLikes !== null) {
             setCalendarEvents(prev => mergeDeferredLikes(prev, nextLikes));
             setLikesLoaded(true);
           }
-          if (nextAnnouncements !== null) {
-            setAnnouncements(nextAnnouncements);
-            setAnnouncementsLoaded(true);
-          } else {
-            setAnnouncementsLoaded(true);
-            logAuthDiagnostic('DEFERRED_UI_RESPONSE_INVALID');
-          }
         })
         .catch(() => {
           if (deferredGeneration !== deferredUiGenerationRef.current) return;
-          setAnnouncementsLoaded(true);
           logAuthDiagnostic('DEFERRED_UI_REQUEST_FAILED');
         });
     }
-  }, [authState, authUser, authMode, calendarEvents, userOrdersMap, announcements, loading, readCurrentCredential]);
+  }, [authState, authUser, authMode, calendarEvents, userOrdersMap, loading, readCurrentCredential]);
 
   useEffect(() => {
     const unsubscribe = guestSessionStore.subscribe((event) => {
@@ -1212,22 +1222,124 @@ export default function App() {
     && hasPermission(authUser?.role, 'manageAnnouncements', authMode, true)
   );
 
-  const refreshPublicAnnouncements = async () => {
-    if (apiClient.transport !== 'worker' || authState !== AUTH_STATES.REGISTERED) return;
-    try {
-      const response = await apiClient.getCalendar({
-        viewAsUserId: isViewAsMode ? viewAsUser?.userId : null
-      });
-      const data = await response.json();
-      const nextAnnouncements = normalizeDeferredAnnouncements(data?.announcements);
-      if (nextAnnouncements !== null) {
-        setAnnouncements(nextAnnouncements);
-        setAnnouncementsLoaded(true);
-      }
-    } catch {
-      // Admin management remains usable even if the public announcement
-      // projection cannot be refreshed immediately.
+  const loadAnnouncementInbox = useCallback(async ({ queuePopups = true } = {}) => {
+    if (authState !== AUTH_STATES.REGISTERED || !authUser?.userId || viewAsUser?.userId) return false;
+    const requestId = ++announcementInboxRequestRef.current;
+    const sessionKey = `${authUser.userId}:${authMode || ''}:${authSelectionRef.current}`;
+    if (announcementPopupSessionRef.current.key !== sessionKey) {
+      announcementPopupSessionRef.current = { key: sessionKey, shownIds: new Set() };
+      setAnnouncementPopupQueue([]);
+      setAnnouncementPopup(null);
+      setAnnouncementPopupDismissError('');
     }
+    setAnnouncementInboxLoading(true);
+    setAnnouncementInboxError('');
+    try {
+      const response = await apiClient.getMyAnnouncements();
+      if (!response.ok) throw new Error('ANNOUNCEMENT_INBOX_HTTP_ERROR');
+      const payload = await response.json();
+      const normalized = normalizeAnnouncementInbox(payload);
+      if (!normalized) throw new Error('ANNOUNCEMENT_INBOX_RESPONSE_INVALID');
+      if (requestId !== announcementInboxRequestRef.current
+        || viewAsUser?.userId
+        || sessionKey !== `${authUser?.userId || ''}:${authMode || ''}:${authSelectionRef.current}`) return false;
+
+      setAnnouncements(normalized.announcements);
+      setAnnouncementUnreadCount(normalized.unreadCount);
+      setAnnouncementsLoaded(true);
+      if (queuePopups && announcementPopupSessionRef.current.key === sessionKey) {
+        const session = announcementPopupSessionRef.current;
+        const candidates = normalized.announcements.filter((announcement) => (
+          announcement.shouldAutoPopup && !session.shownIds.has(announcement.id)
+        ));
+        candidates.forEach((announcement) => session.shownIds.add(announcement.id));
+        if (candidates.length) {
+          setAnnouncementPopupQueue((current) => {
+            const queuedIds = new Set(current.map((announcement) => announcement.id));
+            return [...current, ...candidates.filter((announcement) => !queuedIds.has(announcement.id))];
+          });
+        }
+      }
+      return true;
+    } catch {
+      if (requestId === announcementInboxRequestRef.current && !viewAsUser?.userId) {
+        setAnnouncementsLoaded(true);
+        setAnnouncementInboxError('公告暫時無法載入，請重新載入。');
+      }
+      return false;
+    } finally {
+      if (requestId === announcementInboxRequestRef.current) setAnnouncementInboxLoading(false);
+    }
+  }, [authState, authUser?.userId, authMode, viewAsUser?.userId]);
+
+  const markAnnouncementRead = useCallback(async (announcement) => {
+    const id = String(announcement?.id || '').trim();
+    if (!id || announcement?.readAt || viewAsUser?.userId || announcementReadMutationsRef.current.has(id)) return;
+    announcementReadMutationsRef.current.add(id);
+    try {
+      const response = await apiClient.markAnnouncementRead({ announcementId: id });
+      if (!response.ok) throw new Error('ANNOUNCEMENT_READ_HTTP_ERROR');
+      const payload = await response.json();
+      if (payload?.success !== true) throw new Error('ANNOUNCEMENT_READ_RESPONSE_INVALID');
+      const readAt = typeof payload.readAt === 'string' ? payload.readAt : new Date().toISOString();
+      setAnnouncements((current) => current.map((item) => item.id === id ? { ...item, readAt } : item));
+      setAnnouncementUnreadCount((current) => Math.max(0, current - 1));
+    } catch {
+      setAnnouncementInboxError('公告已開啟，但未能儲存已讀狀態；可重新載入後再試。');
+    } finally {
+      announcementReadMutationsRef.current.delete(id);
+    }
+  }, [viewAsUser?.userId]);
+
+  const closeAnnouncementPopup = () => {
+    setAnnouncementPopup(null);
+    setAnnouncementPopupDismissError('');
+  };
+
+  const dismissAnnouncementPopup = async () => {
+    const id = String(announcementPopup?.id || '').trim();
+    if (!id || announcementPopupDismissLoading || viewAsUser?.userId) return;
+    setAnnouncementPopupDismissLoading(true);
+    setAnnouncementPopupDismissError('');
+    try {
+      const response = await apiClient.dismissAnnouncementAutoPopup({ announcementId: id });
+      if (!response.ok) throw new Error('ANNOUNCEMENT_DISMISS_HTTP_ERROR');
+      const payload = await response.json();
+      if (payload?.success !== true) throw new Error('ANNOUNCEMENT_DISMISS_RESPONSE_INVALID');
+      const dismissAutoPopupAt = typeof payload.dismissAutoPopupAt === 'string'
+        ? payload.dismissAutoPopupAt
+        : new Date().toISOString();
+      setAnnouncements((current) => current.map((item) => item.id === id
+        ? { ...item, dismissAutoPopupAt, shouldAutoPopup: false }
+        : item));
+      setAnnouncementPopup(null);
+    } catch {
+      setAnnouncementPopupDismissError('目前無法儲存此設定，請重試。');
+    } finally {
+      setAnnouncementPopupDismissLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (authState !== AUTH_STATES.REGISTERED || loading || viewAsUser?.userId) return undefined;
+    void loadAnnouncementInbox();
+    return () => {
+      announcementInboxRequestRef.current += 1;
+    };
+  }, [authState, authUser?.userId, authMode, loading, viewAsUser?.userId, loadAnnouncementInbox]);
+
+  useEffect(() => {
+    if (showAnnouncementModal || announcementPopup || announcementPopupQueue.length === 0) return;
+    const [next, ...remaining] = announcementPopupQueue;
+    setAnnouncementPopupQueue(remaining);
+    setAnnouncementPopup(next);
+    setAnnouncementPopupDismissError('');
+    void markAnnouncementRead(next);
+  }, [showAnnouncementModal, announcementPopup, announcementPopupQueue, markAnnouncementRead]);
+
+  const refreshPublicAnnouncements = async () => {
+    if (authState !== AUTH_STATES.REGISTERED || viewAsUser?.userId) return;
+    await loadAnnouncementInbox();
   };
 
   const loadAdminAnnouncements = async (force = false) => {
@@ -1879,12 +1991,6 @@ export default function App() {
       if (data.success) {
         setCalendarEvents(data.events || {});
         setLikesLoaded(true);
-        // announcements is canonical; the singular fallback supports the deployment transition.
-        const nextAnnouncements = Array.isArray(data.announcements)
-          ? data.announcements
-          : (data.announcement ? [data.announcement] : []);
-        setAnnouncements(nextAnnouncements);
-        setAnnouncementsLoaded(true);
         return true;
       }
       return false;
@@ -3413,6 +3519,12 @@ export default function App() {
         <div className="max-w-xl mx-auto min-w-0">
           <h1 className="sr-only">蔬食便當預訂系統</h1>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-emerald-100">
+            {isRegistered && !isViewAsMode && (apiClient.transport === 'worker' || authClient.isMock) && (
+              <AnnouncementBell
+                unreadCount={announcementUnreadCount}
+                onClick={() => setShowAnnouncementModal(true)}
+              />
+            )}
             <span aria-hidden="true">👤</span>
             {headerRoleLabel && isRegistered && (
               <span className="rounded bg-emerald-800/80 px-1.5 py-0.5 font-bold">
@@ -3473,22 +3585,6 @@ export default function App() {
       </header>
 
       <main className="w-full max-w-xl min-w-0 mx-auto flex-1 p-4">
-        {isRegistered && viewMode === 'calendar' && !loading && (
-          <div className="mb-4 min-h-[3rem]">
-            {announcementsLoaded && announcements[0] ? (
-              <AnnouncementBar
-                announcement={announcements[0]}
-                onClick={() => setShowAnnouncementModal(true)}
-              />
-            ) : !announcementsLoaded ? (
-              <div
-                aria-label="Announcements loading"
-                className="h-12 rounded-2xl border border-transparent"
-              />
-            ) : null}
-          </div>
-        )}
-
         {apiClient.transport === 'worker'
           && [AUTH_STATES.AUTH_REQUIRED, AUTH_STATES.AUTH_FAILED].includes(authState)
           && !loading
@@ -4371,11 +4467,24 @@ export default function App() {
         onClose={() => setShowChangelogModal(false)}
       />
 
-      <AnnouncementModal
+      <AnnouncementInbox
         open={showAnnouncementModal}
         announcements={announcements}
-        loading={!announcementsLoaded}
+        unreadCount={announcementUnreadCount}
+        loading={announcementInboxLoading || !announcementsLoaded}
+        error={announcementInboxError}
+        onRetry={() => { void loadAnnouncementInbox(); }}
+        onRead={(announcement) => { void markAnnouncementRead(announcement); }}
         onClose={() => setShowAnnouncementModal(false)}
+      />
+
+      <AnnouncementPopup
+        key={announcementPopup?.id || 'announcement-popup-empty'}
+        announcement={announcementPopup}
+        loading={announcementPopupDismissLoading}
+        error={announcementPopupDismissError}
+        onClose={closeAnnouncementPopup}
+        onDismiss={() => { void dismissAnnouncementPopup(); }}
       />
 
       <OrderConfirmationModal
