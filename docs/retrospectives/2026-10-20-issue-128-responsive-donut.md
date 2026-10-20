@@ -13,7 +13,7 @@
 | PII scan 把改名後新增的既有十六進位色碼列視為連續數字 | 工具誤報 | 第一次候選 diff scan 對圖表來源檔回 `PII_SCAN BLOCKED`；沒有發現真實識別值 | 保留原有色彩常數名稱，只提交圖表用途必要的改動；完整候選 diff 再掃描為 PASS，未放寬掃描規則 | 已驗證：改名把原有色碼整行轉成新增行而觸發數字 pattern |
 | 隔離 Worker API smoke 未取得 Worker 回應 | 網路／外部驗收 BLOCKED | 有界健康檢查在 HTTPS proxy CONNECT 階段收到 403，請求未到 Worker；證據見關聯 PR #134 | 未改用其他網路通道，沒有用 Mock 代替 API smoke | 已驗證：目前執行環境 proxy 阻擋連線；Worker 回應與 runtime 狀態 UNKNOWN |
 | 首輪 reviewer 在 320px 重現無空格合成長店名水平溢出及份數欄碰撞 | P2／UI 缺陷（已修） | 獨立審查綁定首輪 PR head `604f6cca`；測得店名欄及明細清單寬度遠超 viewport，份數欄因此碰撞 | 店名項目加 `min-w-0` 與 `overflow-wrap:anywhere`，左側 flex 區域改為 `flex-1`；在 Local Mock Chromium 加入 320px 無空格合成名稱案例，檢查頁面／清單不溢出且不碰撞份數欄 | 已驗證：修正後完整瀏覽器 Mock UAT 通過，精確 code head `06de2cd` 獨立 reviewer APPROVE |
-| React SSR 對 SVG `<title>` 多個 JSX children 警告 | P3／無障礙 markup | 同一首輪 reviewer 的 SSR probe | 使用同一 `chartLabel` 單一字串作為 SVG aria-label 與 `<title>` children | 已修：程式及本機測試通過；未宣稱獨立複查完成 |
+| React SSR 對 SVG `<title>` 多個 JSX children 警告 | P3／無障礙 markup | 同一首輪 reviewer 的 SSR probe | 使用同一 `chartLabel` 單一字串作為 SVG aria-label 與 `<title>` children | 已修：獨立 reviewer 在精確 code head `06de2cd` 確認 SSR probe 沒有 React console warning |
 
 ## 個資發布檢查
 
