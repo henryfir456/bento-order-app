@@ -11,6 +11,13 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.17.3': [
+    { name: '修正', changes: [
+      '無法確認菜單身份的訂單會保留原始名稱並各自計算，管理頁與足跡排行也會標示身份尚未確認。',
+      '足跡份數、排行與餐點種類改依有效日期、店家、穩定品項識別及規格重算；不同身份、店家或規格不會被合併。',
+      '訂單總覽保留原始餐點快照；身份核實後，明細、樓層數與總數顯示一致的有效名稱。'
+    ] }
+  ],
   '0.17.2': [
     { name: '新增', changes: [
       '使用者明細新增誤建員編修復預覽、覆寫姓名二次確認、來源停用及管理員稽核查詢；目標帳號資料與 LINE 綁定會保留。'

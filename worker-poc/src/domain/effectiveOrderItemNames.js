@@ -2,13 +2,6 @@ import { getCustomerMenu } from './menu.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 import { isDateOnly } from './deadlines.js';
 
-export const EFFECTIVE_ORDER_ITEM_NAME_ALIASES = Object.freeze({
-  '番茄鷹豆泥': '蕃茄鷹豆泥',
-  'C.每日特餐': 'C.特餐',
-  '特餐': 'C.特餐',
-  '風味便當': 'A.風味便當'
-});
-
 const text = (value) => String(value ?? '').trim();
 const itemNameFor = (item) => typeof item?.item_name_snapshot === 'string'
   ? item.item_name_snapshot
@@ -34,6 +27,7 @@ export const resolveEffectiveOrderItemName = ({
 } = {}) => {
   const originalName = itemNameFor(item);
   const normalizedVendor = normalizeMenuVendor(vendor) || text(vendor) || '未命名店家';
+  const hasVendor = Boolean(normalizeMenuVendor(vendor) || text(vendor));
   const catalog = (Array.isArray(menuItems) ? menuItems : []).filter((menuItem) => (
     isEnabled(menuItem)
       && (!text(menuItem?.vendor) || normalizeMenuVendor(menuItem.vendor) === normalizedVendor)
@@ -44,10 +38,10 @@ export const resolveEffectiveOrderItemName = ({
   const requestedVariant = text(item?.variant_key);
   const hasStableIdentity = item?.stable_identity === true;
 
-  const fallback = ({ separate = false } = {}) => ({
+  const fallback = ({ resolutionStatus = 'not_found' } = {}) => ({
     itemName: originalName,
-    // If identity cannot be established, keep this exact order line separate
-    // so two ambiguous variants with identical snapshots are never merged.
+    // An unresolved snapshot has no verified stable identity. Keep the exact
+    // order line separate so identical labels cannot merge unrelated meals.
     identityKey: identity(
       normalizedVendor,
       'snapshot',
@@ -56,51 +50,53 @@ export const resolveEffectiveOrderItemName = ({
       requestedVariant,
       unitPrice,
       originalName,
-      separate ? text(item?.fallbackKey) : ''
+      text(item?.fallbackKey)
     ),
     vendor: normalizedVendor,
     variantKey: requestedVariant,
+    itemCode: legacyItemId,
     resolved: false,
+    resolutionStatus,
     orderDate
   });
+  if (!hasVendor || !isDateOnly(orderDate)) return fallback({ resolutionStatus: 'missing_context' });
   if (item?.stable_identity_vendor_mismatch === true
-    || item?.stable_identity_mismatch === true) return fallback({ separate: true });
+    || item?.stable_identity_mismatch === true) {
+    return fallback({ resolutionStatus: 'identity_mismatch' });
+  }
 
-  let matches = menuItemId
-    ? catalog.filter((candidate) => text(candidate?.menu_item_id) === menuItemId)
-    : [];
-  let ambiguous = matches.length > 1;
+  let matches = [];
+  let ambiguous = false;
+  if (menuItemId) {
+    const directMatches = catalog.filter((candidate) => text(candidate?.menu_item_id) === menuItemId);
+    const verifiedDirectMatches = directMatches.filter((candidate) => (
+      (!legacyItemId || text(candidate?.legacy_item_id || candidate?.item_id) === legacyItemId)
+        && (!requestedVariant || text(candidate?.variant_key) === requestedVariant)
+    ));
+    if (directMatches.length > 0 && verifiedDirectMatches.length !== directMatches.length) {
+      return fallback({ resolutionStatus: 'identity_mismatch' });
+    }
+    matches = verifiedDirectMatches;
+    ambiguous = matches.length > 1;
+  }
   if (matches.length !== 1) {
     const sameLegacyIdentity = legacyItemId
       ? catalog.filter((candidate) => text(candidate?.legacy_item_id || candidate?.item_id) === legacyItemId)
       : [];
-    const identityMatches = sameLegacyIdentity.filter((candidate) => (
-      (hasStableIdentity || unitPrice === null || Number(candidate?.price) === unitPrice)
-        && (!requestedVariant || text(candidate?.variant_key) === requestedVariant)
+    const sameVariantIdentity = sameLegacyIdentity.filter((candidate) => (
+      !requestedVariant || text(candidate?.variant_key) === requestedVariant
     ));
-    ambiguous ||= !requestedVariant
-      && new Set(identityMatches.map((candidate) => text(candidate?.variant_key))).size > 1;
+    ambiguous ||= sameVariantIdentity.length > 1;
+    const identityMatches = sameVariantIdentity.filter((candidate) => (
+      hasStableIdentity || unitPrice === null || Number(candidate?.price) === unitPrice
+    ));
     matches = ambiguous ? [] : identityMatches;
   }
-  if (matches.length !== 1 && !hasStableIdentity && !ambiguous) {
-    const mappedName = EFFECTIVE_ORDER_ITEM_NAME_ALIASES[originalName];
-    if (mappedName) {
-      matches = catalog.filter((candidate) => (
-        text(candidate?.item_name) === mappedName
-          && (unitPrice === null || Number(candidate?.price) === unitPrice)
-          && (!requestedVariant || text(candidate?.variant_key) === requestedVariant)
-      ));
-    } else if (!legacyItemId) {
-      matches = catalog.filter((candidate) => (
-        text(candidate?.item_name) === originalName
-          && (unitPrice === null || Number(candidate?.price) === unitPrice)
-          && (!requestedVariant || text(candidate?.variant_key) === requestedVariant)
-      ));
-    }
-    ambiguous ||= matches.length > 1;
+  if (matches.length !== 1) {
+    // Names and prices alone are not identity evidence. Keep the snapshot
+    // unresolved until a menu item ID or legacy item ID verifies the match.
+    return fallback({ resolutionStatus: ambiguous || matches.length > 1 ? 'ambiguous' : 'not_found' });
   }
-
-  if (matches.length !== 1) return fallback({ separate: ambiguous || matches.length > 1 });
 
   const resolved = matches[0];
   const variantKey = text(resolved.variant_key || requestedVariant);
@@ -113,7 +109,9 @@ export const resolveEffectiveOrderItemName = ({
     identityKey: stableId,
     vendor: normalizedVendor,
     variantKey,
+    itemCode: stableCode || text(resolved.menu_item_id),
     resolved: true,
+    resolutionStatus: 'resolved',
     orderDate
   };
 };

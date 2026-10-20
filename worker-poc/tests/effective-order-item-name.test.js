@@ -26,7 +26,7 @@ const menuItem = ({
   vendor
 });
 
-test('effective order item resolver applies the single approved historical name map', () => {
+test('effective order item resolver shows effective menu labels only for verified stable identities', () => {
   const cases = [
     ['番茄鷹豆泥', '蕃茄鷹豆泥'],
     ['C.每日特餐', 'C.特餐'],
@@ -44,6 +44,28 @@ test('effective order item resolver applies the single approved historical name 
     assert.equal(resolved.itemName, effectiveName);
     assert.equal(resolved.resolved, true);
   }
+});
+
+test('effective order item resolver does not infer identity from an old label and matching price', () => {
+  const resolved = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    item: {
+      item_name_snapshot: '風味便當',
+      unit_price: 90,
+      fallbackKey: 'synthetic-no-identity:1'
+    },
+    menuItems: [menuItem({
+      legacyItemId: 'FLAVOR',
+      name: 'A.風味便當',
+      price: 90,
+      vendor: '合成店家'
+    })]
+  });
+
+  assert.equal(resolved.itemName, '風味便當');
+  assert.equal(resolved.resolved, false);
+  assert.equal(resolved.resolutionStatus, 'not_found');
 });
 
 test('effective order item resolver matches stable identity and fails closed on ambiguity or vendor mismatch', () => {
@@ -85,6 +107,121 @@ test('effective order item resolver matches stable identity and fails closed on 
   });
   assert.equal(vendorMismatch.itemName, '舊快照');
   assert.equal(vendorMismatch.resolved, false);
+});
+
+test('price cannot disambiguate multiple variants under one legacy item identity', () => {
+  const resolved = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    item: {
+      legacy_item_id: 'ITEM-SYNTHETIC',
+      item_name_snapshot: '舊快照',
+      unit_price: 80,
+      fallbackKey: 'synthetic-unknown-variant:1'
+    },
+    menuItems: [
+      menuItem({ menuItemId: 'menu-item-base', variantKey: 'BASE', price: 80 }),
+      menuItem({ menuItemId: 'menu-item-plus', variantKey: 'PLUS', price: 90 })
+    ]
+  });
+
+  assert.equal(resolved.itemName, '舊快照');
+  assert.equal(resolved.resolved, false);
+  assert.equal(resolved.resolutionStatus, 'ambiguous');
+  assert.equal(JSON.parse(resolved.identityKey).at(-1), 'synthetic-unknown-variant:1');
+});
+
+test('price cannot choose among multiple menu rows sharing one legacy identity and variant', () => {
+  const resolved = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    item: {
+      legacy_item_id: 'DUPLICATE-SYNTHETIC',
+      item_name_snapshot: '重複碼舊快照',
+      unit_price: 80,
+      fallbackKey: 'synthetic-duplicate-legacy:1'
+    },
+    menuItems: [
+      menuItem({ menuItemId: 'menu-item-duplicate-a', legacyItemId: 'DUPLICATE-SYNTHETIC', name: '合成候選甲', price: 80, variantKey: '' }),
+      menuItem({ menuItemId: 'menu-item-duplicate-b', legacyItemId: 'DUPLICATE-SYNTHETIC', name: '合成候選乙', price: 30, variantKey: '' })
+    ]
+  });
+
+  assert.equal(resolved.itemName, '重複碼舊快照');
+  assert.equal(resolved.resolved, false);
+  assert.equal(resolved.resolutionStatus, 'ambiguous');
+  assert.equal(JSON.parse(resolved.identityKey).at(-1), 'synthetic-duplicate-legacy:1');
+});
+
+test('an explicit variant cannot let price choose between duplicate menu identities', () => {
+  const resolved = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    item: {
+      legacy_item_id: 'DUPLICATE-SYNTHETIC',
+      variant_key: 'BASE',
+      item_name_snapshot: '重複碼舊快照',
+      unit_price: 80,
+      fallbackKey: 'synthetic-duplicate-legacy-base:1'
+    },
+    menuItems: [
+      menuItem({ menuItemId: 'menu-item-duplicate-base-a', legacyItemId: 'DUPLICATE-SYNTHETIC', name: '合成候選甲', price: 80, variantKey: 'BASE' }),
+      menuItem({ menuItemId: 'menu-item-duplicate-base-b', legacyItemId: 'DUPLICATE-SYNTHETIC', name: '合成候選乙', price: 30, variantKey: 'BASE' })
+    ]
+  });
+
+  assert.equal(resolved.itemName, '重複碼舊快照');
+  assert.equal(resolved.resolved, false);
+  assert.equal(resolved.resolutionStatus, 'ambiguous');
+  assert.equal(JSON.parse(resolved.identityKey).at(-1), 'synthetic-duplicate-legacy-base:1');
+});
+
+test('unresolved snapshots keep line-scoped identities so unknown menu matches cannot be merged', () => {
+  const base = {
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    menuItems: [],
+    item: {
+      item_name_snapshot: '風味便當',
+      unit_price: 90
+    }
+  };
+  const first = resolveEffectiveOrderItemName({
+    ...base,
+    item: { ...base.item, fallbackKey: 'synthetic-order-a:1' }
+  });
+  const second = resolveEffectiveOrderItemName({
+    ...base,
+    item: { ...base.item, fallbackKey: 'synthetic-order-b:1' }
+  });
+
+  assert.equal(first.itemName, '風味便當');
+  assert.equal(first.resolved, false);
+  assert.equal(first.resolutionStatus, 'not_found');
+  assert.notEqual(first.identityKey, second.identityKey);
+});
+
+test('a conflicting legacy item identity cannot be overridden by a matching old label and price', () => {
+  const resolved = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    item: {
+      legacy_item_id: 'OTHER-FLAVOR',
+      item_name_snapshot: '風味便當',
+      unit_price: 90,
+      fallbackKey: 'synthetic-conflicting-line:1'
+    },
+    menuItems: [menuItem({
+      legacyItemId: 'FLAVOR',
+      name: 'A.風味便當',
+      price: 90,
+      vendor: '合成店家'
+    })]
+  });
+
+  assert.equal(resolved.itemName, '風味便當');
+  assert.equal(resolved.resolved, false);
+  assert.equal(resolved.resolutionStatus, 'not_found');
 });
 
 test('database resolver fails closed when the snapshot legacy code conflicts with its stable menu item ID', async () => {
@@ -160,7 +297,12 @@ const seedEffectiveNameHistory = () => {
   return database;
 };
 
-const apiCall = async (database, path, { token, lineUserId, displayName } = {}) => {
+const apiCall = async (database, path, {
+  token,
+  lineUserId,
+  displayName,
+  now = new Date('2026-09-19T00:00:00.000Z')
+} = {}) => {
   const accessToken = token || 'synthetic-access-token';
   const response = await handleFormalRequest(
     request(path, { token: accessToken }),
@@ -171,7 +313,7 @@ const apiCall = async (database, path, { token, lineUserId, displayName } = {}) 
         lineUserId,
         displayName
       }),
-      now: new Date('2026-09-19T00:00:00.000Z')
+      now
     }
   );
   return { response, body: await response.json() };
@@ -224,4 +366,191 @@ test('bento statistics API re-groups name aliases without merging vendors or var
   assert.equal(new Set(statistics.items.map(({ identityKey }) => identityKey)).size, 3);
   assert.equal(database.get(`SELECT SUM(quantity) AS quantity, SUM(unit_price * quantity) AS amount FROM order_items`).quantity, beforeItems.quantity);
   assert.equal(database.get(`SELECT SUM(quantity) AS quantity, SUM(unit_price * quantity) AS amount FROM order_items`).amount, beforeItems.amount);
+});
+
+const seedSyntheticAliasRegressionHistory = () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'synthetic-purchaser', displayName: '合成訂購者' });
+  seedUser(database, { lineUserId: 'synthetic-admin', displayName: '合成管理者', role: 'Admin' });
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES
+      ('version-synthetic-main-old', '合成店家', '2030-03-12'),
+      ('version-synthetic-main-new', '合成店家', '2030-03-14'),
+      ('version-synthetic-other', '另一合成店家', '2030-03-12')
+  `);
+  database.run(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, variant_key, item_name, price,
+      enabled, source_order
+    ) VALUES
+      ('menu-synthetic-flavor-old', 'version-synthetic-main-old', 'FLAVOR', 'BASE', '風味便當', 92, 1, 1),
+      ('menu-synthetic-flavor-plus', 'version-synthetic-main-old', 'FLAVOR', 'PLUS', '風味便當', 95, 1, 2),
+      ('menu-synthetic-alt', 'version-synthetic-main-old', 'ALT-FLAVOR', 'BASE', 'A.風味便當', 92, 1, 3),
+      ('menu-synthetic-box-old', 'version-synthetic-main-old', 'BOX', 'BASE', '方盒便當', 112, 1, 4),
+      ('menu-synthetic-soup-old', 'version-synthetic-main-old', 'SOUP', 'BASE', '清湯', 51, 1, 5),
+      ('menu-synthetic-duplicate-a', 'version-synthetic-main-old', 'DUPLICATE-SYNTHETIC', '', '合成候選甲', 80, 1, 6),
+      ('menu-synthetic-duplicate-b', 'version-synthetic-main-old', 'DUPLICATE-SYNTHETIC', '', '合成候選乙', 30, 1, 7),
+      ('menu-synthetic-flavor-new', 'version-synthetic-main-new', 'FLAVOR', 'BASE', 'A.風味便當', 99, 1, 1),
+      ('menu-synthetic-box-new', 'version-synthetic-main-new', 'BOX', 'BASE', '方盒便當', 112, 1, 2),
+      ('menu-synthetic-soup-new', 'version-synthetic-main-new', 'SOUP', 'BASE', '清湯', 51, 1, 3),
+      ('menu-synthetic-flavor-other', 'version-synthetic-other', 'FLAVOR', 'BASE', 'A.風味便當', 105, 1, 1)
+  `);
+  const addOrder = (orderId, orderDate, vendor, pickupFloor, items) => {
+    const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+    database.run(`
+      INSERT INTO orders (
+        order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+        total_amount, status, created_by_user_id, created_auth_mode
+      ) VALUES (?, 'synthetic-purchaser', '合成訂購者', ?, ?, ?, ?, 'COMPLETED', 'synthetic-purchaser', 'line')
+    `, orderId, orderDate, vendor, pickupFloor, total);
+    items.forEach((item, index) => database.run(`
+      INSERT INTO order_items (
+        order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+        quantity, unit_price, subtotal
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, orderId, index + 1, item.menuItemId, item.legacyItemId, item.snapshot,
+    item.quantity, item.price, item.quantity * item.price));
+  };
+  addOrder('order-synthetic-old-flavor', '2030-03-13', '合成店家', '1樓', [
+    { menuItemId: 'menu-synthetic-flavor-old', legacyItemId: 'FLAVOR', snapshot: '風味便當', quantity: 24, price: 92 }
+  ]);
+  addOrder('order-synthetic-unknown-variant', '2030-03-13', '合成店家', '5樓', [
+    { menuItemId: null, legacyItemId: 'FLAVOR', snapshot: '風味便當', quantity: 6, price: 92 }
+  ]);
+  addOrder('order-synthetic-summary', '2030-03-14', '合成店家', '2樓', [
+    { menuItemId: 'menu-synthetic-flavor-new', legacyItemId: 'FLAVOR', snapshot: '風味便當', quantity: 3, price: 99 },
+    { menuItemId: 'menu-synthetic-box-new', legacyItemId: 'BOX', snapshot: '方盒便當', quantity: 4, price: 112 },
+    { menuItemId: 'menu-synthetic-soup-new', legacyItemId: 'SOUP', snapshot: '清湯', quantity: 2, price: 51 }
+  ]);
+  addOrder('order-synthetic-other-identities', '2030-03-12', '合成店家', '3樓', [
+    { menuItemId: 'menu-synthetic-flavor-plus', legacyItemId: 'FLAVOR', snapshot: '風味便當', quantity: 4, price: 92 },
+    { menuItemId: 'menu-synthetic-alt', legacyItemId: 'ALT-FLAVOR', snapshot: 'A.風味便當', quantity: 2, price: 92 }
+  ]);
+  addOrder('order-synthetic-duplicate-legacy', '2030-03-12', '合成店家', '6樓', [
+    { menuItemId: null, legacyItemId: 'DUPLICATE-SYNTHETIC', snapshot: '重複碼舊快照', quantity: 5, price: 80 },
+    { menuItemId: null, legacyItemId: 'DUPLICATE-SYNTHETIC', snapshot: '重複碼舊快照', quantity: 2, price: 30 }
+  ]);
+  addOrder('order-synthetic-other-vendor', '2030-03-12', '另一合成店家', '4樓', [
+    { menuItemId: 'menu-synthetic-flavor-other', legacyItemId: 'FLAVOR', snapshot: 'A.風味便當', quantity: 5, price: 105 }
+  ]);
+  return database;
+};
+
+test('Worker APIs recompute synthetic summary and ranking by vendor, stable identity, variant, and menu version', async () => {
+  const database = seedSyntheticAliasRegressionHistory();
+  const beforeItems = database.get(`SELECT SUM(quantity) AS quantity, SUM(subtotal) AS amount FROM order_items`);
+  const summaryResult = await apiCall(
+    database,
+    '/api/admin/summary?date=2030-03-14',
+    { lineUserId: 'synthetic-admin', displayName: '合成管理者', now: new Date('2030-03-17T00:00:00.000Z') }
+  );
+  assert.equal(summaryResult.response.status, 200);
+  assert.equal(summaryResult.body.totalItems, 9);
+  assert.equal(summaryResult.body.totalAmount, 847);
+  const flavorRows = summaryResult.body.todayOrders.filter((row) => row.legacy_item_id === 'FLAVOR'
+    || row.item_id === 'FLAVOR');
+  assert.equal(flavorRows.length, 1);
+  assert.equal(flavorRows[0].item_name, '風味便當');
+  assert.equal(flavorRows[0].display_item_name, 'A.風味便當');
+  assert.equal(flavorRows[0].item_name_resolved, true);
+  assert.equal(flavorRows[0].item_name_resolution_status, 'resolved');
+
+  const statsResult = await apiCall(
+    database,
+    '/api/orders/statistics?period=all',
+    { lineUserId: 'synthetic-purchaser', displayName: '合成訂購者', now: new Date('2030-03-17T00:00:00.000Z') }
+  );
+  assert.equal(statsResult.response.status, 200);
+  assert.equal(statsResult.body.totalPortions, 57);
+  assert.equal(statsResult.body.totalOrderDays, 3);
+  assert.equal(statsResult.body.totalMealTypes, 9);
+  const sameVerifiedIdentity = statsResult.body.items.filter((item) => item.vendor === '合成店家'
+    && item.variantKey === 'BASE'
+    && item.name === 'A.風味便當'
+    && JSON.parse(item.identityKey)[2] === 'FLAVOR');
+  assert.equal(sameVerifiedIdentity.length, 1);
+  assert.equal(sameVerifiedIdentity[0].portions, 27);
+  assert.equal(sameVerifiedIdentity[0].resolved, true);
+  assert.equal(statsResult.body.items.find((item) => item.vendor === '合成店家'
+    && item.variantKey === 'BASE'
+    && JSON.parse(item.identityKey)[2] === 'ALT-FLAVOR').portions, 2);
+  assert.equal(statsResult.body.items.find((item) => item.vendor === '合成店家'
+    && item.variantKey === 'PLUS').portions, 4);
+  assert.equal(statsResult.body.items.find((item) => item.vendor === '另一合成店家').portions, 5);
+  const unresolvedVariant = statsResult.body.items.find((item) => item.resolutionStatus === 'ambiguous'
+    && item.name === '風味便當');
+  assert.equal(unresolvedVariant.name, '風味便當');
+  assert.equal(unresolvedVariant.portions, 6);
+  assert.equal(unresolvedVariant.variantKey, '');
+  assert.equal(unresolvedVariant.resolved, false);
+  const unresolvedDuplicateIdentity = statsResult.body.items.filter((item) => item.resolutionStatus === 'ambiguous'
+    && item.name === '重複碼舊快照');
+  assert.equal(unresolvedDuplicateIdentity.length, 2);
+  assert.deepEqual(unresolvedDuplicateIdentity.map((item) => item.portions).sort(), [2, 5]);
+  assert.notEqual(unresolvedDuplicateIdentity[0].identityKey, unresolvedDuplicateIdentity[1].identityKey);
+  assert.ok(unresolvedDuplicateIdentity.every((item) => item.resolved === false));
+
+  const ambiguousSummary = await apiCall(
+    database,
+    '/api/admin/summary?date=2030-03-13',
+    { lineUserId: 'synthetic-admin', displayName: '合成管理者', now: new Date('2030-03-17T00:00:00.000Z') }
+  );
+  assert.equal(ambiguousSummary.response.status, 200);
+  assert.equal(ambiguousSummary.body.totalItems, 30);
+  assert.equal(ambiguousSummary.body.items.length, 2);
+  assert.deepEqual(ambiguousSummary.body.todayOrders.map((row) => row.item_name_resolved), [true, false]);
+  assert.equal(ambiguousSummary.body.todayOrders[1].item_name_resolution_status, 'ambiguous');
+
+  const duplicateIdentitySummary = await apiCall(
+    database,
+    '/api/admin/summary?date=2030-03-12',
+    { lineUserId: 'synthetic-admin', displayName: '合成管理者', now: new Date('2030-03-17T00:00:00.000Z') }
+  );
+  const duplicateIdentityRows = duplicateIdentitySummary.body.todayOrders.filter((row) => row.item_id === 'DUPLICATE-SYNTHETIC');
+  assert.equal(duplicateIdentitySummary.response.status, 200);
+  assert.equal(duplicateIdentityRows.length, 2);
+  assert.ok(duplicateIdentityRows.every((row) => row.item_name_resolved === false
+    && row.item_name_resolution_status === 'ambiguous'));
+  assert.notEqual(duplicateIdentityRows[0].item_identity_key, duplicateIdentityRows[1].item_identity_key);
+  assert.equal(database.get(`SELECT SUM(quantity) AS quantity, SUM(subtotal) AS amount FROM order_items`).quantity, beforeItems.quantity);
+  assert.equal(database.get(`SELECT SUM(quantity) AS quantity, SUM(subtotal) AS amount FROM order_items`).amount, beforeItems.amount);
+});
+
+test('Worker summary and statistics expose unresolved identity diagnostics without merging equal snapshots', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'synthetic-purchaser', displayName: '合成訂購者' });
+  seedUser(database, { lineUserId: 'synthetic-admin', displayName: '合成管理者', role: 'Admin' });
+  for (const [orderId, quantity] of [['order-unresolved-a', 1], ['order-unresolved-b', 2]]) {
+    database.run(`
+      INSERT INTO orders (
+        order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+        total_amount, status, created_by_user_id, created_auth_mode
+      ) VALUES (?, 'synthetic-purchaser', '合成訂購者', '2030-03-15', '合成店家', '1樓', ?, 'COMPLETED', 'synthetic-purchaser', 'line')
+    `, orderId, quantity * 90);
+    database.run(`
+      INSERT INTO order_items (
+        order_id, line_no, item_name_snapshot, quantity, unit_price, subtotal
+      ) VALUES (?, 1, '未確認合成餐點', ?, 90, ?)
+    `, orderId, quantity, quantity * 90);
+  }
+  const now = new Date('2030-03-17T00:00:00.000Z');
+  const summary = await apiCall(database, '/api/admin/summary?date=2030-03-15', {
+    lineUserId: 'synthetic-admin', displayName: '合成管理者', now
+  });
+  assert.equal(summary.response.status, 200);
+  assert.equal(summary.body.items.length, 2);
+  assert.ok(summary.body.todayOrders.every((row) => row.item_name_resolved === false
+    && row.item_name_resolution_status === 'not_found'));
+  assert.notEqual(summary.body.todayOrders[0].item_identity_key, summary.body.todayOrders[1].item_identity_key);
+
+  const statistics = await apiCall(database, '/api/orders/statistics?period=all', {
+    lineUserId: 'synthetic-purchaser', displayName: '合成訂購者', now
+  });
+  assert.equal(statistics.response.status, 200);
+  assert.equal(statistics.body.totalPortions, 3);
+  assert.equal(statistics.body.totalMealTypes, 2);
+  assert.equal(statistics.body.items.length, 2);
+  assert.ok(statistics.body.items.every((item) => item.resolved === false
+    && item.resolutionStatus === 'not_found'));
 });

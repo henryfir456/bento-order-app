@@ -46,7 +46,7 @@ const connectDevTools = (url) => new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         pending.delete(id);
         requestReject(new Error(`Timed out waiting for Chrome DevTools ${method}.`));
-      }, milliseconds(10));
+      }, milliseconds(10_000));
       pending.set(id, { method, details: JSON.stringify(params).slice(0, 240), resolve: requestResolve, reject: requestReject, timeout });
       socket.send(JSON.stringify({ id, method, params }));
     })
@@ -65,7 +65,7 @@ const connectDevTools = (url) => new Promise((resolve, reject) => {
 
 test('local mock UAT #103, #108, and #111 works at phone and desktop widths', {
   skip: browserPath ? false : 'Chromium/Chrome is unavailable; manual viewport UAT remains required.',
-  timeout: milliseconds(90)
+  timeout: milliseconds(90_000)
 }, async () => {
   const envKeys = ['VITE_AUTH_MODE', 'VITE_MOCK_USER', 'VITE_API_TRANSPORT'];
   const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
@@ -99,7 +99,7 @@ test('local mock UAT #103, #108, and #111 works at phone and desktop widths', {
     if (process.platform === 'linux') browserArgs.splice(2, 0, '--no-zygote', '--single-process');
     browser = spawn(browserPath, browserArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
     const devtoolsUrl = await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Chromium did not expose DevTools within 15 seconds.')), milliseconds(15));
+      const timeout = setTimeout(() => reject(new Error('Chromium did not expose DevTools within 15 seconds.')), milliseconds(15_000));
       browser.once('error', (error) => {
         clearTimeout(timeout);
         reject(error);
@@ -139,7 +139,7 @@ test('local mock UAT #103, #108, and #111 works at phone and desktop widths', {
       return response.result.value;
     };
     const waitFor = async (expression, description) => {
-      const until = Date.now() + milliseconds(10);
+      const until = Date.now() + milliseconds(10_000);
       while (Date.now() < until) {
         if (await evaluate(`Boolean(${expression})`)) return;
         await delay(100);
@@ -176,6 +176,11 @@ test('local mock UAT #103, #108, and #111 works at phone and desktop widths', {
       await clickVisibleButton({ ariaLabel: '管理' });
       await clickVisibleButton({ text: '訂單總覽' });
       await waitFor('document.body.innerText.includes("E.風味餐") && document.body.innerText.includes("S.小而美") && document.body.innerText.includes("C.特餐(半飯)")', '#103 effective order labels');
+      await clickVisibleButton({ text: '樓層數' });
+      await waitFor('document.querySelector("[role=tab][aria-selected=true]")?.innerText.includes("樓層數") && document.body.innerText.includes("E.風味餐")', '#103 effective floor count');
+      await clickVisibleButton({ text: '總數' });
+      await waitFor('document.querySelector("[role=tab][aria-selected=true]")?.innerText.includes("總數") && document.body.innerText.includes("E.風味餐")', '#103 effective total count');
+      await clickVisibleButton({ text: '明細' });
 
       await clickVisibleButton({ ariaLabel: '足跡' });
       await waitFor('document.querySelector("[aria-label=我的便當足跡]")?.innerText.includes("餐點份數排行")', '#108 mock statistics');

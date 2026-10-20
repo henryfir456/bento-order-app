@@ -47,7 +47,9 @@ test('order summary and statistics share the Worker effective-name resolver', ()
   const resolver = read('worker-poc/src/domain/effectiveOrderItemNames.js');
   assert.match(summary, /createEffectiveOrderItemNameResolver/);
   assert.match(statistics, /createEffectiveOrderItemNameResolver/);
-  assert.match(resolver, /EFFECTIVE_ORDER_ITEM_NAME_ALIASES/);
+  assert.match(resolver, /resolutionStatus/);
+  assert.match(summary, /item_name_resolution_status/);
+  assert.match(statistics, /resolutionStatus/);
 });
 
 test('order summary preserves snapshot item_name and renders display_item_name in all tabs', async () => {
@@ -66,6 +68,29 @@ test('order summary preserves snapshot item_name and renders display_item_name i
   ];
   assert.equal(aggregateOrdersByFloor(orders)[0].items[0].itemName, '統一合成餐點');
   assert.equal(aggregateOrdersByItem(orders)[0].itemName, '統一合成餐點');
+});
+
+test('unresolved summary rows keep unique identities and expose a diagnostic in every tab', async () => {
+  const { aggregateOrdersByFloor, aggregateOrdersByItem } = await import('../src/features/admin/orderSummary.js');
+  const orders = [
+    { item_name: '未確認合成餐點', display_item_name: '未確認合成餐點', item_identity_key: 'line-a', item_vendor: '合成店家', item_name_resolved: false, item_name_resolution_status: 'not_found', pickup_floor: '1樓', quantity: 1 },
+    { item_name: '未確認合成餐點', display_item_name: '未確認合成餐點', item_identity_key: 'line-b', item_vendor: '合成店家', item_name_resolved: false, item_name_resolution_status: 'not_found', pickup_floor: '1樓', quantity: 2 }
+  ];
+  const floorItems = aggregateOrdersByFloor(orders)[0].items;
+  const totalItems = aggregateOrdersByItem(orders);
+  assert.equal(floorItems.length, 2);
+  assert.equal(totalItems.length, 2);
+  assert.ok(floorItems.every((item) => item.resolved === false && item.resolutionStatus === 'not_found'));
+});
+
+test('summary fallback never merges rows when the Worker identity and line number are absent', async () => {
+  const { aggregateOrdersByFloor, aggregateOrdersByItem } = await import('../src/features/admin/orderSummary.js');
+  const orders = [
+    { item_name: '未識別合成餐點', pickup_floor: '1樓', quantity: 1 },
+    { item_name: '未識別合成餐點', pickup_floor: '1樓', quantity: 2 }
+  ];
+  assert.equal(aggregateOrdersByFloor(orders)[0].items.length, 2);
+  assert.equal(aggregateOrdersByItem(orders).length, 2);
 });
 
 test('local mock exposes resolved #103 summary rows and merged #108 alias statistics', async () => {
