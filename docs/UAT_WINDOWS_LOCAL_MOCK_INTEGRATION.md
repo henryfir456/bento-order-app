@@ -147,9 +147,14 @@ desktop layout.
 
 The browser regression entry points are
 `tests/local-mock-responsive-uat.test.cjs` and
-`tests/vendor-operations-ui.test.cjs`; the latter verifies that a synthetic
-settlement survives a same-origin restart and is visible to the Vendor role.
-These results are `MOCK_TEST_PASS`, not `INTEGRATION_TEST_PASS` for Cloudflare.
+`tests/vendor-operations-ui.test.cjs`. They exercise local UI and viewport
+behavior. The Vendor settlement persistence case in
+`vendor-operations-ui.test.cjs` recreates the Mock adapter with an injected
+test `Storage` stub, then verifies Vendor acknowledgment and Admin readback; it
+does not restart Vite or reload browser `localStorage`. The Admin → Vendor →
+Admin restart steps above remain manual local-browser acceptance. These
+automated results are `MOCK_TEST_PASS`, not `INTEGRATION_TEST_PASS` for
+Cloudflare.
 
 The isolated Worker hostname can be assembled in PowerShell without copying
 it from another source:
