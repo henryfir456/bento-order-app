@@ -5,7 +5,7 @@ const PERIODS = [
   { value: 'year', label: '今年' },
   { value: 'month', label: '本月' }
 ];
-const CHART_COLORS = ['#18745b', '#f0a23b', '#5585c7', '#c65b70', '#8b68aa', '#6f9a49', '#d27b45', '#4f9b9b'];
+const PIE_COLORS = ['#18745b', '#f0a23b', '#5585c7', '#c65b70', '#8b68aa', '#6f9a49', '#d27b45', '#4f9b9b'];
 const numberFormat = new Intl.NumberFormat('zh-TW');
 const formatCount = (value) => numberFormat.format(Number(value) || 0);
 
@@ -33,7 +33,7 @@ function VendorDonutChart({ vendors }) {
     const end = cursor + portions / total * 360;
     const slice = {
       ...vendor,
-      color: CHART_COLORS[index % CHART_COLORS.length],
+      color: PIE_COLORS[index % PIE_COLORS.length],
       percent: Math.round(portions / total * 100),
       proportion: Math.min(100, Math.max(0, portions / total * 100)),
       path: vendors.length === 1 ? null : piePath(cursor, end)
