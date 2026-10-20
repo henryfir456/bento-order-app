@@ -25,6 +25,7 @@
 - P0/P1：初審無；確認 ProxyAdmin/User 無管理結算路徑、Vendor 由有效 membership 取得 scope，結算不寫員工 `balance_ledger`。
 - P2（正式資料對應前置，非本 PR 的程式 blocker）：migration 對未知 vendor 名稱保留 `vendor_id=NULL`，不以名稱猜測權限或帳務歸屬。這是 fail-closed；正式套用前仍需在授權程序下盤點未對應訂單並明確處理。本次 UAT `orders=0`，不能代表正式資料已完成對應；正式 D1 盤點／migration 在本次明確排除範圍內。
 - P2（程式缺陷，已修）：Admin 結算讀取先前錯用只接受啟用中 vendor 的 lookup，導致停用廠商歷史付款無法查閱。`42eb9ab` 將 Admin 唯讀查詢改為可讀既有廠商資料；Vendor 自身讀取及新增轉帳仍要求廠商啟用。合成 regression test 覆蓋歷史可讀且停用後新增轉帳仍回 `VENDOR_NOT_FOUND`。
+- P2（UI 狀態，已修）：Admin 選擇器原先會列出停用 vendor，且仍顯示新增轉帳表單。現在選項標示「已停用」，保留 Admin 歷史對帳查詢，並要求 vendor 明確標記啟用才顯示新轉帳表單；對 `enabled` 缺漏或不明確的回應採 fail-closed。UI policy regression 覆蓋布林、數字與字串狀態及 Admin／Vendor 角色。
 - Final-head independent review 尚待回顧提交後補做；精確 head 與結果以 PR review 記錄為準。
 
 ## 個資與資料邊界
@@ -40,7 +41,7 @@
 - `node worker-poc/tests/invalid-employee-repair.test.js && node worker-poc/tests/effective-order-item-name.test.js && node worker-poc/tests/line-binding-transfer.test.js && node worker-poc/tests/roles.test.js`：9/9、13/13、14/14、3/3 pass。
 - `npm test --prefix worker-poc`：599/599 pass。
 - `node --test worker-poc/tests/vendor-operations.test.js`：6/6 pass，包含停用 vendor 的歷史讀取／新增轉帳封鎖回歸。
-- UI regression + `vendor-operations-ui` + responsive local Mock：33/33 pass；Chromium 375px／1280px。畫面明確標示 `LOCAL MOCK · 非 LINE／非實際 API`。
+- UI regression + `vendor-operations-ui` + responsive local Mock：34/34 pass，包含 Admin 停用 vendor 歷史讀取／新轉帳 UI gate regression。Local Mock browser 使用 Chromium 375px／1280px，明確標示 `LOCAL MOCK · 非 LINE／非實際 API`。
 - `node --test worker-poc/tests/runtime-config.test.js`：6/6 pass。
 - `npm run lint`、`npm run build`、`git diff --check`：exit 0；lint 有既存警告，build 有既存 bundle size 警告。
 - UAT Wrangler dry-run：exit 0；421.36 KiB（gzip 82.78 KiB），唯一 binding 是隔離 D1。

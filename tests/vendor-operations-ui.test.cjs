@@ -64,6 +64,27 @@ test('Vendor operations UI keeps Vendor in a dedicated shell and separates manua
   assert.match(nav, /role === 'Vendor'[\s\S]*key === 'vendor'/);
 });
 
+test('Admin can read disabled vendor history but cannot start a new transfer', async () => {
+  const page = read('src/features/vendors/VendorOperationsPage.jsx');
+  const { canRecordVendorTransfer, isVendorEnabled } = await import('../src/features/vendors/vendorOperationsPolicy.js');
+
+  assert.equal(isVendorEnabled({ enabled: true }), true);
+  assert.equal(isVendorEnabled({ enabled: 1 }), true);
+  assert.equal(isVendorEnabled({ enabled: '1' }), true);
+  assert.equal(isVendorEnabled({ enabled: false }), false);
+  assert.equal(isVendorEnabled({ enabled: 0 }), false);
+  assert.equal(isVendorEnabled({}), false);
+  assert.equal(canRecordVendorTransfer('Admin', { enabled: true }), true);
+  assert.equal(canRecordVendorTransfer('Admin', { enabled: false }), false);
+  assert.equal(canRecordVendorTransfer('Vendor', { enabled: true }), false);
+
+  assert.match(page, /vendors\.find\(\(vendor\) => vendor\.id === vendorId\)/);
+  assert.match(page, /canRecordVendorTransfer\(role, selectedVendor\)/);
+  assert.match(page, /vendor\.name\}（已停用）/);
+  assert.match(page, /此廠商已停用；仍可檢視歷史對帳，但不能登記新轉帳。/);
+  assert.match(page, /getAdminVendorOperations\(\{ month, vendorId \}\)/);
+});
+
 test('local Mock supports a separate Vendor fixture and synthetic bank-transfer workflow', async () => {
   const { createMockGasApi } = await import('../src/api/mockGasApi.js');
   const { getMockIdentityResponse, getMockVendorOperations } = await import('../src/auth/mockData.js');

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient } from '../../api/apiClient';
+import { canRecordVendorTransfer, isVendorEnabled } from './vendorOperationsPolicy';
 
 const taipeiToday = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -57,6 +58,8 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
   const [busyKey, setBusyKey] = useState('');
   const requestRef = useRef(0);
   const idempotencyRef = useRef({ payload: '', key: createKey() });
+  const selectedVendor = vendors.find((vendor) => vendor.id === vendorId);
+  const canRecordTransfer = canRecordVendorTransfer(role, selectedVendor);
 
   const load = useCallback(async () => {
     if (!isVendor && (!isAdmin || !vendorId)) return;
@@ -351,7 +354,9 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
             <select value={vendorId} onChange={(event) => setVendorId(event.target.value)}
               className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3">
               <option value="">請選擇廠商</option>
-              {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
+              {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>
+                {isVendorEnabled(vendor) ? vendor.name : `${vendor.name}（已停用）`}
+              </option>)}
             </select>
           </label>}
           <label className="space-y-1 text-sm font-medium text-slate-700">
@@ -366,7 +371,13 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
         </div>
       </div>
 
-      {isAdmin && vendorId && (
+      {isAdmin && selectedVendor && !isVendorEnabled(selectedVendor) && (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+          此廠商已停用；仍可檢視歷史對帳，但不能登記新轉帳。
+        </p>
+      )}
+
+      {canRecordTransfer && (
         <form onSubmit={submitTransfer} className="space-y-3 rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
           <div>
             <h3 className="font-bold text-[#2C4A3E]">登記已完成的銀行轉帳</h3>
