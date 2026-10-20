@@ -11,8 +11,13 @@ import {
   getMockOrdersMap,
   getMockSessionState,
   getMockVendor,
+  getMockVendorOperations,
   getMockVendors,
   registerMockUser,
+  recordMockVendorPayment,
+  reverseMockVendorPayment,
+  updateMockVendorPayment,
+  adjustMockVendorAllocation,
   updateMockVendor
 } from '../auth/mockData.js';
 
@@ -100,6 +105,7 @@ export const createMockGasApi = ({ mockUser }) => {
   const get = async (query) => {
     const params = parseQuery(query);
     const action = params.get('action');
+    const user = getUser();
 
     if (action === 'getCalendarEvents') {
       return jsonResponse({
@@ -130,6 +136,20 @@ export const createMockGasApi = ({ mockUser }) => {
     if (action === 'getVendor') {
       const vendor = getUser() ? getMockVendor(mockUser, params.get('vendorId')) : null;
       return vendor ? jsonResponse(vendor) : errorResponse('VENDOR_NOT_FOUND');
+    }
+
+    if (action === 'getVendorOperations') {
+      return user?.role === 'Vendor'
+        ? jsonResponse(getMockVendorOperations(mockUser, { month: params.get('month') }))
+        : errorResponse('VENDOR_SCOPE_FORBIDDEN', 403);
+    }
+
+    if (action === 'getAdminVendorOperations') {
+      if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      return jsonResponse(getMockVendorOperations(mockUser, {
+        month: params.get('month'),
+        vendorId: params.get('vendorId')
+      }));
     }
 
     if (action === 'getOrderStatistics') {
@@ -488,6 +508,61 @@ export const createMockGasApi = ({ mockUser }) => {
         .map((field) => [field, payload[field]]));
       const vendor = updateMockVendor(mockUser, payload.vendorId, patch);
       return vendor ? jsonResponse(vendor) : errorResponse('VENDOR_NOT_FOUND');
+    }
+
+    if (action === 'recordVendorPayment') {
+      if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      const result = recordMockVendorPayment(mockUser, payload);
+      const status = result.error === 'PAYMENT_CONFIRMATION_REQUIRED' ? 400 : 201;
+      return result.error ? errorResponse(result.error, status) : jsonResponse({ success: true, ...result }, 201);
+    }
+
+    if (action === 'reverseVendorPayment') {
+      if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      const result = reverseMockVendorPayment(
+        mockUser,
+        String(payload.paymentId || ''),
+        payload.reason,
+        payload.confirmed
+      );
+      const status = result.error === 'PAYMENT_NOT_FOUND' ? 404
+        : result.error === 'REVERSAL_REASON_REQUIRED' || result.error === 'PAYMENT_REVERSAL_CONFIRMATION_REQUIRED' ? 400
+          : result.error ? 409 : 200;
+      return result.error ? errorResponse(result.error, status) : jsonResponse({ success: true, ...result });
+    }
+
+    if (action === 'acknowledgeVendorPayment' || action === 'disputeVendorPayment') {
+      const reason = String(payload.reason || '').trim();
+      if (action === 'disputeVendorPayment' && (!reason || reason.length > 500)) {
+        return errorResponse('DISPUTE_REASON_REQUIRED', 400);
+      }
+      const result = updateMockVendorPayment(
+        mockUser,
+        String(payload.paymentId || ''),
+        action === 'disputeVendorPayment' ? 'DISPUTED' : 'ACKNOWLEDGED',
+        reason
+      );
+      return result.error ? errorResponse(result.error, result.error === 'PAYMENT_NOT_FOUND' ? 404 : 409)
+        : jsonResponse({ success: true, ...result });
+    }
+
+    if (action === 'resolveVendorPaymentDispute') {
+      if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      const resolution = String(payload.resolution || '').trim();
+      if (!resolution || resolution.length > 500) return errorResponse('RESOLUTION_REQUIRED', 400);
+      const result = updateMockVendorPayment(mockUser, String(payload.paymentId || ''), 'RESOLVED', resolution);
+      return result.error ? errorResponse(result.error, 409) : jsonResponse({ success: true, ...result });
+    }
+
+    if (action === 'adjustVendorPaymentAllocation') {
+      if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
+      const reason = String(payload.reason || '').trim();
+      const deltaTwd = Number(payload.deltaTwd);
+      if (!reason || reason.length > 500 || !Number.isSafeInteger(deltaTwd) || deltaTwd === 0) {
+        return errorResponse('ALLOCATION_ADJUSTMENT_INVALID', 400);
+      }
+      const result = adjustMockVendorAllocation(mockUser, String(payload.allocationId || ''), deltaTwd);
+      return result.error ? errorResponse(result.error, 409) : jsonResponse({ success: true, ...result });
     }
 
     return errorResponse(MOCK_API_UNSUPPORTED);

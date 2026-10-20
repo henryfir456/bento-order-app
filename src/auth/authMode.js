@@ -1,6 +1,7 @@
 export const MOCK_USER_KEYS = Object.freeze([
   'user',
   'admin',
+  'vendor',
   'proxy-admin',
   'admin-unverified',
   'admin-unbound',

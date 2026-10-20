@@ -13,6 +13,7 @@ import { renderSummary } from '../scripts/benchmark-report.mjs';
 const readJson = (name) => JSON.parse(fs.readFileSync(new URL('../' + name, import.meta.url), 'utf8'));
 const formalConfig = readJson('wrangler.jsonc');
 const pocConfig = readJson('wrangler-poc.jsonc');
+const uatConfig = readJson('wrangler.uat.jsonc');
 const packageConfig = readJson('package.json');
 const seedScript = fs.readFileSync(new URL('../scripts/seed-parity-poc.mjs', import.meta.url), 'utf8');
 const benchmarkScript = fs.readFileSync(new URL('../scripts/benchmark-bootstrap.mjs', import.meta.url), 'utf8');
@@ -61,7 +62,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0015_invalid_employee_marker.sql',
       '0016_announcement_user_preferences.sql',
       '0017_protected_account_auth_audit.sql',
-      '0018_vendor_principals_and_memberships.sql'
+      '0018_vendor_principals_and_memberships.sql',
+      '0019_vendor_order_settlements.sql'
     ]
   );
 });
@@ -97,6 +99,24 @@ test('legacy POC runtime is local-only and available only through explicit comma
   }
   assert.match(architecture, /Worker \+ formal D1 is the only production backend/);
   assert.match(architecture, /REMOTE MIGRATION:\s+NOT\s+EXECUTED/);
+});
+
+test('UAT Wrangler target is isolated, keeps settings, and has no production schedule', () => {
+  assert.notEqual(uatConfig.name, formalConfig.name);
+  assert.notEqual(uatConfig.name, pocConfig.name);
+  assert.equal(uatConfig.main, 'src/formalWorker.js');
+  assert.equal(uatConfig.keep_vars, true);
+  assert.equal(uatConfig.workers_dev, true);
+  assert.deepEqual(uatConfig.triggers?.crons, []);
+  assert.equal(uatConfig.d1_databases?.length, 1);
+  assert.deepEqual(uatConfig.d1_databases[0], {
+    binding: 'DB',
+    database_name: uatConfig.name,
+    database_id: uatConfig.d1_databases[0].database_id,
+    migrations_dir: 'migrations-formal'
+  });
+  assert.match(uatConfig.name, /^bento-order-app-uat-\d{8}$/);
+  assert.match(uatConfig.d1_databases[0].database_id, /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i);
 });
 
 test('POC target guard rejects formal Worker or D1 identity collisions', () => {

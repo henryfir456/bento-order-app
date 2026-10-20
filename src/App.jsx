@@ -39,6 +39,7 @@ import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import ModernCalendar from './features/calendar/ModernCalendar';
 import VendorHub from './features/vendors/VendorHub';
+import VendorOperationsPage from './features/vendors/VendorOperationsPage';
 import {
   CANONICAL_VENDOR_FALLBACKS,
   normalizeVendor,
@@ -2770,6 +2771,12 @@ export default function App() {
   };
 
   const handleAdminSectionChange = (section) => {
+    if (section === 'vendorOperations') {
+      if (authRole !== 'Admin' || isViewAsMode) return;
+      setAdminSection('vendorOperations');
+      setViewMode('admin');
+      return;
+    }
     if (section === 'orders') {
       if (!can('viewAdminOrderSummary')) return;
       setAdminSection('orders');
@@ -2803,6 +2810,10 @@ export default function App() {
   };
 
   const navigateBottomTab = (key) => {
+    if (authRole === 'Vendor') {
+      if (key === 'vendor') setViewMode('vendor');
+      return;
+    }
     if (key === 'calendar') {
       setAdminManageMode(false);
       setViewMode('calendar');
@@ -3446,6 +3457,7 @@ export default function App() {
     && authState === AUTH_STATES.UNVERIFIED;
   const authUserId = authUser?.userId || lineUserId;
   const authRole = authUser?.role || 'User';
+  const isVendorAccount = authRole === 'Vendor';
   const effectiveUser = viewAsUser || authUser;
   const effectiveRole = effectiveUser?.role || 'User';
   const headerRoleLabel = ['Admin', 'ProxyAdmin'].includes(effectiveRole) ? effectiveRole : '';
@@ -3461,6 +3473,14 @@ export default function App() {
     && hasPermission(effectiveRole, permission, authMode, isRegistered);
   const canAuth = (permission) => isRegistered
     && hasPermission(authRole, permission, authMode, isRegistered);
+  useEffect(() => {
+    if (isRegistered && isVendorAccount) {
+      setViewMode('vendor');
+      setAdminManageMode(false);
+      setViewAsUser(null);
+      setDelegatedOrderUser(null);
+    }
+  }, [isRegistered, isVendorAccount]);
   const authStateLabel = {
     [AUTH_STATES.AUTH_LOADING]: '身份驗證中',
     [AUTH_STATES.AUTH_REQUIRED]: '請登入 LINE',
@@ -3519,19 +3539,20 @@ export default function App() {
         <div className="max-w-xl mx-auto min-w-0">
           <h1 className="sr-only">蔬食便當預訂系統</h1>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-emerald-100">
-            {isRegistered && !isViewAsMode && (apiClient.transport === 'worker' || authClient.isMock) && (
+            {isRegistered && !isVendorAccount && !isViewAsMode && (apiClient.transport === 'worker' || authClient.isMock) && (
               <AnnouncementBell
                 unreadCount={announcementUnreadCount}
                 onClick={() => setShowAnnouncementModal(true)}
               />
             )}
-            <span aria-hidden="true">👤</span>
-            {headerRoleLabel && isRegistered && (
+            {isVendorAccount && <span className="font-bold">廠商工作台</span>}
+            {!isVendorAccount && <span aria-hidden="true">👤</span>}
+            {!isVendorAccount && headerRoleLabel && isRegistered && (
               <span className="rounded bg-emerald-800/80 px-1.5 py-0.5 font-bold">
                 {headerRoleLabel}
               </span>
             )}
-            {isViewAsMode || !isRegistered ? (
+            {!isVendorAccount && (isViewAsMode || !isRegistered ? (
               <span>{displayName}</span>
             ) : (
               <button
@@ -3542,9 +3563,9 @@ export default function App() {
               >
                 {displayName}
               </button>
-            )}
+            ))}
             <DevAuthBadge mode={authClient.mode} mockUser={authClient.mockUser} />
-            {displayFloor && (isViewAsMode ? (
+            {!isVendorAccount && displayFloor && (isViewAsMode ? (
               <span className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
                 {displayFloor}
               </span>
@@ -3558,10 +3579,10 @@ export default function App() {
                 {displayFloor}
               </button>
             ))}
-            {isRegistered && apiClient.transport === 'worker' && (
+            {!isVendorAccount && isRegistered && apiClient.transport === 'worker' && (
               <IdentityStatusBadges fields={['lineBinding']} lineBound={authUser?.lineBound} lineUserId={authUser?.lineUserId} />
             )}
-            {canOfferLineBinding({ user: authUser, registered: isRegistered, transport: apiClient.transport, authMode, isViewAsMode })
+            {!isVendorAccount && canOfferLineBinding({ user: authUser, registered: isRegistered, transport: apiClient.transport, authMode, isViewAsMode })
               && (
                 <button
                   type="button"
@@ -3732,7 +3753,11 @@ export default function App() {
           </div>
         )}
 
-        {isRegistered && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (
+        {isRegistered && isVendorAccount && viewMode === 'vendor' && !loading && (
+          <VendorOperationsPage role="Vendor" mock={authClient.isMock} />
+        )}
+
+        {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (
           <ModernCalendar currentMonth={currentMonth} events={calendarEvents} orders={userOrdersMap}
             onSelectDate={handleSelectDate}
             selectedKey={selectedCalendarKey}
@@ -3740,7 +3765,7 @@ export default function App() {
             onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
             onNextMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))} />
         )}
-        {isRegistered && viewMode === 'calendar' && !loading && (effectiveCalendarUi === 'classic' || adminManageMode) && (
+        {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && (effectiveCalendarUi === 'classic' || adminManageMode) && (
           <CalendarManagement
             currentMonth={currentMonth}
             onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
@@ -3758,7 +3783,7 @@ export default function App() {
           />
         )}
 
-        {isRegistered && ['vendors', 'vendorDetail'].includes(viewMode) && !loading && (
+        {isRegistered && !isVendorAccount && ['vendors', 'vendorDetail'].includes(viewMode) && !loading && (
           <VendorHub
             vendors={vendors}
             selectedVendor={selectedVendor}
@@ -3783,7 +3808,7 @@ export default function App() {
           />
         )}
 
-        {isRegistered && viewMode === 'order' && !loading && (
+        {isRegistered && !isVendorAccount && viewMode === 'order' && !loading && (
           <OrderPage
             selectedDate={selectedDate}
             previousDate={previousOrderDate}
@@ -3811,12 +3836,12 @@ export default function App() {
           />
         )}
 
-        {isRegistered && viewMode === 'myOrders' && !loading && (
+        {isRegistered && !isVendorAccount && viewMode === 'myOrders' && !loading && (
           <MyOrdersPage orders={myOrdersList} loading={myOrdersLoading}
             error={myOrdersError} onRefresh={refreshMyOrders} isViewAsMode={isViewAsMode} />
         )}
 
-        {isRegistered && viewMode === 'footprints' && !loading && (
+        {isRegistered && !isVendorAccount && viewMode === 'footprints' && !loading && (
           <MyBentoFootprintsPage
             data={footprintsData?._subjectUserId === (viewAsUser?.userId || authUserId) ? footprintsData : null}
             isViewAsMode={isViewAsMode}
@@ -3831,14 +3856,14 @@ export default function App() {
           />
         )}
 
-        {isRegistered && viewMode === 'wallet' && !loading && canAuth('viewOwnBalance')
+        {isRegistered && !isVendorAccount && viewMode === 'wallet' && !loading && canAuth('viewOwnBalance')
           && !isViewAsMode && !delegatedOrderUser && (
           <WalletPage balance={displayBalance} year={selectedYear} month={selectedMonth}
             history={historyList} summary={historySummary} loading={historyLoading}
             error={historyError} onMonthShift={shiftHistoryMonth} />
         )}
 
-        {isRegistered && viewMode === 'admin' && !loading && (
+        {isRegistered && !isVendorAccount && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
             {adminSection === 'hub' && (
               <section aria-label="管理中心" className="space-y-3">
@@ -3846,6 +3871,7 @@ export default function App() {
                 <div className="space-y-2" role="group" aria-label="訂餐管理">
                   <h3 className="text-sm font-bold text-[#2C4A3E]">訂餐管理</h3>
                 <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
+                {authRole === 'Admin' && <button type="button" onClick={() => handleAdminSectionChange('vendorOperations')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">廠商每日訂單與轉帳對帳 ›</button>}
                 {canAuth('viewAdminOrderSummary') && <button type="button" onClick={() => handleAdminSectionChange('orders')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">訂單總覽 ›</button>}
                 {canAuth('manageCalendar') && <button type="button" onClick={() => openAdminCalendar()} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">開團管理 ›</button>}
                 {canAuth('manageAnnouncements') && <button type="button" onClick={() => handleAdminSectionChange('announcements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">公告管理 ›</button>}
@@ -3881,6 +3907,10 @@ export default function App() {
                 adminSummaryError={adminSummaryError}
                 aggregatedOrders={aggregatedOrders}
               />
+            )}
+
+            {adminSection === 'vendorOperations' && authRole === 'Admin' && !isViewAsMode && (
+              <VendorOperationsPage role="Admin" mock={authClient.isMock} />
             )}
 
             {adminSection === 'balances' && can('viewMemberBalances') && (
@@ -3951,7 +3981,7 @@ export default function App() {
       </main>
 
       {isRegistered && viewMode !== 'order' && (
-        <BottomNavigation current={viewMode} onNavigate={navigateBottomTab}
+        <BottomNavigation current={viewMode} onNavigate={navigateBottomTab} role={authRole}
           balance={displayBalance} balanceKnown={(effectiveUser?.balance ?? authUser?.balance) != null && Number.isFinite(Number(effectiveUser?.balance ?? authUser?.balance))}
           canViewWallet={canAuth('viewOwnBalance') && !isViewAsMode && !delegatedOrderUser}
           canManage={!isViewAsMode && !delegatedOrderUser

@@ -64,6 +64,30 @@ export const handleReadOnlyRequest = async (request, env, {
     return jsonResponse(getMe(identity));
   }
 
+  if (identity?.actor?.role === 'Vendor') {
+    if (url.pathname === '/api/bootstrap') {
+      return jsonResponse({
+        ...getMe(identity),
+        user: publicUser(identity.effectiveSubject),
+        calendar: { events: {}, announcements: [], announcement: null },
+        ordersMap: {},
+        targetDate: url.searchParams.get('targetDate') || null,
+        bootId: bootId()
+      });
+    }
+    if (url.pathname === '/api/bootstrap/deferred') {
+      return jsonResponse({
+        success: true,
+        registered: true,
+        likes: {},
+        announcements: [],
+        announcement: null,
+        bootId: requiredBootId(url)
+      });
+    }
+    throw forbidden('VENDOR_ROUTE_FORBIDDEN');
+  }
+
   requireRegistered(identity);
   const subject = identity.effectiveSubject;
 

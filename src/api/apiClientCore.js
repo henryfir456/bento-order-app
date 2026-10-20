@@ -320,6 +320,43 @@ const createGasOperations = ({ gasApi, authClient }) => ({
       'Vendor Hub is not implemented for the GAS transport.'
     );
   },
+  getVendorOperations: ({ month } = {}) => {
+    if (authClient?.isMock) return gasApi.get(
+      `?action=getVendorOperations&month=${encodeURIComponent(String(month || ''))}&t=${Date.now()}`
+    );
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'getVendorOperations', 'Vendor operations are implemented only by Worker and local Mock transports.');
+  },
+  getAdminVendorOperations: ({ month, vendorId } = {}) => {
+    if (authClient?.isMock) return gasApi.get(
+      `?action=getAdminVendorOperations&month=${encodeURIComponent(String(month || ''))}`
+        + `&vendorId=${encodeURIComponent(String(vendorId || ''))}&t=${Date.now()}`
+    );
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'getAdminVendorOperations', 'Vendor operations are implemented only by Worker and local Mock transports.');
+  },
+  recordVendorPayment: (payload = {}) => {
+    if (authClient?.isMock) return gasApi.post({ action: 'recordVendorPayment', ...payload });
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'recordVendorPayment', 'Vendor payments are implemented only by Worker and local Mock transports.');
+  },
+  reverseVendorPayment: ({ paymentId, reason, confirmed } = {}) => {
+    if (authClient?.isMock) return gasApi.post({ action: 'reverseVendorPayment', paymentId, reason, confirmed });
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'reverseVendorPayment', 'Vendor payments are implemented only by Worker and local Mock transports.');
+  },
+  acknowledgeVendorPayment: ({ paymentId } = {}) => {
+    if (authClient?.isMock) return gasApi.post({ action: 'acknowledgeVendorPayment', paymentId });
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'acknowledgeVendorPayment', 'Vendor payments are implemented only by Worker and local Mock transports.');
+  },
+  disputeVendorPayment: ({ paymentId, reason } = {}) => {
+    if (authClient?.isMock) return gasApi.post({ action: 'disputeVendorPayment', paymentId, reason });
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'disputeVendorPayment', 'Vendor payments are implemented only by Worker and local Mock transports.');
+  },
+  resolveVendorPaymentDispute: ({ paymentId, resolution } = {}) => {
+    if (authClient?.isMock) return gasApi.post({ action: 'resolveVendorPaymentDispute', paymentId, resolution });
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'resolveVendorPaymentDispute', 'Vendor payments are implemented only by Worker and local Mock transports.');
+  },
+  adjustVendorPaymentAllocation: ({ allocationId, deltaTwd, reason } = {}) => {
+    if (authClient?.isMock) return gasApi.post({ action: 'adjustVendorPaymentAllocation', allocationId, deltaTwd, reason });
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'adjustVendorPaymentAllocation', 'Vendor payments are implemented only by Worker and local Mock transports.');
+  },
   toggleLike: ({ date, userId } = {}) => gasApi.post({
     action: 'toggleLike',
     date,
@@ -574,6 +611,39 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'PATCH',
     `/api/admin/vendors/${encodeURIComponent(String(vendorId || '').trim())}`,
     { body: payload }
+  ),
+  getVendorOperations: ({ month } = {}) => workerRequest(
+    'getVendorOperations', 'GET', '/api/vendor/orders', { query: { month } }
+  ),
+  getAdminVendorOperations: ({ month, vendorId } = {}) => workerRequest(
+    'getAdminVendorOperations', 'GET', '/api/admin/vendor-operations', { query: { month, vendorId } }
+  ),
+  recordVendorPayment: (payload = {}) => workerRequest(
+    'recordVendorPayment', 'POST', '/api/admin/vendor-payments', { body: payload }
+  ),
+  reverseVendorPayment: ({ paymentId, reason, confirmed } = {}) => workerRequest(
+    'reverseVendorPayment', 'POST',
+    `/api/admin/vendor-payments/${encodeURIComponent(String(paymentId || '').trim())}/reversals`,
+    { body: { reason, confirmed } }
+  ),
+  acknowledgeVendorPayment: ({ paymentId } = {}) => workerRequest(
+    'acknowledgeVendorPayment', 'POST',
+    `/api/vendor/payments/${encodeURIComponent(String(paymentId || '').trim())}/acknowledgement`
+  ),
+  disputeVendorPayment: ({ paymentId, reason } = {}) => workerRequest(
+    'disputeVendorPayment', 'POST',
+    `/api/vendor/payments/${encodeURIComponent(String(paymentId || '').trim())}/disputes`,
+    { body: { reason } }
+  ),
+  resolveVendorPaymentDispute: ({ paymentId, resolution } = {}) => workerRequest(
+    'resolveVendorPaymentDispute', 'POST',
+    `/api/admin/vendor-payments/${encodeURIComponent(String(paymentId || '').trim())}/dispute-resolution`,
+    { body: { resolution } }
+  ),
+  adjustVendorPaymentAllocation: ({ allocationId, deltaTwd, reason } = {}) => workerRequest(
+    'adjustVendorPaymentAllocation', 'POST',
+    `/api/admin/vendor-payment-allocations/${encodeURIComponent(String(allocationId || '').trim())}/adjustments`,
+    { body: { deltaTwd, reason } }
   ),
   getMemberBalances: ({ includeInvalid = false } = {}) => workerRequest(
     'getMemberBalances',

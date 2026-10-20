@@ -5,6 +5,7 @@ import { handleOrderRoute } from './routes/orders.js';
 import { handleBalanceRoute } from './routes/balance.js';
 import { handleVendorRoute } from './routes/vendors.js';
 import { handleVendorContextRoute } from './routes/vendorContext.js';
+import { handleVendorOperationsRoute } from './routes/vendorOperations.js';
 import { handleAdminRoute } from './routes/admin.js';
 import { handleCalendarRoute } from './routes/calendar.js';
 import { handleRoleRoute } from './routes/roles.js';
@@ -130,6 +131,10 @@ export const handleFormalRequest = async (request, env, options = {}) => {
       if (!response) {
         const vendorContextResponse = await handleVendorContextRoute(request, env, options);
         if (vendorContextResponse) response = vendorContextResponse;
+      }
+      if (!response) {
+        const vendorOperationsResponse = await handleVendorOperationsRoute(request, env, options);
+        if (vendorOperationsResponse) response = vendorOperationsResponse;
       }
       if (!response) {
         const readResponse = await handleReadOnlyRequest(request, env, options);
