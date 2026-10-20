@@ -85,6 +85,194 @@ test('Admin can read disabled vendor history but cannot start a new transfer', a
   assert.match(page, /getAdminVendorOperations\(\{ month, vendorId \}\)/);
 });
 
+test('local Mock keeps disabled vendor settlement history read-only', async () => {
+  const { createMockGasApi } = await import('../src/api/mockGasApi.js');
+  const { getMockSessionState } = await import('../src/auth/mockData.js');
+  const state = getMockSessionState('admin');
+  const vendor = state.vendorMetadata.find((entry) => entry.id === 'mock-vendor-b');
+  assert.ok(vendor);
+  const priorEnabled = vendor.enabled;
+  const priorPaymentCount = state.vendorPayments.length;
+  const adminApi = createMockGasApi({ mockUser: 'admin' });
+  const fixture = {
+    vendorId: vendor.id, amountTwd: 80, transferredOn: '2099-01-01',
+    actualTransferDone: true, detailsReviewed: true,
+    idempotencyKey: 'mock-disabled-vendor-history',
+    allocations: [{ serviceDate: '2099-01-01', amountTwd: 80 }]
+  };
+
+  try {
+    const paymentResponse = await adminApi.post({ action: 'recordVendorPayment', ...fixture });
+    assert.equal(paymentResponse.status, 201);
+    const payment = await paymentResponse.json();
+    vendor.enabled = false;
+
+    const historyResponse = await adminApi.get(
+      `?action=getAdminVendorOperations&month=2099-01&vendorId=${vendor.id}`
+    );
+    assert.equal(historyResponse.status, 200);
+    const history = await historyResponse.json();
+    assert.equal(history.vendor.id, vendor.id);
+    assert.equal(history.days[0].settlement.registeredTransferTwd, 80);
+    assert.equal(history.days[0].settlement.transfers[0].paymentId, payment.paymentId);
+
+    const blockedResponse = await adminApi.post({
+      action: 'recordVendorPayment', ...fixture, idempotencyKey: 'mock-disabled-vendor-new-transfer'
+    });
+    assert.equal(blockedResponse.status, 404);
+    assert.deepEqual(await blockedResponse.json(), { success: false, error: 'VENDOR_NOT_FOUND' });
+    assert.equal(state.vendorPayments.length, priorPaymentCount + 1);
+  } finally {
+    vendor.enabled = priorEnabled;
+    state.vendorPayments.splice(priorPaymentCount);
+  }
+});
+
+test('Admin browser shows disabled vendor history without a transfer form', {
+  skip: browserPath ? false : 'Chromium/Chrome is unavailable; local browser UAT remains required.',
+  timeout: 90_000
+}, async () => {
+  const envKeys = ['VITE_AUTH_MODE', 'VITE_MOCK_USER', 'VITE_API_TRANSPORT'];
+  const originalEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  process.env.VITE_AUTH_MODE = 'mock';
+  process.env.VITE_MOCK_USER = 'admin';
+  delete process.env.VITE_API_TRANSPORT;
+  let viteServer;
+  let browser;
+  let devtools;
+  let profile;
+  let browserStderr = '';
+
+  try {
+    const { createServer } = await import('vite');
+    viteServer = await createServer({
+      configFile: path.join(root, 'vite.config.js'),
+      root,
+      logLevel: 'error',
+      server: { host: '127.0.0.1', port: 0, strictPort: true }
+    });
+    await viteServer.listen();
+    const appUrl = `http://127.0.0.1:${viteServer.httpServer.address().port}/`;
+    profile = mkdtempSync(path.join(os.tmpdir(), 'bento-admin-vendor-mock-'));
+    const browserArgs = [
+      '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+      '--disable-crash-reporter', '--disable-breakpad', '--remote-debugging-port=0',
+      `--user-data-dir=${profile}`, 'about:blank'
+    ];
+    if (process.platform === 'linux') browserArgs.splice(2, 0, '--no-zygote', '--single-process');
+    browser = spawn(browserPath, browserArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const browserUrl = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Chromium did not start within 15 seconds.')), 15_000);
+      browser.once('error', (error) => { clearTimeout(timeout); reject(error); });
+      browser.once('exit', (code) => {
+        if (!browserStderr.includes('DevTools listening on')) {
+          clearTimeout(timeout);
+          reject(new Error(`Chromium exited before DevTools startup (${code}).`));
+        }
+      });
+      browser.stderr.on('data', (chunk) => {
+        browserStderr += chunk.toString();
+        const match = browserStderr.match(/DevTools listening on (ws:\/\/127\.0\.0\.1:\d+\/devtools\/browser\/[^\s]+)/u);
+        if (match) { clearTimeout(timeout); resolve(match[1]); }
+      });
+    });
+    const port = new URL(browserUrl).port;
+    const targetResponse = await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' });
+    assert.equal(targetResponse.ok, true);
+    const target = await targetResponse.json();
+    devtools = await connectDevTools(target.webSocketDebuggerUrl);
+    await devtools.send('Page.enable');
+    await devtools.send('Runtime.enable');
+    const evaluate = async (expression) => {
+      const result = await devtools.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+      if (result.result.exceptionDetails) throw new Error(result.result.exceptionDetails.text || 'Browser evaluation failed.');
+      return result.result.value;
+    };
+    const waitFor = async (expression, label) => {
+      const until = Date.now() + 20_000;
+      while (Date.now() < until) {
+        if (await evaluate(`Boolean(${expression})`)) return;
+        await pause(100);
+      }
+      throw new Error(`Timed out waiting for ${label}.`);
+    };
+    const clickButton = async (label, selector = 'button') => {
+      const clicked = await evaluate(`(() => {
+        const button = [...document.querySelectorAll(${JSON.stringify(selector)})]
+          .find((candidate) => candidate.innerText.trim() === ${JSON.stringify(label)});
+        if (!button) return false;
+        button.click();
+        return true;
+      })()`);
+      assert.equal(clicked, true, `Could not find button: ${label}`);
+    };
+
+    await devtools.send('Page.navigate', { url: appUrl });
+    await waitFor('document.querySelector("nav[aria-label=主要導覽]")?.innerText.includes("管理")', 'Admin local Mock shell');
+    await clickButton('管理', 'nav[aria-label="主要導覽"] button');
+    await waitFor('document.body.innerText.includes("管理中心")', 'Admin management center');
+    await clickButton('店家專區 ›');
+    await waitFor('document.body.innerText.includes("Mock Bento B")', 'Admin vendor list');
+    const openedVendor = await evaluate(`(() => {
+      const article = [...document.querySelectorAll("article")]
+        .find((candidate) => candidate.innerText.includes("Mock Bento B"));
+      const button = article?.querySelector("button");
+      if (!button) return false;
+      button.click();
+      return true;
+    })()`);
+    assert.equal(openedVendor, true, 'Could not open the synthetic Mock Bento B details.');
+    await waitFor('document.querySelector("#vendor-enabled")', 'vendor editor');
+    await evaluate('document.querySelector("#vendor-enabled").click()');
+    await clickButton('儲存店家資料');
+    await waitFor('document.body.innerText.includes("暫停使用") && document.querySelector("#vendor-enabled")?.checked === false', 'disabled vendor update');
+
+    await clickButton('← 店家專區');
+    await waitFor('document.body.innerText.includes("店家專區") && document.body.innerText.includes("查看店家")', 'Admin vendor list after update');
+    await clickButton('← 月曆');
+    await clickButton('管理', 'nav[aria-label="主要導覽"] button');
+    await clickButton('廠商每日訂單與轉帳對帳 ›');
+    await waitFor('document.querySelector("[aria-label=廠商每日訂單與轉帳管理] select option[value=mock-vendor-b]")', 'Admin Vendor operations selector');
+    const selected = await evaluate(`(() => {
+      const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
+      const select = section?.querySelector("select");
+      if (!select) return false;
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(select, "mock-vendor-b");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    assert.equal(selected, true);
+    await waitFor(`(() => {
+      const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
+      return section?.innerText.includes("此廠商已停用；仍可檢視歷史對帳，但不能登記新轉帳。")
+        && !section.querySelector("form")
+        && section.querySelector("select option:checked")?.textContent.includes("已停用");
+    })()`, 'disabled-vendor history-only view');
+    const result = await evaluate(`(() => {
+      const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
+      return {
+        selectedOption: section.querySelector("select option:checked").textContent.trim(),
+        hasHistory: section.innerText.includes("Mock Bento B"),
+        transferFormCount: section.querySelectorAll("form").length,
+        status: section.querySelector('[role="status"]')?.innerText || ""
+      };
+    })()`);
+    assert.match(result.selectedOption, /已停用/u);
+    assert.equal(result.hasHistory, true);
+    assert.equal(result.transferFormCount, 0);
+    assert.match(result.status, /不能登記新轉帳/u);
+  } finally {
+    devtools?.close();
+    if (browser && browser.exitCode === null) browser.kill('SIGTERM');
+    if (viteServer) await viteServer.close();
+    if (profile) rmSync(profile, { recursive: true, force: true });
+    for (const key of envKeys) {
+      if (originalEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = originalEnv[key];
+    }
+  }
+});
+
 test('local Mock supports a separate Vendor fixture and synthetic bank-transfer workflow', async () => {
   const { createMockGasApi } = await import('../src/api/mockGasApi.js');
   const { getMockIdentityResponse, getMockVendorOperations } = await import('../src/auth/mockData.js');

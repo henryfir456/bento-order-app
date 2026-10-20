@@ -513,6 +513,9 @@ export const createMockGasApi = ({ mockUser }) => {
     if (action === 'recordVendorPayment') {
       if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
       const result = recordMockVendorPayment(mockUser, payload);
+      if (result.error === 'VENDOR_NOT_FOUND') {
+        return jsonResponse({ success: false, error: result.error }, 404);
+      }
       const status = result.error === 'PAYMENT_CONFIRMATION_REQUIRED' ? 400 : 201;
       return result.error ? errorResponse(result.error, status) : jsonResponse({ success: true, ...result }, 201);
     }

@@ -459,6 +459,11 @@ export const getMockVendorOperations = (mockUser, { month, vendorId = null } = {
 
 export const recordMockVendorPayment = (mockUser, payload = {}) => {
   const state = getMockSessionState(mockUser);
+  const vendorId = String(payload.vendorId || '');
+  const vendor = state.vendorMetadata.find((candidate) => (
+    candidate.id === vendorId && candidate.enabled === true
+  ));
+  if (!vendor) return { error: 'VENDOR_NOT_FOUND' };
   if (payload.actualTransferDone !== true || payload.detailsReviewed !== true) {
     return { error: 'PAYMENT_CONFIRMATION_REQUIRED' };
   }
@@ -472,7 +477,7 @@ export const recordMockVendorPayment = (mockUser, payload = {}) => {
   const payment = {
     paymentId: `mock-payment-${state.vendorPayments.length + 1}`,
     createdByMockUser: mockUser,
-    vendorId: String(payload.vendorId || ''),
+    vendorId,
     amountTwd: Number(payload.amountTwd),
     transferredOn: String(payload.transferredOn || ''),
     idempotencyKey: String(payload.idempotencyKey || ''),
