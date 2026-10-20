@@ -247,6 +247,25 @@ test('Admin browser shows disabled vendor history without a transfer form', {
     assert.equal(selected, true);
     await waitFor(`(() => {
       const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
+      return section?.querySelectorAll("article").length > 0
+        && section.querySelector("select option:checked")?.textContent.includes("已停用");
+    })()`, 'disabled-vendor order day');
+    const expandedHistory = await evaluate(`(() => {
+      const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
+      const article = [...(section?.querySelectorAll("article") || [])]
+        .find((candidate) => candidate.innerText.includes("2 筆訂單"));
+      const button = article?.querySelector("button");
+      if (!button) return false;
+      if (button.getAttribute("aria-expanded") === "false") button.click();
+      return true;
+    })()`);
+    assert.equal(
+      expandedHistory,
+      true,
+      `Disabled-vendor history day should be expandable. Current section: ${await evaluate('document.querySelector("[aria-label=廠商每日訂單與轉帳管理]")?.innerText || "missing"')}`
+    );
+    await waitFor(`(() => {
+      const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
       const historyDay = [...(section?.querySelectorAll("article") || [])]
         .find((article) => article.innerText.includes("Mock Noodle"));
       return section?.innerText.includes("此廠商已停用；仍可檢視歷史對帳，但不能登記新轉帳。")

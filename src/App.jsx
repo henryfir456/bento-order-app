@@ -3,7 +3,7 @@ import Swal from 'sweetalert2';
 import 'sweetalert2/dist/sweetalert2.min.css';
 import { formatDateInput, formatDateTime, formatTaipeiTopupNote, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
 import { apiClient, guestSessionStore } from './api/apiClient';
-import { getApiErrorPresentation } from './api/apiErrors';
+import { formatApiErrorDiagnostic, getApiErrorPresentation } from './api/apiErrors';
 import {
   clearClientRequestKey,
   createClientRequestKey,
@@ -1237,10 +1237,16 @@ export default function App() {
     setAnnouncementInboxError('');
     try {
       const response = await apiClient.getMyAnnouncements();
-      if (!response.ok) throw new Error('ANNOUNCEMENT_INBOX_HTTP_ERROR');
+      if (!response.ok) throw Object.assign(new Error('ANNOUNCEMENT_INBOX_HTTP_ERROR'), {
+        code: 'ANNOUNCEMENT_INBOX_HTTP_ERROR',
+        requestId: response.headers.get('X-Request-Id')
+      });
       const payload = await response.json();
       const normalized = normalizeAnnouncementInbox(payload);
-      if (!normalized) throw new Error('ANNOUNCEMENT_INBOX_RESPONSE_INVALID');
+      if (!normalized) throw Object.assign(new Error('ANNOUNCEMENT_INBOX_RESPONSE_INVALID'), {
+        code: 'ANNOUNCEMENT_INBOX_RESPONSE_INVALID',
+        requestId: response.headers.get('X-Request-Id')
+      });
       if (requestId !== announcementInboxRequestRef.current
         || viewAsUser?.userId
         || sessionKey !== `${authUser?.userId || ''}:${authMode || ''}:${authSelectionRef.current}`) return false;
@@ -1262,10 +1268,10 @@ export default function App() {
         }
       }
       return true;
-    } catch {
+    } catch (error) {
       if (requestId === announcementInboxRequestRef.current && !viewAsUser?.userId) {
         setAnnouncementsLoaded(true);
-        setAnnouncementInboxError('公告暫時無法載入，請重新載入。');
+        setAnnouncementInboxError(`公告暫時無法載入，請重新載入。${formatApiErrorDiagnostic(error)}`);
       }
       return false;
     } finally {
@@ -1279,14 +1285,20 @@ export default function App() {
     announcementReadMutationsRef.current.add(id);
     try {
       const response = await apiClient.markAnnouncementRead({ announcementId: id });
-      if (!response.ok) throw new Error('ANNOUNCEMENT_READ_HTTP_ERROR');
+      if (!response.ok) throw Object.assign(new Error('ANNOUNCEMENT_READ_HTTP_ERROR'), {
+        code: 'ANNOUNCEMENT_READ_HTTP_ERROR',
+        requestId: response.headers.get('X-Request-Id')
+      });
       const payload = await response.json();
-      if (payload?.success !== true) throw new Error('ANNOUNCEMENT_READ_RESPONSE_INVALID');
+      if (payload?.success !== true) throw Object.assign(new Error('ANNOUNCEMENT_READ_RESPONSE_INVALID'), {
+        code: 'ANNOUNCEMENT_READ_RESPONSE_INVALID',
+        requestId: response.headers.get('X-Request-Id')
+      });
       const readAt = typeof payload.readAt === 'string' ? payload.readAt : new Date().toISOString();
       setAnnouncements((current) => current.map((item) => item.id === id ? { ...item, readAt } : item));
       setAnnouncementUnreadCount((current) => Math.max(0, current - 1));
-    } catch {
-      setAnnouncementInboxError('公告已開啟，但未能儲存已讀狀態；可重新載入後再試。');
+    } catch (error) {
+      setAnnouncementInboxError(`公告已開啟，但未能儲存已讀狀態；可重新載入後再試。${formatApiErrorDiagnostic(error)}`);
     } finally {
       announcementReadMutationsRef.current.delete(id);
     }
@@ -1304,9 +1316,15 @@ export default function App() {
     setAnnouncementPopupDismissError('');
     try {
       const response = await apiClient.dismissAnnouncementAutoPopup({ announcementId: id });
-      if (!response.ok) throw new Error('ANNOUNCEMENT_DISMISS_HTTP_ERROR');
+      if (!response.ok) throw Object.assign(new Error('ANNOUNCEMENT_DISMISS_HTTP_ERROR'), {
+        code: 'ANNOUNCEMENT_DISMISS_HTTP_ERROR',
+        requestId: response.headers.get('X-Request-Id')
+      });
       const payload = await response.json();
-      if (payload?.success !== true) throw new Error('ANNOUNCEMENT_DISMISS_RESPONSE_INVALID');
+      if (payload?.success !== true) throw Object.assign(new Error('ANNOUNCEMENT_DISMISS_RESPONSE_INVALID'), {
+        code: 'ANNOUNCEMENT_DISMISS_RESPONSE_INVALID',
+        requestId: response.headers.get('X-Request-Id')
+      });
       const dismissAutoPopupAt = typeof payload.dismissAutoPopupAt === 'string'
         ? payload.dismissAutoPopupAt
         : new Date().toISOString();
@@ -1314,8 +1332,8 @@ export default function App() {
         ? { ...item, dismissAutoPopupAt, shouldAutoPopup: false }
         : item));
       setAnnouncementPopup(null);
-    } catch {
-      setAnnouncementPopupDismissError('目前無法儲存此設定，請重試。');
+    } catch (error) {
+      setAnnouncementPopupDismissError(`目前無法儲存此設定，請重試。${formatApiErrorDiagnostic(error)}`);
     } finally {
       setAnnouncementPopupDismissLoading(false);
     }

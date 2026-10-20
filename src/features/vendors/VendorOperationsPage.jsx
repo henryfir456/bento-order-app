@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient } from '../../api/apiClient';
+import { formatApiErrorDiagnostic } from '../../api/apiErrors';
 import { canRecordVendorTransfer, isVendorEnabled } from './vendorOperationsPolicy';
 
 const taipeiToday = () => new Intl.DateTimeFormat('en-CA', {
@@ -26,8 +27,9 @@ const readResponse = async (response) => {
   let data = {};
   try { data = await response.json(); } catch { /* response contract is reported below */ }
   if (!response.ok || data?.success === false || data?.error) {
-    const error = new Error(data?.error || data?.message || `HTTP ${response.status}`);
+    const error = new Error(data?.error || data?.code || `HTTP ${response.status}`);
     error.code = data?.error || data?.code || 'VENDOR_OPERATIONS_REQUEST_FAILED';
+    error.requestId = response.headers.get('X-Request-Id') || data?.requestId || null;
     throw error;
   }
   return data;
@@ -77,9 +79,10 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
       if (isVendor && Array.isArray(data.vendors)) setVendors(data.vendors);
     } catch (requestError) {
       if (requestId === requestRef.current) {
-        setError(requestError.code === 'FORBIDDEN' || requestError.code === 'VENDOR_SCOPE_FORBIDDEN'
+        const message = requestError.code === 'FORBIDDEN' || requestError.code === 'VENDOR_SCOPE_FORBIDDEN'
           ? '目前登入身分沒有這家廠商的權限。'
-          : '目前無法取得廠商訂單與對帳資料，請重新載入。');
+          : '目前無法取得廠商訂單與對帳資料，請重新載入。';
+        setError(`${message}${formatApiErrorDiagnostic(requestError)}`);
       }
     } finally {
       if (requestId === requestRef.current) setLoading(false);
@@ -94,8 +97,8 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
         const list = Array.isArray(data.vendors) ? data.vendors : [];
         setVendors(list);
         setVendorId((current) => current || list[0]?.id || '');
-      }).catch(() => {
-        if (!cancelled) setError('目前無法載入廠商清單。');
+      }).catch((requestError) => {
+        if (!cancelled) setError(`目前無法載入廠商清單。${formatApiErrorDiagnostic(requestError)}`);
       });
     }
     return () => { cancelled = true; };
@@ -144,7 +147,8 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
         VENDOR_ALLOCATION_ADJUSTMENT_INVALID: '調整會造成負數分攤或超過當日應收。',
         IDEMPOTENCY_KEY_REUSED: '表單內容已變更，請重新送出。'
       };
-      setActionError(messages[code] || '操作沒有完成，請檢查欄位後重試。');
+      const message = messages[code] || '操作沒有完成，請檢查欄位後重試。';
+      setActionError(`${message}${formatApiErrorDiagnostic(actionFailure)}`);
     } finally {
       setBusyKey('');
     }
@@ -374,6 +378,10 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
           </button>
         </div>
       </div>
+
+      {!error && <p className="text-xs text-slate-500">
+        轉帳對帳與訂單履行狀態分開顯示。
+      </p>}
 
       {isAdmin && selectedVendor && !isVendorEnabled(selectedVendor) && (
         <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">

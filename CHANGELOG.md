@@ -5,6 +5,8 @@
 ### Fixed
 
 - Restore mobile user-management sort field and direction controls using the same ordering state as desktop, and compact mobile actions including the ledger-details entry (Issue #82).
+- Canonicalize the known historical menu code alias `R` to `FR` so effective-name summaries and footprint totals group the same verified dish across menu versions while preserving distinct vendor and variant identities (Issues #103 and #108).
+- Return a generated `X-Request-Id` response header and show sanitized API error codes and trace IDs for announcement and vendor failures, without changing JSON response contracts.
 
 - Prevent failed Android LINE LIFF initialization from being automatically retried by queued foreground/online events, avoiding repeated SDK success prompts. Preserve user-initiated retry (Issue #32; real-device acceptance pending).
 - Align personal balance history filtering and monthly summaries with the Taipei time zone.
@@ -19,6 +21,7 @@
 - Add a Vendor daily-order and transfer reconciliation portal scoped by canonical vendor membership. Cutoff snapshots are append-only; Admin records completed manual transfers with multi-date/partial allocations, reasoned corrections and atomic reversals; Vendor acknowledgement/dispute events stay separate from order fulfillment, and no vendor settlement touches the employee balance ledger (Issues #123–#125).
 - Add an isolated browser-memory mock fixture and Windows local UAT steps for #103, #108, and #111. Mock repair changes are discarded on reload.
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
+- Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
 ## [0.17.3] - 2026-10-20
 

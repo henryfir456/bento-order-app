@@ -47,14 +47,18 @@ const buildWorkerUrl = (baseUrl, path, query) => {
   return url.toString();
 };
 
-const readWorkerErrorCode = async (response, fallback) => {
+const readWorkerErrorDetails = async (response, fallback) => {
+  let body = {};
   try {
-    const body = await response.clone().json();
-    if (typeof body?.error === 'string' && body.error.trim()) return body.error.trim();
+    body = await response.clone().json();
   } catch {
     // Preserve the typed error category when the error body is not JSON.
   }
-  return fallback;
+  const requestId = String(response.headers.get('X-Request-Id') || body?.requestId || '').trim();
+  return {
+    code: typeof body?.error === 'string' && body.error.trim() ? body.error.trim() : fallback,
+    requestId: /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(requestId) ? requestId : null
+  };
 };
 
 const calendarMode = (vendor, mode) => {
@@ -116,7 +120,7 @@ const createWorkerRequest = ({ baseUrl, authClient, sessionStore, fetchImpl }) =
   }
 
   if (response.status === 401) {
-    const errorCode = await readWorkerErrorCode(response, 'API_AUTH_REJECTED');
+    const { code: errorCode, requestId } = await readWorkerErrorDetails(response, 'API_AUTH_REJECTED');
     if (errorCode === 'GUEST_SESSION_INVALID' && credential?.authMode === 'employee_guest'
       && sessionStore?.getGuestSession?.()?.token === credential.token) {
       sessionStore?.clearGuestSession?.({ reason: 'rejected' });
@@ -124,23 +128,23 @@ const createWorkerRequest = ({ baseUrl, authClient, sessionStore, fetchImpl }) =
     throw new ApiAuthenticationError(
       errorCode === 'GUEST_SESSION_INVALID' ? errorCode : 'API_AUTH_REJECTED',
       'Worker API authentication failed.',
-      { operation, status: response.status }
+      { operation, status: response.status, requestId }
     );
   }
   if (response.status === 403) {
-    const errorCode = await readWorkerErrorCode(response, 'API_AUTHORIZATION_REJECTED');
+    const { code: errorCode, requestId } = await readWorkerErrorDetails(response, 'API_AUTHORIZATION_REJECTED');
     throw new ApiAuthorizationError(
       errorCode,
       'Worker API authorization failed.',
-      { operation, status: response.status }
+      { operation, status: response.status, requestId }
     );
   }
   if (!response.ok) {
-    const errorCode = await readWorkerErrorCode(response, 'API_HTTP_ERROR');
+    const { code: errorCode, requestId } = await readWorkerErrorDetails(response, 'API_HTTP_ERROR');
     throw new ApiBackendError(
       errorCode,
       'Worker API returned an unsuccessful response.',
-      { operation, status: response.status }
+      { operation, status: response.status, requestId }
     );
   }
   return response;

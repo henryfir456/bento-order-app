@@ -40,6 +40,24 @@ test('PII scan allows a clearly synthetic account mapping expression', () => {
   assert.match(result.stdout, /PII_SCAN PASS/);
 });
 
+test('PII scan allows only the typed public commit SHA in the formal deployment baseline', () => {
+  const publicCommitSha = 'a'.repeat(40);
+  const result = spawnSync(process.execPath, [scanner, '--diff-stdin'], {
+    encoding: 'utf8',
+    input: diffForFile('worker-poc/scripts/detect-formal-drift.mjs', `  sourceSha: '${publicCommitSha}'`)
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /PII_SCAN PASS/);
+
+  const generatedId = ['555', '555'].join('');
+  const unrelated = spawnSync(process.execPath, [scanner, '--diff-stdin'], {
+    encoding: 'utf8',
+    input: diffForFile('worker-poc/scripts/detect-formal-drift.mjs', `  employeeId: ${generatedId}`)
+  });
+  assert.equal(unrelated.status, 1);
+  assert.match(unrelated.stderr, /numeric employee or phone pattern/);
+});
+
 test('PII scan allows only typed UAT resource identifiers and still blocks nearby numeric identities', () => {
   const uatName = ['bento-order-app-uat-', '2026', '1019'].join('');
   const uatId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';

@@ -46,6 +46,115 @@ test('effective order item resolver shows effective menu labels only for verifie
   }
 });
 
+test('known legacy menu code aliases resolve to the same canonical meal identity', () => {
+  const legacyCode = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    item: { legacy_item_id: 'R', variant_key: 'BASE', item_name_snapshot: '風味便當' },
+    menuItems: [menuItem({ legacyItemId: 'FR', variantKey: 'BASE', name: 'A.風味便當' })]
+  });
+  const canonicalCode = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    item: { legacy_item_id: 'FR', variant_key: 'BASE', item_name_snapshot: 'A.風味便當' },
+    menuItems: [menuItem({ legacyItemId: 'FR', variantKey: 'BASE', name: 'A.風味便當' })]
+  });
+
+  assert.equal(legacyCode.resolved, true);
+  assert.equal(legacyCode.itemName, 'A.風味便當');
+  assert.equal(legacyCode.identityKey, canonicalCode.identityKey);
+});
+
+const seedCanonicalStatisticsHistory = () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'canonical-statistics-user', displayName: '合成統計使用者' });
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES ('canonical-menu-old', '合成店家', '2030-03-01'),
+           ('canonical-menu-new', '合成店家', '2030-03-10')
+  `);
+  database.run(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, variant_key, item_name, price, enabled, source_order
+    ) VALUES
+      ('canonical-r-old', 'canonical-menu-old', 'R', 'BASE', '風味便當', 90, 1, 1),
+      ('canonical-b-old', 'canonical-menu-old', 'B', 'BASE', 'B.水煮低醣健康餐', 100, 1, 2),
+      ('canonical-c-old', 'canonical-menu-old', 'C', 'BASE', 'C.每日特餐', 110, 1, 3),
+      ('canonical-alt-old', 'canonical-menu-old', 'ALT', 'BASE', 'A.風味便當', 90, 1, 4),
+      ('canonical-fr-new', 'canonical-menu-new', 'FR', 'BASE', 'A.風味便當', 95, 1, 1),
+      ('canonical-b-new', 'canonical-menu-new', 'B', 'BASE', '水煮低醣健康餐', 105, 1, 2),
+      ('canonical-c-new', 'canonical-menu-new', 'C', 'BASE', 'C.特餐', 115, 1, 3),
+      ('canonical-alt-new', 'canonical-menu-new', 'ALT', 'BASE', 'A.風味便當', 95, 1, 4)
+  `);
+  const addOrder = (orderId, date, items) => {
+    const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+    database.run(`
+      INSERT INTO orders (
+        order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+        total_amount, status, created_by_user_id, created_auth_mode
+      ) VALUES (?, 'canonical-statistics-user', '合成統計使用者', ?, '合成店家', '1樓', ?, 'COMPLETED', 'canonical-statistics-user', 'line')
+    `, orderId, date, total);
+    items.forEach((item, index) => database.run(`
+      INSERT INTO order_items (
+        order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+        quantity, unit_price, subtotal
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, orderId, index + 1, item.menuItemId, item.code, item.snapshot,
+    item.quantity, item.price, item.quantity * item.price));
+  };
+  addOrder('canonical-order-old', '2030-03-05', [
+    { menuItemId: 'canonical-r-old', code: 'R', snapshot: '風味便當', quantity: 2, price: 90 },
+    { menuItemId: 'canonical-b-old', code: 'B', snapshot: 'B.水煮低醣健康餐', quantity: 1, price: 100 },
+    { menuItemId: 'canonical-c-old', code: 'C', snapshot: 'C.每日特餐', quantity: 1, price: 110 },
+    { menuItemId: 'canonical-alt-old', code: 'ALT', snapshot: 'A.風味便當', quantity: 3, price: 90 }
+  ]);
+  addOrder('canonical-order-new', '2030-03-12', [
+    { menuItemId: 'canonical-fr-new', code: 'FR', snapshot: '風味便當', quantity: 4, price: 95 },
+    { menuItemId: 'canonical-b-new', code: 'B', snapshot: 'B.水煮低醣健康餐', quantity: 2, price: 105 },
+    { menuItemId: 'canonical-c-new', code: 'C', snapshot: '每日特餐', quantity: 3, price: 115 },
+    { menuItemId: 'canonical-alt-new', code: 'ALT', snapshot: 'A.風味便當', quantity: 5, price: 95 }
+  ]);
+  return database;
+};
+
+test('statistics canonicalize A/B/C menu aliases for all, year, and month without merging duplicate labels or changing snapshots', async () => {
+  const database = seedCanonicalStatisticsHistory();
+  const snapshotsBefore = database.get(`
+    SELECT COUNT(*) AS rowCount, GROUP_CONCAT(item_name_snapshot, '|') AS names,
+           SUM(quantity) AS portions, SUM(subtotal) AS amount FROM order_items
+  `);
+  const results = [];
+  for (const period of ['all', 'year', 'month']) {
+    const result = await apiCall(database, `/api/orders/statistics?period=${period}`, {
+      lineUserId: 'canonical-statistics-user',
+      displayName: '合成統計使用者',
+      now: new Date('2030-03-17T00:00:00.000Z')
+    });
+    assert.equal(result.response.status, 200);
+    results.push(result.body);
+  }
+
+  for (const result of results) {
+    assert.equal(result.totalPortions, 21);
+    assert.equal(result.totalMealTypes, 4, 'different legacy identity ALT stays separate from flavor FR');
+    assert.equal(result.items.length, 4);
+    assert.equal(result.items.find((item) => JSON.parse(item.identityKey)[2] === 'FR').portions, 6);
+    assert.equal(result.items.find((item) => JSON.parse(item.identityKey)[2] === 'B').portions, 3);
+    assert.equal(result.items.find((item) => JSON.parse(item.identityKey)[2] === 'C').portions, 4);
+    assert.equal(result.items.find((item) => JSON.parse(item.identityKey)[2] === 'ALT').portions, 8);
+    assert.equal(result.items.find((item) => JSON.parse(item.identityKey)[2] === 'FR').name, 'A.風味便當');
+    assert.equal(result.items.find((item) => JSON.parse(item.identityKey)[2] === 'B').name, '水煮低醣健康餐');
+    assert.equal(result.items.find((item) => JSON.parse(item.identityKey)[2] === 'C').name, 'C.特餐');
+  }
+  assert.deepEqual(results.map(({ totalPortions, totalMealTypes }) => [totalPortions, totalMealTypes]), [
+    [21, 4], [21, 4], [21, 4]
+  ]);
+  assert.deepEqual(database.get(`
+    SELECT COUNT(*) AS rowCount, GROUP_CONCAT(item_name_snapshot, '|') AS names,
+           SUM(quantity) AS portions, SUM(subtotal) AS amount FROM order_items
+  `), snapshotsBefore);
+});
+
 test('effective order item resolver does not infer identity from an old label and matching price', () => {
   const resolved = resolveEffectiveOrderItemName({
     vendor: '合成店家',

@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { main as upload } from './upload-formal-version.mjs';
+import { assertFormalReleaseD1Ready, runFormalDrift } from './detect-formal-drift.mjs';
 
 const worker=resolve(import.meta.dirname,'..');
 const root=resolve(worker,'..');
@@ -36,6 +37,8 @@ export async function runRelease({ env=process.env, uploadImpl=upload, apiFetch=
   const manifestFile=join(evidenceDir,'release-manifest.json');
   const manifest=JSON.parse(readFileSync(manifestFile,'utf8'));
   if(manifest.sourceSha!==git('rev-parse','HEAD'))throw new Error('BLOCKED: manifest SHA mismatch');
+  const drift=await runFormalDrift({env,fetchImpl:apiFetch});
+  assertFormalReleaseD1Ready(drift);
   const proof=await uploadImpl({...env,BENTO_RELEASE_MANIFEST:manifestFile,BENTO_UPLOAD_VERSION:'true'});
   assertUploadEvidence(proof,manifest);
   // No upload result is sufficient to release if the configured production
@@ -56,6 +59,7 @@ export async function runRelease({ env=process.env, uploadImpl=upload, apiFetch=
     actual.versions[0]?.percentage!==100)throw new Error('BLOCKED: production traffic verification failed');
   mkdirSync(evidenceDir,{recursive:true});
   const evidence={sourceSha:manifest.sourceSha,newVersionId:proof.newVersionId,deploymentId:actual.id,
+    migrationVersion:drift.database.appliedLatestMigration,driftStatus:drift.status,
     trafficPercent:100,smoke:'PENDING',status:'DEPLOYED_AWAITING_SMOKE'};
   writeFileSync(join(evidenceDir,'deployment-result.json'),JSON.stringify(evidence,null,2)+'\n');
   if(!env.BENTO_WORKER_BASE_URL)throw new Error('BLOCKED: HTTP smoke URL missing; deployment completed, smoke NOT VERIFIED');
