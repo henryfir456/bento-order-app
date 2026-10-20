@@ -23,6 +23,7 @@ const hasEmployeeId = (value) => String(value ?? '').trim().length > 0;
 // sessions are audit/provenance only and never override current eligibility.
 export const isEligibleOrderTarget = (user) => Boolean(
   user?.userId
+  && user.role !== 'Vendor'
   && user.active === true
   && hasEmployeeId(user.employeeId)
   && isProfileComplete(user)
@@ -32,7 +33,10 @@ const orderTargetColumns = (alias = 'u') => `
   ${alias}.user_id, ${alias}.employee_id, ${alias}.line_user_id,
   ${alias}.display_name, ${alias}.pickup_floor,
   ${currentBalanceProjection(alias)} AS balance,
-  ${alias}.role, ${alias}.active, ${alias}.verification_status,
+  CASE WHEN ${alias}.role = 'User' AND vp.user_id IS NOT NULL
+    THEN 'Vendor' ELSE ${alias}.role END AS role,
+  CASE WHEN vp.user_id IS NULL THEN 0 ELSE 1 END AS vendor_principal,
+  ${alias}.active, ${alias}.invalid_reason, ${alias}.verification_status,
   ${alias}.created_at, ${alias}.updated_at
 `;
 
@@ -42,6 +46,7 @@ const getOrderTargetById = async (database, userId) => {
   const row = await database.prepare(`
     SELECT ${orderTargetColumns('u')}
     FROM users u
+    LEFT JOIN vendor_principals vp ON vp.user_id = u.user_id
     WHERE u.user_id = ?
     LIMIT 1
   `).bind(userId).first();
@@ -166,6 +171,7 @@ export const getEligibleOrderTargets = async (database, identity) => {
   const result = await database.prepare(`
     SELECT ${orderTargetColumns('u')}
     FROM users u
+    LEFT JOIN vendor_principals vp ON vp.user_id = u.user_id
     WHERE u.active = 1
     ORDER BY u.display_name ASC, u.user_id ASC
   `).all();

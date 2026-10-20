@@ -184,6 +184,9 @@ export const completeEmployeeGuestOnboarding = async (
     || inspected?.user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
   }
+  if (inspected?.vendorPrincipal || inspected?.user?.role === 'Vendor') {
+    throw forbidden('VENDOR_EMPLOYEE_GUEST_FORBIDDEN');
+  }
   if (!inspected || !inspected.normal || !inspected.employeeId) {
     throw unauthorized('GUEST_SESSION_INVALID');
   }
@@ -659,6 +662,9 @@ export const bindLineIdentity = async (
   if (inspected.invalidReason === 'INVALID_EMPLOYEE_ID'
     || inspected.user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
+  }
+  if (inspected.vendorPrincipal || inspected.user?.role === 'Vendor') {
+    throw forbidden('VENDOR_EMPLOYEE_GUEST_FORBIDDEN');
   }
 
   const existingLineUser = await getUserByLineId(database, verifiedLineUserId);

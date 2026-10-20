@@ -64,7 +64,9 @@ test('formal migration creates every source-of-truth table', () => {
     'vendor_daily_flavor_sync_runs',
     'taiwan_government_holidays',
     'protected_account_employee_mappings',
-    'protected_account_access_audit'
+    'protected_account_access_audit',
+    'vendor_principals',
+    'vendor_memberships'
   ];
 
   const actual = tableNames(database);
@@ -98,7 +100,8 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_taiwan_government_holidays_year',
     'idx_users_invalid_reason',
     'idx_announcement_user_preferences_user_read',
-    'idx_protected_account_access_audit_time'
+    'idx_protected_account_access_audit_time',
+    'idx_vendor_memberships_vendor_status'
   ];
   const actual = new Set(rows(database, `
     SELECT name
@@ -120,6 +123,63 @@ test('0016 adds nullable popup eligibility and independent per-user preference t
   assert.equal(preferenceColumns.get('announcement_id').pk, 2);
   const foreignKeys = rows(database, 'PRAGMA foreign_key_list(announcement_user_preferences)');
   assert.deepEqual(new Set(foreignKeys.map((key) => key.table)), new Set(['users', 'announcements']));
+});
+
+test('0018 adds separate Vendor principal and multi-vendor membership constraints', () => {
+  const database = openDatabase();
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('synthetic-vendor-user', '合成廠商使用者', '1樓', 0, 'User');
+  database.prepare(`
+    INSERT INTO vendors (vendor_id, name) VALUES (?, ?), (?, ?)
+  `).run('synthetic-vendor-a', '合成店家 A', 'synthetic-vendor-b', '合成店家 B');
+  database.prepare(`
+    INSERT INTO vendor_principals (user_id) VALUES (?)
+  `).run('synthetic-vendor-user');
+  database.prepare(`
+    INSERT INTO vendor_memberships (user_id, vendor_id) VALUES (?, ?), (?, ?)
+  `).run(
+    'synthetic-vendor-user', 'synthetic-vendor-a',
+    'synthetic-vendor-user', 'synthetic-vendor-b'
+  );
+  assert.equal(database.prepare(
+    'SELECT COUNT(*) AS count FROM vendor_memberships WHERE user_id = ?'
+  ).get('synthetic-vendor-user').count, 2);
+  assert.throws(() => database.prepare(`
+    INSERT INTO vendor_memberships (user_id, vendor_id) VALUES (?, ?)
+  `).run('synthetic-vendor-user', 'synthetic-vendor-a'), /UNIQUE/i);
+  assert.throws(() => database.prepare(`
+    INSERT INTO vendor_memberships (user_id, vendor_id, status) VALUES (?, ?, ?)
+  `).run('synthetic-vendor-user', 'synthetic-vendor-a', 'ENABLED'), /CHECK|constraint/i);
+  assert.throws(() => database.prepare(`
+    INSERT INTO vendor_principals (user_id, principal_role) VALUES (?, ?)
+  `).run('synthetic-vendor-user', 'Admin'), /CHECK|constraint/i);
+  assert.throws(() => database.prepare(`
+    INSERT INTO vendor_principals (user_id, status) VALUES (?, ?)
+  `).run('synthetic-vendor-user', 'ENABLED'), /CHECK|constraint/i);
+  assert.throws(() => database.prepare(
+    'INSERT INTO vendor_memberships (user_id, vendor_id) VALUES (?, ?)'
+  ).run('synthetic-vendor-user', 'synthetic-vendor-missing'), /FOREIGN KEY/i);
+  assert.throws(() => database.prepare(
+    'INSERT INTO vendor_principals (user_id) VALUES (?)'
+  ).run('synthetic-vendor-missing-user'), /FOREIGN KEY/i);
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('synthetic-admin-user', '合成管理者', '1樓', 0, 'Admin');
+  assert.throws(() => database.prepare(`
+    INSERT INTO vendor_principals (user_id) VALUES (?)
+  `).run('synthetic-admin-user'), /VENDOR_PRINCIPAL_REQUIRES_USER/);
+  assert.equal(database.prepare(
+    'SELECT role FROM users WHERE user_id = ?'
+  ).get('synthetic-vendor-user').role, 'User');
+  assert.throws(() => database.prepare(`
+    UPDATE users SET role = ? WHERE user_id = ?
+  `).run('Admin', 'synthetic-vendor-user'), /VENDOR_PRINCIPAL_REQUIRES_USER/);
+  assert.equal(database.prepare(
+    'SELECT role FROM users WHERE user_id = ?'
+  ).get('synthetic-vendor-user').role, 'User');
 });
 
 test('0015 adds a constrained invalid employee marker without rewriting existing user rows', () => {

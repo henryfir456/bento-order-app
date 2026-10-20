@@ -76,6 +76,7 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
       ? await getUserByLineId(database, targetUserInput)
       : await getUserById(database, targetUserInput);
   if (!target) throw notFound('TOP_UP_TARGET_NOT_FOUND');
+  if (target.vendorPrincipal) throw conflict('VENDOR_BALANCE_FORBIDDEN');
   const targetUserId = target.userId;
   const requestHash = await hashRequest({ targetUserId, amount, topupMethod, note });
   const existing = await readExistingIdempotencyResult(database, {

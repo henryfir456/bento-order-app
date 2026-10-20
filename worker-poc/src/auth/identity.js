@@ -35,18 +35,23 @@ const actorFromUser = (
   const verificationStatus = user?.verificationStatus
     || (provisional ? VERIFICATION_STATUSES.UNVERIFIED : null);
   const hasEmployeeId = Boolean(String(user?.employeeId || employeeId || '').trim());
+  const active = user ? Boolean(user.active) : true;
+  const vendorPrincipal = Boolean(
+    authMode === 'line'
+    && user?.role === 'Vendor'
+    && user?.vendorPrincipal === true
+  );
   const requiresEmployeeBinding = Boolean(
     user
     && authMode === 'line'
     && !hasEmployeeId
+    && !vendorPrincipal
   );
-  const active = user ? Boolean(user.active) : true;
   const registered = Boolean(
     user
     && active
-    && hasEmployeeId
     && (
-      authMode === 'line'
+      (authMode === 'line' && (hasEmployeeId || vendorPrincipal))
       || isRegisteredEmployeeGuestPrincipal({
         ...user,
         authMode,
@@ -67,6 +72,8 @@ const actorFromUser = (
     registered,
     provisional: guestProvisional,
     requiresEmployeeBinding,
+    vendorPrincipal,
+    vendorAccessActive: vendorPrincipal && user.vendorAccessActive === true,
     verificationStatus,
     canonicalRole,
     // Employee-only authentication never becomes an elevated principal.
@@ -80,6 +87,7 @@ const actorFromUser = (
     actor.employeeId,
     requiresEmployeeBinding
   );
+  if (vendorPrincipal && !actor.vendorAccessActive) actor.capabilities = [];
   actor.identityState = identityStateFor(actor);
   return actor;
 };
@@ -99,6 +107,9 @@ export const resolveLineIdentity = async (
   }
   if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
+  }
+  if (user?.role === 'Vendor' && !user.vendorAccessActive) {
+    throw forbidden('VENDOR_SCOPE_FORBIDDEN');
   }
   return {
     token,

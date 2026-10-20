@@ -18,6 +18,14 @@ test('role assignment is Admin-only, validates formal roles, and is audited', as
   const database = new SqliteD1();
   seedUser(database, { lineUserId: 'admin-1', role: 'Admin' });
   seedUser(database, { lineUserId: 'user-1', role: 'User' });
+  seedUser(database, {
+    userId: 'vendor-role-target',
+    employeeId: 'SYNTHETIC-VENDOR-ROLE-TARGET',
+    lineUserId: 'vendor-role-target-line',
+    displayName: '合成 Vendor 角色目標',
+    role: 'User'
+  });
+  database.run('INSERT INTO vendor_principals (user_id) VALUES (?)', 'vendor-role-target');
   const changed = await call(
     database,
     '/api/admin/users/user-1/role',
@@ -36,6 +44,27 @@ test('role assignment is Admin-only, validates formal roles, and is audited', as
   );
   assert.equal(invalid.response.status, 400);
   assert.equal(invalid.body.error, 'ROLE_INVALID');
+
+  const vendorRole = await call(
+    database,
+    '/api/admin/users/user-1/role',
+    { method: 'PUT', token: 'admin-token', body: { role: 'Vendor' } },
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(vendorRole.response.status, 400);
+  assert.equal(vendorRole.body.error, 'ROLE_INVALID');
+
+  const vendorPrincipal = await call(
+    database,
+    '/api/admin/users/vendor-role-target/role',
+    { method: 'PUT', token: 'admin-token', body: { role: 'Admin' } },
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(vendorPrincipal.response.status, 409);
+  assert.equal(vendorPrincipal.body.error, 'ROLE_TARGET_VENDOR_PRINCIPAL');
+  assert.equal(database.get(
+    'SELECT role FROM users WHERE user_id = ?', 'vendor-role-target'
+  ).role, 'User');
 
   const nonAdmin = await call(
     database,

@@ -294,6 +294,7 @@ export const handleAdminRoute = async (request, env, {
     if (!userId) throw badRequest('USER_ID_REQUIRED');
     const target = await getUserById(env.DB, userId);
     if (!target) throw notFound('USER_NOT_FOUND');
+    if (target.vendorPrincipal) throw notFound('USER_LEDGER_NOT_FOUND');
     const month = url.searchParams.get('month') || '';
     const history = await getBalanceHistory(env.DB, userId, month);
     await appendAuditEvent(env.DB, {

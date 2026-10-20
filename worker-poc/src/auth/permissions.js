@@ -21,8 +21,12 @@ export const ACTIONS = Object.freeze({
   ADMIN_EMPLOYEE_BIND: 'ADMIN_EMPLOYEE_BIND',
   ADMIN_LINE_BINDING_TRANSFER: 'ADMIN_LINE_BINDING_TRANSFER',
   VIEW_AS: 'VIEW_AS',
-  DELEGATE_ORDER: 'DELEGATE_ORDER'
+  DELEGATE_ORDER: 'DELEGATE_ORDER',
+  READ_VENDOR_CONTEXT: 'READ_VENDOR_CONTEXT'
 });
+
+const ADMIN_ACTIONS = Object.values(ACTIONS)
+  .filter((action) => action !== ACTIONS.READ_VENDOR_CONTEXT);
 
 const ROLE_ACTIONS = Object.freeze({
   User: new Set([
@@ -40,7 +44,8 @@ const ROLE_ACTIONS = Object.freeze({
     ACTIONS.ADMIN_VENDORS,
     ACTIONS.DELEGATE_ORDER
   ]),
-  Admin: new Set(Object.values(ACTIONS))
+  Admin: new Set(ADMIN_ACTIONS),
+  Vendor: new Set([ACTIONS.READ_VENDOR_CONTEXT])
 });
 
 const GUEST_ACTIONS = new Set([
@@ -100,6 +105,11 @@ export const isProvisionalPrincipal = (principal) => Boolean(
 
 export const identityStateFor = (principal) => {
   const authMode = principal?.authMode || 'line';
+  if (principal?.canonicalRole === 'Vendor'
+    && authMode === 'line'
+    && principal?.active === true) {
+    return IDENTITY_STATES.VERIFIED;
+  }
   if (
     principal?.userId
     && authMode === 'line'
@@ -141,10 +151,12 @@ export const capabilitiesFor = (
 ) => {
   if (!active) return [];
   if (authMode === 'employee_guest') {
+    if (role === 'Vendor') return [];
     return [...GUEST_ACTIONS].sort();
   }
   if (
     authMode === 'line'
+    && role !== 'Vendor'
     && (employeeBindingRequired || !hasEmployeeId(employeeId))
   ) {
     return [
@@ -182,9 +194,13 @@ export const assertCan = (identity, action) => {
   const actor = identity?.actor;
   const authMode = actor?.authMode || 'line';
   const registered = isRegisteredLinePrincipal(actor);
+  const vendorPrincipal = actor?.role === 'Vendor'
+    && actor?.vendorPrincipal === true
+    && actor?.active === true
+    && authMode === 'line';
   const guest = authMode === 'employee_guest' && actor?.active === true;
   const unbound = isEmployeeBindingPrincipal(actor);
-  if (!actor || (!registered && !guest && !unbound) || !can(
+  if (!actor || (!registered && !vendorPrincipal && !guest && !unbound) || !can(
     actor.role,
     action,
     authMode,
@@ -192,6 +208,9 @@ export const assertCan = (identity, action) => {
     actor.employeeId,
     actor.requiresEmployeeBinding
   )) {
+    throw forbidden();
+  }
+  if (action === ACTIONS.READ_VENDOR_CONTEXT && !actor.vendorAccessActive) {
     throw forbidden();
   }
   return true;
