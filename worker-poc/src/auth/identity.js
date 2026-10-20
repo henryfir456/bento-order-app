@@ -12,7 +12,7 @@ import { fetchLineProfile } from './lineProfile.js';
 import { inspectGuestSession, isGuestToken } from './guestSession.js';
 import {
   denyProtectedAccountAccess,
-  isProtectedEmployeeId,
+  hasAnyProtectedEmployeeId,
   requireProtectedLineOwner
 } from './protectedAccounts.js';
 
@@ -94,7 +94,7 @@ export const resolveLineIdentity = async (
   if (!token) throw unauthorized();
   const profile = await fetchLineProfile(token, fetchImpl);
   let user = await getUserByLineId(database, profile.lineUserId);
-  if (isProtectedEmployeeId(user?.employeeId)) {
+  if (hasAnyProtectedEmployeeId(user?.employeeId)) {
     user = await requireProtectedLineOwner(database, profile.lineUserId, clock);
   }
   if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
@@ -150,7 +150,11 @@ export const resolveCanonicalIdentity = async (
   if (isGuestToken(token)) {
     if (viewAsTarget(new URL(request.url))) throw forbidden('VIEW_AS_FORBIDDEN');
     if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
-    if (isProtectedEmployeeId(guest.employeeId || guest.user?.employeeId)) {
+    if (hasAnyProtectedEmployeeId(
+      guest.employeeId,
+      guest.session?.employeeId,
+      guest.user?.employeeId
+    )) {
       return denyProtectedAccountAccess(env.DB, {
         authMode: 'employee_guest',
         reason: 'GUEST_SESSION_FOR_PROTECTED_ACCOUNT',
@@ -209,7 +213,7 @@ export const resolveCanonicalIdentity = async (
   }
   const effectiveUser = await getUserById(env.DB, requestedTarget);
   if (!effectiveUser) throw forbidden('VIEW_AS_TARGET_NOT_FOUND');
-  if (isProtectedEmployeeId(effectiveUser.employeeId)) {
+  if (hasAnyProtectedEmployeeId(effectiveUser.employeeId)) {
     await appendAuditEvent(env.DB, {
       actorUserId: actor.userId,
       actorAuthMode: actor.authMode,

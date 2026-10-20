@@ -4,7 +4,10 @@ import { forbidden } from '../http/errors.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
 import { VERIFICATION_STATUSES } from './permissions.js';
 
-export { isProtectedEmployeeId } from './protectedAccountPolicy.js';
+export {
+  hasAnyProtectedEmployeeId,
+  isProtectedEmployeeId
+} from './protectedAccountPolicy.js';
 
 export const recordProtectedAccountDenial = async (
   database,

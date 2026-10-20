@@ -199,6 +199,57 @@ test('employee login, onboarding, and old guest sessions cannot use protected em
   assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 4);
 });
 
+test('a guest session employee ID cannot mask its linked protected canonical user', async () => {
+  const database = protectedDatabase({ lineUserId: null });
+  const createMismatchedSession = () => createGuestSession(database, {
+    userId: PROTECTED_USER_ID,
+    employeeId: 'SYNTHETIC-OTHER',
+    status: 'VERIFIED',
+    clock: NOW
+  });
+
+  const sessionForMe = await createMismatchedSession();
+  const me = await call(database, '/api/me', { token: sessionForMe.token });
+  assert.equal(me.response.status, 403);
+  assert.equal(me.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
+  assert.equal(JSON.stringify(me.body).includes(PROTECTED_USER_ID), false);
+
+  const sessionForOnboarding = await createMismatchedSession();
+  const onboarding = await call(database, '/api/auth/employee-guest/onboarding', {
+    method: 'POST',
+    token: '',
+    headers: { 'X-Employee-Guest-Session': sessionForOnboarding.token },
+    body: { displayName: 'Synthetic Attempt', pickupFloor: '1樓' }
+  });
+  assert.equal(onboarding.response.status, 403);
+  assert.equal(onboarding.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
+  assert.equal(JSON.stringify(onboarding.body).includes(PROTECTED_USER_ID), false);
+
+  const sessionForBind = await createMismatchedSession();
+  const bind = await call(database, '/api/auth/line-bind', {
+    method: 'POST',
+    token: 'synthetic-stranger-token',
+    headers: { 'X-Employee-Guest-Session': sessionForBind.token },
+    body: { displayName: 'Synthetic Attempt', pickupFloor: '1樓' }
+  }, { fetchImpl: strangerFetch });
+  assert.equal(bind.response.status, 403);
+  assert.equal(bind.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
+  assert.equal(JSON.stringify(bind.body).includes(PROTECTED_USER_ID), false);
+  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', PROTECTED_USER_ID).line_user_id, null);
+
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 3);
+  assert.deepEqual(database.database.prepare('PRAGMA table_info(protected_account_access_audit)')
+    .all().map(({ name }) => name), ['event_id', 'auth_mode', 'reason_code', 'occurred_at']);
+  assert.deepEqual(database.database.prepare(`
+    SELECT reason_code FROM protected_account_access_audit ORDER BY occurred_at, event_id
+  `).all().map(({ reason_code }) => reason_code).sort(), [
+    'GUEST_SESSION_FOR_PROTECTED_ACCOUNT',
+    'LINE_OWNER_MISMATCH',
+    'ONBOARDING_FOR_PROTECTED_ACCOUNT',
+  ].sort());
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM admin_audit_log').count, 0);
+});
+
 test('expired legacy guest sessions cannot resume protected-account access', async () => {
   const database = protectedDatabase();
   const expired = await createGuestSession(database, {

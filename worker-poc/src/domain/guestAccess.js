@@ -3,6 +3,7 @@ import { getUserByEmployeeId, getUserById, getUserByLineId, publicUser } from '.
 import { createGuestSession, inspectGuestSession } from '../auth/guestSession.js';
 import {
   denyProtectedAccountAccess,
+  hasAnyProtectedEmployeeId,
   isProtectedEmployeeId,
   requireProtectedLineOwner
 } from '../auth/protectedAccounts.js';
@@ -186,7 +187,11 @@ export const completeEmployeeGuestOnboarding = async (
   if (!inspected || !inspected.normal || !inspected.employeeId) {
     throw unauthorized('GUEST_SESSION_INVALID');
   }
-  if (isProtectedEmployeeId(inspected.employeeId || inspected.user?.employeeId)) {
+  if (hasAnyProtectedEmployeeId(
+    inspected.employeeId,
+    inspected.session?.employeeId,
+    inspected.user?.employeeId
+  )) {
     return denyProtectedAccountAccess(database, {
       authMode: 'employee_guest',
       reason: 'ONBOARDING_FOR_PROTECTED_ACCOUNT',
@@ -663,8 +668,11 @@ export const bindLineIdentity = async (
   if (!inspected.normal && !inspected.replay) {
     throw unauthorized('GUEST_SESSION_INVALID');
   }
-  const inspectedEmployeeId = inspected.employeeId || inspected.user?.employeeId;
-  if (isProtectedEmployeeId(inspectedEmployeeId)) {
+  if (hasAnyProtectedEmployeeId(
+    inspected.employeeId,
+    inspected.session?.employeeId,
+    inspected.user?.employeeId
+  )) {
     const protectedOwner = await requireProtectedLineOwner(database, verifiedLineUserId, clock);
     if (inspected.user?.userId === protectedOwner.userId) {
       return {
