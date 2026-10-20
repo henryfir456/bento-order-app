@@ -60,7 +60,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0014_taiwan_government_holidays.sql',
       '0015_invalid_employee_marker.sql',
       '0016_announcement_user_preferences.sql',
-      '0017_protected_account_auth_audit.sql'
+      '0017_protected_account_auth_audit.sql',
+      '0018_vendor_principals_and_memberships.sql'
     ]
   );
 });

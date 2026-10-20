@@ -89,6 +89,32 @@ test('Admin binding without a roster match remains directly registered', async (
   assert.equal(database.get("SELECT verification_status FROM users WHERE user_id = 'target-1'").verification_status, 'VERIFIED');
 });
 
+test('Admin employee binding cannot race a Vendor principal becoming active', async () => {
+  const database = seedBindingDatabase();
+  const originalBatch = database.batch.bind(database);
+  let principalInserted = false;
+  database.batch = (statements) => {
+    if (!principalInserted) {
+      database.run(`
+        INSERT INTO vendor_principals (user_id, principal_role, status)
+        VALUES ('target-1', 'Vendor', 'ACTIVE')
+      `);
+      principalInserted = true;
+    }
+    return originalBatch(statements);
+  };
+
+  const result = await adminBind(database, 'target-1', 'SYNTHETIC-ADMIN-BIND-RACE');
+
+  assert.equal(principalInserted, true);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'EMPLOYEE_BIND_CONFLICT');
+  assert.equal(database.get('SELECT employee_id FROM users WHERE user_id = ?', 'target-1').employee_id, null);
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ADMIN_EMPLOYEE_BIND'"
+  ).count, 0);
+});
+
 test('registered LINE Admin can bind with historical UNVERIFIED status, while unbound Admin cannot', async () => {
   const database = seedBindingDatabase();
   database.run(`

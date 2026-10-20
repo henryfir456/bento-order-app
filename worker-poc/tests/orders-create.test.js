@@ -118,6 +118,41 @@ test('normal order debit keeps users, authoritative ledger, and response balance
   `).balance_after, 935);
 });
 
+test('Vendor principal inserted after order preflight blocks order and debit writes', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  let principalInserted = false;
+  const racingDatabase = {
+    prepare: (...args) => database.prepare(...args),
+    batch(statements) {
+      if (!principalInserted) {
+        database.run(`
+          INSERT INTO vendor_principals (user_id, principal_role, status)
+          VALUES ('user-1', 'Vendor', 'ACTIVE')
+        `);
+        principalInserted = true;
+      }
+      return database.batch(statements);
+    }
+  };
+
+  const result = await create(racingDatabase, {
+    targetDate: ORDER_DATE,
+    pickupFloor: '1樓',
+    items: [{ menu_item_id: 'menu-a', quantity: 1 }]
+  }, 'vendor-order-race');
+
+  assert.equal(principalInserted, true);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'IDENTITY_SESSION_STALE');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM orders').count, 0);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', 'user-1').balance, 100);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM idempotency_keys WHERE idempotency_key = ?',
+    'vendor-order-race'
+  ).count, 0);
+});
+
 test('duplicate legacy item IDs remain selectable by distinct internal keys', async () => {
   const database = seedOrderDatabase();
   const result = await create(database, {

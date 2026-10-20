@@ -98,6 +98,7 @@ const conflictsFor = async (database, source, target) => {
   add('SOURCE_NAME_REQUIRED', !String(source.displayName || '').trim());
   add('TARGET_ALREADY_INVALID', target.invalidReason === INVALID_REASON);
   add('TARGET_INACTIVE', !target.active);
+  add('TARGET_VENDOR_PRINCIPAL', target.vendorPrincipal === true);
   add('TARGET_EMPLOYEE_ID_MISSING', !String(target.employeeId || '').trim());
   add('TARGET_NAME_REQUIRED', !String(target.displayName || '').trim());
   add('REPAIR_ALREADY_RECORDED', await repairAuditExists(database, source.userId));
@@ -197,6 +198,9 @@ export const repairInvalidEmployeeIdentity = async (
     WHERE user_id = ?
       AND active = 1
       AND role = 'User'
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+      )
       AND employee_id = ?
       AND length(trim(employee_id)) > 0
       AND display_name = ?
@@ -207,6 +211,9 @@ export const repairInvalidEmployeeIdentity = async (
       AND EXISTS (
         SELECT 1 FROM users target
         WHERE target.user_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = target.user_id
+          )
           AND target.active = 1
           AND target.invalid_reason IS NULL
           AND target.employee_id = ?
@@ -250,12 +257,18 @@ export const repairInvalidEmployeeIdentity = async (
       AND active = 1
       AND invalid_reason IS NULL
       AND employee_id = ?
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+      )
       AND display_name = ?
       AND updated_at = ?
       AND ${currentBalanceProjection('users')} = ?
       AND EXISTS (
         SELECT 1 FROM users source
         WHERE source.user_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = source.user_id
+          )
           AND source.active = 0
           AND source.invalid_reason = ?
           AND source.updated_at = ?

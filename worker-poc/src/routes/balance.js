@@ -76,6 +76,7 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
       ? await getUserByLineId(database, targetUserInput)
       : await getUserById(database, targetUserInput);
   if (!target) throw notFound('TOP_UP_TARGET_NOT_FOUND');
+  if (target.vendorPrincipal) throw conflict('VENDOR_BALANCE_FORBIDDEN');
   const targetUserId = target.userId;
   const requestHash = await hashRequest({ targetUserId, amount, topupMethod, note });
   const existing = await readExistingIdempotencyResult(database, {
@@ -101,6 +102,16 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
   try {
     return await runIdempotentMutation(database, {
       ...details,
+      claimPredicate: {
+        sql: `EXISTS (
+          SELECT 1 FROM users target
+          WHERE target.user_id = ?
+            AND NOT EXISTS (
+              SELECT 1 FROM vendor_principals vp WHERE vp.user_id = target.user_id
+            )
+        )`,
+        params: [targetUserId]
+      },
       responseSpec: balanceMutationResponseSpec({
         message: 'BALANCE_TOPPED_UP',
         targetUserId,
@@ -119,7 +130,8 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
           targetLineUserIdSnapshot: target.lineUserId,
           action: 'BALANCE_TOP_UP',
           metadata: { amount, topupMethod, note, transactionId },
-          occurredAt: now
+          occurredAt: now,
+          onlyIfPriorMutation: true
         });
         const ledger = ledgerMutationStatements(database, {
           transactionId,
@@ -147,6 +159,9 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
       }
     });
   } catch (error) {
+    if (error?.code === 'IDENTITY_SESSION_STALE') {
+      throw conflict('VENDOR_BALANCE_FORBIDDEN');
+    }
     if (error?.code === 'TRANSACTION_FAILED') throw conflict('MUTATION_CONFLICT');
     throw error;
   }

@@ -19,8 +19,20 @@ const memberRows = async (database, { includeInvalid = false } = {}) => {
              FROM protected_account_employee_mappings mapping
              WHERE UPPER(trim(mapping.employee_id)) = UPPER(trim(u.employee_id))
            ) THEN 1 ELSE 0 END AS is_protected_account,
-           u.role, u.active, u.invalid_reason, u.verification_status, u.created_at, u.updated_at
+           CASE WHEN u.role = 'User' AND vp.user_id IS NOT NULL
+             THEN 'Vendor' ELSE u.role END AS role,
+           CASE WHEN vp.user_id IS NULL THEN 0 ELSE 1 END AS vendor_principal,
+           CASE WHEN u.role = 'User' AND vp.status = 'ACTIVE' AND EXISTS (
+             SELECT 1
+             FROM vendor_memberships vm
+             JOIN vendors v ON v.vendor_id = vm.vendor_id
+             WHERE vm.user_id = u.user_id
+               AND vm.status = 'ACTIVE'
+               AND v.enabled = 1
+           ) THEN 1 ELSE 0 END AS vendor_access_active,
+           u.active, u.invalid_reason, u.verification_status, u.created_at, u.updated_at
     FROM users u
+    LEFT JOIN vendor_principals vp ON vp.user_id = u.user_id
     WHERE (? = 1 OR (u.active = 1 AND u.invalid_reason IS NULL))
     ORDER BY u.display_name ASC, u.user_id ASC
   `).bind(includeInvalid ? 1 : 0).all();
@@ -33,6 +45,9 @@ const memberRows = async (database, { includeInvalid = false } = {}) => {
     balance: Number(row.balance),
     isProtectedAccount: Boolean(row.is_protected_account),
     role: row.role,
+    canonicalRole: row.role,
+    vendorPrincipal: Number(row.vendor_principal || 0) === 1,
+    vendorAccessActive: Number(row.vendor_access_active || 0) === 1,
     active: Boolean(row.active),
     invalidReason: row.invalid_reason,
     verificationStatus: row.verification_status,

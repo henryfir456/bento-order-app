@@ -161,6 +161,150 @@ test('admin group cancellation after cutoff cancels every active order and refun
   ).count, 2);
 });
 
+test('admin group cancellation rejects a pre-existing Vendor principal order without mutations', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  const created = await callOrderRoute(
+    database,
+    '/api/orders',
+    {
+      method: 'POST',
+      body: {
+        targetDate: ORDER_DATE,
+        pickupFloor: '1樓',
+        items: [{ menu_item_id: 'menu-a', quantity: 1 }]
+      },
+      headers: { 'Idempotency-Key': 'synthetic-calendar-vendor-order' }
+    },
+    userProfile('user-1', 'token-user-1')
+  );
+  assert.equal(created.response.status, 200);
+  database.run(`
+    INSERT INTO vendor_principals (user_id, principal_role, status)
+    VALUES ('user-1', 'Vendor', 'ACTIVE')
+  `);
+
+  const result = await call(database, `/api/admin/calendar/${ORDER_DATE}`, {
+    method: 'PUT',
+    token: 'admin-token',
+    body: { vendor: '', mode: 'A' }
+  }, { token: 'admin-token', lineUserId: 'admin-1' });
+
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'VENDOR_ORDER_GROUP_CANCELLATION_FORBIDDEN');
+  assert.equal(database.get(
+    'SELECT status FROM orders WHERE order_id = ?', created.body.orderId
+  ).status, 'ACTIVE');
+  assert.equal(database.get(
+    'SELECT balance FROM users WHERE user_id = ?', 'user-1'
+  ).balance, 20);
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'REFUND'"
+  ).count, 0);
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM order_status_history WHERE reason = 'GROUP_CANCELLED'"
+  ).count, 0);
+  assert.equal(database.get(
+    'SELECT vendor FROM calendar_settings WHERE order_date = ?', ORDER_DATE
+  ).vendor, 'Vendor A');
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'CALENDAR_SETTING_UPDATED'"
+  ).count, 0);
+});
+
+test('admin group cancellation race with a Vendor principal leaves the whole group unchanged', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  const funded = await call(database, '/api/admin/balances/top-up', {
+    method: 'POST',
+    token: 'admin-token',
+    headers: { 'Idempotency-Key': 'synthetic-calendar-race-funding' },
+    body: {
+      targetUserId: 'user-2',
+      amount: 100,
+      topupMethod: 'CASH',
+      note: 'synthetic race fixture'
+    }
+  }, { token: 'admin-token', lineUserId: 'admin-1' });
+  assert.equal(funded.response.status, 200);
+
+  const created = await callOrderRoute(
+    database,
+    '/api/orders',
+    {
+      method: 'POST',
+      body: {
+        targetDate: ORDER_DATE,
+        pickupFloor: '1樓',
+        items: [{ menu_item_id: 'menu-a', quantity: 1 }]
+      },
+      headers: { 'Idempotency-Key': 'synthetic-calendar-vendor-race' }
+    },
+    userProfile('user-1', 'token-user-1')
+  );
+  assert.equal(created.response.status, 200);
+  const secondCreated = await callOrderRoute(
+    database,
+    '/api/orders',
+    {
+      method: 'POST',
+      body: {
+        targetDate: ORDER_DATE,
+        pickupFloor: '9樓',
+        items: [{ menu_item_id: 'menu-a', quantity: 1 }]
+      },
+      headers: { 'Idempotency-Key': 'synthetic-calendar-race-employee-order' }
+    },
+    userProfile('user-2', 'token-user-2')
+  );
+  assert.equal(secondCreated.response.status, 200);
+
+  const originalBatch = database.batch.bind(database);
+  let principalInserted = false;
+  database.batch = (statements) => {
+    if (!principalInserted) {
+      database.run(`
+        INSERT INTO vendor_principals (user_id, principal_role, status)
+        VALUES ('user-1', 'Vendor', 'ACTIVE')
+      `);
+      principalInserted = true;
+    }
+    return originalBatch(statements);
+  };
+
+  const result = await call(database, `/api/admin/calendar/${ORDER_DATE}`, {
+    method: 'PUT',
+    token: 'admin-token',
+    body: { vendor: '', mode: 'A' }
+  }, { token: 'admin-token', lineUserId: 'admin-1' });
+
+  assert.equal(principalInserted, true);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'VENDOR_ORDER_GROUP_CANCELLATION_FORBIDDEN');
+  assert.equal(database.get(
+    'SELECT status FROM orders WHERE order_id = ?', created.body.orderId
+  ).status, 'ACTIVE');
+  assert.equal(database.get(
+    'SELECT status FROM orders WHERE order_id = ?', secondCreated.body.orderId
+  ).status, 'ACTIVE');
+  assert.equal(database.get(
+    'SELECT balance FROM users WHERE user_id = ?', 'user-1'
+  ).balance, 20);
+  assert.equal(database.get(
+    'SELECT balance FROM users WHERE user_id = ?', 'user-2'
+  ).balance, 20);
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'REFUND'"
+  ).count, 0);
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM order_status_history WHERE reason = 'GROUP_CANCELLED'"
+  ).count, 0);
+  assert.equal(database.get(
+    'SELECT vendor FROM calendar_settings WHERE order_date = ?', ORDER_DATE
+  ).vendor, 'Vendor A');
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'CALENDAR_SETTING_UPDATED'"
+  ).count, 0);
+});
+
 test('admin can close a group with no active orders', async () => {
   const database = databaseWithActors();
   database.run(`

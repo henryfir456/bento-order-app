@@ -50,6 +50,45 @@ test('permission matrix preserves User, ProxyAdmin, and Admin boundaries', () =>
   assert.equal(can('Unknown', ACTIONS.READ_SELF), false);
 });
 
+test('Vendor has only server-scoped vendor context permission', () => {
+  assert.equal(can('Vendor', ACTIONS.READ_VENDOR_CONTEXT, 'line', true, null), true);
+  for (const action of Object.values(ACTIONS).filter((action) => action !== ACTIONS.READ_VENDOR_CONTEXT)) {
+    assert.equal(can('Vendor', action, 'line', true, null), false, action);
+    assert.equal(can('Vendor', action, 'employee_guest', true, null), false, 'employee_guest ' + action);
+  }
+  for (const role of ['User', 'ProxyAdmin', 'Admin']) {
+    assert.equal(can(role, ACTIONS.READ_VENDOR_CONTEXT, 'line', true, 'synthetic-employee'), false, role);
+  }
+  assert.equal(can('Vendor', ACTIONS.READ_VENDOR_CONTEXT, 'employee_guest', true, null), false);
+});
+
+test('Vendor action requires a verified server-derived principal and active scope', () => {
+  const vendorIdentity = {
+    actor: {
+      userId: 'synthetic-vendor-user',
+      role: 'Vendor',
+      active: true,
+      registered: true,
+      authMode: 'line',
+      employeeId: null,
+      vendorPrincipal: true,
+      vendorAccessActive: true
+    }
+  };
+  assert.doesNotThrow(() => assertCan(vendorIdentity, ACTIONS.READ_VENDOR_CONTEXT));
+  for (const actor of [
+    { ...vendorIdentity.actor, vendorPrincipal: false },
+    { ...vendorIdentity.actor, vendorAccessActive: false },
+    { ...vendorIdentity.actor, authMode: 'employee_guest' },
+    { ...vendorIdentity.actor, active: false }
+  ]) {
+    assert.throws(
+      () => assertCan({ actor }, ACTIONS.READ_VENDOR_CONTEXT),
+      (error) => error.code === 'FORBIDDEN'
+    );
+  }
+});
+
 test('User gains only order-summary read access and no other administrative action', () => {
   for (const action of [
     ACTIONS.READ_MEMBER_BALANCES,
@@ -71,13 +110,14 @@ test('User gains only order-summary read access and no other administrative acti
     false
   );
   assert.equal(can('ProxyAdmin', ACTIONS.VIEW_AS, 'line', true, 'employee-proxy'), false);
-  for (const action of Object.values(ACTIONS)) {
+  for (const action of Object.values(ACTIONS).filter((action) => action !== ACTIONS.READ_VENDOR_CONTEXT)) {
     assert.equal(
       can('Admin', action, 'line', true, 'employee-admin'),
       true,
       'Admin must retain ' + action
     );
   }
+  assert.equal(can('Admin', ACTIONS.READ_VENDOR_CONTEXT, 'line', true, 'employee-admin'), false);
 });
 
 test('assertCan requires a registered actor and assertSelfTarget rejects impersonation', () => {

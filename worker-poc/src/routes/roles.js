@@ -36,11 +36,15 @@ export const assignRole = async (database, identity, targetUserInput, input, clo
   if (existing.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
   }
+  if (existing.vendorPrincipal) throw conflict('ROLE_TARGET_VENDOR_PRINCIPAL');
   const occurredAt = resolveClock(clock).toISOString();
   const auditId = randomId('audit');
   const update = prepareStatement(database, `
     UPDATE users SET role = ?, updated_at = ?
     WHERE user_id = ? AND invalid_reason IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+      )
   `, [role, occurredAt, existing.userId]);
   const audit = auditStatement(database, {
     auditId,

@@ -184,6 +184,9 @@ export const completeEmployeeGuestOnboarding = async (
     || inspected?.user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
   }
+  if (inspected?.vendorPrincipal || inspected?.user?.role === 'Vendor') {
+    throw forbidden('VENDOR_EMPLOYEE_GUEST_FORBIDDEN');
+  }
   if (!inspected || !inspected.normal || !inspected.employeeId) {
     throw unauthorized('GUEST_SESSION_INVALID');
   }
@@ -458,6 +461,9 @@ export const lineEmployeeBind = async (
           AND active = 1
           AND role = 'User'
           AND invalid_reason IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+          )
       `).bind(
         verifiedLineUserId,
         legacyEmployeeDisplayName(user.employeeId),
@@ -548,6 +554,9 @@ export const lineEmployeeBind = async (
           AND employee_id IS NULL
           AND active = 1
           AND invalid_reason IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+          )
       `).bind(
         employeeId,
         timestamp,
@@ -659,6 +668,9 @@ export const bindLineIdentity = async (
   if (inspected.invalidReason === 'INVALID_EMPLOYEE_ID'
     || inspected.user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
+  }
+  if (inspected.vendorPrincipal || inspected.user?.role === 'Vendor') {
+    throw forbidden('VENDOR_EMPLOYEE_GUEST_FORBIDDEN');
   }
 
   const existingLineUser = await getUserByLineId(database, verifiedLineUserId);
@@ -791,6 +803,9 @@ export const bindLineIdentity = async (
         updated_at = ?
     WHERE user_id = ? AND active = 1 AND line_user_id IS NULL
       AND invalid_reason IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+      )
   `, [
     verifiedLineUserId,
     legacyEmployeeDisplayName(inspected.user.employeeId),

@@ -471,6 +471,41 @@ test('Admin can delegate an order to an active canonical no-LINE User', async ()
   assert.equal(database.get("SELECT created_by_user_id FROM orders WHERE order_id = ?", result.body.orderId).created_by_user_id, 'admin-1');
 });
 
+test('Vendor principal inserted after delegated-order preflight blocks target order and debit writes', async () => {
+  const database = delegatedDatabase({ targetBalance: 100, actorBalance: 500 });
+  let principalInserted = false;
+  const racingDatabase = {
+    prepare: (...args) => database.prepare(...args),
+    batch(statements) {
+      if (!principalInserted) {
+        database.run(`
+          INSERT INTO vendor_principals (user_id, principal_role, status)
+          VALUES ('user-2', 'Vendor', 'ACTIVE')
+        `);
+        principalInserted = true;
+      }
+      return database.batch(statements);
+    }
+  };
+
+  const result = await create(
+    racingDatabase,
+    orderBody(TODAY, { targetUserId: 'user-2' }),
+    'vendor-delegated-order-race',
+    profileFor('admin-1')
+  );
+
+  assert.equal(principalInserted, true);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'IDEMPOTENCY_FAILED');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM orders').count, 0);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM balance_ledger WHERE user_id = ?', 'user-2'
+  ).count, 0);
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', 'user-2').balance, 100);
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', 'admin-1').balance, 500);
+});
+
 test('User self-order remains subject to the ordinary cutoff', async () => {
   const result = await create(
     delegatedDatabase(),
@@ -684,6 +719,51 @@ test('delegated cancellation refunds target balance and leaves actor balance unc
   assert.equal(audit.actor_user_id, 'admin-1');
   assert.equal(audit.target_user_id, 'user-2');
   assert.equal(audit.action, 'ORDER_CANCEL');
+});
+
+test('Vendor principal inserted after delegated-cancel preflight blocks refund and status writes', async () => {
+  const database = delegatedDatabase({ targetBalance: 100, actorBalance: 500 });
+  const created = await create(
+    database,
+    orderBody(TODAY, { targetUserId: 'user-2' }),
+    'vendor-delegated-cancel-setup',
+    profileFor('admin-1')
+  );
+  assert.equal(created.response.status, 200);
+  const orderId = created.body.orderId;
+  let principalInserted = false;
+  const racingDatabase = {
+    prepare: (...args) => database.prepare(...args),
+    batch(statements) {
+      if (!principalInserted) {
+        database.run(`
+          INSERT INTO vendor_principals (user_id, principal_role, status)
+          VALUES ('user-2', 'Vendor', 'ACTIVE')
+        `);
+        principalInserted = true;
+      }
+      return database.batch(statements);
+    }
+  };
+
+  const result = await cancel(
+    racingDatabase,
+    orderId,
+    'vendor-delegated-cancel-race',
+    profileFor('admin-1'),
+    { targetUserId: 'user-2' }
+  );
+
+  assert.equal(principalInserted, true);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'IDEMPOTENCY_FAILED');
+  assert.equal(database.get('SELECT status FROM orders WHERE order_id = ?', orderId).status, 'ACTIVE');
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM balance_ledger WHERE type = \'REFUND\' AND reference_id = ?',
+    orderId
+  ).count, 0);
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', 'user-2').balance, 20);
+  assert.equal(database.get('SELECT balance FROM users WHERE user_id = ?', 'admin-1').balance, 500);
 });
 
 test('ProxyAdmin and Admin cannot cancel a completed delegated order', async () => {

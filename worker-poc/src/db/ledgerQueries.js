@@ -201,7 +201,11 @@ export const ledgerMutationStatements = (
           ELSE ${updateElse}
         END,
         updated_at = ?
-    WHERE target.user_id = ? AND ${guardSql}
+    WHERE target.user_id = ?
+      AND (${guardSql})
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = target.user_id
+      )
   `, updateParams);
 
   const insert = prepareStatement(database, `
@@ -224,6 +228,9 @@ export const ledgerMutationStatements = (
       ${dynamicOrder ? `AND ${dynamicOrderAmount} IS NOT NULL` : ''}
       ${dynamicBalanceAfter || dynamicOrder ? '' : 'AND target.balance = ?'}
       AND ${guardSql}
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = target.user_id
+      )
   `, [
     entry.transactionId,
     entry.userId,

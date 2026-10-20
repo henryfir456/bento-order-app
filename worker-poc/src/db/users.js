@@ -21,6 +21,9 @@ export const toUser = (row) => {
       : String(row.pickup_floor),
     balance: Number(row.balance),
     role: String(row.role || 'User'),
+    canonicalRole: String(row.role || 'User'),
+    vendorPrincipal: Number(row.vendor_principal || 0) === 1,
+    vendorAccessActive: Number(row.vendor_access_active || 0) === 1,
     active: Boolean(row.active),
     invalidReason: row.invalid_reason || null,
     isProtectedAccount: Boolean(row.is_protected_account),
@@ -62,15 +65,30 @@ const userColumns = (alias = 'u') => `
     FROM protected_account_employee_mappings mapping
     WHERE UPPER(trim(mapping.employee_id)) = UPPER(trim(${alias}.employee_id))
   ) THEN 1 ELSE 0 END AS is_protected_account,
-  ${alias}.role, ${alias}.active, ${alias}.invalid_reason,
-  ${alias}.verification_status,
+  CASE WHEN ${alias}.role = 'User' AND vp.user_id IS NOT NULL
+    THEN 'Vendor' ELSE ${alias}.role END AS role,
+  CASE WHEN vp.user_id IS NULL THEN 0 ELSE 1 END AS vendor_principal,
+  CASE WHEN ${alias}.role = 'User' AND vp.status = 'ACTIVE' AND EXISTS (
+    SELECT 1
+    FROM vendor_memberships vm
+    JOIN vendors v ON v.vendor_id = vm.vendor_id
+    WHERE vm.user_id = ${alias}.user_id
+      AND vm.status = 'ACTIVE'
+      AND v.enabled = 1
+  ) THEN 1 ELSE 0 END AS vendor_access_active,
+  ${alias}.active, ${alias}.invalid_reason, ${alias}.verification_status,
   ${alias}.created_at, ${alias}.updated_at
+`;
+
+const userJoins = (alias = 'u') => `
+  LEFT JOIN vendor_principals vp ON vp.user_id = ${alias}.user_id
 `;
 
 export const getUserById = async (database, userId) => {
   const row = await database.prepare(`
     SELECT ${userColumns('u')}
     FROM users u
+    ${userJoins('u')}
     WHERE u.user_id = ?
     LIMIT 1
   `).bind(userId).first();
@@ -82,6 +100,7 @@ export const getUserByEmployeeId = async (database, employeeId) => {
   const row = await database.prepare(`
     SELECT ${userColumns('u')}
     FROM users u
+    ${userJoins('u')}
     WHERE UPPER(trim(u.employee_id)) = ? AND length(trim(u.employee_id)) > 0
     LIMIT 1
   `).bind(lookupKey).first();
@@ -92,6 +111,7 @@ export const getUserByLineId = async (database, lineUserId) => {
   const row = await database.prepare(`
     SELECT ${userColumns('u')}
     FROM users u
+    ${userJoins('u')}
     WHERE u.line_user_id = ?
     LIMIT 1
   `).bind(lineUserId).first();
@@ -106,6 +126,7 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
   const authMode = projectedAuthMode || user.authMode || (hasLineBinding ? 'line' : 'canonical');
   const isEmployeeGuest = authMode === 'employee_guest';
   const canonicalRole = user.canonicalRole || user.role;
+  const isVendor = canonicalRole === 'Vendor';
   const registeredEmployeeGuest = isRegisteredEmployeeGuestPrincipal({
     ...user,
     authMode,
@@ -116,8 +137,9 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
   // not be inferred from a nullable users.line_user_id projection.
   const identityState = identityStateFor({
     userId: user.userId,
-    employeeId: user.employeeId,
+    employeeId: isVendor ? null : user.employeeId,
     authMode,
+    canonicalRole,
     registered: isEmployeeGuest
       ? registeredEmployeeGuest
       : user.active && hasEmployeeId,
@@ -134,11 +156,11 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
         : 'NON_LINE';
   return {
     userId: user.userId,
-    employeeId: user.employeeId,
+    employeeId: isVendor ? null : user.employeeId,
     name: user.displayName,
     floor: user.pickupFloor,
     defaultFloor: user.pickupFloor,
-    balance: user.balance,
+    balance: isVendor ? null : user.balance,
     // The employee_guest projection is intentionally self-service only and
     // must never expose an elevated role obtained through employee auth.
     role: isEmployeeGuest ? 'User' : user.role,
@@ -148,7 +170,7 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
     identityState,
     verificationStatus,
     lineBound: hasLineBinding,
-    lineUserId: isEmployeeGuest || user.isProtectedAccount
+    lineUserId: isEmployeeGuest || isVendor || user.isProtectedAccount
       ? null
       : user.lineUserId,
     displayName: user.displayName,

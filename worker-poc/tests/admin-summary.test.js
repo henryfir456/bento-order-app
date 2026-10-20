@@ -98,6 +98,56 @@ test('admin and proxy summary views aggregate active orders without leaking memb
   assert.deepEqual(userWithMemberBalances.body.usersSummary, []);
 });
 
+test('admin member name update cannot race a Vendor principal becoming active', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'admin-name-race', role: 'Admin' });
+  seedUser(database, {
+    userId: 'vendor-name-race-target',
+    employeeId: 'SYNTHETIC-VENDOR-NAME-RACE',
+    lineUserId: 'vendor-name-race-line',
+    displayName: 'Synthetic Vendor name target',
+    role: 'User'
+  });
+  const originalBatch = database.batch.bind(database);
+  let principalInserted = false;
+  const racingDatabase = {
+    prepare: (...args) => database.prepare(...args),
+    batch(statements) {
+      if (!principalInserted) {
+        database.run(`
+          INSERT INTO vendor_principals (user_id, principal_role, status)
+          VALUES ('vendor-name-race-target', 'Vendor', 'ACTIVE')
+        `);
+        principalInserted = true;
+      }
+      return originalBatch(statements);
+    }
+  };
+  const response = await handleFormalRequest(
+    request('/api/admin/users/vendor-name-race-target/name', {
+      method: 'PATCH',
+      token: 'admin-name-race-token',
+      body: { displayName: 'Attempted change' }
+    }),
+    { DB: racingDatabase },
+    {
+      fetchImpl: profileFetch({ token: 'admin-name-race-token', lineUserId: 'admin-name-race' }),
+      now: new Date('2026-09-08T00:00:00.000Z')
+    }
+  );
+  const body = await response.json();
+
+  assert.equal(principalInserted, true);
+  assert.equal(response.status, 404);
+  assert.equal(body.error, 'USER_NOT_FOUND');
+  assert.equal(database.get(
+    'SELECT display_name FROM users WHERE user_id = ?', 'vendor-name-race-target'
+  ).display_name, 'Synthetic Vendor name target');
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ADMIN_USER_NAME_UPDATED'"
+  ).count, 0);
+});
+
 test('User, ProxyAdmin, and Admin all read order summaries while only Admin reads member balances', async () => {
   const database = seedSummary();
   const results = await Promise.all([

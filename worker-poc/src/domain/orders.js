@@ -281,7 +281,11 @@ const buildOrderStatements = (database, context, actor, details) => {
     : [];
   const validityPredicate = `
     EXISTS (
-      SELECT 1 FROM users WHERE user_id = ? AND active = 1
+      SELECT 1 FROM users
+      WHERE user_id = ? AND active = 1
+        AND NOT EXISTS (
+          SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+        )
     )
     AND ${identityPredicate.sql}
     AND EXISTS (
@@ -360,6 +364,9 @@ const buildOrderStatements = (database, context, actor, details) => {
     FROM orders o
     JOIN users u ON u.user_id = o.user_id
     WHERE o.user_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = o.user_id
+      )
       AND ${guardSql}
   `, [
     replacementTransitionId,
@@ -379,6 +386,9 @@ const buildOrderStatements = (database, context, actor, details) => {
         cancelled_auth_mode = ?,
         updated_at = ?
     WHERE user_id = ? AND order_date = ? AND status = 'ACTIVE'
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = orders.user_id
+      )
       AND ${guardSql}
   `, [actor.userId, actor.authMode, occurredAt, targetUserId, targetDate, ...guardParams]);
 
@@ -408,6 +418,9 @@ const buildOrderStatements = (database, context, actor, details) => {
       WHERE cs.order_date = ?
       AND length(trim(cs.vendor)) > 0
       ${calendarTimingPredicate}
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = u.user_id
+      )
       AND ${guardSql}
   `, [
     ...menuParams(items),
@@ -485,6 +498,9 @@ const buildOrderStatements = (database, context, actor, details) => {
     FROM orders o
     JOIN users u ON u.user_id = o.user_id
     WHERE o.order_id = ? AND o.user_id = ? AND o.status = 'ACTIVE'
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = o.user_id
+      )
       AND ${guardSql}
   `, [
     createdTransitionId,
@@ -688,6 +704,9 @@ export const cancelOrder = async (
             WHERE o.order_id = ?
               AND o.user_id = ?
               AND o.status = 'ACTIVE'
+              AND NOT EXISTS (
+                SELECT 1 FROM vendor_principals vp WHERE vp.user_id = o.user_id
+              )
               AND ${identityPredicate.sql}
               AND NOT EXISTS (
                 SELECT 1 FROM balance_ledger bl
@@ -736,6 +755,9 @@ export const cancelOrder = async (
           FROM orders o
           JOIN users u ON u.user_id = o.user_id
           WHERE o.order_id = ? AND o.user_id = ? AND o.status = 'ACTIVE'
+            AND NOT EXISTS (
+              SELECT 1 FROM vendor_principals vp WHERE vp.user_id = o.user_id
+            )
             AND ${guardSql}
         `, [
           transitionId,
@@ -753,6 +775,9 @@ export const cancelOrder = async (
               cancelled_auth_mode = ?,
               updated_at = ?
           WHERE order_id = ? AND user_id = ? AND status = 'ACTIVE'
+            AND NOT EXISTS (
+              SELECT 1 FROM vendor_principals vp WHERE vp.user_id = orders.user_id
+            )
             AND ${guardSql}
         `, [
           actor.userId,

@@ -44,6 +44,7 @@ const assertDisplayName = (displayName) => {
 export const getMe = (identity) => {
   const actor = identity?.actor || {};
   const guest = actor.authMode === 'employee_guest';
+  const vendor = actor.role === 'Vendor' && actor.vendorPrincipal === true;
   const identityState = identityStateFor(actor);
   const employeeBindingRequired = identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED;
   const registered = Boolean(actor.registered);
@@ -77,8 +78,8 @@ export const getMe = (identity) => {
       status: 'VERIFIED',
       verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.VERIFIED,
       capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
-      employeeId: actor.employeeId || '',
-      lineUserId: publicLineUserId,
+      ...(vendor ? {} : { employeeId: actor.employeeId || '' }),
+      lineUserId: vendor ? '' : publicLineUserId,
       displayName: actor.displayName || ''
     } : {
       lineUserId: publicLineUserId,
