@@ -16,7 +16,9 @@
 - Protect the reserved vendor's existing LINE account through a controlled server-side mapping; fail closed with HTTP 503 until it resolves to exactly one active, valid, verified, LINE-bound canonical user, then block employee-only login, guest-session replay, rebinding, administrator reassignment, identity repair, and View As; redact its LINE ID from API responses and record deidentified denials without changing account or ledger records (Issue #122).
 - 以鈴鐺收件匣取代首頁固定公告卡；載入失敗只提供重試、不顯示無公告，管理頁刷新也不觸發入場彈窗；舊公告不因功能上線或編輯而彈出（Issue #121）。
 - 新增 Vendor 專用伺服器端身份與多店家成員範圍；角色及可用店家由 canonical principal 與有效 membership 派生，未新增真實帳號映射（Issue #123）。
+- Add a Vendor daily-order and transfer reconciliation portal scoped by canonical vendor membership. Cutoff snapshots are append-only; Admin records completed manual transfers with multi-date/partial allocations, reasoned corrections and atomic reversals; Vendor acknowledgement/dispute events stay separate from order fulfillment, and no vendor settlement touches the employee balance ledger (Issues #123–#125).
 - Add an isolated browser-memory mock fixture and Windows local UAT steps for #103, #108, and #111. Mock repair changes are discarded on reload.
+- Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 
 ## [0.17.3] - 2026-10-20
 

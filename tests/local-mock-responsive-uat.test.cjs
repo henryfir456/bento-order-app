@@ -274,6 +274,31 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
       assert.equal(invalidSourceButtons.includes('檢視身分'), false, 'An inactive invalid account must not expose View As.');
       assert.equal(invalidSourceButtons.includes('代點餐'), false, 'An inactive invalid account must not expose delegated ordering.');
       assert.equal(invalidSourceButtons.includes('Mock Source Name'), false, 'An inactive invalid account must not expose name editing.');
+
+      await clickVisibleButton({ ariaLabel: '管理' });
+      await clickVisibleButton({ text: '廠商每日訂單與轉帳對帳' });
+      await waitFor('document.body.innerText.includes("登記已完成的銀行轉帳") && document.body.innerText.includes("Mock Bento A")', '#124/#125 Admin transfer recording form');
+      const setNumberInput = async (index, value) => {
+        const set = await evaluate(`(()=>{const input=document.querySelectorAll('form input[type="number"]')[${index}];if(!input)return false;const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(input,${JSON.stringify(String(value))});input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+        assert.equal(set, true, 'A transfer amount input should be available.');
+      };
+      await setNumberInput(0, 100);
+      await setNumberInput(1, 100);
+      await evaluate('[...document.querySelectorAll("form input[type=checkbox]")].forEach((checkbox)=>checkbox.click())');
+      await clickVisibleButton({ text: '登記轉帳與日期分攤' });
+      await waitFor('document.body.innerText.includes("待廠商確認") && document.body.innerText.includes("100 元")', '#125 mock transfer appears as pending confirmation');
+      const vendorSettlementLayout = JSON.parse(await evaluate('JSON.stringify({width:innerWidth,documentWidth:document.documentElement.scrollWidth,main:document.querySelector("main")?.innerText||""})'));
+      assert.ok(vendorSettlementLayout.documentWidth <= width, 'Vendor settlement form and allocated rows should not overflow the viewport.');
+      assert.match(vendorSettlementLayout.main, /尚未分攤 0 元/u);
+      const reversalFilled = await evaluate('(()=>{const input=document.querySelector("input[id^=reverse-mock-payment]");if(!input)return false;const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;setter.call(input,"Mock bank returned the transfer");input.dispatchEvent(new Event("input",{bubbles:true}));return true})()');
+      assert.equal(reversalFilled, true, 'Admin should have a whole-transfer reversal reason field.');
+      const reversalConfirmed = await evaluate('(()=>{const label=[...document.querySelectorAll("label")].find(item=>item.innerText.includes("我已核對原因，並確認將這筆轉帳的所有日期分攤沖正"));const checkbox=label?.querySelector("input[type=checkbox]");if(!checkbox)return false;checkbox.click();return true})()');
+      assert.equal(reversalConfirmed, true, 'Admin should explicitly confirm the whole-transfer reversal.');
+      await clickVisibleButton({ text: '沖正整筆轉帳' });
+      await waitFor('document.body.innerText.includes("轉帳紀錄已沖正")', '#125 mock transfer reversal and allocation reconciliation');
+      const reversedLayout = JSON.parse(await evaluate('JSON.stringify({width:innerWidth,documentWidth:document.documentElement.scrollWidth,main:document.querySelector("main")?.innerText||""})'));
+      assert.ok(reversedLayout.documentWidth <= width, 'The reversed transfer should remain within the viewport.');
+      assert.match(reversedLayout.main, /已登記轉帳\s*0 元/u);
     }
   } finally {
     devtools?.close();

@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bento-order-app-uat-20261019",
+  "main": "src/formalWorker.js",
+  "compatibility_date": "2026-09-07",
+  "compatibility_flags": [],
+  "workers_dev": true,
+  "keep_vars": true,
+  "triggers": {
+    "crons": []
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bento-order-app-uat-20261019",
+      "database_id": "201b066a-63a2-43a4-9b60-233755189b5d",
+      "migrations_dir": "migrations-formal"
+    }
+  ]
+}

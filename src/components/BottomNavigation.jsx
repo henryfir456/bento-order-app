@@ -8,6 +8,7 @@ const icons = {
   management: <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" /></>
 };
 const entries = [
+  { key: 'vendor', label: '店家', icon: 'management' },
   { key: 'calendar', label: '訂餐', icon: 'calendar' },
   { key: 'myOrders', label: '我的訂單', icon: 'orders' },
   { key: 'footprints', label: '足跡', icon: 'footprints' },
@@ -15,10 +16,12 @@ const entries = [
   { key: 'admin', label: '管理', icon: 'management' }
 ];
 
-export default function BottomNavigation({ current, onNavigate, canViewWallet, canManage, balance, balanceKnown = false }) {
-  const visible = entries.filter(({ key }) => (
-    key === 'wallet' ? canViewWallet : key === 'admin' ? canManage : true
-  ));
+export default function BottomNavigation({ current, onNavigate, role, canViewWallet, canManage, balance, balanceKnown = false }) {
+  const visible = role === 'Vendor'
+    ? entries.filter(({ key }) => key === 'vendor')
+    : entries.filter(({ key }) => key !== 'vendor' && (
+      key === 'wallet' ? canViewWallet : key === 'admin' ? canManage : true
+    ));
   return <nav aria-label="主要導覽" className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 shadow-[0_-2px_12px_rgba(0,0,0,0.05)] backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
     <div className="mx-auto flex max-w-xl items-stretch">
       {visible.map(({ key, label, icon }) => (

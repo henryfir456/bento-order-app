@@ -52,6 +52,21 @@ const MOCK_USER_FIXTURES = Object.freeze({
     identityState: 'VERIFIED',
     verificationStatus: 'VERIFIED'
   }),
+  vendor: Object.freeze({
+    userId: 'mock-vendor-principal-id',
+    employeeId: null,
+    name: 'Local mock vendor',
+    floor: null,
+    defaultFloor: null,
+    balance: null,
+    role: 'Vendor',
+    authSource: 'LINE',
+    authMode: 'line',
+    identityState: 'VERIFIED',
+    registered: true,
+    lineBound: true,
+    verificationStatus: 'VERIFIED'
+  }),
   'admin-unverified': Object.freeze({
     userId: 'mock-admin-unverified-id',
     employeeId: 'MCKUNV',
@@ -158,6 +173,7 @@ const MOCK_INVALID_REPAIR_MEMBERS = Object.freeze([
 ]);
 
 const sessionStates = new Map();
+const mockVendorPaymentStore = [];
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
@@ -200,6 +216,7 @@ const createSessionState = (mockUser) => {
     likes: new Set(),
     vendors: {},
     vendorMetadata: MOCK_VENDOR_FIXTURES.map(clone),
+    vendorPayments: mockVendorPaymentStore,
     announcementPreferences: {},
     members: Object.values(MOCK_USER_FIXTURES)
       .filter(Boolean)
@@ -353,6 +370,181 @@ export const updateMockVendor = (mockUser, vendorId, patch = {}) => {
     if (Object.prototype.hasOwnProperty.call(vendor, field)) vendor[field] = patch[field];
   });
   return getMockVendor(mockUser, vendor.id);
+};
+
+// This fixture is browser-memory only. It never calls a Worker, LINE login,
+// bank service, or persistent database.
+export const getMockVendorOperations = (mockUser, { month, vendorId = null } = {}) => {
+  const state = getMockSessionState(mockUser);
+  const isVendor = state.user?.role === 'Vendor';
+  const vendors = getMockVendors(mockUser).filter((vendor) => (
+    isVendor ? vendor.id === 'mock-vendor-a' : !vendorId || vendor.id === vendorId
+  ));
+  const currentDate = getPrimaryDate();
+  const currentMonth = currentDate.slice(0, 7);
+  const selectedMonth = String(month || currentMonth);
+  const days = [];
+  for (const vendor of vendors) {
+    const serviceDates = new Set();
+    if (selectedMonth === currentMonth) serviceDates.add(currentDate);
+    state.vendorPayments
+      .filter((payment) => payment.vendorId === vendor.id)
+      .forEach((payment) => payment.allocations.forEach((allocation) => {
+        if (allocation.serviceDate.startsWith(`${selectedMonth}-`)) serviceDates.add(allocation.serviceDate);
+      }));
+    for (const serviceDate of [...serviceDates].sort().reverse()) {
+      const transfers = state.vendorPayments
+        .filter((payment) => payment.vendorId === vendor.id)
+        .flatMap((payment) => payment.allocations
+          .filter((allocation) => allocation.serviceDate === serviceDate)
+          .map((allocation) => ({
+            paymentId: payment.paymentId,
+            allocationId: allocation.allocationId,
+            paymentAmountTwd: payment.amountTwd,
+            unallocatedAmountTwd: payment.status === 'REVERSED' ? 0 : Math.max(0, payment.amountTwd - payment.allocations
+              .reduce((sum, item) => sum + item.amountTwd + Number(item.adjustmentTwd || 0), 0)),
+            transferredOn: payment.transferredOn,
+            allocatedAmountTwd: allocation.amountTwd + Number(allocation.adjustmentTwd || 0),
+            isPrimaryTransferRow: allocation.serviceDate === payment.allocations
+              .map((item) => item.serviceDate).sort()[0],
+            status: payment.status,
+            disputeReason: payment.disputeReason || null,
+            resolution: payment.resolution || null,
+            reversalReason: payment.reversalReason || null
+          })));
+      const estimate = vendor.id === 'mock-vendor-a'
+        ? { orderCount: 3, portionCount: 4, amountTwd: 320,
+          items: [{ name: 'Mock Bento', variantKey: '', quantity: 4, amountTwd: 320 }] }
+        : { orderCount: 2, portionCount: 2, amountTwd: 160,
+          items: [{ name: 'Mock Noodle', variantKey: '', quantity: 2, amountTwd: 160 }] };
+      const amountTwd = serviceDate === currentDate ? estimate.amountTwd : 0;
+      const registeredTransferTwd = transfers.reduce((sum, transfer) => sum + transfer.allocatedAmountTwd, 0);
+      days.push({
+        serviceDate,
+        vendorId: vendor.id,
+        vendorName: vendor.name,
+        cutoffAt: `${serviceDate}T02:00:00.000Z`,
+        cutoffPassed: false,
+        source: 'MOCK',
+        revision: 0,
+        changeReason: null,
+        orderCount: serviceDate === currentDate ? estimate.orderCount : 0,
+        portionCount: serviceDate === currentDate ? estimate.portionCount : 0,
+        amountTwd,
+        items: serviceDate === currentDate ? estimate.items : [],
+        settlement: {
+          receivableTwd: amountTwd,
+          registeredTransferTwd,
+          unregisteredDifferenceTwd: Math.max(0, amountTwd - registeredTransferTwd),
+          overAllocatedTwd: Math.max(0, registeredTransferTwd - amountTwd),
+          pendingConfirmationTwd: transfers.filter((entry) => entry.status === 'REGISTERED')
+            .reduce((sum, entry) => sum + entry.allocatedAmountTwd, 0),
+          confirmedTwd: transfers.filter((entry) => ['ACKNOWLEDGED', 'RESOLVED'].includes(entry.status))
+            .reduce((sum, entry) => sum + entry.allocatedAmountTwd, 0),
+          disputedTwd: transfers.filter((entry) => entry.status === 'DISPUTED')
+            .reduce((sum, entry) => sum + entry.allocatedAmountTwd, 0),
+          transfers
+        }
+      });
+    }
+  }
+  return {
+    success: true,
+    month: selectedMonth,
+    ...(isVendor ? {} : { vendor: vendors[0] ? { id: vendors[0].id, name: vendors[0].name } : null }),
+    vendors: vendors.map(({ id, name }) => ({ id, name })),
+    days
+  };
+};
+
+export const recordMockVendorPayment = (mockUser, payload = {}) => {
+  const state = getMockSessionState(mockUser);
+  const vendorId = String(payload.vendorId || '');
+  const vendor = state.vendorMetadata.find((candidate) => (
+    candidate.id === vendorId && candidate.enabled === true
+  ));
+  if (!vendor) return { error: 'VENDOR_NOT_FOUND' };
+  if (payload.actualTransferDone !== true || payload.detailsReviewed !== true) {
+    return { error: 'PAYMENT_CONFIRMATION_REQUIRED' };
+  }
+  const existing = state.vendorPayments.find((payment) => (
+    payment.createdByMockUser === mockUser
+      && payment.idempotencyKey === payload.idempotencyKey
+  ));
+  if (existing) return existing.requestHash === JSON.stringify(payload)
+    ? { paymentId: existing.paymentId, replayed: true }
+    : { error: 'IDEMPOTENCY_KEY_REUSED' };
+  const payment = {
+    paymentId: `mock-payment-${state.vendorPayments.length + 1}`,
+    createdByMockUser: mockUser,
+    vendorId,
+    amountTwd: Number(payload.amountTwd),
+    transferredOn: String(payload.transferredOn || ''),
+    idempotencyKey: String(payload.idempotencyKey || ''),
+    requestHash: JSON.stringify(payload),
+    status: 'REGISTERED',
+    disputeReason: '',
+    resolution: '',
+    allocations: (Array.isArray(payload.allocations) ? payload.allocations : []).map((entry, index) => ({
+      allocationId: `mock-allocation-${state.vendorPayments.length + 1}-${index + 1}`,
+      serviceDate: String(entry.serviceDate || ''),
+      amountTwd: Number(entry.amountTwd),
+      adjustmentTwd: 0
+    }))
+  };
+  state.vendorPayments.push(payment);
+  return { paymentId: payment.paymentId, replayed: false };
+};
+
+export const reverseMockVendorPayment = (mockUser, paymentId, reason, confirmed) => {
+  const state = getMockSessionState(mockUser);
+  const authMode = state.user?.authMode
+    || (state.user?.authSource === 'EMPLOYEE_GUEST' ? 'employee_guest' : 'line');
+  if (state.user?.role !== 'Admin' || authMode !== 'line' || state.user?.registered === false) {
+    return { error: 'ADMIN_LINE_AUTH_REQUIRED' };
+  }
+  const payment = state.vendorPayments.find((entry) => entry.paymentId === paymentId);
+  if (!payment) return { error: 'PAYMENT_NOT_FOUND' };
+  if (payment.status === 'REVERSED') return { error: 'PAYMENT_ALREADY_REVERSED' };
+  if (payment.status === 'DISPUTED') return { error: 'PAYMENT_DISPUTE_MUST_BE_RESOLVED' };
+  if (confirmed !== true) return { error: 'PAYMENT_REVERSAL_CONFIRMATION_REQUIRED' };
+  const normalizedReason = String(reason || '').trim();
+  if (!normalizedReason || normalizedReason.length > 500) return { error: 'REVERSAL_REASON_REQUIRED' };
+  for (const allocation of payment.allocations) {
+    allocation.adjustmentTwd = -allocation.amountTwd;
+  }
+  payment.status = 'REVERSED';
+  payment.reversalReason = normalizedReason;
+  return { paymentId, status: payment.status };
+};
+
+export const updateMockVendorPayment = (mockUser, paymentId, eventType, value = '') => {
+  const state = getMockSessionState(mockUser);
+  const payment = state.vendorPayments.find((entry) => entry.paymentId === paymentId);
+  if (!payment) return { error: 'PAYMENT_NOT_FOUND' };
+  if (eventType === 'RESOLVED') {
+    if (payment.status !== 'DISPUTED') return { error: 'PAYMENT_NOT_DISPUTED' };
+    payment.status = 'RESOLVED';
+    payment.resolution = value;
+  } else {
+    if (state.user?.role !== 'Vendor' || payment.vendorId !== 'mock-vendor-a') return { error: 'PAYMENT_NOT_FOUND' };
+    if (payment.status !== 'REGISTERED') return { error: 'PAYMENT_RESPONSE_ALREADY_RECORDED' };
+    payment.status = eventType;
+    if (eventType === 'DISPUTED') payment.disputeReason = value;
+  }
+  return { paymentId, status: payment.status };
+};
+
+export const adjustMockVendorAllocation = (mockUser, allocationId, deltaTwd) => {
+  const state = getMockSessionState(mockUser);
+  const allocation = state.vendorPayments.flatMap((payment) => payment.allocations)
+    .find((entry) => entry.allocationId === allocationId);
+  if (!allocation) return { error: 'ALLOCATION_NOT_FOUND' };
+  if (allocation.amountTwd + Number(allocation.adjustmentTwd || 0) + deltaTwd < 0) {
+    return { error: 'VENDOR_ALLOCATION_ADJUSTMENT_INVALID' };
+  }
+  allocation.adjustmentTwd = Number(allocation.adjustmentTwd || 0) + deltaTwd;
+  return { allocationId, deltaTwd };
 };
 
 export const getMockAnnouncements = (mockUser) => {

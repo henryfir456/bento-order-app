@@ -66,7 +66,12 @@ test('formal migration creates every source-of-truth table', () => {
     'protected_account_employee_mappings',
     'protected_account_access_audit',
     'vendor_principals',
-    'vendor_memberships'
+    'vendor_memberships',
+    'vendor_day_snapshots',
+    'vendor_transfer_payments',
+    'vendor_transfer_allocations',
+    'vendor_transfer_allocation_events',
+    'vendor_payment_events'
   ];
 
   const actual = tableNames(database);
@@ -95,6 +100,11 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_menu_item_change_sequence_id',
     'idx_menu_items_version_identity',
     'idx_vendors_enabled_name',
+    'idx_orders_vendor_id_date_status',
+    'idx_vendor_payment_events_latest',
+    'idx_vendor_payment_events_one_vendor_response',
+    'idx_vendor_payment_events_one_resolution',
+    'idx_vendor_payment_events_one_reversal',
     'idx_vendor_daily_flavors_date',
     'idx_vendor_daily_flavor_sync_runs_started',
     'idx_taiwan_government_holidays_year',
@@ -109,6 +119,81 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     WHERE type = 'index'
   `).map((row) => row.name));
   for (const indexName of expected) assert.equal(actual.has(indexName), true, indexName);
+});
+
+test('0019 resolves order rows to a canonical vendor ID and protects payment event history', () => {
+  const database = openDatabase();
+  const ordersColumns = tableColumns(database, 'orders');
+  assert.equal(ordersColumns.get('vendor_id').type, 'TEXT');
+  assert.equal(ordersColumns.get('vendor_id').notnull, 0);
+  database.prepare('INSERT INTO users (user_id, display_name, pickup_floor, balance, role) VALUES (?, ?, ?, ?, ?)')
+    .run('synthetic-vendor-buyer', 'Synthetic Buyer', '1樓', 0, 'User');
+  database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
+    .run('synthetic-canonical-vendor', '禾拾');
+  database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor,
+      pickup_floor, total_amount, status, created_by_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-order-alias', 'synthetic-vendor-buyer', 'Synthetic Buyer',
+    '2026-10-20', '合十', '1樓', 80, 'ACTIVE', 'synthetic-vendor-buyer'
+  );
+  assert.equal(database.prepare('SELECT vendor_id FROM orders WHERE order_id = ?')
+    .get('synthetic-order-alias').vendor_id, 'synthetic-canonical-vendor');
+  assert.throws(() => database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, vendor_id,
+      pickup_floor, total_amount, status, created_by_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-order-forged-scope', 'synthetic-vendor-buyer', 'Synthetic Buyer',
+    '2026-10-20', '禾拾', 'another-vendor-id', '1樓', 80, 'ACTIVE', 'synthetic-vendor-buyer'
+  ), /ORDER_VENDOR_ID_MISMATCH/);
+  database.prepare(`
+    INSERT INTO vendor_transfer_payments (
+      payment_id, vendor_id, amount_twd, transferred_on, idempotency_key,
+      request_hash, created_by_user_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-vendor-payment', 'synthetic-canonical-vendor', 80, '2026-10-20',
+    'synthetic-idempotency', '{}', 'synthetic-vendor-buyer', '2026-10-20T00:00:00.000Z'
+  );
+  database.prepare(`
+    INSERT INTO vendor_payment_events (
+      event_id, payment_id, event_type, actor_user_id, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-payment-event', 'synthetic-vendor-payment', 'DISPUTED',
+    'synthetic-vendor-buyer', '2026-10-20T00:00:00.000Z'
+  );
+  assert.throws(() => database.prepare('DELETE FROM vendor_payment_events').run(),
+    /VENDOR_PAYMENT_EVENT_APPEND_ONLY/);
+});
+
+test('0019 backfills canonical vendor IDs for existing orders without changing order money', () => {
+  const database = new DatabaseSync(':memory:');
+  migrationSql.slice(0, -1).forEach((sql) => database.exec(sql));
+  database.prepare('INSERT INTO users (user_id, display_name, pickup_floor, balance, role) VALUES (?, ?, ?, ?, ?)')
+    .run('synthetic-vendor-buyer', 'Synthetic Buyer', '1樓', 0, 'User');
+  database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
+    .run('synthetic-canonical-vendor', '禾拾');
+  database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor,
+      pickup_floor, total_amount, status, created_by_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-order-before-migration', 'synthetic-vendor-buyer', 'Synthetic Buyer',
+    '2026-10-20', '合十', '1樓', 180, 'ACTIVE', 'synthetic-vendor-buyer'
+  );
+  database.exec(migrationSql.at(-1));
+  const order = database.prepare('SELECT vendor_id, total_amount FROM orders WHERE order_id = ?')
+    .get('synthetic-order-before-migration');
+  assert.equal(order.vendor_id, 'synthetic-canonical-vendor');
+  assert.equal(order.total_amount, 180);
+  assert.equal(database.prepare('SELECT COUNT(*) AS count FROM balance_ledger').get().count, 0);
+  database.close();
 });
 
 test('0016 adds nullable popup eligibility and independent per-user preference timestamps', () => {

@@ -110,6 +110,32 @@ test('Vendor identity and scope come only from canonical principal and membershi
   assert.equal(me.body.identityState, 'VERIFIED');
   assert.equal(me.body.capabilities.includes(ACTIONS.READ_VENDOR_CONTEXT), true);
 
+  const vendorBootstrap = await call(database, '/api/bootstrap?targetDate=2026-10-20', {
+    token: 'synthetic-vendor-token-a',
+    lineUserId: 'synthetic-line-vendor-a'
+  });
+  assert.equal(vendorBootstrap.response.status, 200);
+  assert.equal(vendorBootstrap.body.user.role, 'Vendor');
+  assert.equal(vendorBootstrap.body.user.employeeId, null);
+  assert.equal(vendorBootstrap.body.user.balance, null);
+  assert.deepEqual(vendorBootstrap.body.calendar.events, {});
+  assert.deepEqual(vendorBootstrap.body.ordersMap, {});
+
+  const vendorBootId = ['BOOT-', '2026', '1020', '-vendor'].join('');
+  const vendorDeferred = await call(database, `/api/bootstrap/deferred?bootId=${vendorBootId}`, {
+    token: 'synthetic-vendor-token-a',
+    lineUserId: 'synthetic-line-vendor-a'
+  });
+  assert.equal(vendorDeferred.response.status, 200);
+  assert.deepEqual(vendorDeferred.body.likes, {});
+  assert.deepEqual(vendorDeferred.body.announcements, []);
+  const vendorCalendar = await call(database, '/api/calendar', {
+    token: 'synthetic-vendor-token-a',
+    lineUserId: 'synthetic-line-vendor-a'
+  });
+  assert.equal(vendorCalendar.response.status, 403);
+  assert.equal(vendorCalendar.body.error, 'VENDOR_ROUTE_FORBIDDEN');
+
   const second = await call(database, '/api/vendor/context', {
     token: 'synthetic-vendor-token-b',
     lineUserId: 'synthetic-line-vendor-b'

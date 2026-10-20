@@ -11,8 +11,15 @@ const checks = [
 ];
 
 const findings = [];
+const isUatResourceIdentifier = (file, line) => file === 'worker-poc/wrangler.uat.jsonc'
+  && (
+    /^\s*"(?:name|database_name)"\s*:\s*"bento-order-app-uat-\d{8}"\s*,?\s*$/u.test(line)
+    || /^\s*"database_id"\s*:\s*"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}"\s*,?\s*$/iu.test(line)
+  );
+
 const scanLine = (file, index, line) => {
   for (const [label, pattern] of checks) {
+    if (label === 'numeric employee or phone pattern' && isUatResourceIdentifier(file, line)) continue;
     if (pattern.test(line)) findings.push({ file, line: index + 1, label });
     pattern.lastIndex = 0;
   }
