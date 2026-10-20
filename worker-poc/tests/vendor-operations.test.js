@@ -346,6 +346,66 @@ test('Vendor disputes require a reason, only their own vendor payment is visible
   assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_payment_events WHERE payment_id = ?', own.body.paymentId).count, 2);
 });
 
+test('Admin can read disabled-vendor settlement history while new transfers remain blocked', async () => {
+  const database = new SqliteD1();
+  seedVendor(database, { vendorId: 'synthetic-vendor-disabled-history', name: 'Synthetic Bento History' });
+  seedUser(database, {
+    userId: 'synthetic-admin', lineUserId: 'synthetic-line-admin', employeeId: 'SYNTHETIC-ADMIN',
+    displayName: 'Synthetic Admin', role: 'Admin'
+  });
+  seedUser(database, {
+    userId: 'synthetic-buyer', lineUserId: 'synthetic-line-buyer', employeeId: 'SYNTHETIC-BUYER',
+    displayName: 'Synthetic Buyer'
+  });
+  database.run(
+    'INSERT INTO calendar_settings (order_date, vendor, mode) VALUES (?, ?, \'A\')',
+    '2026-10-20', 'Synthetic Bento History'
+  );
+  addOrder(database, {
+    orderId: 'synthetic-order-disabled-vendor-history',
+    buyerId: 'synthetic-buyer',
+    serviceDate: '2026-10-20',
+    vendor: 'Synthetic Bento History',
+    itemName: 'Synthetic Rice Box',
+    quantity: 1,
+    unitPrice: 80
+  });
+  const payment = await call(database, '/api/admin/vendor-payments', {
+    method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+    body: {
+      vendorId: 'synthetic-vendor-disabled-history', amountTwd: 80,
+      transferredOn: '2026-10-20', idempotencyKey: 'synthetic-disabled-history-payment',
+      actualTransferDone: true, detailsReviewed: true,
+      allocations: [{ serviceDate: '2026-10-20', amountTwd: 80 }]
+    }
+  });
+  assert.equal(payment.response.status, 201, JSON.stringify(payment.body));
+
+  database.run('UPDATE vendors SET enabled = 0 WHERE vendor_id = ?', 'synthetic-vendor-disabled-history');
+
+  const history = await call(database,
+    '/api/admin/vendor-operations?month=2026-10&vendorId=synthetic-vendor-disabled-history', {
+      token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin'
+    });
+  assert.equal(history.response.status, 200, JSON.stringify(history.body));
+  assert.equal(history.body.vendor.id, 'synthetic-vendor-disabled-history');
+  assert.equal(history.body.days[0].settlement.registeredTransferTwd, 80);
+  assert.equal(history.body.days[0].settlement.transfers[0].paymentId, payment.body.paymentId);
+
+  const newPayment = await call(database, '/api/admin/vendor-payments', {
+    method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+    body: {
+      vendorId: 'synthetic-vendor-disabled-history', amountTwd: 80,
+      transferredOn: '2026-10-20', idempotencyKey: 'synthetic-disabled-new-payment',
+      actualTransferDone: true, detailsReviewed: true,
+      allocations: [{ serviceDate: '2026-10-20', amountTwd: 80 }]
+    }
+  });
+  assert.equal(newPayment.response.status, 404);
+  assert.equal(newPayment.body.error, 'VENDOR_NOT_FOUND');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
+});
+
 test('Admin reversal appends atomic allocation and payment events, confirms twice, and leaves the employee ledger untouched', async () => {
   const database = new SqliteD1();
   seedVendor(database, { vendorId: 'synthetic-vendor-a', name: 'Synthetic Bento A' });

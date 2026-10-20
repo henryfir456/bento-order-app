@@ -32,8 +32,12 @@ const pathSegment = (value) => {
   return normalized;
 };
 
-const vendorForId = async (database, vendorId) => database.prepare(`
+const activeVendorForId = async (database, vendorId) => database.prepare(`
   SELECT vendor_id, name FROM vendors WHERE vendor_id = ? AND enabled = 1 LIMIT 1
+`).bind(vendorId).first();
+
+const vendorForAdminRead = async (database, vendorId) => database.prepare(`
+  SELECT vendor_id, name FROM vendors WHERE vendor_id = ? LIMIT 1
 `).bind(vendorId).first();
 
 const assertVendorActor = (identity, action) => {
@@ -354,7 +358,7 @@ const currentPaymentStatus = async (database, paymentId) => {
 
 const postAdminTransfer = async (database, identity, body, now) => {
   const vendorId = text(body.vendorId);
-  const vendor = await vendorForId(database, vendorId);
+  const vendor = await activeVendorForId(database, vendorId);
   if (!vendor) throw notFound('VENDOR_NOT_FOUND');
   const amountTwd = safeInteger(body.amountTwd);
   if (amountTwd === null || amountTwd <= 0) throw badRequest('PAYMENT_AMOUNT_INVALID');
@@ -659,7 +663,7 @@ export const handleVendorOperationsRoute = async (request, env, {
     const month = text(url.searchParams.get('month'));
     const results = [];
     for (const vendorId of vendorIds) {
-      const vendor = await vendorForId(env.DB, vendorId);
+      const vendor = await activeVendorForId(env.DB, vendorId);
       if (vendor) results.push(await operationsForVendor(env.DB, identity, vendor, month, now));
     }
     return jsonResponse({ success: true, month, vendors: results.map(({ vendor }) => vendor),
@@ -674,7 +678,7 @@ export const handleVendorOperationsRoute = async (request, env, {
     if ([...url.searchParams.keys()].some((key) => !['month', 'vendorId'].includes(key))) {
       throw badRequest('QUERY_PARAMETER_UNSUPPORTED');
     }
-    const vendor = await vendorForId(env.DB, vendorId);
+    const vendor = await vendorForAdminRead(env.DB, vendorId);
     if (!vendor) throw notFound('VENDOR_NOT_FOUND');
     return jsonResponse(await operationsForVendor(env.DB, identity, vendor, month, now));
   }
