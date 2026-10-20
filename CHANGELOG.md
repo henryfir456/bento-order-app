@@ -13,7 +13,7 @@
 
 ### Added
 
-- 以鈴鐺收件匣取代首頁固定公告卡；新公告依每位使用者的已讀與「不再自動顯示」設定管理序列彈窗，舊公告不因功能上線或編輯而彈出（Issue #121）。
+- 以鈴鐺收件匣取代首頁固定公告卡；載入失敗只提供重試、不顯示無公告，管理頁刷新也不觸發入場彈窗；舊公告不因功能上線或編輯而彈出（Issue #121）。
 - Add an isolated browser-memory mock fixture and Windows local UAT steps for #103, #108, and #111. Mock repair changes are discarded on reload.
 
 ## [0.17.3] - 2026-10-20

@@ -1339,7 +1339,7 @@ export default function App() {
 
   const refreshPublicAnnouncements = async () => {
     if (authState !== AUTH_STATES.REGISTERED || viewAsUser?.userId) return;
-    await loadAnnouncementInbox();
+    await loadAnnouncementInbox({ queuePopups: false });
   };
 
   const loadAdminAnnouncements = async (force = false) => {

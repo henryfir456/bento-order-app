@@ -28,6 +28,15 @@ test('public announcement projection refreshes after admin edits', () => {
   assert.match(app, /await loadAdminAnnouncements\(true\);[\s\S]*await refreshPublicAnnouncements\(\);/);
   assert.match(app, /<AnnouncementInbox[\s\S]*onRetry=\{\(\) => \{ void loadAnnouncementInbox\(\); \}\}/);
   assert.match(app, /shouldAutoPopup && !session\.shownIds\.has/);
+  assert.match(app, /await loadAnnouncementInbox\(\{ queuePopups: false \}\)/);
   assert.match(app, /announcementPopup \|\| announcementPopupQueue\.length === 0/);
   assert.doesNotMatch(app, /<AnnouncementBar/);
+});
+
+test('announcement inbox does not render an empty result when loading failed', async () => {
+  const { shouldShowAnnouncementEmptyState } = await import('../src/features/announcements/announcementInboxViewState.js');
+  assert.equal(shouldShowAnnouncementEmptyState({ announcements: [] }), true);
+  assert.equal(shouldShowAnnouncementEmptyState({ loading: true, announcements: [] }), false);
+  assert.equal(shouldShowAnnouncementEmptyState({ error: 'temporary request failure', announcements: [] }), false);
+  assert.equal(shouldShowAnnouncementEmptyState({ error: 'temporary request failure', announcements: [{ id: 'stale' }] }), false);
 });

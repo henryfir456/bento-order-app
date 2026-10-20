@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Modal from '../../components/Modal';
 import AnnouncementContent from './AnnouncementContent';
+import { shouldShowAnnouncementEmptyState } from './announcementInboxViewState';
 
 export default function AnnouncementInbox({
   open,
@@ -14,6 +15,11 @@ export default function AnnouncementInbox({
 }) {
   const [selectedId, setSelectedId] = useState('');
   const selected = announcements.find((announcement) => announcement.id === selectedId) || null;
+  const showEmptyState = shouldShowAnnouncementEmptyState({
+    loading,
+    error,
+    announcements
+  });
 
   const close = () => {
     setSelectedId('');
@@ -49,9 +55,9 @@ export default function AnnouncementInbox({
           )}
           {loading && announcements.length === 0 ? (
             <div role="status" className="py-6 text-center text-sm text-gray-500">公告載入中…</div>
-          ) : announcements.length === 0 ? (
+          ) : showEmptyState ? (
             <p className="rounded-xl bg-gray-50 p-5 text-center text-sm text-gray-500">目前沒有公告</p>
-          ) : (
+          ) : announcements.length > 0 ? (
             <ul className="divide-y divide-gray-100" aria-label="公告列表">
               {announcements.map((announcement) => (
                 <li key={announcement.id}>
@@ -74,7 +80,7 @@ export default function AnnouncementInbox({
                 </li>
               ))}
             </ul>
-          )}
+          ) : null}
         </div>
       )}
     </Modal>
