@@ -104,6 +104,17 @@ Worker/D1 是唯一正式傳輸及身分事實來源；任何涉及 GAS adapter 
 ## 開發回顧（每輪修改交付前必填）
 每次實際程式、文件、流程修正後，依 `docs/retrospectives/README.md` 建立／更新對應任務回顧，列明遇到的阻礙（無則明寫無）、嘗試與根因信心、測試命令及實際結果、遺留事項、P0/P1/P2 建議與下次預防。PR 須連結回顧。開工先查看同類回顧以避免重複踩坑；優先合併重複改善而非每次開新 Issue。回顧不取代既有安全 Gate、正式 `main` 交付規則、簽到的實機結果證據或便當的 Worker/D1 部署驗證；敏感日誌、憑證與個資不可寫入 Git。
 
+## 真實證據、RED→GREEN 與獨立驗收（強制）
+
+涉及真實使用者畫面、裝置、外部服務／資料或重複失敗時，這一節是既有開發與 PR Gate 的必要入口；不得只增加一份無人載入的政策文件。
+
+1. **Evidence custody**：先查閱本輪可取得的原始截圖、XML、activity/window/focus、log、版本及 SHA；記錄來源、擷取時間、原始檔是否可讀及隱私處理。所有 Issue、PR、測試、commit 與回顧繼續遵守本檔及 `docs/PRIVACY_PUBLICATION_GATE.md`。公開 repo 只放去識別化或完全合成、必要且明確標示的衍生 fixture；不得把重建節點、OCR/layout 資料稱為原始 dump，不得公開真實值的穩定 hash。
+2. **Snapshot truth**：不同時間或來源的截圖、XML、activity/window 與資料不拼成同一快照。缺少 raw evidence 時說明缺口及可由現有來源支持的範圍；不臆造 node、bounds、資料值或外部操作結果，保留 `UNKNOWN`／`NOT VERIFIED`。
+3. **Production-path RED→GREEN**：追查實際 gate、早期 return、break、exception、timeout／cancel、action dispatcher 與結果 verifier。在修正前以同一失敗輸入沿實際 parser／snapshot → policy → dispatcher 路徑確認 RED；實作後同測試確認 GREEN。孤立 policy test、檔案存在、lint/build 或自造的 happy-path 不足以證明根因重現。
+4. **Adversarial regression**：覆蓋失敗及負向相鄰狀態（錯誤視窗／服務、重複或缺失控制、不可用的下一項、空輸入／root、service interruption、timeout／exception、授權等待、checkpoint／恢復及避免重複副作用），並驗證新增 gate 不阻斷合法流程。
+5. **Independent review**：由非作者 reviewer 檢查同一完整 PR head 的差異、來源與衍生 fixture、RED/GREEN 輸出、PII_SCAN、所有相關 gate／return／break／exception 和錯誤處理；發現後修正再檢查最新 head。自動測試通過不等於 review 通過。
+6. **Truthful handoff**：分列 `CODE_CHANGE`、`MOCK_TEST_PASS`、`INTEGRATION_TEST_PASS`、`REAL_DEVICE_ACTION_ACCEPTED` 與 `REAL_DEVICE_OUTCOME_VERIFIED`。只有最後一種的直接證據可宣稱外部結果已完成；未完成的裝置、LIFF、Worker／D1 或人工操作保留 `NOT VERIFIED`／`HUMAN_TEST_PENDING`，不得以本機測試取代。
+
 ## 外部服務 Readiness 與證據分級 Gate（強制；2026-10-18）
 - 對網路、Secrets、身分／憑證、工具能力、外部 API 操作分別記錄 `PASS`、`FAIL`、`UNKNOWN`、`BLOCKED` 或 `NOT RUN`，每項附觀測來源、時間／revision、實際命令或請求結果。不得將 `UNKNOWN`、未執行、快照存在、設定已保存或工具缺席寫成 `PASS`／憑證失敗。
 - 觀測狀態 `unknown`、環境變數 `unknown` 代表**沒有足夠當前證據**，不等於已失效；只有有界的已執行認證請求遭明確拒絕，才能判定相應憑證驗證 `FAIL`。過去 `ready` 不可直接替代最新 `unknown`。
