@@ -156,7 +156,7 @@ test('dynamic Pinggy OPTIONS is allowed without remote-test CORS mode', async ()
 test('dynamic Pinggy unauthenticated GET /api/me keeps CORS without remote-test mode', async () => {
   const response = await handleFormalRequest(request('/api/me', {
     headers: { Origin: remoteTestPinggyOrigin }
-  }), {});
+  }), { DB: new SqliteD1() });
 
   assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), { error: 'AUTH_REQUIRED' });
@@ -373,7 +373,7 @@ test('unauthenticated GET /api/me keeps CORS for both stable localhost origins',
   for (const origin of ['http://localhost:5173', 'http://127.0.0.1:5173']) {
     const response = await handleFormalRequest(request('/api/me', {
       headers: { Origin: origin }
-    }), {});
+    }), { DB: new SqliteD1() });
 
     assert.equal(response.status, 401);
     assertCorsAllowed(response, origin);
@@ -491,21 +491,21 @@ test('OPTIONS advertises DELETE for formal announcement preflight', async () => 
 test('error responses use the same CORS policy', async () => {
   const allowed = await handleFormalRequest(request('/api/me', {
     headers: { Origin: 'http://localhost:5173' }
-  }), localEnv('http://localhost:5173'));
+  }), { ...localEnv('http://localhost:5173'), DB: new SqliteD1() });
 
   assert.equal(allowed.status, 401);
   assertCorsAllowed(allowed, 'http://localhost:5173');
 
   const denied = await handleFormalRequest(request('/api/me', {
     headers: { Origin: 'https://arbitrary.example' }
-  }), localEnv('http://localhost:5173'));
+  }), { ...localEnv('http://localhost:5173'), DB: new SqliteD1() });
 
   assert.equal(denied.status, 401);
   assertCorsDenied(denied);
 
   const remoteTest = await handleFormalRequest(request('/api/me', {
     headers: { Origin: remoteTestPinggyOrigin }
-  }), remoteTestEnv(remoteTestPinggyOrigin));
+  }), { ...remoteTestEnv(remoteTestPinggyOrigin), DB: new SqliteD1() });
 
   assert.equal(remoteTest.status, 401);
   assertCorsAllowed(remoteTest, remoteTestPinggyOrigin);
