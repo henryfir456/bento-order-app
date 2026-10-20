@@ -14,6 +14,11 @@ const memberRows = async (database, { includeInvalid = false } = {}) => {
   const result = await database.prepare(`
     SELECT u.user_id, u.employee_id, u.line_user_id, u.display_name, u.pickup_floor,
            ${currentBalanceProjection('u')} AS balance,
+           CASE WHEN EXISTS (
+             SELECT 1
+             FROM protected_account_employee_mappings mapping
+             WHERE UPPER(trim(mapping.employee_id)) = UPPER(trim(u.employee_id))
+           ) THEN 1 ELSE 0 END AS is_protected_account,
            u.role, u.active, u.invalid_reason, u.verification_status, u.created_at, u.updated_at
     FROM users u
     WHERE (? = 1 OR (u.active = 1 AND u.invalid_reason IS NULL))
@@ -26,6 +31,7 @@ const memberRows = async (database, { includeInvalid = false } = {}) => {
     displayName: row.display_name,
     pickupFloor: row.pickup_floor,
     balance: Number(row.balance),
+    isProtectedAccount: Boolean(row.is_protected_account),
     role: row.role,
     active: Boolean(row.active),
     invalidReason: row.invalid_reason,

@@ -3,6 +3,10 @@ import { appendAuditEvent } from '../db/audit.js';
 import { currentBalanceProjection, getUserById } from '../db/users.js';
 import { prepareStatement, randomId, runMutationBatch, resolveClock } from '../db/transactions.js';
 import { conflict, forbidden, notFound } from '../http/errors.js';
+import {
+  auditProtectedAdminIntervention,
+  isProtectedAccount
+} from '../auth/protectedAccounts.js';
 
 const INVALID_REASON = 'INVALID_EMPLOYEE_ID';
 const REPAIR_ACTION = 'INVALID_EMPLOYEE_ID_REPAIR';
@@ -50,11 +54,44 @@ const readPair = async (database, sourceUserId, targetUserId) => {
   return { source, target };
 };
 
+const protectedRepairSide = (source, target) => {
+  const sourceProtected = isProtectedAccount(source);
+  const targetProtected = isProtectedAccount(target);
+  return sourceProtected && targetProtected
+    ? 'both'
+    : sourceProtected
+      ? 'source'
+      : targetProtected
+        ? 'target'
+        : null;
+};
+
+const auditProtectedRepairAttempt = async (
+  database,
+  identity,
+  side,
+  { preview = false, clock = new Date() } = {}
+) => {
+  if (!side) return;
+  await auditProtectedAdminIntervention(database, {
+    actor: identity.authorizationActor,
+    action: preview
+      ? 'PROTECTED_ACCOUNT_IDENTITY_REPAIR_PREVIEW_BLOCKED'
+      : 'PROTECTED_ACCOUNT_IDENTITY_REPAIR_DENIED',
+    side,
+    reason: preview
+      ? 'PROTECTED_ACCOUNT_ADMIN_REPAIR_PREVIEW_BLOCKED'
+      : 'PROTECTED_ACCOUNT_ADMIN_REPAIR_BLOCKED',
+    clock
+  });
+};
+
 const conflictsFor = async (database, source, target) => {
   const conflicts = [];
   const add = (code, applies) => { if (applies) conflicts.push(code); };
   add('SOURCE_AND_TARGET_SAME', source.userId === target.userId);
   add('SOURCE_ALREADY_INVALID', source.invalidReason === INVALID_REASON);
+  add('PROTECTED_ACCOUNT_IDENTITY_REPAIR_BLOCKED', Boolean(protectedRepairSide(source, target)));
   add('SOURCE_INACTIVE', !source.active);
   add('SOURCE_ROLE_NOT_REPAIRABLE', source.role !== 'User');
   add('SOURCE_EMPLOYEE_ID_MISSING', !String(source.employeeId || '').trim());
@@ -79,6 +116,10 @@ export const getInvalidEmployeeRepairPreview = async (
   if (!sourceUserId) throw notFound('SOURCE_USER_NOT_FOUND');
   if (!targetUserId) throw notFound('TARGET_USER_NOT_FOUND');
   const { source, target } = await readPair(database, sourceUserId, targetUserId);
+  const protectedSide = protectedRepairSide(source, target);
+  await auditProtectedRepairAttempt(database, identity, protectedSide, {
+    preview: true
+  });
   const conflicts = await conflictsFor(database, source, target);
   return {
     success: true,
@@ -125,6 +166,13 @@ export const repairInvalidEmployeeIdentity = async (
   if (!sourceUserId) throw notFound('SOURCE_USER_NOT_FOUND');
   if (!targetUserId) throw notFound('TARGET_USER_NOT_FOUND');
   const { source, target } = await readPair(database, sourceUserId, targetUserId);
+  const protectedSide = protectedRepairSide(source, target);
+  if (protectedSide) {
+    await auditProtectedRepairAttempt(database, identity, protectedSide, {
+      clock
+    });
+    throw conflict('INVALID_EMPLOYEE_REPAIR_NOT_READY');
+  }
   const conflicts = await conflictsFor(database, source, target);
   if (conflicts.length) throw conflict('INVALID_EMPLOYEE_REPAIR_NOT_READY');
   if (source.updatedAt !== expectedSourceUpdatedAt

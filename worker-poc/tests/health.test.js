@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { handleFormalRequest } from '../src/formalWorker.js';
+import { handleFormalRequest } from './helpers/formal-fixtures.js';
 import { CORS_HEADERS, PRODUCTION_FRONTEND_ORIGIN } from '../src/http/response.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 import { request, seedUser } from './helpers/formal-fixtures.js';

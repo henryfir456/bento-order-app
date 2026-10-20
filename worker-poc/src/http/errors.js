@@ -28,6 +28,10 @@ export const conflict = (code, message = code) => (
   new HttpError(409, code, message)
 );
 
+export const serviceUnavailable = (code = 'SERVICE_UNAVAILABLE', message = code) => (
+  new HttpError(503, code, message)
+);
+
 export const toPublicError = (error) => {
   if (error instanceof HttpError) {
     return {

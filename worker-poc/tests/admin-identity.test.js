@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { handleFormalRequest } from '../src/formalWorker.js';
+import { handleFormalRequest } from './helpers/formal-fixtures.js';
 import { auditStatement } from '../src/db/audit.js';
 import { prepareStatement, runMutationBatch } from '../src/db/transactions.js';
 import { SqliteD1 } from './helpers/formal-db.js';

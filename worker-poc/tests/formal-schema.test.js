@@ -62,7 +62,9 @@ test('formal migration creates every source-of-truth table', () => {
     'vendors',
     'vendor_daily_flavors',
     'vendor_daily_flavor_sync_runs',
-    'taiwan_government_holidays'
+    'taiwan_government_holidays',
+    'protected_account_employee_mappings',
+    'protected_account_access_audit'
   ];
 
   const actual = tableNames(database);
@@ -95,7 +97,8 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_vendor_daily_flavor_sync_runs_started',
     'idx_taiwan_government_holidays_year',
     'idx_users_invalid_reason',
-    'idx_announcement_user_preferences_user_read'
+    'idx_announcement_user_preferences_user_read',
+    'idx_protected_account_access_audit_time'
   ];
   const actual = new Set(rows(database, `
     SELECT name
@@ -138,6 +141,46 @@ test('0015 adds a constrained invalid employee marker without rewriting existing
   database.prepare('UPDATE users SET invalid_reason = ? WHERE user_id = ?').run('INVALID_EMPLOYEE_ID', 'user-migration-synthetic');
   assert.equal(database.prepare('SELECT invalid_reason FROM users WHERE user_id = ?').get('user-migration-synthetic').invalid_reason, 'INVALID_EMPLOYEE_ID');
   assert.throws(() => database.prepare('UPDATE users SET invalid_reason = ? WHERE user_id = ?').run('SYNTHETIC_OTHER_REASON', 'user-migration-synthetic'), /CHECK|constraint/i);
+});
+
+test('0017 adds a deidentified append-only protected-account access audit', () => {
+  const database = openDatabase();
+  const mappingColumns = tableColumns(database, 'protected_account_employee_mappings');
+  assert.deepEqual([...mappingColumns.keys()], ['account_key', 'employee_id', 'created_at']);
+  database.prepare(`
+    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    VALUES (?, ?, ?)
+  `).run('RESERVED_VENDOR_OWNER', 'SYNTHETIC-PROTECTED-EMPLOYEE', '2026-10-20T12:00:00.000Z');
+  assert.throws(() => database.prepare(`
+    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    VALUES (?, ?, ?)
+  `).run('ANOTHER_SYNTHETIC_ACCOUNT', 'SYNTHETIC-PROTECTED-EMPLOYEE', '2026-10-20T12:00:00.000Z'), /UNIQUE|constraint/i);
+  assert.throws(() => database.prepare(`
+    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    VALUES (?, ?, ?)
+  `).run('', 'SYNTHETIC-OTHER-EMPLOYEE', '2026-10-20T12:00:00.000Z'), /CHECK|constraint/i);
+
+  const columns = tableColumns(database, 'protected_account_access_audit');
+  assert.deepEqual([...columns.keys()], ['event_id', 'auth_mode', 'reason_code', 'occurred_at']);
+  database.prepare(`
+    INSERT INTO protected_account_access_audit (event_id, auth_mode, reason_code, occurred_at)
+    VALUES (?, ?, ?, ?)
+  `).run('synthetic-audit-event', 'line', 'LINE_OWNER_MISMATCH', '2026-10-20T12:00:00.000Z');
+  assert.throws(() => database.prepare(`
+    INSERT INTO protected_account_access_audit (event_id, auth_mode, reason_code, occurred_at)
+    VALUES (?, ?, ?, ?)
+  `).run('synthetic-invalid-auth', 'admin', 'LINE_OWNER_MISMATCH', '2026-10-20T12:00:00.000Z'), /CHECK|constraint/i);
+  assert.throws(() => database.prepare(`
+    INSERT INTO protected_account_access_audit (event_id, auth_mode, reason_code, occurred_at)
+    VALUES (?, ?, ?, ?)
+  `).run('synthetic-invalid-reason', 'line', 'SENSITIVE_VALUE', '2026-10-20T12:00:00.000Z'), /CHECK|constraint/i);
+  assert.throws(() => database.prepare(`
+    UPDATE protected_account_access_audit SET reason_code = ? WHERE event_id = ?
+  `).run('AUTHORIZATION_UNVERIFIED', 'synthetic-audit-event'), /append-only/i);
+  assert.throws(() => database.prepare(`
+    DELETE FROM protected_account_access_audit WHERE event_id = ?
+  `).run('synthetic-audit-event'), /append-only/i);
+  assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
 });
 
 test('0010 backfills canonical vendors without duplicating historical aliases', () => {

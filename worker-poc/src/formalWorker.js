@@ -14,6 +14,7 @@ import { syncTaiwanGovernmentHolidays } from './domain/taiwanHolidays.js';
 import { HttpError, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
 import { asNumber } from './contract.js';
+import { assertProtectedAccountMappingReady } from './auth/protectedAccountPolicy.js';
 
 const AUTOMATIC_OPENING_LOG_EVENT = 'automatic_daily_group_opening';
 const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
@@ -90,6 +91,7 @@ export const handleFormalRequest = async (request, env, options = {}) => {
         }, 503);
       }
     } else {
+      if (env?.DB) await assertProtectedAccountMappingReady(env.DB);
       const authResponse = await handleAuthRoute(request, env, options);
       if (authResponse) response = authResponse;
       if (!response) {

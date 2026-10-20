@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { handleFormalRequest } from '../src/formalWorker.js';
+import { handleFormalRequest } from './helpers/formal-fixtures.js';
 import {
   CORS_HEADERS,
   PRODUCTION_FRONTEND_ORIGIN
@@ -511,7 +511,7 @@ test('error responses use the same CORS policy', async () => {
   assertCorsAllowed(remoteTest, remoteTestPinggyOrigin);
 });
 
-test('uncaught runtime errors keep CORS for an allowed origin', async () => {
+test('database readiness errors keep the unavailable response inside the CORS policy', async () => {
   const response = await handleFormalRequest(request('/api/me', {
     headers: {
       Origin: 'http://localhost:5173',
@@ -527,7 +527,7 @@ test('uncaught runtime errors keep CORS for an allowed origin', async () => {
     fetchImpl: profileFetch({ token: 'test-token', lineUserId: 'test-user' })
   });
 
-  assert.equal(response.status, 500);
+  assert.equal(response.status, 503);
   assertCorsAllowed(response, 'http://localhost:5173');
 });
 

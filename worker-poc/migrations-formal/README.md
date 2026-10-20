@@ -38,13 +38,14 @@ The formal chain is exactly:
 0014_taiwan_government_holidays.sql  # public holiday source
 0015_invalid_employee_marker.sql     # explicit invalid employee marker for disabled canonical users
 0016_announcement_user_preferences.sql # per-user read/dismissal state and new-announcement popup eligibility
+0017_protected_account_auth_audit.sql # controlled protected-account mapping and deidentified append-only denials
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all seventeen files in order. Migration 0003 defaults existing users to
+all eighteen files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -89,6 +90,23 @@ Migration 0016 leaves existing announcements ineligible for automatic popups,
 adds an eligibility timestamp for newly created announcements, and stores
 read and popup-dismissal timestamps independently per canonical user and
 announcement. It does not seed user preference rows.
+Migration 0017 adds a protected-account mapping table keyed by a non-sensitive
+account key, plus a separate append-only audit for denied access. The mapping
+is used by the Worker to classify the reserved account without embedding its
+employee login value in source code. The audit
+stores only a random event ID, authentication mode, constrained reason code,
+and timestamp; it has no user, employee, or LINE identity columns. The
+mapping table is intentionally empty in the migration: controlled setup must
+populate it only with the authorized value for the target environment. No
+mapping, user, account, order, or ledger row is seeded or changed by this
+migration. Until setup supplies exactly one `RESERVED_VENDOR_OWNER` mapping
+that resolves to exactly one canonical user, the formal Worker returns HTTP
+503 (`PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED`) for business API requests;
+health and CORS preflight remain available. A database read failure while
+checking readiness returns HTTP 503 (`PROTECTED_ACCOUNT_CONFIGURATION_UNAVAILABLE`).
+This configuration is a deployment prerequisite, and ordinary employee login
+and onboarding work once a valid mapping is configured. It follows the
+announcement-preference schema in migration 0016.
 
 ## Recovery procedure
 

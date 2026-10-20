@@ -32,7 +32,7 @@ commands:
     - "npm ci --cache /tmp/bento-order-app-npm-cache"
     - "npm ci --prefix worker-poc --cache /tmp/bento-order-app-npm-cache"
   test:
-    - "node --test tests/strict-identity-ledger.test.cjs tests/changelog-migration.test.cjs"
+    - "node --test tests/strict-identity-ledger.test.cjs tests/changelog-migration.test.cjs tests/pii-scan-public-artifacts.test.cjs"
     - "node worker-poc/tests/invalid-employee-repair.test.js && node worker-poc/tests/effective-order-item-name.test.js && node worker-poc/tests/line-binding-transfer.test.js && node worker-poc/tests/roles.test.js"
     - "npm test --prefix worker-poc"
     - "node --test tests/invalid-employee-repair-ui.test.cjs tests/effective-order-item-name-ui.test.cjs tests/line-binding-transfer-ui.test.cjs tests/order-statistics-ui.test.cjs tests/announcement-images-ui.test.cjs tests/local-mock-responsive-uat.test.cjs"

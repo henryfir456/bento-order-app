@@ -11,7 +11,7 @@ import {
   getWorkerSelectionKey,
   normalizeWorkerOrderMenu
 } from '../../src/features/orders/orderSelection.js';
-import { handleFormalRequest } from '../src/formalWorker.js';
+import { handleFormalRequest } from './helpers/formal-fixtures.js';
 import { getCustomerMenu } from '../src/domain/menu.js';
 import { getOrderItemSelectionKey } from '../src/domain/ordersRead.js';
 import { normalizeLegacyWorkbook } from '../scripts/lib/import-normalizer.mjs';
