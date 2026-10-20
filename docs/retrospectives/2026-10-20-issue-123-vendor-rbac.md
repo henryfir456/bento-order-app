@@ -12,6 +12,8 @@
 
 目前修正將 Vendor principal 條件加到資料庫寫入邊界，涵蓋員工 claim、LINE 與員工 ID 綁定、共用餘額 ledger、訂單建立／取消、管理者員工綁定及角色更新。儲值以同一原子批次的 claim predicate 阻止競態，同時避免留下儲值 audit 或 idempotency 記錄。新增可控同步競態測試，在實際寫入前插入合成 Vendor principal，檢查身分、訂單、餘額、ledger、audit 及 session 狀態均不被改動。
 
+在後續獨立審查中，reviewer 於前一精確 head 重現另一個 P2：群組取消預讀 ACTIVE 訂單後，若 Vendor principal 在 batch 前出現，逐筆 Vendor fence 會跳過退款與取消，卻仍可能清空日曆並回報成功。現行修正遇到既存 Vendor 訂單時先回 409；寫入 batch 也在退款、狀態歷程、訂單取消、日曆設定與 audit 加入整組 Vendor-active fence，批次後再檢查並拒絕殘留的 Vendor ACTIVE 訂單。新增兩個合成 SQLite 測試覆蓋既存 principal 與預查後、batch 前插入 principal 的交錯，確認訂單、餘額、refund ledger、歷程、日曆設定及 audit 均不變。
+
 每次 PR head 更新後，獨立 reviewer 與 CI 都必須對同一精確版本重新檢查；即時結果以 [PR #136](https://github.com/henryfir456/bento-order-app/pull/136) 為準。本文件不抄錄自我參照的 commit SHA。此前版本的 Actions 成功狀態不代表後續修正已驗證。
 
 ## 安全與資料範圍
@@ -27,15 +29,16 @@
 本輪本機驗證：
 
 - `node --test tests/strict-identity-ledger.test.cjs tests/changelog-migration.test.cjs tests/pii-scan-public-artifacts.test.cjs`：PASS，92 passed、3 skipped、0 failed。
+- `node --test worker-poc/tests/calendar-admin.test.js`：PASS，6/6；包含新 Vendor group-cancellation 衝突與可控 batch race 回歸。
 - `node worker-poc/tests/invalid-employee-repair.test.js && node worker-poc/tests/effective-order-item-name.test.js && node worker-poc/tests/line-binding-transfer.test.js && node worker-poc/tests/roles.test.js`：PASS，退出碼 0。
-- `npm test --prefix worker-poc`：PASS，588/588。
+- `npm test --prefix worker-poc`：PASS，590/590。
 - `node --test tests/invalid-employee-repair-ui.test.cjs tests/effective-order-item-name-ui.test.cjs tests/line-binding-transfer-ui.test.cjs tests/order-statistics-ui.test.cjs tests/announcement-images-ui.test.cjs tests/local-mock-responsive-uat.test.cjs`：PASS，30/30；這是本機 Mock/UI 驗證。
 - `npm run lint`：PASS，退出碼 0；仍有既有 lint warnings。
 - `npm run build`：PASS，退出碼 0；Vite 顯示 JS bundle 764.79 kB，高於 500 kB 建議值。
 - `git diff --check`：PASS。`git diff --unified=0 origin/main | node scripts/pii-scan-public-artifacts.mjs --diff-stdin`：PASS，未命中設定的身份或憑證樣式。`git ls-files --others --exclude-standard | xargs -r node scripts/pii-scan-public-artifacts.mjs`：PASS，沒有未追蹤文字檔。
 - 工具能力探測 `tools/get-toolchain-capabilities.ps1`：BLOCKED，宣告路徑不存在且執行環境沒有 `pwsh`；這不影響以上已實際執行的本機命令。遠端服務能力另行保留為 NOT VERIFIED。
 
-PR 精確 head 的獨立 review 與 Actions 狀態以 PR 即時記錄為準，不以之前版本的 5 項成功 Actions 代替。此前版本 Worker 577/577、根目錄測試 92 passed／3 skipped 只屬於前次精確版本。
+現行修正尚需獨立 reviewer 與 Actions 對應更新後的精確 PR head 重新檢查；不以之前版本的 review 或 5 項成功 Actions 代替。前次精確版本的 Actions 成功狀態只屬於該版本。
 
 遠端隔離 Worker API 的 HTTPS CONNECT 在代理層回應 403，請求未抵達 Worker，因此本地 SQLite／Mock 測試不代表遠端 API 或正式環境驗收。不得以其他 Cloudflare 操作或替代網路通道繞過此限制。
 

@@ -1,6 +1,7 @@
 import { auditStatement } from '../db/audit.js';
 import { ledgerMutationStatements } from '../db/ledgerQueries.js';
 import { prepareStatement, randomId, resolveClock, runMutationBatch } from '../db/transactions.js';
+import { conflict } from '../http/errors.js';
 import { deadlineInfo, getTaipeiDate, isDateOnly } from './deadlines.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 
@@ -91,6 +92,9 @@ export const cancelCalendarGroup = async (
            u.employee_id, u.line_user_id, u.display_name,
            COALESCE(SUM(oi.quantity), 0) AS total_quantity,
            EXISTS (
+             SELECT 1 FROM vendor_principals vp WHERE vp.user_id = o.user_id
+           ) AS is_vendor_principal,
+           EXISTS (
              SELECT 1 FROM balance_ledger bl
              WHERE bl.type = 'REFUND' AND bl.reference_id = o.order_id
            ) AS has_refund
@@ -103,6 +107,10 @@ export const cancelCalendarGroup = async (
     ORDER BY o.order_id
   `).bind(orderDate).all();
   const activeOrders = rowsFrom(activeResult);
+
+  if (activeOrders.some((order) => Number(order.is_vendor_principal) === 1)) {
+    throw conflict('VENDOR_ORDER_GROUP_CANCELLATION_FORBIDDEN');
+  }
 
   if (activeOrders.some((order) => Number(order.has_refund) === 1)) {
     const error = new Error('Active order already has a refund.');
@@ -120,10 +128,13 @@ export const cancelCalendarGroup = async (
           AND current_order.order_date = ?
           AND current_order.status = 'ACTIVE'
           AND NOT EXISTS (
-            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = current_order.user_id
+            SELECT 1
+            FROM orders vendor_order
+            JOIN vendor_principals vp ON vp.user_id = vendor_order.user_id
+            WHERE vendor_order.order_date = ? AND vendor_order.status = 'ACTIVE'
           )
       )`,
-      params: [order.order_id, order.user_id, orderDate]
+      params: [order.order_id, order.user_id, orderDate, orderDate]
     };
     const refundableGuard = {
       sql: `${activeGuard.sql}
@@ -206,14 +217,27 @@ export const cancelCalendarGroup = async (
     INSERT INTO calendar_settings (
       order_date, vendor, mode, vendor_source, updated_by_user_id,
       created_at, updated_at
-    ) VALUES (?, '', ?, 'CONFIGURED', ?, ?, ?)
+    )
+    SELECT ?, '', ?, 'CONFIGURED', ?, ?, ?
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM orders vendor_order
+      JOIN vendor_principals vp ON vp.user_id = vendor_order.user_id
+      WHERE vendor_order.order_date = ? AND vendor_order.status = 'ACTIVE'
+    )
     ON CONFLICT(order_date) DO UPDATE SET
       vendor = '',
       mode = excluded.mode,
       vendor_source = 'CONFIGURED',
       updated_by_user_id = excluded.updated_by_user_id,
       updated_at = excluded.updated_at
-  `, [orderDate, mode, actor.userId, occurredAt, occurredAt]));
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM orders vendor_order
+      JOIN vendor_principals vp ON vp.user_id = vendor_order.user_id
+      WHERE vendor_order.order_date = ? AND vendor_order.status = 'ACTIVE'
+    )
+  `, [orderDate, mode, actor.userId, occurredAt, occurredAt, orderDate, orderDate]));
 
   const summary = {
     userCount: new Set(activeOrders.map((order) => order.user_id)).size,
@@ -236,10 +260,19 @@ export const cancelCalendarGroup = async (
       groupCancellation: true,
       ...summary
     },
-    occurredAt
+    occurredAt,
+    onlyIfPriorMutation: true
   }));
 
   await runMutationBatch(database, statements);
+  const remainingVendorOrder = await database.prepare(`
+    SELECT 1 AS found
+    FROM orders o
+    JOIN vendor_principals vp ON vp.user_id = o.user_id
+    WHERE o.order_date = ? AND o.status = 'ACTIVE'
+    LIMIT 1
+  `).bind(orderDate).first();
+  if (remainingVendorOrder) throw conflict('VENDOR_ORDER_GROUP_CANCELLATION_FORBIDDEN');
   return {
     success: true,
     setting: await getCalendarSetting(database, orderDate),
