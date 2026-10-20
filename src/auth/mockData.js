@@ -174,8 +174,60 @@ const MOCK_INVALID_REPAIR_MEMBERS = Object.freeze([
 
 const sessionStates = new Map();
 const mockVendorPaymentStore = [];
+export const MOCK_VENDOR_PAYMENT_STORAGE_KEY = 'bento-mock-vendor-payments-v1';
+let mockVendorPaymentStorage = null;
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+
+const isOptionalMockText = (value) => value == null || (typeof value === 'string' && value.length <= 500);
+const isStoredMockVendorPayment = (payment) => (
+  payment && typeof payment === 'object'
+  && /^mock-payment-\d+$/u.test(String(payment.paymentId || ''))
+  && payment.createdByMockUser === 'admin'
+  && MOCK_VENDOR_FIXTURES.some((vendor) => vendor.id === payment.vendorId)
+  && Number.isSafeInteger(payment.amountTwd) && payment.amountTwd > 0
+  && /^\d{4}-\d{2}-\d{2}$/u.test(String(payment.transferredOn || ''))
+  && typeof payment.idempotencyKey === 'string' && payment.idempotencyKey.length <= 200
+  && typeof payment.requestHash === 'string' && payment.requestHash.length <= 9999
+  && [payment.disputeReason, payment.resolution, payment.reversalReason].every(isOptionalMockText)
+  && ['REGISTERED', 'ACKNOWLEDGED', 'DISPUTED', 'RESOLVED', 'REVERSED'].includes(payment.status)
+  && Array.isArray(payment.allocations)
+  && payment.allocations.length <= 31
+  && payment.allocations.every((allocation) => (
+    allocation && typeof allocation === 'object'
+    && /^mock-allocation-\d+-\d+$/u.test(String(allocation.allocationId || ''))
+    && /^\d{4}-\d{2}-\d{2}$/u.test(String(allocation.serviceDate || ''))
+    && Number.isSafeInteger(allocation.amountTwd) && allocation.amountTwd >= 0
+    && Number.isSafeInteger(allocation.adjustmentTwd || 0)
+  ))
+);
+
+const persistMockVendorPayments = () => {
+  if (!mockVendorPaymentStorage) return;
+  try {
+    mockVendorPaymentStorage.setItem(
+      MOCK_VENDOR_PAYMENT_STORAGE_KEY,
+      JSON.stringify(mockVendorPaymentStore)
+    );
+  } catch {
+    // Local storage is optional; the in-memory mock remains usable if it is unavailable.
+  }
+};
+
+export const configureMockVendorPaymentStorage = (storage) => {
+  if (!storage || typeof storage.getItem !== 'function' || typeof storage.setItem !== 'function') return;
+  if (storage === mockVendorPaymentStorage) return;
+  mockVendorPaymentStorage = storage;
+  mockVendorPaymentStore.splice(0);
+  try {
+    const saved = JSON.parse(storage.getItem(MOCK_VENDOR_PAYMENT_STORAGE_KEY) || '[]');
+    if (Array.isArray(saved)) {
+      mockVendorPaymentStore.push(...saved.slice(0, 100).filter(isStoredMockVendorPayment).map(clone));
+    }
+  } catch {
+    // Invalid or unavailable saved data starts with an empty synthetic store.
+  }
+};
 
 const toDateKey = (date) => {
   const year = date.getFullYear();
@@ -372,8 +424,9 @@ export const updateMockVendor = (mockUser, vendorId, patch = {}) => {
   return getMockVendor(mockUser, vendor.id);
 };
 
-// This fixture is browser-memory only. It never calls a Worker, LINE login,
-// bank service, or persistent database.
+// These fixtures are synthetic and never call a Worker, LINE login, bank
+// service, or persistent database. Vendor payment entries may be kept in
+// localStorage so a local Mock role can be restarted in the same browser.
 export const getMockVendorOperations = (mockUser, { month, vendorId = null } = {}) => {
   const state = getMockSessionState(mockUser);
   const isVendor = state.user?.role === 'Vendor';
@@ -493,6 +546,7 @@ export const recordMockVendorPayment = (mockUser, payload = {}) => {
     }))
   };
   state.vendorPayments.push(payment);
+  persistMockVendorPayments();
   return { paymentId: payment.paymentId, replayed: false };
 };
 
@@ -515,6 +569,7 @@ export const reverseMockVendorPayment = (mockUser, paymentId, reason, confirmed)
   }
   payment.status = 'REVERSED';
   payment.reversalReason = normalizedReason;
+  persistMockVendorPayments();
   return { paymentId, status: payment.status };
 };
 
@@ -532,6 +587,7 @@ export const updateMockVendorPayment = (mockUser, paymentId, eventType, value = 
     payment.status = eventType;
     if (eventType === 'DISPUTED') payment.disputeReason = value;
   }
+  persistMockVendorPayments();
   return { paymentId, status: payment.status };
 };
 
@@ -544,6 +600,7 @@ export const adjustMockVendorAllocation = (mockUser, allocationId, deltaTwd) => 
     return { error: 'VENDOR_ALLOCATION_ADJUSTMENT_INVALID' };
   }
   allocation.adjustmentTwd = Number(allocation.adjustmentTwd || 0) + deltaTwd;
+  persistMockVendorPayments();
   return { allocationId, deltaTwd };
 };
 

@@ -7,7 +7,17 @@ export const createGasApi = ({
   fetchImpl = globalThis.fetch
 } = {}) => {
   const gasApiUrl = String(env.VITE_GAS_API_URL || '').trim();
-  const mockGasApi = auth.isMock ? createMockGasApi({ mockUser: auth.mockUser }) : null;
+  let mockStorage;
+  if (auth.isMock) {
+    try {
+      mockStorage = globalThis.localStorage;
+    } catch {
+      mockStorage = null;
+    }
+  }
+  const mockGasApi = auth.isMock
+    ? createMockGasApi({ mockUser: auth.mockUser, storage: mockStorage })
+    : null;
 
   if (!mockGasApi && !gasApiUrl) {
     throw new Error('Missing VITE_GAS_API_URL');

@@ -10,6 +10,7 @@ import {
   getMockOrderStatistics,
   getMockOrdersMap,
   getMockSessionState,
+  configureMockVendorPaymentStorage,
   getMockVendor,
   getMockVendorOperations,
   getMockVendors,
@@ -98,7 +99,8 @@ const getMockDeferredUiResponse = (mockUser) => {
   };
 };
 
-export const createMockGasApi = ({ mockUser }) => {
+export const createMockGasApi = ({ mockUser, storage } = {}) => {
+  configureMockVendorPaymentStorage(storage);
   const getState = () => getMockSessionState(mockUser);
   const getUser = () => getState().user;
 

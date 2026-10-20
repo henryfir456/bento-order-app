@@ -95,7 +95,7 @@ Vite 預設在 `http://localhost:5173` 啟動。正式 Worker 通常使用已部
 | `VITE_API_TRANSPORT` | 省略或設為 `worker` 會使用 Worker；`gas` 僅保留給 legacy regression。 |
 | `VITE_WORKER_API_URL` | Worker transport 的 HTTP(S) base URL；Worker 模式必填。 |
 | `VITE_GAS_API_URL` | 只有明確使用 `VITE_API_TRANSPORT=gas` 時才需要。 |
-| `VITE_MOCK_USER` | mock 情境：`user`、`admin`、`proxy-admin`、`admin-unverified`、`admin-unbound`、`guest-admin` 或 `unregistered`。 |
+| `VITE_MOCK_USER` | mock 情境：`user`、`admin`、`vendor`、`proxy-admin`、`admin-unverified`、`admin-unbound`、`guest-admin` 或 `unregistered`。 |
 
 正式／LIFF 模式的最小設定：
 
@@ -112,6 +112,13 @@ VITE_WORKER_API_URL=https://your-worker.example.workers.dev
 VITE_AUTH_MODE=mock
 VITE_MOCK_USER=admin
 ```
+
+Windows synthetic integration steps for announcements, footprints, Vendor
+scope, daily orders, and Plan B settlement are in
+[the local Mock UAT runbook](docs/UAT_WINDOWS_LOCAL_MOCK_INTEGRATION.md).
+Switching the `VITE_MOCK_USER` role requires restarting Vite on the same
+origin; only the synthetic Vendor payment fixture is kept in local storage for
+that flow.
 
 ## 身份與傳輸邊界
 

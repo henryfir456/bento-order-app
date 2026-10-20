@@ -1,8 +1,11 @@
 # Windows Local UAT: Issues #103, #108, and #111
 
-This frontend uses only synthetic data in a browser-memory mock. It does not
-call the production D1, R2, LINE binding, accounting, or Worker API. A page
-reload resets mock mutations.
+This frontend uses synthetic data in a local Mock. It does not call
+the production D1, R2, LINE binding, accounting, or Worker API. Reloading resets
+ordinary Mock mutations; the combined guide now keeps only synthetic vendor
+settlement records in same-origin local storage so Admin/Vendor role switching
+can be tested across a Vite restart. See
+[Windows integrated local Mock UAT](UAT_WINDOWS_LOCAL_MOCK_INTEGRATION.md).
 
 ## Start the local frontend
 
@@ -11,12 +14,15 @@ Use Node.js 24 and PowerShell from the repository root:
 ```powershell
 node --version
 npm --version
-Copy-Item .env.uat-mock.example .env.local -Force
+if (-not (Test-Path .env.local)) { Copy-Item .env.uat-mock.example .env.local }
 npm ci
 $env:VITE_AUTH_MODE = 'mock'
 $env:VITE_MOCK_USER = 'admin'
-Remove-Item Env:VITE_API_TRANSPORT -ErrorAction SilentlyContinue
-npm run dev -- --host 127.0.0.1
+$env:VITE_API_TRANSPORT = ''
+$env:VITE_GAS_API_URL = ''
+$env:VITE_WORKER_API_URL = ''
+$env:VITE_LIFF_ID = ''
+npm run dev -- --host 127.0.0.1 --strictPort
 ```
 
 Open <http://127.0.0.1:5173>. The development badge should say `DEV · MOCK
@@ -64,8 +70,10 @@ value for this terminal only and do not change Windows user or machine settings.
 6. Select 查詢誤建員編修復稽核 and confirm one synthetic audit entry records
    the name change and preserved target fields.
 
-Restart the Vite server or reload the page to reset the mock data before
-repeating #111.
+Reloading resets ordinary Mock edits before repeating #111. The separate
+synthetic vendor settlement list is preserved in local storage for role-switch
+UAT; to clear only that list in the browser console, run
+`localStorage.removeItem('bento-mock-vendor-payments-v1')` and reload.
 
 ## Automated Worker API and isolated D1 coverage
 

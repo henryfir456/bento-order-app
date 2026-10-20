@@ -50,6 +50,9 @@ test('Vendor operations UI keeps Vendor in a dedicated shell and separates manua
 
   assert.match(page, /依已授權廠商範圍顯示/);
   assert.match(page, /LOCAL MOCK · 非 LINE／非實際 API/);
+  assert.match(page, /模擬登記銀行轉帳（LOCAL MOCK）/);
+  assert.match(page, /只建立本機瀏覽器中的合成測試紀錄，不連接銀行、Worker 或正式資料/);
+  assert.match(page, /我確認這是合成 Mock 轉帳/);
   assert.match(page, /我已在銀行 App 完成這筆實際轉帳/);
   assert.match(page, /本系統不會執行付款/);
   assert.match(page, /不收集帳號或付款截圖/);
@@ -348,6 +351,75 @@ test('local Mock supports a separate Vendor fixture and synthetic bank-transfer 
   assert.equal(reversedOps.days[0].settlement.confirmedTwd, 0);
   assert.equal(reversedOps.days[0].settlement.registeredTransferTwd, 0);
   assert.equal(reversedOps.days[0].settlement.transfers[0].status, 'REVERSED');
+});
+
+test('local Mock settlement survives a same-browser restart when switching Admin and Vendor roles', async () => {
+  const { createMockGasApi } = await import('../src/api/mockGasApi.js');
+  const { MOCK_VENDOR_PAYMENT_STORAGE_KEY, getMockSessionState } = await import('../src/auth/mockData.js');
+  const createStorage = (initialValue = '[]') => {
+    let value = initialValue;
+    return {
+      getItem: (key) => key === MOCK_VENDOR_PAYMENT_STORAGE_KEY ? value : null,
+      setItem: (key, nextValue) => { if (key === MOCK_VENDOR_PAYMENT_STORAGE_KEY) value = String(nextValue); }
+    };
+  };
+  const initialStorage = createStorage();
+  const serviceDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(new Date());
+  let paymentId;
+
+  try {
+    const adminApi = createMockGasApi({ mockUser: 'admin', storage: initialStorage });
+    const recordedResponse = await adminApi.post({
+      action: 'recordVendorPayment',
+      vendorId: 'mock-vendor-a',
+      amountTwd: 100,
+      transferredOn: serviceDate,
+      actualTransferDone: true,
+      detailsReviewed: true,
+      idempotencyKey: 'mock-role-switch-storage',
+      allocations: [{ serviceDate, amountTwd: 100 }]
+    });
+    assert.equal(recordedResponse.status, 201);
+    paymentId = (await recordedResponse.json()).paymentId;
+    assert.equal(JSON.parse(initialStorage.getItem(MOCK_VENDOR_PAYMENT_STORAGE_KEY))[0].paymentId, paymentId);
+
+    // A new Storage instance models a reload/restart using the same browser origin.
+    const restartedStorage = createStorage(initialStorage.getItem(MOCK_VENDOR_PAYMENT_STORAGE_KEY));
+    const vendorApi = createMockGasApi({ mockUser: 'vendor', storage: restartedStorage });
+    const vendorResponse = await vendorApi.get(`?action=getVendorOperations&month=${serviceDate.slice(0, 7)}`);
+    const vendorOperations = await vendorResponse.json();
+    assert.equal(vendorOperations.days[0].settlement.pendingConfirmationTwd, 100);
+    assert.equal(vendorOperations.days[0].settlement.transfers[0].paymentId, paymentId);
+
+    const acknowledgement = await vendorApi.post({ action: 'acknowledgeVendorPayment', paymentId });
+    assert.equal((await acknowledgement.json()).status, 'ACKNOWLEDGED');
+    const adminAfterRestart = createMockGasApi({
+      mockUser: 'admin',
+      storage: createStorage(restartedStorage.getItem(MOCK_VENDOR_PAYMENT_STORAGE_KEY))
+    });
+    const adminResponse = await adminAfterRestart.get(
+      `?action=getAdminVendorOperations&month=${serviceDate.slice(0, 7)}&vendorId=mock-vendor-a`
+    );
+    const adminOperations = await adminResponse.json();
+    assert.equal(adminOperations.days[0].settlement.confirmedTwd, 100);
+
+    const tampered = JSON.parse(restartedStorage.getItem(MOCK_VENDOR_PAYMENT_STORAGE_KEY));
+    tampered[0].createdByMockUser = 'not-admin';
+    const vendorWithInvalidStorage = createMockGasApi({
+      mockUser: 'vendor',
+      storage: createStorage(JSON.stringify(tampered))
+    });
+    const ignoredPaymentResponse = await vendorWithInvalidStorage.get(
+      `?action=getVendorOperations&month=${serviceDate.slice(0, 7)}`
+    );
+    const ignoredPayment = await ignoredPaymentResponse.json();
+    assert.equal(ignoredPayment.days[0].settlement.registeredTransferTwd, 0);
+  } finally {
+    getMockSessionState('admin').vendorPayments.splice(0);
+    createMockGasApi({ mockUser: 'admin', storage: createStorage() });
+  }
 });
 
 test('Vendor local mock portal renders at phone and desktop widths without employee or wallet views', {

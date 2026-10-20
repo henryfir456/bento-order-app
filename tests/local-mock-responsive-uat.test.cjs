@@ -161,6 +161,7 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
 
     for (const width of [375, 1280]) {
       const height = width < 640 ? 812 : 900;
+      if (width > 375) await evaluate('localStorage.removeItem("bento-mock-vendor-payments-v1")');
       await devtools.send('Emulation.setDeviceMetricsOverride', {
         width, height, deviceScaleFactor: 1, mobile: width < 640,
         screenWidth: width, screenHeight: height
@@ -277,7 +278,7 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
 
       await clickVisibleButton({ ariaLabel: '管理' });
       await clickVisibleButton({ text: '廠商每日訂單與轉帳對帳' });
-      await waitFor('document.body.innerText.includes("登記已完成的銀行轉帳") && document.body.innerText.includes("Mock Bento A")', '#124/#125 Admin transfer recording form');
+      await waitFor('document.body.innerText.includes("模擬登記銀行轉帳（LOCAL MOCK）") && document.body.innerText.includes("Mock Bento A")', '#124/#125 Admin synthetic transfer recording form');
       const setNumberInput = async (index, value) => {
         const set = await evaluate(`(()=>{const input=document.querySelectorAll('form input[type="number"]')[${index}];if(!input)return false;const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(input,${JSON.stringify(String(value))});input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
         assert.equal(set, true, 'A transfer amount input should be available.');
@@ -285,7 +286,7 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
       await setNumberInput(0, 100);
       await setNumberInput(1, 100);
       await evaluate('[...document.querySelectorAll("form input[type=checkbox]")].forEach((checkbox)=>checkbox.click())');
-      await clickVisibleButton({ text: '登記轉帳與日期分攤' });
+      await clickVisibleButton({ text: '登記合成轉帳與日期分攤' });
       await waitFor('document.body.innerText.includes("待廠商確認") && document.body.innerText.includes("100 元")', '#125 mock transfer appears as pending confirmation');
       const vendorSettlementLayout = JSON.parse(await evaluate('JSON.stringify({width:innerWidth,documentWidth:document.documentElement.scrollWidth,main:document.querySelector("main")?.innerText||""})'));
       assert.ok(vendorSettlementLayout.documentWidth <= width, 'Vendor settlement form and allocated rows should not overflow the viewport.');
