@@ -135,7 +135,9 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
         PAYMENT_REVERSAL_CONFLICT: '付款分攤剛有變動，請重新整理核對後再沖正。',
         REVERSAL_REASON_REQUIRED: '請填寫轉帳沖正原因。',
         PAYMENT_DISPUTE_ALREADY_RESOLVED: '這筆異議已處理，請重新整理查看最新狀態。',
-        PAYMENT_CONFIRMATION_REQUIRED: '請確認已完成實際轉帳，並再次核對日期、總額與各日分攤。',
+        PAYMENT_CONFIRMATION_REQUIRED: mock
+          ? '請確認這是合成 Mock 轉帳，並核對日期、總額與各日分攤。'
+          : '請確認已完成實際轉帳，並再次核對日期、總額與各日分攤。',
         PAYMENT_NOT_DISPUTED: '這筆轉帳目前沒有待處理爭議。',
         VENDOR_DAY_RECEIVABLE_EXCEEDED: '分攤金額超過該日目前應收，請調整金額。',
         VENDOR_PAYMENT_ALLOCATION_INVALID: '分攤總額超過這筆轉帳金額。',
@@ -156,7 +158,9 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
       amountTwd: Number(item.amountTwd)
     }));
     if (!actualTransferDone || !detailsReviewed) {
-      setActionError('請確認已在銀行 App 完成實際轉帳，並再次核對日期、總額與各日分攤。');
+      setActionError(mock
+        ? '請確認這是合成 Mock 轉帳，並核對日期、總額與各日分攤。'
+        : '請確認已在銀行 App 完成實際轉帳，並再次核對日期、總額與各日分攤。');
       return;
     }
     if (!Number.isSafeInteger(amountTwd) || amountTwd <= 0
@@ -380,18 +384,20 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
       {canRecordTransfer && (
         <form onSubmit={submitTransfer} className="space-y-3 rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
           <div>
-            <h3 className="font-bold text-[#2C4A3E]">登記已完成的銀行轉帳</h3>
-            <p className="mt-1 text-sm text-slate-600">請先在銀行 App 實際轉帳，再記錄金額與日期。本系統不會執行付款，也不收集帳號或付款截圖。</p>
+            <h3 className="font-bold text-[#2C4A3E]">{mock ? '模擬登記銀行轉帳（LOCAL MOCK）' : '登記已完成的銀行轉帳'}</h3>
+            <p className="mt-1 text-sm text-slate-600">{mock
+              ? '只建立本機瀏覽器中的合成測試紀錄，不連接銀行、Worker 或正式資料。'
+              : '請先在銀行 App 實際轉帳，再記錄金額與日期。本系統不會執行付款，也不收集帳號或付款截圖。'}</p>
           </div>
           <label className="flex min-h-11 items-center gap-2 rounded-lg bg-amber-50 px-3 text-sm text-amber-950">
             <input type="checkbox" checked={actualTransferDone} onChange={(event) => {
               setActualTransferDone(event.target.checked);
               setDetailsReviewed(false);
             }} />
-            我已在銀行 App 完成這筆實際轉帳
+            {mock ? '我確認這是合成 Mock 轉帳' : '我已在銀行 App 完成這筆實際轉帳'}
           </label>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="space-y-1 text-sm font-medium text-slate-700"><span>實際轉帳總額（元）</span>
+            <label className="space-y-1 text-sm font-medium text-slate-700"><span>{mock ? '模擬轉帳總額（元）' : '實際轉帳總額（元）'}</span>
               <input required min="1" step="1" type="number" inputMode="numeric" value={transferAmount}
                 onChange={(event) => { setTransferAmount(event.target.value); clearTransferConfirmations(); }}
                 className="min-h-11 w-full rounded-lg border border-slate-300 px-3" />
@@ -423,11 +429,11 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
           </fieldset>
           <label className="flex min-h-11 items-center gap-2 rounded-lg bg-slate-50 px-3 text-sm text-slate-700">
             <input type="checkbox" checked={detailsReviewed} onChange={(event) => setDetailsReviewed(event.target.checked)} />
-            我已再次核對轉帳日期、總額及每筆日期分攤
+            {mock ? '我已核對合成轉帳日期、總額及每筆日期分攤' : '我已再次核對轉帳日期、總額及每筆日期分攤'}
           </label>
           <button type="submit" disabled={Boolean(busyKey) || !actualTransferDone || !detailsReviewed}
             className="min-h-11 w-full rounded-lg bg-[#2C4A3E] px-4 py-2 font-bold text-white disabled:opacity-50">
-            {busyKey === 'record-transfer' ? '登記中…' : '登記轉帳與日期分攤'}
+            {busyKey === 'record-transfer' ? '登記中…' : mock ? '登記合成轉帳與日期分攤' : '登記轉帳與日期分攤'}
           </button>
         </form>
       )}
