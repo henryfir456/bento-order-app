@@ -2,9 +2,9 @@
 
 - Repository：`henryfir456/bento-order-app`。
 - 核對 base：`main` SHA `709a0c6`；候選分支 `codex/issue-122-redacted`，目前程式碼候選 SHA `c1915cf`。
-- PR 狀態：獨立複審候選 SHA 中；待複審完成後建立乾淨替代 PR。既有 Draft PR #133 含有不安全的公開歷史，不能合併，亦未改寫歷史。
+- PR 狀態：[乾淨替代 PR #134](https://github.com/henryfir456/bento-order-app/pull/134) 已建立為 Draft；獨立複審與 PR checks 進行中，尚未合併。既有 Draft PR #133 含有不安全的公開歷史，不能合併，亦未改寫歷史。
 - 本輪範圍：在 Worker 身分解析、員編訪客登入／註冊、LINE 員編查找／綁定、舊訪客 session、直接 provisional claim、Admin 員編綁定、LINE 綁定轉移、身份修復與 View As 全路徑保護受限 canonical account。保護 mapping 由 D1 受控表讀取；migration 只建立 schema，不建立真實 mapping。拒絕稽核不保存帳號或 LINE 識別；公開投影不回傳受保護 owner 的 LINE ID。未更改任何使用者、訂單、餘額或 ledger 資料。
-- 交付狀態：程式和本機 gates PASS；精確候選 SHA 獨立複審進行中；尚未建立/合併新 PR。隔離 Worker runtime API 驗收 BLOCKED；正式 Worker、正式 D1 migration 和真實身分／帳務操作未執行。
+- 交付狀態：程式和本機 gates PASS；PR #134 精確 head 的獨立複審與 CI 進行中；尚未合併。隔離 Worker runtime API 驗收 BLOCKED；正式 Worker、正式 D1 migration 和真實身分／帳務操作未執行。
 
 ## 修復與獨立審查發現
 
@@ -19,7 +19,7 @@
 ## 公開內容與地域條件
 
 - 已重查 Issue #111 中的既有地域留言：原選擇是接受現有 R2 `default` jurisdiction（APAC），但前提為沒有更嚴格的資料落地限制。Repo runbook 要求 jurisdiction 有核准依據；目前可查政策與交付紀錄沒有證據證明上述前提成立，因此紀錄為 `REGION_POLICY_UNVERIFIED`。本輪未執行正式備份、D1 export 或 R2 寫入，也未重問已留存的 APAC 選擇。
-- Issue #122 目前標題/內文已去識別化；是否仍有舊編輯內容存在於通知、索引、fork 或快取無法由本輪證據確認。既有 PR #133 保持 Draft，沒有改寫公開 commit history。乾淨替代 PR 待本輪獨立覆核完成後建立。
+- Issue #122 目前標題/內文已去識別化；是否仍有舊編輯內容存在於通知、索引、fork 或快取無法由本輪證據確認。既有 PR #133 保持 Draft，沒有改寫公開 commit history；PR #134 以新 sanitized history 取代之，待獨立覆核及 CI 通過後再合併。
 
 ## 隔離環境與資料面驗收
 
@@ -30,7 +30,7 @@
 
 ## 精確 SHA 驗證
 
-以下結果均在候選 SHA `c1915cf` 的乾淨工作樹執行：
+以下結果均在 PR #134 本文件版本提交後的乾淨 head 執行；PR head SHA 是複審和 GitHub Actions 的精確 pin：
 
 - `node --test tests/strict-identity-ledger.test.cjs tests/changelog-migration.test.cjs tests/pii-scan-public-artifacts.test.cjs`：92 passed、3 skipped、0 failed。
 - Worker targeted：`invalid-employee-repair` 9、`effective-order-item-name` 13、`line-binding-transfer` 14、`roles` 2，全部通過。
