@@ -117,11 +117,13 @@ Expected results are health `{ ok: true, database: true, users: 2 }`, HTTP 401
 for the unauthenticated member request, and HTTP 204 with
 `Access-Control-Allow-Origin: http://127.0.0.1:5173` for preflight.
 
-The current execution environment blocks outbound requests to `workers.dev`
-with `403 Forbidden: requests ... are not allowed`. Therefore remote runtime
-health, CORS, and API authorization have not been observed here. The protected
-business API routes require a valid LINE identity; no synthetic auth bypass was
-added. Use the local mock above for the three interactive acceptance flows.
+An earlier bounded probe from this execution environment returned
+`403 Forbidden: requests ... are not allowed`; a new read-only `/api/health`
+probe on 2026-10-20 failed during hostname resolution with `EAI_AGAIN`, before
+receiving any Worker response. Therefore remote runtime health, CORS, and API
+authorization have not been observed here. The protected business API routes
+require a valid LINE identity; no synthetic auth bypass was added. Use the local
+mock above for the three interactive acceptance flows.
 
 ## Verification boundary
 

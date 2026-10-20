@@ -83,14 +83,13 @@ export const resolveEffectiveOrderItemName = ({
     const sameLegacyIdentity = legacyItemId
       ? catalog.filter((candidate) => text(candidate?.legacy_item_id || candidate?.item_id) === legacyItemId)
       : [];
-    const legacyVariants = new Set(sameLegacyIdentity.map((candidate) => text(candidate?.variant_key)));
-    ambiguous ||= !requestedVariant && legacyVariants.size > 1;
-    const identityMatches = sameLegacyIdentity.filter((candidate) => (
-      (hasStableIdentity || unitPrice === null || Number(candidate?.price) === unitPrice)
-        && (!requestedVariant || text(candidate?.variant_key) === requestedVariant)
+    const sameVariantIdentity = sameLegacyIdentity.filter((candidate) => (
+      !requestedVariant || text(candidate?.variant_key) === requestedVariant
     ));
-    ambiguous ||= !requestedVariant
-      && new Set(identityMatches.map((candidate) => text(candidate?.variant_key))).size > 1;
+    ambiguous ||= sameVariantIdentity.length > 1;
+    const identityMatches = sameVariantIdentity.filter((candidate) => (
+      hasStableIdentity || unitPrice === null || Number(candidate?.price) === unitPrice
+    ));
     matches = ambiguous ? [] : identityMatches;
   }
   if (matches.length !== 1) {

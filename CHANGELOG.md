@@ -19,6 +19,7 @@
 
 ### Fixed
 
+- 同店家、有效日期、legacy 品項碼與 variant 對應到多筆菜單時保留歧義；不以價格猜測身份，摘要與足跡各自保留未確認訂單列（Issues #103、#108）。
 - Keep unresolved order snapshot lines in separate identity groups and expose a diagnostic in order summaries and footprints instead of merging by matching text (Issues #103 and #108).
 - Recompute footprint portions, ranks, and meal-type counts from the effective menu identity, vendor, and variant; merge renamed entries across menu versions only when their stable identity is verified (Issue #108).
 - Preserve each source order-name snapshot; after menu identity is verified, show the same effective name across detail, floor, and total views (Issue #103).
