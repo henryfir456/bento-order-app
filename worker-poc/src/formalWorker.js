@@ -91,7 +91,7 @@ export const handleFormalRequest = async (request, env, options = {}) => {
         }, 503);
       }
     } else {
-      if (env?.DB) await assertProtectedAccountMappingReady(env.DB);
+      await assertProtectedAccountMappingReady(env?.DB);
       const authResponse = await handleAuthRoute(request, env, options);
       if (authResponse) response = authResponse;
       if (!response) {
