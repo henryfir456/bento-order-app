@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { handleFormalRequest } from '../src/formalWorker.js';
+import { handleFormalRequest } from './helpers/formal-fixtures.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 import {
   profileFetch,
@@ -75,7 +75,7 @@ test('admin and proxy summary views aggregate active orders without leaking memb
     { token: 'admin-token', lineUserId: 'admin-1' }
   );
   assert.equal(admin.response.status, 200);
-  assert.equal(admin.body.usersSummary.length, 4);
+  assert.equal(admin.body.usersSummary.filter((member) => !member.employeeId?.startsWith('TEST-PROTECTED-OWNER-')).length, 4);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ADMIN_SUMMARY_READ'").count, 1);
 
   const user = await call(
@@ -118,7 +118,7 @@ test('User, ProxyAdmin, and Admin all read order summaries while only Admin read
   assert.deepEqual(results.map(({ response }) => response.status), [200, 200, 200]);
   assert.deepEqual(results.map(({ body }) => body.requesterRole), ['User', 'ProxyAdmin', 'Admin']);
   assert.deepEqual(results.slice(0, 2).map(({ body }) => body.usersSummary), [[], []]);
-  assert.equal(results[2].body.usersSummary.length, 4);
+  assert.equal(results[2].body.usersSummary.filter((member) => !member.employeeId?.startsWith('TEST-PROTECTED-OWNER-')).length, 4);
 });
 
 test('historical summaries include completed orders while current summaries remain active-only', async () => {
@@ -156,7 +156,9 @@ test('member balances are Admin-only, token-derived, and mapped to public member
   assert.equal(admin.response.status, 200);
   assert.equal(admin.body.success, true);
   assert.equal(admin.body.requesterRole, 'Admin');
-  assert.deepEqual(admin.body.members.map((member) => ({
+  assert.deepEqual(admin.body.members
+    .filter((member) => !member.employeeId?.startsWith('TEST-PROTECTED-OWNER-'))
+    .map((member) => ({
     userId: member.userId,
     employeeId: member.employeeId,
     name: member.name,
@@ -184,6 +186,46 @@ test('member balances are Admin-only, token-derived, and mapped to public member
   );
   assert.equal(unauthenticatedResponse.status, 401);
   assert.deepEqual(await unauthenticatedResponse.json(), { error: 'AUTH_REQUIRED' });
+});
+
+test('admin member APIs do not expose the LINE ID of a protected account', async () => {
+  const database = seedSummary();
+  const protectedLineId = 'synthetic-protected-line-owner';
+  seedUser(database, {
+    userId: 'synthetic-protected-user',
+    employeeId: 'SYNTHETIC-PROTECTED-EMPLOYEE',
+    lineUserId: protectedLineId,
+    displayName: 'Synthetic protected account'
+  });
+  database.run(`
+    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    VALUES ('RESERVED_VENDOR_OWNER', ?, ?)
+  `, 'SYNTHETIC-PROTECTED-EMPLOYEE', '2026-10-20T12:00:00.000Z');
+
+  const balances = await call(
+    database,
+    '/api/admin/members/balances',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(balances.response.status, 200);
+  const protectedMember = balances.body.members.find(
+    (member) => member.userId === 'synthetic-protected-user'
+  );
+  assert.equal(protectedMember.lineBound, true);
+  assert.equal(protectedMember.lineUserId, null);
+  assert.equal(JSON.stringify(balances.body).includes(protectedLineId), false);
+
+  const summary = await call(
+    database,
+    '/api/admin/summary?date=2026-09-08&includeMemberBalances=true',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(summary.response.status, 200);
+  const protectedSummaryMember = summary.body.usersSummary.find(
+    (member) => member.userId === 'synthetic-protected-user'
+  );
+  assert.equal(protectedSummaryMember.lineUserId, null);
+  assert.equal(JSON.stringify(summary.body).includes(protectedLineId), false);
 });
 
 test('invalid employee rows stay hidden by default and only a LINE Admin outside View As can include them', async () => {

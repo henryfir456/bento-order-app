@@ -1,4 +1,6 @@
 import { ACTIONS, assertCan, isRegisteredLinePrincipal } from '../auth/permissions.js';
+import { isProtectedAccount, recordProtectedAccountDenial } from '../auth/protectedAccounts.js';
+import { appendAuditEvent } from '../db/audit.js';
 import { getUserByEmployeeId, getUserById, getUserByLineId } from '../db/users.js';
 import { conflict, forbidden, notFound } from '../http/errors.js';
 import { prepareStatement, randomId, resolveClock, runMutationBatch } from '../db/transactions.js';
@@ -87,7 +89,9 @@ const makeMemberSummary = (user, relations) => ({
   pickupFloor: user.pickupFloor,
   role: user.role,
   active: user.active,
-  lineBinding: lineBindingLabel(user.lineUserId),
+  lineBinding: isProtectedAccount(user)
+    ? { bound: Boolean(user.lineUserId), masked: null }
+    : lineBindingLabel(user.lineUserId),
   relatedData: relations
 });
 
@@ -106,8 +110,11 @@ const inspectTransfer = async (database, sourceUserId, employeeIdInput, now) => 
   ]);
   const conflicts = [];
   const addConflict = (code, shouldAdd) => { if (shouldAdd) conflicts.push(code); };
+  const protectedAccountTransfer = isProtectedAccount(source)
+    || isProtectedAccount(target);
 
   addConflict('SOURCE_AND_TARGET_SAME', source.userId === target.userId);
+  addConflict('PROTECTED_ACCOUNT_LINE_BINDING_IMMUTABLE', protectedAccountTransfer);
   addConflict('SOURCE_INVALID_EMPLOYEE_ID', source.invalidReason === 'INVALID_EMPLOYEE_ID');
   addConflict('TARGET_INVALID_EMPLOYEE_ID', target.invalidReason === 'INVALID_EMPLOYEE_ID');
   addConflict('SOURCE_INACTIVE', !source.active);
@@ -148,9 +155,36 @@ const inspectTransfer = async (database, sourceUserId, employeeIdInput, now) => 
     sourceRelations,
     targetRelations,
     conflicts,
+    protectedAccountTransfer,
     checks,
     previewFingerprint: await digestFingerprint(source, target)
   };
+};
+
+const auditProtectedTransferAttempt = async (
+  database,
+  actor,
+  inspection,
+  { action, occurredAt }
+) => {
+  const protectedTarget = isProtectedAccount(inspection.source)
+    ? inspection.source
+    : inspection.target;
+  await appendAuditEvent(database, {
+    actorUserId: actor.userId,
+    actorAuthMode: actor.authMode,
+    actorEmployeeIdSnapshot: null,
+    actorLineUserIdSnapshot: null,
+    targetUserId: null,
+    targetEmployeeIdSnapshot: null,
+    targetLineUserIdSnapshot: null,
+    action,
+    metadata: {
+      protectedSide: protectedTarget.userId === inspection.source.userId ? 'source' : 'target',
+      reason: 'PROTECTED_ACCOUNT_LINE_BINDING_IMMUTABLE'
+    },
+    occurredAt
+  });
 };
 
 const publicPreview = (inspection) => ({
@@ -170,9 +204,16 @@ export const getLineBindingTransferPreview = async (
   employeeIdInput,
   clock = new Date()
 ) => {
-  assertLineTransferAdmin(identity);
+  const actor = assertLineTransferAdmin(identity);
   const timestamp = resolveClock(clock).toISOString();
-  return publicPreview(await inspectTransfer(database, sourceUserId, employeeIdInput, timestamp));
+  const inspection = await inspectTransfer(database, sourceUserId, employeeIdInput, timestamp);
+  if (inspection.protectedAccountTransfer) {
+    await auditProtectedTransferAttempt(database, actor, inspection, {
+      action: 'PROTECTED_ACCOUNT_LINE_BINDING_TRANSFER_PREVIEW',
+      occurredAt: timestamp
+    });
+  }
+  return publicPreview(inspection);
 };
 
 const statementChanges = (result) => Number(result?.meta?.changes ?? result?.changes ?? 0);
@@ -271,6 +312,18 @@ export const transferLineBinding = async (
   const actor = assertLineTransferAdmin(identity);
   const timestamp = resolveClock(clock).toISOString();
   const inspection = await inspectTransfer(database, sourceUserId, employeeIdInput, timestamp);
+  if (inspection.protectedAccountTransfer) {
+    await auditProtectedTransferAttempt(database, actor, inspection, {
+      action: 'PROTECTED_ACCOUNT_LINE_BINDING_TRANSFER_DENIED',
+      occurredAt: timestamp
+    });
+    await recordProtectedAccountDenial(database, {
+      authMode: 'line',
+      reason: 'PROTECTED_ACCOUNT_ADMIN_TRANSFER_BLOCKED',
+      clock: timestamp
+    });
+    throw conflict('PROTECTED_ACCOUNT_LINE_BINDING_IMMUTABLE');
+  }
   if (inspection.conflicts.length) throw conflict(inspection.conflicts[0]);
   if (typeof previewFingerprint !== 'string'
     || previewFingerprint !== inspection.previewFingerprint) {

@@ -5,7 +5,7 @@ import {
   createEffectiveOrderItemNameResolver,
   resolveEffectiveOrderItemName
 } from '../src/domain/effectiveOrderItemNames.js';
-import { handleFormalRequest } from '../src/formalWorker.js';
+import { handleFormalRequest } from './helpers/formal-fixtures.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 import { profileFetch, request, seedUser } from './helpers/formal-fixtures.js';
 

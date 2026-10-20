@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { handleFormalRequest } from '../src/formalWorker.js';
+import { handleFormalRequest } from './helpers/formal-fixtures.js';
 import { CORS_HEADERS, PRODUCTION_FRONTEND_ORIGIN } from '../src/http/response.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 import { request, seedUser } from './helpers/formal-fixtures.js';
+import { handleFormalRequest as handleWithoutFixture } from '../src/formalWorker.js';
 
 const writesTracked = (database) => {
   const writes = [];
@@ -33,6 +34,28 @@ test('GET /api/health is public and preserves the existing liveness shape', asyn
     users: 1
   });
   assert.deepEqual(writes, []);
+});
+
+test('business routes fail closed with a configuration 503 when the D1 binding is missing', async () => {
+  let identityCalls = 0;
+  const response = await handleWithoutFixture(
+    request('/api/auth/employee-guest', {
+      method: 'POST',
+      token: 'synthetic-token',
+      body: { employeeId: 'SYNTHETIC-EMPLOYEE' }
+    }),
+    {},
+    {
+      fetchImpl: async () => {
+        identityCalls += 1;
+        return new Response('{}', { status: 200 });
+      }
+    }
+  );
+
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { error: 'PROTECTED_ACCOUNT_CONFIGURATION_UNAVAILABLE' });
+  assert.equal(identityCalls, 0);
 });
 
 test('OPTIONS /api/health keeps the formal CORS preflight contract', async () => {

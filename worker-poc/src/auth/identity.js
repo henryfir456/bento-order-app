@@ -1,4 +1,5 @@
 import { getUserByEmployeeId, getUserById, getUserByLineId } from '../db/users.js';
+import { appendAuditEvent } from '../db/audit.js';
 import { forbidden, unauthorized } from '../http/errors.js';
 import {
   capabilitiesFor,
@@ -9,6 +10,11 @@ import {
 } from './permissions.js';
 import { fetchLineProfile } from './lineProfile.js';
 import { inspectGuestSession, isGuestToken } from './guestSession.js';
+import {
+  denyProtectedAccountAccess,
+  hasAnyProtectedEmployeeId,
+  requireProtectedLineOwner
+} from './protectedAccounts.js';
 
 const bearerToken = (request) => {
   const header = request?.headers?.get('Authorization') || '';
@@ -81,12 +87,16 @@ const actorFromUser = (
 export const resolveLineIdentity = async (
   request,
   database,
-  fetchImpl = globalThis.fetch
+  fetchImpl = globalThis.fetch,
+  clock = new Date()
 ) => {
   const token = bearerToken(request);
   if (!token) throw unauthorized();
   const profile = await fetchLineProfile(token, fetchImpl);
-  const user = await getUserByLineId(database, profile.lineUserId);
+  let user = await getUserByLineId(database, profile.lineUserId);
+  if (await hasAnyProtectedEmployeeId(database, user?.employeeId)) {
+    user = await requireProtectedLineOwner(database, profile.lineUserId, clock);
+  }
   if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
   }
@@ -140,6 +150,17 @@ export const resolveCanonicalIdentity = async (
   if (isGuestToken(token)) {
     if (viewAsTarget(new URL(request.url))) throw forbidden('VIEW_AS_FORBIDDEN');
     if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
+    if (await hasAnyProtectedEmployeeId(env.DB,
+      guest.employeeId,
+      guest.session?.employeeId,
+      guest.user?.employeeId
+    )) {
+      return denyProtectedAccountAccess(env.DB, {
+        authMode: 'employee_guest',
+        reason: 'GUEST_SESSION_FOR_PROTECTED_ACCOUNT',
+        clock: now
+      });
+    }
     if (guest?.provisional) {
       const canonicalUser = await resolveGuestCanonicalUser(env.DB, guest);
       if (canonicalUser && canonicalUser.role !== 'User') {
@@ -171,7 +192,7 @@ export const resolveCanonicalIdentity = async (
     };
   }
 
-  const line = await resolveLineIdentity(request, env.DB, fetchImpl);
+  const line = await resolveLineIdentity(request, env.DB, fetchImpl, now);
   const actor = line.actor;
   const url = new URL(request.url);
   const requestedTarget = viewAsTarget(url);
@@ -192,6 +213,25 @@ export const resolveCanonicalIdentity = async (
   }
   const effectiveUser = await getUserById(env.DB, requestedTarget);
   if (!effectiveUser) throw forbidden('VIEW_AS_TARGET_NOT_FOUND');
+  if (await hasAnyProtectedEmployeeId(env.DB, effectiveUser.employeeId)) {
+    await appendAuditEvent(env.DB, {
+      actorUserId: actor.userId,
+      actorAuthMode: actor.authMode,
+      actorEmployeeIdSnapshot: null,
+      actorLineUserIdSnapshot: null,
+      targetUserId: null,
+      targetEmployeeIdSnapshot: null,
+      targetLineUserIdSnapshot: null,
+      action: 'PROTECTED_ACCOUNT_VIEW_AS_DENIED',
+      metadata: { reason: 'PROTECTED_ACCOUNT_VIEW_AS_FORBIDDEN' },
+      occurredAt: new Date(now).toISOString()
+    });
+    await denyProtectedAccountAccess(env.DB, {
+      authMode: 'line',
+      reason: 'PROTECTED_ACCOUNT_VIEW_AS_BLOCKED',
+      clock: now
+    });
+  }
   const effectiveSubject = actorFromUser(effectiveUser, { authMode: 'line' });
 
   return {

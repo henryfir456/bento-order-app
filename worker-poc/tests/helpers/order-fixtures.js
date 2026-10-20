@@ -1,4 +1,4 @@
-import { handleFormalRequest } from '../../src/formalWorker.js';
+import { handleFormalRequest } from './formal-fixtures.js';
 import { profileFetch, request, seedMenuVersion, seedUser } from './formal-fixtures.js';
 import { SqliteD1 } from './formal-db.js';
 

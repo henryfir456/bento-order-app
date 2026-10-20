@@ -23,6 +23,7 @@ export const toUser = (row) => {
     role: String(row.role || 'User'),
     active: Boolean(row.active),
     invalidReason: row.invalid_reason || null,
+    isProtectedAccount: Boolean(row.is_protected_account),
     verificationStatus: row.verification_status || 'VERIFIED',
     createdAt: row.created_at || null,
     updatedAt: row.updated_at || null
@@ -56,7 +57,13 @@ const userColumns = (alias = 'u') => `
   ${alias}.user_id, ${alias}.employee_id, ${alias}.line_user_id,
   ${alias}.display_name, ${alias}.pickup_floor,
   ${currentBalanceProjection(alias)} AS balance,
-  ${alias}.role, ${alias}.active, ${alias}.invalid_reason, ${alias}.verification_status,
+  CASE WHEN EXISTS (
+    SELECT 1
+    FROM protected_account_employee_mappings mapping
+    WHERE UPPER(trim(mapping.employee_id)) = UPPER(trim(${alias}.employee_id))
+  ) THEN 1 ELSE 0 END AS is_protected_account,
+  ${alias}.role, ${alias}.active, ${alias}.invalid_reason,
+  ${alias}.verification_status,
   ${alias}.created_at, ${alias}.updated_at
 `;
 
@@ -141,7 +148,9 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
     identityState,
     verificationStatus,
     lineBound: hasLineBinding,
-    lineUserId: isEmployeeGuest ? null : user.lineUserId,
+    lineUserId: isEmployeeGuest || user.isProtectedAccount
+      ? null
+      : user.lineUserId,
     displayName: user.displayName,
     profileComplete: isProfileComplete(user)
   };
