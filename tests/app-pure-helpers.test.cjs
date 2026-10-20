@@ -29,6 +29,41 @@ test('extracted deferred bootstrap helpers preserve validated merge behavior', a
   })['2026-10-03'], { vendor: 'A', likeCount: 5, isUserLiked: false });
 });
 
+test('announcement inbox projection validates entries and keeps read and popup state separate', async () => {
+  const { normalizeAnnouncementInbox } = await import('../src/features/bootstrap/deferredBootstrap.js');
+  assert.deepEqual(normalizeAnnouncementInbox({
+    success: true,
+    announcements: [
+      {
+        id: 'notice-1',
+        title: 'Notice',
+        content: 'Details',
+        start_date: '2026-10-01',
+        end_date: '2026-10-03',
+        images: ['https://example.com/notice.png', 'javascript:alert(1)'],
+        readAt: '2026-10-02T00:00:00.000Z',
+        dismissAutoPopupAt: null,
+        shouldAutoPopup: true
+      },
+      { id: '', title: 'Invalid', content: 'Missing identity', start_date: '2026-10-01', end_date: '2026-10-03' }
+    ]
+  }), {
+    announcements: [{
+      id: 'notice-1',
+      title: 'Notice',
+      content: 'Details',
+      start_date: '2026-10-01',
+      end_date: '2026-10-03',
+      images: ['https://example.com/notice.png'],
+      readAt: '2026-10-02T00:00:00.000Z',
+      dismissAutoPopupAt: null,
+      shouldAutoPopup: true
+    }],
+    unreadCount: 0
+  });
+  assert.equal(normalizeAnnouncementInbox({ success: false, announcements: [] }), null);
+});
+
 test('extracted order and ledger presentation helpers preserve output', async () => {
   const [{ parseMenuItemName }, { formatLedgerOrderDate }] = await Promise.all([
     import('../src/features/orders/menuItemName.js'),

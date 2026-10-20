@@ -170,6 +170,41 @@ const createGasOperations = ({ gasApi, authClient }) => ({
   getCalendar: ({ userId } = {}) => gasApi.get(
     `?action=getCalendarEvents&userId=${userId || ''}&t=${Date.now()}`
   ),
+  getMyAnnouncements: () => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'getMyAnnouncements',
+      accessToken: readToken(authClient, 'getMyAnnouncements')
+    });
+    throw new ApiContractGapError(
+      'ANNOUNCEMENT_INBOX_UNSUPPORTED_TRANSPORT',
+      'getMyAnnouncements',
+      'The announcement inbox is available through the formal Worker API.'
+    );
+  },
+  markAnnouncementRead: ({ announcementId } = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'markAnnouncementRead',
+      accessToken: readToken(authClient, 'markAnnouncementRead'),
+      announcementId
+    });
+    throw new ApiContractGapError(
+      'ANNOUNCEMENT_INBOX_UNSUPPORTED_TRANSPORT',
+      'markAnnouncementRead',
+      'The announcement inbox is available through the formal Worker API.'
+    );
+  },
+  dismissAnnouncementAutoPopup: ({ announcementId } = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'dismissAnnouncementAutoPopup',
+      accessToken: readToken(authClient, 'dismissAnnouncementAutoPopup'),
+      announcementId
+    });
+    throw new ApiContractGapError(
+      'ANNOUNCEMENT_INBOX_UNSUPPORTED_TRANSPORT',
+      'dismissAnnouncementAutoPopup',
+      'The announcement inbox is available through the formal Worker API.'
+    );
+  },
   getOrdersMap: ({ userId } = {}) => gasApi.get(
     `?action=getUserAllOrdersMap&userId=${encodeURIComponent(userId || '')}&t=${Date.now()}`
   ),
@@ -404,6 +439,19 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'POST',
     '/api/register',
     { body: { pickupFloor } }
+  ),
+  getMyAnnouncements: () => workerRequest(
+    'getMyAnnouncements', 'GET', '/api/me/announcements'
+  ),
+  markAnnouncementRead: ({ announcementId } = {}) => workerRequest(
+    'markAnnouncementRead',
+    'POST',
+    `/api/me/announcements/${encodeURIComponent(String(announcementId || '').trim())}/read`
+  ),
+  dismissAnnouncementAutoPopup: ({ announcementId } = {}) => workerRequest(
+    'dismissAnnouncementAutoPopup',
+    'POST',
+    `/api/me/announcements/${encodeURIComponent(String(announcementId || '').trim())}/dismiss`
   ),
   getCalendar: ({ viewAsUserId } = {}) => workerRequest(
     'getCalendar',

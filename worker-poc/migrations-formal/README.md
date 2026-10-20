@@ -37,13 +37,14 @@ The formal chain is exactly:
 0013_announcement_images.sql         # announcement image metadata
 0014_taiwan_government_holidays.sql  # public holiday source
 0015_invalid_employee_marker.sql     # explicit invalid employee marker for disabled canonical users
+0016_announcement_user_preferences.sql # per-user read/dismissal state and new-announcement popup eligibility
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all sixteen files in order. Migration 0003 defaults existing users to
+all seventeen files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -84,6 +85,10 @@ sequence. No menu history, snapshots, orders, or order items are rewritten.
 Migration 0015 adds a nullable, constrained `users.invalid_reason` marker and
 an audit lookup index. Existing user rows retain their values; the migration
 does not disable, rename, rebind, or otherwise modify any individual account.
+Migration 0016 leaves existing announcements ineligible for automatic popups,
+adds an eligibility timestamp for newly created announcements, and stores
+read and popup-dismissal timestamps independently per canonical user and
+announcement. It does not seed user preference rows.
 
 ## Recovery procedure
 

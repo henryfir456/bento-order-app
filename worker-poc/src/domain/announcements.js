@@ -180,8 +180,8 @@ export const createAnnouncement = async (
   const insert = prepareStatement(database, `
     INSERT INTO announcements (
       announcement_id, title, content, start_date, end_date, enabled,
-      image_urls_json, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      image_urls_json, auto_popup_eligible_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     announcementId,
     values.title,
@@ -190,6 +190,7 @@ export const createAnnouncement = async (
     values.end_date,
     values.enabled ? 1 : 0,
     JSON.stringify(values.images),
+    occurredAt,
     occurredAt,
     occurredAt
   ]);

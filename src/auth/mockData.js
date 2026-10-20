@@ -200,6 +200,7 @@ const createSessionState = (mockUser) => {
     likes: new Set(),
     vendors: {},
     vendorMetadata: MOCK_VENDOR_FIXTURES.map(clone),
+    announcementPreferences: {},
     members: Object.values(MOCK_USER_FIXTURES)
       .filter(Boolean)
       .map(clone)
@@ -249,8 +250,8 @@ export const getMockIdentityResponse = (mockUser) => {
     },
     calendar: {
       events: calendarEvents,
-      announcements: getMockAnnouncements(),
-      announcement: getMockAnnouncements()[0] || null
+      announcements: getMockAnnouncements(mockUser),
+      announcement: getMockAnnouncements(mockUser)[0] || null
     },
     ordersMap,
     targetDate: null
@@ -354,14 +355,45 @@ export const updateMockVendor = (mockUser, vendorId, patch = {}) => {
   return getMockVendor(mockUser, vendor.id);
 };
 
-export const getMockAnnouncements = () => ([
-  {
-    id: 'mock-announcement-1',
-    title: 'Mock mode is local only',
-    start_date: '2099-01-01',
-    content: 'Orders and balance changes in DEV mock mode stay in browser memory.'
-  }
-]);
+export const getMockAnnouncements = (mockUser) => {
+  const state = getMockSessionState(mockUser);
+  const today = new Date().toISOString().slice(0, 10);
+  const fixtures = [
+    {
+      id: 'mock-announcement-2',
+      title: 'Mock 新公告二',
+      content: '此公告用來驗證多筆公告會依序顯示。',
+      start_date: '2026-10-03'
+    },
+    {
+      id: 'mock-announcement-1',
+      title: 'Mock 新公告一',
+      content: '此為本機模擬公告，不含真實使用者資料。',
+      start_date: '2026-10-02'
+    },
+    {
+      id: 'mock-announcement-legacy',
+      title: 'Mock 既有公告',
+      content: '既有公告保留在收件匣，但不會因功能上線而自動彈出。',
+      start_date: '2026-09-30',
+      legacy: true
+    }
+  ];
+  return fixtures.map((fixture) => {
+    const preference = state.announcementPreferences[fixture.id] || {};
+    return {
+      ...fixture,
+      start_date: fixture.start_date,
+      end_date: '2099-01-01',
+      images: [],
+      readAt: preference.readAt || null,
+      dismissAutoPopupAt: preference.dismissAutoPopupAt || null,
+      shouldAutoPopup: !fixture.legacy
+        && today >= '2026-01-01'
+        && !preference.dismissAutoPopupAt
+    };
+  });
+};
 
 export const getMockOrderPageData = (mockUser, targetDate) => {
   const state = getMockSessionState(mockUser);

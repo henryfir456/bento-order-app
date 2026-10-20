@@ -972,34 +972,39 @@ test('missing Announcements sheet returns null and keeps calendar initialization
   assert.equal(gas.__activeSpreadsheetCalls(), 2);
 });
 
-test('calendar page data includes the effective announcement without another frontend request', () => {
+test('announcement inbox uses an accessible bell and modal instead of a persistent home card', () => {
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
-  const barSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'AnnouncementBar.jsx'), 'utf8');
-  const modalSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'AnnouncementModal.jsx'), 'utf8');
+  const bellSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'announcements', 'AnnouncementBell.jsx'), 'utf8');
+  const inboxSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'announcements', 'AnnouncementInbox.jsx'), 'utf8');
+  const contentSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'announcements', 'AnnouncementContent.jsx'), 'utf8');
+  const popupSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'announcements', 'AnnouncementPopup.jsx'), 'utf8');
+  const apiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js'), 'utf8');
   const calendarSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'calendar', 'CalendarManagement.jsx'), 'utf8');
   const orderSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderPage.jsx'), 'utf8');
   const gasCalendarSource = fs.readFileSync(path.join(__dirname, '..', 'gas', 'Calendar.gs'), 'utf8');
 
-  assert.match(appSource, /import AnnouncementBar from ['"]\.\/components\/AnnouncementBar['"]/);
-  assert.match(appSource, /import AnnouncementModal from ['"]\.\/components\/AnnouncementModal['"]/);
+  assert.match(appSource, /import AnnouncementBell from ['"]\.\/features\/announcements\/AnnouncementBell['"]/);
+  assert.match(appSource, /import AnnouncementInbox from ['"]\.\/features\/announcements\/AnnouncementInbox['"]/);
   assert.match(appSource, /const \[announcements, setAnnouncements\] = useState\(\[\]\)/);
-  assert.match(appSource, /Array\.isArray\(data\.announcements\)/);
-  assert.match(appSource, /setAnnouncements\(nextAnnouncements\)/);
-  assert.match(appSource, /announcements is canonical/);
+  assert.match(apiSource, /getMyAnnouncements:[\s\S]*?\/api\/me\/announcements/);
+  assert.match(appSource, /apiClient\.getMyAnnouncements\(\)/);
+  assert.match(appSource, /normalizeAnnouncementInbox\(payload\)/);
   assert.match(appSource, /onClick=\{\(\) => setShowAnnouncementModal\(true\)\}/);
-  assert.match(appSource, /<AnnouncementBar[\s\S]*announcement=\{announcements\[0\]\}/);
-  assert.match(appSource, /<AnnouncementModal[\s\S]*announcements=\{announcements\}[\s\S]*loading=\{!announcementsLoaded\}/);
-  assert.match(barSource, /truncate/);
-  assert.match(barSource, /onClick/);
-  assert.match(modalSource, /announcements\.map/);
-  assert.match(modalSource, /announcement\.title/);
-  assert.match(modalSource, /announcement\.start_date/);
-  assert.match(modalSource, /公告日期/);
-  assert.match(modalSource, /formatAnnouncementDate/);
-  assert.match(modalSource, /announcement\.content/);
-  assert.ok(modalSource.indexOf('announcement.title') < modalSource.indexOf('announcement.start_date'));
-  assert.ok(modalSource.indexOf('announcement.start_date') < modalSource.indexOf('announcement.content'));
-  assert.doesNotMatch(modalSource, /announcement\.end_date/);
+  assert.match(appSource, /<AnnouncementInbox[\s\S]*announcements=\{announcements\}/);
+  assert.match(appSource, /!isViewAsMode && \(apiClient\.transport === 'worker' \|\| authClient\.isMock\)/);
+  assert.doesNotMatch(appSource, /<AnnouncementBar/);
+  assert.match(bellSource, /aria-label=\{count \? `公告通知，\$\{count\} 則未讀` : '公告通知'\}/);
+  assert.match(bellSource, /count > 99 \? '99\+' : count/);
+  assert.match(inboxSource, /role="alert"/);
+  assert.match(inboxSource, /onRead\?\.\(announcement\)/);
+  assert.match(contentSource, /Array\.isArray\(announcement\.images\)/);
+  assert.match(contentSource, /max-h-\[70vh\]/);
+  assert.match(contentSource, /target="_blank"/);
+  assert.match(contentSource, /object-contain/);
+  assert.match(popupSource, /checked=\{dontShowAgain\}/);
+  assert.match(popupSource, /確認不再顯示/);
+  assert.match(appSource, /shownIds\.add/);
+  assert.match(appSource, /void markAnnouncementRead\(next\)/);
   assert.match(gasCalendarSource, /announcements: announcements/);
   assert.match(gasCalendarSource, /Transitional compatibility/);
   assert.match(calendarSource, /w-full min-w-0 bg-white/);
@@ -2154,8 +2159,8 @@ test('frontend announcement administration stays Worker-only, Admin-only, and Vi
   assert.match(appSource, /handleAdminSectionChange\('announcements'\)/);
   assert.match(appSource, /AnnouncementManagement/);
   assert.match(appSource, /adminSection === ['"]announcements['"][\s\S]*?canAuth\('manageAnnouncements'\)[\s\S]*?!isViewAsMode/);
-  assert.match(appSource, /AnnouncementBar/);
-  assert.match(appSource, /AnnouncementModal/);
+  assert.match(appSource, /AnnouncementInbox/);
+  assert.match(appSource, /AnnouncementPopup/);
 
   const deleteHandler = componentSource.match(/const handleDelete = async[\s\S]*?\n  \};/);
   assert.ok(deleteHandler);

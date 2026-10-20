@@ -293,6 +293,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Hide all inactive and explicitly invalid employee rows from the default Admin member list; allow only a LINE Admin outside View As to include them (Issue #111).'
   ];
   const expectedUnreleasedAdded = [
+    '以鈴鐺收件匣取代首頁固定公告卡；載入失敗只提供重試、不顯示無公告，管理頁刷新也不觸發入場彈窗；舊公告不因功能上線或編輯而彈出（Issue #121）。',
     'Add an isolated browser-memory mock fixture and Windows local UAT steps for #103, #108, and #111. Mock repair changes are discarded on reload.'
   ];
   assert.deepEqual(unreleased[0].categories, [{

@@ -45,6 +45,7 @@ test('formal migration creates every source-of-truth table', () => {
     'menu_versions',
     'menu_items',
     'announcements',
+    'announcement_user_preferences',
     'orders',
     'order_items',
     'order_status_history',
@@ -93,7 +94,8 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_vendor_daily_flavors_date',
     'idx_vendor_daily_flavor_sync_runs_started',
     'idx_taiwan_government_holidays_year',
-    'idx_users_invalid_reason'
+    'idx_users_invalid_reason',
+    'idx_announcement_user_preferences_user_read'
   ];
   const actual = new Set(rows(database, `
     SELECT name
@@ -101,6 +103,20 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     WHERE type = 'index'
   `).map((row) => row.name));
   for (const indexName of expected) assert.equal(actual.has(indexName), true, indexName);
+});
+
+test('0016 adds nullable popup eligibility and independent per-user preference timestamps', () => {
+  const database = openDatabase();
+  const announcementColumns = tableColumns(database, 'announcements');
+  const preferenceColumns = tableColumns(database, 'announcement_user_preferences');
+  assert.equal(announcementColumns.get('auto_popup_eligible_at').type, 'TEXT');
+  assert.equal(announcementColumns.get('auto_popup_eligible_at').notnull, 0);
+  assert.equal(preferenceColumns.get('read_at').notnull, 0);
+  assert.equal(preferenceColumns.get('dismiss_auto_popup_at').notnull, 0);
+  assert.equal(preferenceColumns.get('user_id').pk, 1);
+  assert.equal(preferenceColumns.get('announcement_id').pk, 2);
+  const foreignKeys = rows(database, 'PRAGMA foreign_key_list(announcement_user_preferences)');
+  assert.deepEqual(new Set(foreignKeys.map((key) => key.table)), new Set(['users', 'announcements']));
 });
 
 test('0015 adds a constrained invalid employee marker without rewriting existing user rows', () => {

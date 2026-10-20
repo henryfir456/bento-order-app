@@ -1,5 +1,6 @@
 import { handleAuthRoute } from './routes/auth.js';
 import { handleMeRoute } from './routes/me.js';
+import { handleAnnouncementInboxRoute } from './routes/announcementInbox.js';
 import { handleOrderRoute } from './routes/orders.js';
 import { handleBalanceRoute } from './routes/balance.js';
 import { handleVendorRoute } from './routes/vendors.js';
@@ -94,6 +95,10 @@ export const handleFormalRequest = async (request, env, options = {}) => {
       if (!response) {
         const meResponse = await handleMeRoute(request, env, options);
         if (meResponse) response = meResponse;
+      }
+      if (!response) {
+        const announcementInboxResponse = await handleAnnouncementInboxRoute(request, env, options);
+        if (announcementInboxResponse) response = announcementInboxResponse;
       }
       if (!response) {
         const orderResponse = await handleOrderRoute(request, env, options);
