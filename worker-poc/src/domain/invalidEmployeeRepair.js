@@ -69,16 +69,12 @@ const protectedRepairSide = (source, target) => {
 const auditProtectedRepairAttempt = async (
   database,
   identity,
-  source,
-  target,
   side,
   { preview = false, clock = new Date() } = {}
 ) => {
   if (!side) return;
-  const targetsProtectedSource = side === 'source' || side === 'both';
   await auditProtectedAdminIntervention(database, {
     actor: identity.authorizationActor,
-    targetUserId: targetsProtectedSource ? source.userId : target.userId,
     action: preview
       ? 'PROTECTED_ACCOUNT_IDENTITY_REPAIR_PREVIEW_BLOCKED'
       : 'PROTECTED_ACCOUNT_IDENTITY_REPAIR_DENIED',
@@ -121,7 +117,7 @@ export const getInvalidEmployeeRepairPreview = async (
   if (!targetUserId) throw notFound('TARGET_USER_NOT_FOUND');
   const { source, target } = await readPair(database, sourceUserId, targetUserId);
   const protectedSide = protectedRepairSide(source, target);
-  await auditProtectedRepairAttempt(database, identity, source, target, protectedSide, {
+  await auditProtectedRepairAttempt(database, identity, protectedSide, {
     preview: true
   });
   const conflicts = await conflictsFor(database, source, target);
@@ -172,7 +168,7 @@ export const repairInvalidEmployeeIdentity = async (
   const { source, target } = await readPair(database, sourceUserId, targetUserId);
   const protectedSide = protectedRepairSide(source, target);
   if (protectedSide) {
-    await auditProtectedRepairAttempt(database, identity, source, target, protectedSide, {
+    await auditProtectedRepairAttempt(database, identity, protectedSide, {
       clock
     });
     throw conflict('INVALID_EMPLOYEE_REPAIR_NOT_READY');

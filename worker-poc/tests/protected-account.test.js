@@ -83,7 +83,11 @@ test('protected account permits only the active verified account’s existing LI
   const me = await call(database, '/api/me', { token: PROTECTED_TOKEN }, { fetchImpl: ownerFetch });
   assert.equal(me.response.status, 200);
   assert.equal(me.body.user.userId, PROTECTED_USER_ID);
+  assert.equal(me.body.lineUserId, '');
   assert.equal(JSON.stringify(me.body).includes(PROTECTED_LINE_ID), false);
+  const bootstrap = await call(database, '/api/bootstrap', { token: PROTECTED_TOKEN }, { fetchImpl: ownerFetch });
+  assert.equal(bootstrap.response.status, 200);
+  assert.equal(JSON.stringify(bootstrap.body).includes(PROTECTED_LINE_ID), false);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 0);
 });
 
@@ -250,10 +254,22 @@ test('authorized admin transfer preview and submission cannot move protected LIN
   assert.equal(preview.response.status, 200);
   assert.equal(preview.body.readyToTransfer, false);
   assert.ok(preview.body.conflicts.includes('PROTECTED_ACCOUNT_LINE_BINDING_IMMUTABLE'));
+  assert.deepEqual(preview.body.source.lineBinding, { bound: true, masked: null });
+  assert.equal(JSON.stringify(preview.body).includes(PROTECTED_LINE_ID), false);
+
+  const protectedTargetPreview = await call(
+    database,
+    `/api/admin/users/synthetic-target-user/line-binding-transfer-preview?employeeId=${protectedEmployeeId()}`,
+    { token: adminToken },
+    { fetchImpl: adminFetch }
+  );
+  assert.equal(protectedTargetPreview.response.status, 200);
+  assert.deepEqual(protectedTargetPreview.body.target.lineBinding, { bound: true, masked: null });
+  assert.equal(JSON.stringify(protectedTargetPreview.body).includes(PROTECTED_LINE_ID), false);
   assert.equal(database.get(`
     SELECT COUNT(*) AS count FROM admin_audit_log
     WHERE action = 'PROTECTED_ACCOUNT_LINE_BINDING_TRANSFER_PREVIEW'
-  `).count, 1);
+  `).count, 2);
 
   const transfer = await call(database,
     '/api/admin/users/synthetic-protected-user/line-binding-transfer',
@@ -280,7 +296,7 @@ test('authorized admin transfer preview and submission cannot move protected LIN
   `);
   assert.equal(denialAudit.actor_user_id, 'synthetic-admin-user');
   assert.equal(denialAudit.actor_line_user_id_snapshot, null);
-  assert.equal(denialAudit.target_user_id, PROTECTED_USER_ID);
+  assert.equal(denialAudit.target_user_id, null);
   assert.equal(denialAudit.target_employee_id_snapshot, null);
   assert.equal(denialAudit.target_line_user_id_snapshot, null);
   assert.ok(denialAudit.metadata_json.includes('PROTECTED_ACCOUNT_LINE_BINDING_IMMUTABLE'));
@@ -290,7 +306,7 @@ test('authorized admin transfer preview and submission cannot move protected LIN
       'PROTECTED_ACCOUNT_LINE_BINDING_TRANSFER_PREVIEW',
       'PROTECTED_ACCOUNT_LINE_BINDING_TRANSFER_DENIED'
     )
-  `).count, 2);
+  `).count, 3);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'LINE_BINDING_TRANSFER'").count, 0);
 });
 
@@ -332,6 +348,7 @@ test('admin employee binding cannot assign or replace the protected employee ide
   assert.equal(database.get(`
     SELECT COUNT(*) AS count FROM admin_audit_log
     WHERE action = 'PROTECTED_ACCOUNT_EMPLOYEE_BIND_DENIED'
+      AND target_user_id IS NULL
       AND target_employee_id_snapshot IS NULL
       AND target_line_user_id_snapshot IS NULL
       AND actor_employee_id_snapshot IS NULL
@@ -406,6 +423,7 @@ test('identity repair preview and submission reject protected accounts and leave
           'PROTECTED_ACCOUNT_IDENTITY_REPAIR_PREVIEW_BLOCKED',
           'PROTECTED_ACCOUNT_IDENTITY_REPAIR_DENIED'
         )
+          AND target_user_id IS NULL
           AND actor_employee_id_snapshot IS NULL
           AND actor_line_user_id_snapshot IS NULL
           AND target_employee_id_snapshot IS NULL
@@ -438,7 +456,7 @@ test('View As cannot enter a protected account and the authorized Admin attempt 
   `);
   assert.equal(audit.actor_user_id, 'synthetic-admin-user');
   assert.equal(audit.actor_line_user_id_snapshot, null);
-  assert.equal(audit.target_user_id, PROTECTED_USER_ID);
+  assert.equal(audit.target_user_id, null);
   assert.equal(audit.target_employee_id_snapshot, null);
   assert.equal(audit.target_line_user_id_snapshot, null);
   assert.ok(audit.metadata_json.includes('PROTECTED_ACCOUNT_VIEW_AS_FORBIDDEN'));
@@ -494,6 +512,6 @@ test('protected account denial audit contains only deidentified, append-only fie
   assert.equal(audit.reason_code, 'LINE_OWNER_MISMATCH');
   assert.equal(JSON.stringify(audit).includes(PROTECTED_LINE_ID), false);
   assert.equal(JSON.stringify(audit).includes('line-synthetic-stranger'), false);
-  assert.throws(() => database.run('UPDATE protected_account_access_audit SET reason_code = ?', 'AUTHORIZATION_UNVERIFIED', audit.event_id), /append-only/i);
+  assert.throws(() => database.run('UPDATE protected_account_access_audit SET reason_code = ? WHERE event_id = ?', 'AUTHORIZATION_UNVERIFIED', audit.event_id), /append-only/i);
   assert.throws(() => database.run('DELETE FROM protected_account_access_audit WHERE event_id = ?', audit.event_id), /append-only/i);
 });

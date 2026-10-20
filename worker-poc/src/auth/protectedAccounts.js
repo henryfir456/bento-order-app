@@ -4,12 +4,7 @@ import { forbidden } from '../http/errors.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
 import { VERIFICATION_STATUSES } from './permissions.js';
 
-const PROTECTED_EMPLOYEE_IDS = new Set(['0'.repeat(6)]);
-
-export const isProtectedEmployeeId = (value) => (
-  typeof value === 'string'
-  && PROTECTED_EMPLOYEE_IDS.has(value.trim().toUpperCase())
-);
+export { isProtectedEmployeeId } from './protectedAccountPolicy.js';
 
 export const recordProtectedAccountDenial = async (
   database,
@@ -33,7 +28,6 @@ export const auditProtectedAdminIntervention = async (
   database,
   {
     actor,
-    targetUserId = null,
     action,
     side = 'target',
     reason = 'AUTHORIZATION_UNVERIFIED',
@@ -46,7 +40,7 @@ export const auditProtectedAdminIntervention = async (
     actorAuthMode: actor?.authMode || 'line',
     actorEmployeeIdSnapshot: null,
     actorLineUserIdSnapshot: null,
-    targetUserId,
+    targetUserId: null,
     targetEmployeeIdSnapshot: null,
     targetLineUserIdSnapshot: null,
     action,
@@ -74,7 +68,8 @@ const allRows = (result) => (
 
 /**
  * Resolve the protected employee only from its canonical LINE binding. The
- * audit table intentionally stores no actor, account, employee, or LINE IDs.
+ * dedicated protected-account audit table intentionally stores no actor,
+ * account, employee, or LINE IDs.
  */
 export const requireProtectedLineOwner = async (database, lineUserId, clock = new Date()) => {
   const owners = allRows(await database.prepare(`

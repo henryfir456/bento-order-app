@@ -4,6 +4,7 @@ import {
   VERIFICATION_STATUSES
 } from '../auth/permissions.js';
 import { isProfileComplete } from '../domain/profile.js';
+import { isProtectedEmployeeId } from '../auth/protectedAccountPolicy.js';
 
 export const toUser = (row) => {
   if (!row) return null;
@@ -141,7 +142,9 @@ export const publicUser = (user, { authMode: projectedAuthMode = null, provision
     identityState,
     verificationStatus,
     lineBound: hasLineBinding,
-    lineUserId: isEmployeeGuest ? null : user.lineUserId,
+    lineUserId: isEmployeeGuest || isProtectedEmployeeId(user.employeeId)
+      ? null
+      : user.lineUserId,
     displayName: user.displayName,
     profileComplete: isProfileComplete(user)
   };

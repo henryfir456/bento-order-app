@@ -13,6 +13,7 @@ import {
 } from '../auth/permissions.js';
 import { VALID_PICKUP_FLOORS } from './profile.js';
 import { assertCurrentIdentity } from '../auth/mutationIdentity.js';
+import { isProtectedEmployeeId } from '../auth/protectedAccountPolicy.js';
 
 export { VALID_PICKUP_FLOORS } from './profile.js';
 
@@ -46,6 +47,9 @@ export const getMe = (identity) => {
   const identityState = identityStateFor(actor);
   const employeeBindingRequired = identityState === IDENTITY_STATES.EMPLOYEE_BIND_REQUIRED;
   const registered = Boolean(actor.registered);
+  const publicLineUserId = isProtectedEmployeeId(actor.employeeId)
+    ? ''
+    : actor.lineUserId || '';
   const user = actor.userId ? publicUser(actor) : null;
   return {
     success: true,
@@ -59,7 +63,7 @@ export const getMe = (identity) => {
       verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.VERIFIED,
       capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
       employeeId: actor.employeeId || '',
-      lineUserId: actor.lineUserId || '',
+      lineUserId: publicLineUserId,
       displayName: actor.displayName || ''
     } : guest ? {
       status: actor.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED
@@ -74,10 +78,10 @@ export const getMe = (identity) => {
       verificationStatus: actor.verificationStatus || VERIFICATION_STATUSES.VERIFIED,
       capabilities: Array.isArray(actor.capabilities) ? actor.capabilities : [],
       employeeId: actor.employeeId || '',
-      lineUserId: actor.lineUserId || '',
+      lineUserId: publicLineUserId,
       displayName: actor.displayName || ''
     } : {
-      lineUserId: actor.lineUserId || '',
+      lineUserId: publicLineUserId,
       displayName: actor.displayName || ''
     })
   };

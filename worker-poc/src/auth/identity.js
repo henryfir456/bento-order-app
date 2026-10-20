@@ -215,7 +215,7 @@ export const resolveCanonicalIdentity = async (
       actorAuthMode: actor.authMode,
       actorEmployeeIdSnapshot: null,
       actorLineUserIdSnapshot: null,
-      targetUserId: effectiveUser.userId,
+      targetUserId: null,
       targetEmployeeIdSnapshot: null,
       targetLineUserIdSnapshot: null,
       action: 'PROTECTED_ACCOUNT_VIEW_AS_DENIED',

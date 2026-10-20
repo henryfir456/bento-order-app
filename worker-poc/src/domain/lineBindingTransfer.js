@@ -89,7 +89,9 @@ const makeMemberSummary = (user, relations) => ({
   pickupFloor: user.pickupFloor,
   role: user.role,
   active: user.active,
-  lineBinding: lineBindingLabel(user.lineUserId),
+  lineBinding: isProtectedEmployeeId(user.employeeId)
+    ? { bound: Boolean(user.lineUserId), masked: null }
+    : lineBindingLabel(user.lineUserId),
   relatedData: relations
 });
 
@@ -173,7 +175,7 @@ const auditProtectedTransferAttempt = async (
     actorAuthMode: actor.authMode,
     actorEmployeeIdSnapshot: null,
     actorLineUserIdSnapshot: null,
-    targetUserId: protectedTarget.userId,
+    targetUserId: null,
     targetEmployeeIdSnapshot: null,
     targetLineUserIdSnapshot: null,
     action,

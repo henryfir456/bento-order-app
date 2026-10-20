@@ -186,6 +186,42 @@ test('member balances are Admin-only, token-derived, and mapped to public member
   assert.deepEqual(await unauthenticatedResponse.json(), { error: 'AUTH_REQUIRED' });
 });
 
+test('admin member APIs do not expose the LINE ID of a protected account', async () => {
+  const database = seedSummary();
+  const protectedLineId = 'synthetic-protected-line-owner';
+  seedUser(database, {
+    userId: 'synthetic-protected-user',
+    employeeId: '0'.repeat(6),
+    lineUserId: protectedLineId,
+    displayName: 'Synthetic protected account'
+  });
+
+  const balances = await call(
+    database,
+    '/api/admin/members/balances',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(balances.response.status, 200);
+  const protectedMember = balances.body.members.find(
+    (member) => member.userId === 'synthetic-protected-user'
+  );
+  assert.equal(protectedMember.lineBound, true);
+  assert.equal(protectedMember.lineUserId, null);
+  assert.equal(JSON.stringify(balances.body).includes(protectedLineId), false);
+
+  const summary = await call(
+    database,
+    '/api/admin/summary?date=2026-09-08&includeMemberBalances=true',
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  assert.equal(summary.response.status, 200);
+  const protectedSummaryMember = summary.body.usersSummary.find(
+    (member) => member.userId === 'synthetic-protected-user'
+  );
+  assert.equal(protectedSummaryMember.lineUserId, null);
+  assert.equal(JSON.stringify(summary.body).includes(protectedLineId), false);
+});
+
 test('invalid employee rows stay hidden by default and only a LINE Admin outside View As can include them', async () => {
   const database = seedSummary();
   seedUser(database, {

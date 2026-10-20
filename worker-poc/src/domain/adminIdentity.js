@@ -96,7 +96,6 @@ export const adminBindEmployee = async (
   if (isProtectedEmployeeId(employeeId) || isProtectedEmployeeId(target.employeeId)) {
     await auditProtectedAdminIntervention(database, {
       actor,
-      targetUserId: target.userId,
       action: 'PROTECTED_ACCOUNT_EMPLOYEE_BIND_DENIED',
       side: isProtectedEmployeeId(target.employeeId) ? 'target' : 'submitted_employee',
       reason: 'PROTECTED_ACCOUNT_ADMIN_EMPLOYEE_BIND_BLOCKED',
