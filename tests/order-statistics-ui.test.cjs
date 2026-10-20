@@ -63,10 +63,14 @@ test('footprints presents a zero-record empty state', () => {
   assert.match(page, /這段期間還沒有可計入的便當紀錄/);
 });
 
-test('pie chart draws after render and respects reduced motion', () => {
+test('vendor donut chart shows the center total and respects reduced motion', () => {
   const page = read('src/features/orders/MyBentoFootprintsPage.jsx');
   assert.match(page, /footprints-pie-draw/);
   assert.match(page, /prefers-reduced-motion: reduce/);
   assert.ok(page.includes('mask="url(#footprints-pie-mask)"'));
+  assert.match(page, /店家份數甜甜圈圖/);
+  assert.match(page, /data-chart-total/);
+  assert.match(page, /aria-label="店家份數明細"/);
+  assert.match(page, /aria-hidden="true" className="ml-5 h-1\.5/);
   assert.match(page, /isViewAsMode/);
 });

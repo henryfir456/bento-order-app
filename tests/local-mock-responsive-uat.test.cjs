@@ -215,6 +215,11 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
       assert.match(footprintText, /蕃茄鷹豆泥[\s\S]*?3 份/u);
       assert.match(footprintText, /C\.特餐[\s\S]*?3 份/u);
 
+      const vendorChart = JSON.parse(await evaluate('(()=>{const chart=document.querySelector("[aria-label*=店家份數甜甜圈圖]");return JSON.stringify({label:chart?.getAttribute("aria-label"),total:chart?.querySelector("[data-chart-total]")?.textContent?.trim(),details:document.querySelector("[aria-label=店家份數明細]")?.children.length})})()'));
+      assert.equal(vendorChart.label, '店家份數甜甜圈圖，共 7 份');
+      assert.equal(vendorChart.total, '7');
+      assert.ok(vendorChart.details > 0, 'Each vendor should have a readable details row.');
+
       await clickVisibleButton({ ariaLabel: '管理' });
       await clickVisibleButton({ text: '使用者管理' });
       await waitFor('document.querySelector("input[type=checkbox]") && document.body.innerText.includes("使用者管理中心")', '#111 member management');
