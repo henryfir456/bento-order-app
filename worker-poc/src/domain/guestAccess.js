@@ -2,6 +2,11 @@ import { badRequest, conflict, forbidden, unauthorized } from '../http/errors.js
 import { getUserByEmployeeId, getUserById, getUserByLineId, publicUser } from '../db/users.js';
 import { createGuestSession, inspectGuestSession } from '../auth/guestSession.js';
 import {
+  denyProtectedAccountAccess,
+  isProtectedEmployeeId,
+  requireProtectedLineOwner
+} from '../auth/protectedAccounts.js';
+import {
   capabilitiesFor,
   identityStateFor,
   isGeneralUser,
@@ -106,6 +111,13 @@ export const employeeGuestLogin = async (
   clock = new Date()
 ) => {
   const employeeId = employeeIdText(employeeIdInput);
+  if (isProtectedEmployeeId(employeeId)) {
+    return denyProtectedAccountAccess(database, {
+      authMode: 'employee_guest',
+      reason: 'EMPLOYEE_LOGIN_FOR_PROTECTED_ACCOUNT',
+      clock
+    });
+  }
   const user = await getUserByEmployeeId(database, employeeId);
   if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
@@ -173,6 +185,13 @@ export const completeEmployeeGuestOnboarding = async (
   }
   if (!inspected || !inspected.normal || !inspected.employeeId) {
     throw unauthorized('GUEST_SESSION_INVALID');
+  }
+  if (isProtectedEmployeeId(inspected.employeeId || inspected.user?.employeeId)) {
+    return denyProtectedAccountAccess(database, {
+      authMode: 'employee_guest',
+      reason: 'ONBOARDING_FOR_PROTECTED_ACCOUNT',
+      clock
+    });
   }
   if (inspected.user && !inspected.provisional) {
     return provisionalGuestResult(inspected.user, inspected.session);
@@ -269,11 +288,26 @@ export const lineEmployeeLookup = async (
   database,
   {
     employeeId: employeeIdInput,
-    lineUserId
+    lineUserId,
+    clock = new Date()
   } = {}
 ) => {
   const employeeId = employeeIdText(employeeIdInput);
   const verifiedLineUserId = lineIdText(lineUserId);
+  if (isProtectedEmployeeId(employeeId)) {
+    const user = await requireProtectedLineOwner(database, verifiedLineUserId, clock);
+    return {
+      success: true,
+      status: 'FOUND',
+      resolution: 'PROTECTED_LINE_ACCOUNT',
+      ownershipChanged: false,
+      identityState: identityStateFor({ ...user, authMode: 'line' }),
+      verificationStatus: user.verificationStatus,
+      authMode: 'line',
+      employeeId,
+      user: employeePreview(user)
+    };
+  }
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
   if (currentLineUser?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
@@ -391,6 +425,10 @@ export const lineEmployeeBind = async (
 ) => {
   const employeeId = employeeIdText(employeeIdInput);
   const verifiedLineUserId = lineIdText(lineUserId);
+  if (isProtectedEmployeeId(employeeId)) {
+    const user = await requireProtectedLineOwner(database, verifiedLineUserId, clock);
+    return lineBindingResult(user, 'ALREADY_BOUND');
+  }
   const currentLineUser = await getUserByLineId(database, verifiedLineUserId);
   const user = await getUserByEmployeeId(database, employeeId);
   if (currentLineUser?.invalidReason === 'INVALID_EMPLOYEE_ID'
@@ -621,6 +659,27 @@ export const bindLineIdentity = async (
   const existingLineUser = await getUserByLineId(database, verifiedLineUserId);
   if (existingLineUser?.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
+  }
+  if (!inspected.normal && !inspected.replay) {
+    throw unauthorized('GUEST_SESSION_INVALID');
+  }
+  const inspectedEmployeeId = inspected.employeeId || inspected.user?.employeeId;
+  if (isProtectedEmployeeId(inspectedEmployeeId)) {
+    const protectedOwner = await requireProtectedLineOwner(database, verifiedLineUserId, clock);
+    if (inspected.user?.userId === protectedOwner.userId) {
+      return {
+        success: true,
+        status: 'ALREADY_BOUND',
+        identityState: publicUser(protectedOwner).identityState,
+        authMode: 'line',
+        user: publicUser(protectedOwner)
+      };
+    }
+    return denyProtectedAccountAccess(database, {
+      authMode: 'employee_guest',
+      reason: 'LINE_BIND_FOR_PROTECTED_ACCOUNT',
+      clock
+    });
   }
   if (inspected.replay) {
     if (inspected.user.lineUserId === verifiedLineUserId) {

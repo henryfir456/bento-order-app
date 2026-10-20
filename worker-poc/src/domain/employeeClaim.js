@@ -9,6 +9,10 @@ import {
 import { digestEmployeeId, employeeIdText } from './employeeVerification.js';
 import { matchingEmployeeGuestEvidencePredicate } from './employeeGuestEvidence.js';
 import {
+  denyProtectedAccountAccess,
+  isProtectedEmployeeId
+} from '../auth/protectedAccounts.js';
+import {
   prepareStatement,
   randomId,
   resolveClock,
@@ -450,6 +454,13 @@ export const claimProvisionalEmployee = async (
   const verifiedLineUserId = String(lineUserId || '').trim();
   if (!survivorId || !verifiedLineUserId) throw conflict('LINE_BIND_CONFLICT');
   const employeeId = employeeIdText(employeeIdInput);
+  if (isProtectedEmployeeId(employeeId)) {
+    return denyProtectedAccountAccess(database, {
+      authMode: 'line',
+      reason: 'PROTECTED_ACCOUNT_CLAIM_BLOCKED',
+      clock
+    });
+  }
   const timestamp = resolveClock(clock).toISOString();
   const state = await readClaimState(database, {
     survivorUserId: survivorId,

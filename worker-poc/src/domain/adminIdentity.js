@@ -4,6 +4,10 @@ import { getUserByEmployeeId, getUserById, publicUser } from '../db/users.js';
 import { conflict, forbidden, notFound } from '../http/errors.js';
 import { prepareStatement, resolveClock, runMutationBatch } from '../db/transactions.js';
 import {
+  auditProtectedAdminIntervention,
+  isProtectedEmployeeId
+} from '../auth/protectedAccounts.js';
+import {
   employeeIdText,
   digestEmployeeId,
   sameEmployeeId,
@@ -89,6 +93,17 @@ export const adminBindEmployee = async (
   const timestamp = resolveClock(clock).toISOString();
   const target = await getUserById(database, targetId);
   if (!target) throw notFound('USER_NOT_FOUND');
+  if (isProtectedEmployeeId(employeeId) || isProtectedEmployeeId(target.employeeId)) {
+    await auditProtectedAdminIntervention(database, {
+      actor,
+      targetUserId: target.userId,
+      action: 'PROTECTED_ACCOUNT_EMPLOYEE_BIND_DENIED',
+      side: isProtectedEmployeeId(target.employeeId) ? 'target' : 'submitted_employee',
+      reason: 'PROTECTED_ACCOUNT_ADMIN_EMPLOYEE_BIND_BLOCKED',
+      clock
+    });
+    throw forbidden('PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
+  }
   if (target.invalidReason === 'INVALID_EMPLOYEE_ID') {
     throw forbidden('INVALID_EMPLOYEE_ID');
   }

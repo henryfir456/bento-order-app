@@ -64,12 +64,13 @@ export const handleAuthRoute = async (request, env, {
   }
 
   if (isLineEmployeeLookup || isLineEmployeeBind) {
-    const line = await resolveLineIdentity(request, env.DB, fetchImpl);
+    const line = await resolveLineIdentity(request, env.DB, fetchImpl, now);
     const body = await readJson(request);
     const result = isLineEmployeeLookup
       ? await lineEmployeeLookup(env.DB, {
         employeeId: body.employeeId,
-        lineUserId: line.profile.lineUserId
+        lineUserId: line.profile.lineUserId,
+        clock: now
       })
       : await lineEmployeeBind(env.DB, {
         employeeId: body.employeeId,
@@ -84,7 +85,7 @@ export const handleAuthRoute = async (request, env, {
 
   const guestToken = request.headers.get('X-Employee-Guest-Session')?.trim() || '';
   if (!guestToken) throw unauthorized('GUEST_SESSION_INVALID');
-  const line = await resolveLineIdentity(request, env.DB, fetchImpl);
+  const line = await resolveLineIdentity(request, env.DB, fetchImpl, now);
   const body = await readOptionalJson(request);
   return jsonResponse(await bindLineIdentity(env.DB, {
     guestToken,
