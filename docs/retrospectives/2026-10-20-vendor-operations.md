@@ -27,6 +27,7 @@
 - P2（程式缺陷，已修）：Admin 結算讀取先前錯用只接受啟用中 vendor 的 lookup，導致停用廠商歷史付款無法查閱。`42eb9ab` 將 Admin 唯讀查詢改為可讀既有廠商資料；Vendor 自身讀取及新增轉帳仍要求廠商啟用。合成 regression test 覆蓋歷史可讀且停用後新增轉帳仍回 `VENDOR_NOT_FOUND`。
 - P2（UI 狀態，已修）：Admin 選擇器原先會列出停用 vendor，且仍顯示新增轉帳表單。現在選項標示「已停用」，保留 Admin 歷史對帳查詢，並要求 vendor 明確標記啟用才顯示新轉帳表單；對 `enabled` 缺漏或不明確的回應採 fail-closed。UI policy regression 覆蓋布林、數字與字串狀態及 Admin／Vendor 角色。
 - P2（Mock API 差異，已修）：前次 exact-head review 發現直接呼叫本機 Mock 新轉帳 API 仍可為停用 vendor 新增合成付款。Mock adapter 現在要求 vendor 明確啟用，否則回 404 `VENDOR_NOT_FOUND`；測試同時確認停用後歷史仍可讀、拒絕的新付款不會增加記憶體紀錄。Admin Chromium regression 實際透過本機 UI 停用合成 vendor，再確認對帳畫面標示停用、保留歷史視圖且不顯示轉帳表單。
+- P2（Chromium 歷史資料斷言，已修）：對 `7a87c8565eae8b57e032b82e9dd9ab4eae064fda` 的 exact-head review 發現，舊斷言可能只因停用選項文字存在而誤判歷史載入成功。等待條件現要求實際呈現的對帳日文章含 `Mock Noodle` 與 2 筆訂單，並另外斷言日期、餐點、筆數、停用狀態與表單不存在；更新後目標瀏覽器測試 6/6 通過，宣告 UI 測試組 36/36 通過。
 - 前次 exact-head review 的 P2 已修正；最終 PR head 的獨立複核仍待本次程式與回顧提交完成後執行，結果綁定精確 SHA 並記錄於交付回覆。
 
 ## 個資與資料邊界

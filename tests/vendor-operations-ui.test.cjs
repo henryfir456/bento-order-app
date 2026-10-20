@@ -244,21 +244,30 @@ test('Admin browser shows disabled vendor history without a transfer form', {
     assert.equal(selected, true);
     await waitFor(`(() => {
       const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
+      const historyDay = [...(section?.querySelectorAll("article") || [])]
+        .find((article) => article.innerText.includes("Mock Noodle"));
       return section?.innerText.includes("此廠商已停用；仍可檢視歷史對帳，但不能登記新轉帳。")
         && !section.querySelector("form")
-        && section.querySelector("select option:checked")?.textContent.includes("已停用");
-    })()`, 'disabled-vendor history-only view');
+        && section.querySelector("select option:checked")?.textContent.includes("已停用")
+        && historyDay?.innerText.includes("2 筆訂單");
+    })()`, 'successfully loaded disabled-vendor order history and history-only view');
     const result = await evaluate(`(() => {
       const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
+      const historyDay = [...section.querySelectorAll("article")]
+        .find((article) => article.innerText.includes("Mock Noodle"));
       return {
         selectedOption: section.querySelector("select option:checked").textContent.trim(),
-        hasHistory: section.innerText.includes("Mock Bento B"),
+        historyDate: historyDay?.querySelector("button")?.innerText.split(" ・")[0] || "",
+        historyOrders: historyDay?.innerText.match(/(\\d+) 筆訂單/u)?.[1] || "",
+        historyItem: historyDay?.innerText.includes("Mock Noodle") || false,
         transferFormCount: section.querySelectorAll("form").length,
         status: section.querySelector('[role="status"]')?.innerText || ""
       };
     })()`);
     assert.match(result.selectedOption, /已停用/u);
-    assert.equal(result.hasHistory, true);
+    assert.match(result.historyDate, /^\d{4}-\d{2}-\d{2}$/u);
+    assert.equal(result.historyOrders, '2');
+    assert.equal(result.historyItem, true);
     assert.equal(result.transferFormCount, 0);
     assert.match(result.status, /不能登記新轉帳/u);
   } finally {
