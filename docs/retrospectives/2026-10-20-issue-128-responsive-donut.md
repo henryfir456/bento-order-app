@@ -1,10 +1,10 @@
 # 2026-10-20 — Issue #128 響應式店家份數甜甜圈圖
 
 - Repository：`henryfir456/bento-order-app`。
-- Base：`main` `44ef1eb`；branch：`codex/issue-128-responsive-donut`；[PR #135](https://github.com/henryfir456/bento-order-app/pull/135)。首輪獨立審查 pin 在 `604f6cca`，發現 P2 後已修正；程式與完整必要 Gates 在 `06de2cd` 通過、獨立 reviewer 對該精確 head APPROVE。此文件更新只同步最新審查與 Actions 證據，最終文件 head 會再次要求精確審查。
+- Base：`main` `44ef1eb`；branch：`codex/issue-128-responsive-donut`；[PR #135](https://github.com/henryfir456/bento-order-app/pull/135)。首輪獨立審查 pin 在 `604f6cca`，發現 P2 後已修正；程式與完整必要 Gates 在 `06de2cd` 通過、獨立 reviewer 對該精確 code head APPROVE。`12b779b` 文件 head 覆核後要求同步目前 PR head／review 狀態；此回顧現分開記錄程式驗證 head 與文件審查證據，PR metadata 記錄最終文件 head。
 - 本輪目標／修改：把「我的便當足跡」店家份數圓餅圖改為響應式甜甜圈圖，在中心呈現選取期間總份數；保留既有統計 API、聚合與期間，改善窄版長店名及份數／比例的可讀性，提供 SVG 文字標籤並保留減少動態效果支援。
 - 首輪獨立審查在 320px viewport 以無空格合成長店名重現 P2：flex 文字項目保留 min-content 寬度，明細清單水平溢出並碰撞份數欄。已將名稱欄限制在剩餘寬度並允許 anywhere wrapping，新增 Chromium 320px 合成回歸案例；同時將 SVG `<title>` 改為單一字串，消除 React SSR 的多子節點警告。這不改動 API、資料聚合或帳務。
-- 交付狀態：CODE_CHANGE / MOCK_TEST_PASS / REVIEW_APPROVED（精確 code head `06de2cd`）；PR body 與本回顧需同步本次 Actions／Review 結果後，對文件最終 head 再做獨立確認。UAT API 仍 NOT VERIFIED。
+- 交付狀態：CODE_CHANGE / MOCK_TEST_PASS / REVIEW_APPROVED（精確 code head `06de2cd`）/ CI_PASS（三個 Actions workflows）；UAT API 仍 NOT VERIFIED。PR metadata 另記錄文件提交的精確 head 與獨立覆核狀態。
 
 ## 本輪阻礙
 
@@ -12,7 +12,7 @@
 | --- | --- | --- | --- | --- |
 | PII scan 把改名後新增的既有十六進位色碼列視為連續數字 | 工具誤報 | 第一次候選 diff scan 對圖表來源檔回 `PII_SCAN BLOCKED`；沒有發現真實識別值 | 保留原有色彩常數名稱，只提交圖表用途必要的改動；完整候選 diff 再掃描為 PASS，未放寬掃描規則 | 已驗證：改名把原有色碼整行轉成新增行而觸發數字 pattern |
 | 隔離 Worker API smoke 未取得 Worker 回應 | 網路／外部驗收 BLOCKED | 有界健康檢查在 HTTPS proxy CONNECT 階段收到 403，請求未到 Worker；證據見關聯 PR #134 | 未改用其他網路通道，沒有用 Mock 代替 API smoke | 已驗證：目前執行環境 proxy 阻擋連線；Worker 回應與 runtime 狀態 UNKNOWN |
-| 首輪 reviewer 在 320px 重現無空格合成長店名水平溢出及份數欄碰撞 | P2／UI 缺陷（已修） | 獨立審查綁定首輪 PR head `604f6cca`；測得店名欄及明細清單寬度遠超 viewport，份數欄因此碰撞 | 店名項目加 `min-w-0` 與 `overflow-wrap:anywhere`，左側 flex 區域改為 `flex-1`；在 Local Mock Chromium 加入 320px 無空格合成名稱案例，檢查頁面／清單不溢出且不碰撞份數欄 | 已驗證：修正後完整瀏覽器 Mock UAT 通過；新 head 獨立複查待完成 |
+| 首輪 reviewer 在 320px 重現無空格合成長店名水平溢出及份數欄碰撞 | P2／UI 缺陷（已修） | 獨立審查綁定首輪 PR head `604f6cca`；測得店名欄及明細清單寬度遠超 viewport，份數欄因此碰撞 | 店名項目加 `min-w-0` 與 `overflow-wrap:anywhere`，左側 flex 區域改為 `flex-1`；在 Local Mock Chromium 加入 320px 無空格合成名稱案例，檢查頁面／清單不溢出且不碰撞份數欄 | 已驗證：修正後完整瀏覽器 Mock UAT 通過，精確 code head `06de2cd` 獨立 reviewer APPROVE |
 | React SSR 對 SVG `<title>` 多個 JSX children 警告 | P3／無障礙 markup | 同一首輪 reviewer 的 SSR probe | 使用同一 `chartLabel` 單一字串作為 SVG aria-label 與 `<title>` children | 已修：程式及本機測試通過；未宣稱獨立複查完成 |
 
 ## 個資發布檢查
