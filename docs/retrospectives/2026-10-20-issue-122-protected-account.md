@@ -1,40 +1,56 @@
 # 2026-10-20 — Issue #122 保護既有廠商 LINE 身分
-- Repository、分支、PR：`henryfir456/bento-order-app`，分支 `codex/issue-122-protected-line-identity`，PR #133（base 為當時最新 `main`）。本回顧更新會另形成 PR head，CI 與 reviewer 結果以最終 PR head 為準。
-- 本輪目標／實際修改：將保護條件設於 Worker 身分解析、員編訪客登入／註冊、LINE 員編查找／綁定、舊訪客 session、直接 provisional claim、Admin 員編綁定、LINE 綁定轉移、身份修復與 View As 路徑。只允許經驗證的既有 LINE owner 使用該 canonical 帳號。保護 mapping 改由受控 D1 mapping table 取得，不將真實登入識別寫入程式碼或測試；migration 不 seed 實際 mapping。新增不含帳號／員編／LINE ID 的拒絕稽核表；API 公開投影遮蔽受保護帳號的 LINE ID。不變更現有帳號、訂單、餘額或 ledger。
-- 交付狀態：CODE_READY（本機完整測試通過；PR #133 已開啟，最終 head 獨立複審、合併與隔離 API 驗收進行中；正式 Worker、正式 D1 與正式帳號資料操作明確排除。）
 
-## 本輪阻礙
-| 現象／階段 | 分類 | 證據 | 已嘗試及結果 | 根因（已驗證／推測／UNKNOWN） |
-| --- | --- | --- | --- | --- |
-| 新 main 加入公告偏好 migration 0016，與本分支 migration README 及 schema index 變更重疊 | rebase 衝突 | 兩個衝突檔都由兩個獨立 migration 修改 | 保留 0016、0017 的順序與兩個 index；更新 migration 數為十八；rebase 已完成 | 已驗證為相鄰 migration 合併衝突，未丟棄任一方 schema |
-| 第一輪 Worker 全套測試發現正確 owner 綁定與 `/api/me` 回應洩出 LINE ID，另 append-only trigger 測試 SQL 無 `WHERE` 條件 | 實際安全缺陷＋測試缺陷 | 首輪 Worker suite 2 項失敗；測試直接解析綁定、`/api/me`、bootstrap 與 trigger 寫入 | 將 `publicUser`、`getMe` 的保護帳號投影改為不回傳 ID，增加 bootstrap／管理摘要／成員清單 API 斷言；修正 UPDATE 條件，並使受保護 Admin 拒絕稽核不記目標 ID；後續全套 560/560 通過 | 已驗證：共享公開投影是 LINE ID 外洩根因；SQL 測試原本沒有命中指定 row。一般 Admin 稽核另曾保留目標 user ID，已在此修改清除 |
-| 獨立審查發現 guest session 員編可遮蔽其連結 canonical user 的受保護員編 | P1 身分授權缺陷 | reviewer 對 PR #133 head `79dc8f188be5e5b7a865c78b3fa318d458bd7577` 以合成資料重現：`GET /api/me` 回 200 並回傳受保護 user projection，拒絕 audit 為 0 | 先加同一 Worker route 回歸測試，舊程式 RED：`node --test tests/protected-account.test.js`，新測試 HTTP 200、預期 403；修正後 GREEN，同測試 20/20。新檢查分別驗證 session employee ID、linked user employee ID 與其合併投影，並覆蓋 `/api/me`、onboarding、LINE bind；錯誤身份均拒絕、LINE 綁定不變、audit schema 不存 target 欄位 | 已驗證：`a || b` 只檢查優先值，session/canonical 欄位不同時短路；修正以任何來源命中受保護員編即 fail closed。新實作 commit 為上述 SHA；最終 PR head 的 reviewer 結果另以 PR 審查紀錄為準 |
-| 安裝依賴前 root UI、lint、build 首輪無法啟動 | 工具／依賴缺漏 | `vite` 與 `oxlint` 指令不存在 | `npm ci --cache /tmp/bento-order-app-npm-cache` 及 `npm ci --prefix worker-poc --cache /tmp/bento-order-app-npm-cache` 成功，lockfile 未變；重跑所有 gates 通過 | 已驗證為工作樹缺少 node_modules，非程式錯誤 |
-| 既有帳號狀態及真實 LINE 主體尚無授權外部驗證 | 外部驗收未完成 | Issue 要求由既有合法 LINE 綁定使用；本輪禁止修改正式資料及正式綁定 | 只以合成身份和本機 SQLite Worker handler 測試；不讀／匯出正式資料，不使用真實 LINE ID | 外部 identity/runtime 結果 UNKNOWN，須在隔離環境或由合法身分提供證據 |
+- Repository：`henryfir456/bento-order-app`。
+- 核對 base：`main` SHA `709a0c6`；候選分支 `codex/issue-122-redacted`，目前程式碼候選 SHA `c1915cf`。
+- PR 狀態：獨立複審候選 SHA 中；待複審完成後建立乾淨替代 PR。既有 Draft PR #133 含有不安全的公開歷史，不能合併，亦未改寫歷史。
+- 本輪範圍：在 Worker 身分解析、員編訪客登入／註冊、LINE 員編查找／綁定、舊訪客 session、直接 provisional claim、Admin 員編綁定、LINE 綁定轉移、身份修復與 View As 全路徑保護受限 canonical account。保護 mapping 由 D1 受控表讀取；migration 只建立 schema，不建立真實 mapping。拒絕稽核不保存帳號或 LINE 識別；公開投影不回傳受保護 owner 的 LINE ID。未更改任何使用者、訂單、餘額或 ledger 資料。
+- 交付狀態：程式和本機 gates PASS；精確候選 SHA 獨立複審進行中；尚未建立/合併新 PR。隔離 Worker runtime API 驗收 BLOCKED；正式 Worker、正式 D1 migration 和真實身分／帳務操作未執行。
 
-## 個資發布檢查
-- 初輪 PII_SCAN 曾回報 PASS，但 reviewer 發現程式以重複字元運算產生的值與 Issue 指定的保留登入識別相同；該掃描結果是 false negative，不能作為發布通過證據。程式和測試現改用合成 fixture 與受控 mapping table；PII scanner 增加對重複數字運算式的阻擋測試，最終 PR head 仍須重新掃描及獨立複審。
-- 已將 Issue #122 目前標題與內文改為合成、去識別化描述；Issue 編輯歷史、既有 PR commit history、通知、搜尋索引、fork/cache 是否保留舊內容均尚未查證。使用者未授權歷史刪除或 force-push，因此不執行該等動作；PR #133 保持 Draft 並阻擋合併。
+## 修復與獨立審查發現
 
-## 驗證
-- FULL_PREFLIGHT：PASS。核對根目錄、`AGENTS.md`、`agent.yaml` schema／欄位、宣告技能名稱與版本、`PROJECT_STATE.md`、`DECISIONS.md`、歷史 migration 政策、公開資料政策、回顧範本與工作樹；原 branch 基於前一 main，已將程式重播到含 migration 0016 的最新 main。
-- `node --test tests/strict-identity-ledger.test.cjs tests/changelog-migration.test.cjs`：PASS，90 passed、3 skipped、0 failed。
-- Worker targeted tests：PASS，9 + 13 + 14 + 2；`npm test --prefix worker-poc`：PASS，561 passed、0 failed。
-- 宣告 UI 測試：PASS，30 passed，含 375px 與 1280px browser Mock。
-- `npm run lint`：PASS，無 error；保留既有 warnings，沒有本輪新增 unused-variable warning。
-- `npm run build`：PASS；保留既有 500 kB bundle warning。
-- 同一實作／測試樹 `da0aa2c78ced43d0d4b0a3ba30af13cd87d984d8` 對應完整命令：root 90 passed／3 skipped；Worker targeted 9 + 13 + 14 + 2；`npm test --prefix worker-poc` 561 passed／0 failed；宣告 UI tests 30 passed；lint 與 build exit 0。
-- `git diff --check origin/main`、diff 與未追蹤檔兩項 PII_SCAN：PASS，退出碼 0。Lint 保留既有 warnings；build 有既有 500 kB chunk warning。最終回顧更新後仍須對最終 PR head 重跑 affected gates 及 PII_SCAN，Actions 與獨立審查待更新 head。
-- Toolchain capability probe：NOT RUN；manifest 所述 `tools/get-toolchain-capabilities.ps1` 在 repository 不存在。
-- 正式 D1 migration、正式 Worker、真實 LINE 身分與正式帳號／訂單／ledger：NOT RUN，明確排除於本輪授權。
-- 隔離 Worker/D1 的 migration、部署與可連線 API/前端實測：NOT VERIFIED；先前執行環境對既有隔離 Worker API host 的 HTTPS CONNECT 回覆 403，沒有收到 Worker HTTP response。只代表目前該執行環境的網路出口受阻，不等同 Worker 或憑證失敗；需用已授權的 Cloudflare 隔離通道繼續診斷。
+| 發現 | 證據與處理 | 狀態 |
+| --- | --- | --- |
+| Worker session 員編可遮蔽連結 canonical user 的受保護員編 | reviewer 對先前 PR head 以合成資料重現；增加 API 回歸測試並在每個可用 identity 來源獨立檢查保護身分。覆蓋 `/api/me`、onboarding、LINE bind，並確認拒絕後身份和稽核不含敏感欄位。 | 已修；候選 SHA 全套測試通過 |
+| Readiness 只確認 mapping 存在，未確認 owner 可用 | 將唯一 owner 條件加嚴為單筆 canonical user、active、verified、未標 invalid、且已有非空 LINE binding；缺漏、歧義及不合格狀態都在業務寫入前回 503。 | 已修；新增合成 D1 測試 |
+| D1 binding 缺失時 readiness 原先會被跳過 | `OPTIONS` 與健康檢查外，所有業務路由都無條件執行 readiness；缺少 D1 時回 `PROTECTED_ACCOUNT_CONFIGURATION_UNAVAILABLE` 503。測試確認身分服務未被呼叫。 | 已修；health/CORS 測試通過 |
+| CORS 測試原本以缺少 DB binding 的 fixture 驗證 401 | 在這些 401/CORS 測試補上合成 D1 與受保護 owner fixture，讓測試驗證授權錯誤本身；另保留專門測試缺少 D1 時的 503。 | 已修；Worker suite 567/567 |
+| 舊 PR #133 的變更與 commit 歷史含受保護識別資訊 | 新候選分支由目前 main 重播為獨立乾淨歷史；PII scanner 增補重複數字運算式規則和回歸測試。未嘗試 force-push、清除 Issue edit history 或宣稱外部副本已刪除。 | 新候選 diff 掃描 PASS；舊 PR 保持 Draft |
 
-## 改善建議
-| 建議事項 | P0/P1/P2 | 本輪修／另開 Issue／觀察／不採用 | 追蹤連結 | 驗收條件 |
-| --- | --- | --- | --- | --- |
-| 以隔離 D1 合成帳號驗證 migration 0017 及 API 拒絕路徑，確認不觸碰正式 Worker／D1 | P1 | 本輪隔離部署與 API 驗收階段處理；目前連線檢查被 execution network 403 阻擋 | Issue #122 | 確認隔離 Worker 綁定隔離 D1；拒絕事件僅保存允許欄位；正確 owner contract 不輸出 LINE ID |
-| 取得合法既有 owner 的真實 LIFF／session 驗收證據 | P1 | 等待具備人類身分的驗收者；本機合成測試不可替代 | Issue #122 | 真實 owner 成功取得原帳號，陌生 LINE／員編／舊 session 皆 fail closed，且沒有帳務資料變更 |
+## 公開內容與地域條件
 
-## 下一輪預防
-- 觸發條件：新增登入入口、員編綁定／修復／轉移入口、或新增保護帳號的資料庫 migration。
-- 應追加的前置檢查／測試／規範：對全部 Worker 路由和直接 domain helper 搜尋 identity writes；測試正確 owner、陌生 LINE、guest replay／過期 session、Admin、View As、資料缺失／歧義、停權及並發；migration 預期清單與 README 必須連續。
+- 已重查 Issue #111 中的既有地域留言：原選擇是接受現有 R2 `default` jurisdiction（APAC），但前提為沒有更嚴格的資料落地限制。Repo runbook 要求 jurisdiction 有核准依據；目前可查政策與交付紀錄沒有證據證明上述前提成立，因此紀錄為 `REGION_POLICY_UNVERIFIED`。本輪未執行正式備份、D1 export 或 R2 寫入，也未重問已留存的 APAC 選擇。
+- Issue #122 目前標題/內文已去識別化；是否仍有舊編輯內容存在於通知、索引、fork 或快取無法由本輪證據確認。既有 PR #133 保持 Draft，沒有改寫公開 commit history。乾淨替代 PR 待本輪獨立覆核完成後建立。
+
+## 隔離環境與資料面驗收
+
+- Cloudflare 唯讀控制面確認既有隔離 UAT Worker 的 `DB` binding 指向同名隔離 D1；檢查沒有讀取或輸出 Secrets。既有 deployment metadata 無來源 Git SHA，無法證明部署版本等於本候選 SHA。本輪未上傳 Worker、未套用隔離或正式 D1 migration，也未寫入測試 D1。
+- 對管理面所確認隔離 Worker URL 的 `/api/health` 實際請求，在 HTTPS proxy CONNECT 階段收到 403，沒有收到 Worker HTTP response；runtime/API integration 為 `BLOCKED / NOT VERIFIED`。不以管理面讀取或本機 Mock 代替 runtime smoke，也沒有改走其他網路通道。
+- 本機 Chromium Mock UAT 截圖（合成資料）保存在 `/tmp/bento-uat-evidence/footprints-375-mock-final.png` 與 `/tmp/bento-uat-evidence/footprints-1280-mock-final.png`。它們只證明 Mock UI，不代表隔離 API、LINE 身分或正式交付。
+- 最小解阻：由管理端在既有核准網路政策下，允許執行環境對該隔離 Worker hostname 的 `443` HTTPS CONNECT egress，或提供已核准、可直達該隔離 Worker 的執行環境。這不是要求新增憑證或更改 Worker 權限；本輪不會以其他通道規避現有 403。
+
+## 精確 SHA 驗證
+
+以下結果均在候選 SHA `c1915cf` 的乾淨工作樹執行：
+
+- `node --test tests/strict-identity-ledger.test.cjs tests/changelog-migration.test.cjs tests/pii-scan-public-artifacts.test.cjs`：92 passed、3 skipped、0 failed。
+- Worker targeted：`invalid-employee-repair` 9、`effective-order-item-name` 13、`line-binding-transfer` 14、`roles` 2，全部通過。
+- `npm test --prefix worker-poc`：567 passed、0 failed。
+- Manifest UI/Mock 測試（六個指定檔案）：30 passed、0 failed，含 375px 和 1280px 本機瀏覽器 Mock。
+- `npm run lint`、`npm run build`、`git diff --check`：exit 0。Lint 仍有既有 warnings；build 保留既有 500 kB chunk warning。
+- `git diff --unified=0 origin/main | node scripts/pii-scan-public-artifacts.mjs --diff-stdin` 與 tracked/untracked 掃描：PASS，未發現設定的識別或憑證模式。
+- `npm run test:line-binding` 的 SSR 子測試曾在先前 branch 執行失敗，亦曾在 base `709a0c6` 重現相同失敗；它不是 `agent.yaml` 宣告的 required gate。本輪未以它替代或略過 required tests。
+
+## 尚未完成
+
+| 項目 | 狀態 | 解阻條件 |
+| --- | --- | --- |
+| 獨立審查及 PR | 進行中 | reviewer 對精確候選 SHA 回覆無 P1/P2，建立乾淨替代 PR，取得 GitHub checks，再依核准流程合併 |
+| 隔離 Worker/API runtime 驗收 | BLOCKED | 管理端按上方 hostname 放行核准的 egress，之後對精確候選部署版本做健康、匿名拒絕、CORS 與授權 contract smoke |
+| 真實 LIFF / LINE owner 身分驗收 | NOT RUN | 需要允許的合成測試身分或由合法身分持有人提供驗收；Mock 不可替代 |
+| 正式 D1 備份、migration、Worker release、Netlify release | NOT RUN / 不在本輪授權 | 原有 backup、維護窗口及 release gates 必須另外滿足；不因隔離 UAT 解除 |
+
+## 後續預防
+
+- 新增登入入口、員編綁定/修復/轉移入口，或改動保護 mapping 時，搜尋全部 Worker routes 與直接 domain helper 的 identity writes。
+- readiness 測試需涵蓋 mapping 缺漏/重複/懸空、owner inactive/unverified/unbound/invalid、D1 binding 缺失，以及任何狀態在身分服務或帳務寫入前 fail closed。
+- migration 編號須以 merge 後最新 main 為準；同一 PR 不得因本機測試 fixture 自動植入真實帳號 mapping。
