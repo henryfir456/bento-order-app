@@ -1,11 +1,12 @@
 class ApiError extends Error {
-  constructor({ code, kind, message, operation = null, status = null }) {
+  constructor({ code, kind, message, operation = null, status = null, requestId = null }) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.kind = kind;
     this.operation = operation;
     this.status = status;
+    this.requestId = requestId;
   }
 }
 
@@ -17,22 +18,22 @@ export class ApiConfigurationError extends ApiError {
 }
 
 export class ApiAuthenticationError extends ApiError {
-  constructor(code, message, { operation = null, status = null } = {}) {
-    super({ code, kind: 'authentication', message, operation, status });
+  constructor(code, message, { operation = null, status = null, requestId = null } = {}) {
+    super({ code, kind: 'authentication', message, operation, status, requestId });
     this.name = 'ApiAuthenticationError';
   }
 }
 
 export class ApiAuthorizationError extends ApiError {
-  constructor(code, message, { operation = null, status = null } = {}) {
-    super({ code, kind: 'authorization', message, operation, status });
+  constructor(code, message, { operation = null, status = null, requestId = null } = {}) {
+    super({ code, kind: 'authorization', message, operation, status, requestId });
     this.name = 'ApiAuthorizationError';
   }
 }
 
 export class ApiBackendError extends ApiError {
-  constructor(code, message, { operation = null, status = null } = {}) {
-    super({ code, kind: 'backend', message, operation, status });
+  constructor(code, message, { operation = null, status = null, requestId = null } = {}) {
+    super({ code, kind: 'backend', message, operation, status, requestId });
     this.name = 'ApiBackendError';
   }
 }
@@ -52,6 +53,18 @@ export class ApiContractGapError extends ApiError {
 }
 
 export const isApiError = (error) => error instanceof ApiError;
+
+const SAFE_API_CODE = /^[A-Z0-9][A-Z0-9_:-]{0,63}$/;
+const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+export const formatApiErrorDiagnostic = (error) => {
+  const rawCode = String(error?.code || '').trim();
+  const rawRequestId = String(error?.requestId || '').trim();
+  const code = SAFE_API_CODE.test(rawCode) ? rawCode : '';
+  const requestId = SAFE_REQUEST_ID.test(rawRequestId) ? rawRequestId : '';
+  if (!code && !requestId) return '';
+  return `（${code}${code && requestId ? '・' : ''}${requestId ? `追蹤碼 ${requestId}` : ''}）`;
+};
 
 const businessMessages = Object.freeze({
   DEADLINE_CLOSED: '已過截止時間，請重新整理訂單狀態後再試。',
@@ -83,12 +96,13 @@ const businessMessages = Object.freeze({
 export const getApiErrorPresentation = (error, operationLabel = '操作') => {
   const code = String(error?.code || '').trim();
   const status = Number(error?.status);
+  const withDiagnostic = (message) => `${message}${formatApiErrorDiagnostic(error)}`;
 
   if (error?.kind === 'network' || code === 'API_REQUEST_FAILED') {
     return {
       category: 'network',
       code,
-      message: `${operationLabel}失敗，請檢查網路連線後再試。`
+      message: withDiagnostic(`${operationLabel}失敗，請檢查網路連線後再試。`)
     };
   }
 
@@ -97,13 +111,13 @@ export const getApiErrorPresentation = (error, operationLabel = '操作') => {
       return {
         category: error.kind === 'authorization' ? 'authorization' : 'authentication',
         code,
-        message: businessMessages[code]
+        message: withDiagnostic(businessMessages[code])
       };
     }
     return {
       category: 'auth',
       code,
-      message: `${operationLabel}需要重新驗證身份，請重新登入後再試。`
+      message: withDiagnostic(`${operationLabel}需要重新驗證身份，請重新登入後再試。`)
     };
   }
 
@@ -111,14 +125,14 @@ export const getApiErrorPresentation = (error, operationLabel = '操作') => {
     return {
       category: 'business',
       code,
-      message: businessMessages[code]
-        || `${operationLabel}失敗（${code || `HTTP ${status}`}），請檢查資料後再試。`
+      message: withDiagnostic(businessMessages[code]
+        || `${operationLabel}失敗（${code || `HTTP ${status}`}），請檢查資料後再試。`)
     };
   }
 
   return {
     category: 'server',
     code,
-    message: `${operationLabel}遇到伺服器錯誤，請稍後再試。`
+    message: withDiagnostic(`${operationLabel}遇到伺服器錯誤，請稍後再試。`)
   };
 };

@@ -103,6 +103,16 @@ test('production CORS allows the Netlify origin and Authorization header', async
   assertCorsAllowed(response, PRODUCTION_FRONTEND_ORIGIN);
 });
 
+test('Worker errors carry a generated request ID header and CORS exposes the trace header', async () => {
+  const response = await callFormal('/api/me');
+  const body = await response.json();
+
+  assert.equal(response.status, 401);
+  assert.match(response.headers.get('X-Request-Id') || '', /^[0-9a-f-]{36}$/i);
+  assert.deepEqual(body, { error: 'AUTH_REQUIRED' });
+  assert.match(response.headers.get('Access-Control-Expose-Headers') || '', /X-Request-Id/i);
+});
+
 test('remote-test CORS retains the Netlify origin', async () => {
   const response = await callMe(PRODUCTION_FRONTEND_ORIGIN, remoteTestEnv());
 
@@ -159,7 +169,9 @@ test('dynamic Pinggy unauthenticated GET /api/me keeps CORS without remote-test 
   }), { DB: new SqliteD1() });
 
   assert.equal(response.status, 401);
-  assert.deepEqual(await response.json(), { error: 'AUTH_REQUIRED' });
+  const body = await response.json();
+  assert.equal(body.error, 'AUTH_REQUIRED');
+  assert.match(response.headers.get('X-Request-Id') || '', /^[0-9a-f-]{36}$/i);
   assertCorsAllowed(response, remoteTestPinggyOrigin);
 });
 

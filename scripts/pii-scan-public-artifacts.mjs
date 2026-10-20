@@ -11,6 +11,10 @@ const checks = [
 ];
 
 const findings = [];
+// A full Git commit hash is public source metadata, not a personal identifier.
+// Keep this exception limited to the formally verified deployment baseline.
+const isVerifiedDeploymentCommitSha = (file, line) => file === 'worker-poc/scripts/detect-formal-drift.mjs'
+  && /^\s*sourceSha:\s*['"][a-f0-9]{40}['"],?\s*$/iu.test(line);
 const isUatResourceIdentifier = (file, line) => file === 'worker-poc/wrangler.uat.jsonc'
   && (
     /^\s*"(?:name|database_name)"\s*:\s*"bento-order-app-uat-\d{8}"\s*,?\s*$/u.test(line)
@@ -20,6 +24,7 @@ const isUatResourceIdentifier = (file, line) => file === 'worker-poc/wrangler.ua
 const scanLine = (file, index, line) => {
   for (const [label, pattern] of checks) {
     if (label === 'numeric employee or phone pattern' && isUatResourceIdentifier(file, line)) continue;
+    if (label === 'numeric employee or phone pattern' && isVerifiedDeploymentCommitSha(file, line)) continue;
     if (pattern.test(line)) findings.push({ file, line: index + 1, label });
     pattern.lastIndex = 0;
   }

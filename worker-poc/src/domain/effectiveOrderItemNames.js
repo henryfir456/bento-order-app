@@ -1,8 +1,12 @@
-import { getCustomerMenu } from './menu.js';
+import { getCustomerMenu, HISTORICAL_MENU_ITEM_CODE_ALIASES } from './menu.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 import { isDateOnly } from './deadlines.js';
 
 const text = (value) => String(value ?? '').trim();
+const canonicalLegacyItemId = (value) => {
+  const code = text(value);
+  return HISTORICAL_MENU_ITEM_CODE_ALIASES[code] || code;
+};
 const itemNameFor = (item) => typeof item?.item_name_snapshot === 'string'
   ? item.item_name_snapshot
   : String(item?.item_name ?? '');
@@ -34,6 +38,7 @@ export const resolveEffectiveOrderItemName = ({
   ));
   const menuItemId = text(item?.menu_item_id);
   const legacyItemId = text(item?.legacy_item_id || item?.item_id);
+  const canonicalItemId = canonicalLegacyItemId(legacyItemId);
   const unitPrice = priceFor(item);
   const requestedVariant = text(item?.variant_key);
   const hasStableIdentity = item?.stable_identity === true;
@@ -70,7 +75,7 @@ export const resolveEffectiveOrderItemName = ({
   if (menuItemId) {
     const directMatches = catalog.filter((candidate) => text(candidate?.menu_item_id) === menuItemId);
     const verifiedDirectMatches = directMatches.filter((candidate) => (
-      (!legacyItemId || text(candidate?.legacy_item_id || candidate?.item_id) === legacyItemId)
+      (!canonicalItemId || canonicalLegacyItemId(candidate?.legacy_item_id || candidate?.item_id) === canonicalItemId)
         && (!requestedVariant || text(candidate?.variant_key) === requestedVariant)
     ));
     if (directMatches.length > 0 && verifiedDirectMatches.length !== directMatches.length) {
@@ -80,8 +85,8 @@ export const resolveEffectiveOrderItemName = ({
     ambiguous = matches.length > 1;
   }
   if (matches.length !== 1) {
-    const sameLegacyIdentity = legacyItemId
-      ? catalog.filter((candidate) => text(candidate?.legacy_item_id || candidate?.item_id) === legacyItemId)
+    const sameLegacyIdentity = canonicalItemId
+      ? catalog.filter((candidate) => canonicalLegacyItemId(candidate?.legacy_item_id || candidate?.item_id) === canonicalItemId)
       : [];
     const sameVariantIdentity = sameLegacyIdentity.filter((candidate) => (
       !requestedVariant || text(candidate?.variant_key) === requestedVariant
@@ -100,7 +105,7 @@ export const resolveEffectiveOrderItemName = ({
 
   const resolved = matches[0];
   const variantKey = text(resolved.variant_key || requestedVariant);
-  const stableCode = text(resolved.legacy_item_id || resolved.item_id);
+  const stableCode = canonicalLegacyItemId(resolved.legacy_item_id || resolved.item_id);
   const stableId = stableCode
     ? identity(normalizedVendor, 'menu', stableCode, variantKey)
     : identity(normalizedVendor, 'menu-id', resolved.menu_item_id);
@@ -137,8 +142,8 @@ export const createEffectiveOrderItemNameResolver = (database) => {
       }
       const stableIdentity = await historicalIdentities.get(menuItemId);
       if (stableIdentity) {
-        const snapshotLegacyId = text(sourceItem.legacy_item_id || sourceItem.item_id);
-        const storedLegacyId = text(stableIdentity.legacy_item_id);
+        const snapshotLegacyId = canonicalLegacyItemId(sourceItem.legacy_item_id || sourceItem.item_id);
+        const storedLegacyId = canonicalLegacyItemId(stableIdentity.legacy_item_id);
         const snapshotVariant = text(sourceItem.variant_key);
         const storedVariant = text(stableIdentity.variant_key);
         if (normalizeMenuVendor(stableIdentity.vendor) !== normalizedVendor

@@ -9,6 +9,7 @@
 3. `npm ci --prefix worker-poc`、`npm test --prefix worker-poc`。
 4. `node worker-poc/scripts/prepare-formal-release.mjs`：再次驗證 branch、工作樹、正式設定、D1 UUID，執行固定版本 Wrangler 的 `deploy --dry-run --outdir`，產生 `worker-poc/.release-evidence/release-manifest.json`（SHA-256）。這是 **NOT DEPLOYED** 證據，絕不可當成正式版本號。
 5. 確認 bundle 包含本次修改以及全部依賴；發布前必須取得可上傳的所有 bundle 部件（例如 Wrangler 產出的 Worker 模組、附帶二進位或靜態資產），不能只上傳第一個 JS 檔。檢查且排除 release evidence 中意外夾帶的機密。不要提交 bundle 到 GitHub。
+6. 在同一個 clean/up-to-date `main` checkout 執行 `npm run drift:formal --prefix worker-poc`。此唯讀檢查比對目前 main 的 Worker runtime 檔案變更、正式 deployment/version 的 `workers/commit_sha` 註記，以及正式 D1 `d1_migrations` 清單。`DRIFT` 會列出需部署或缺少的 migration，`BLOCKED` 表示 metadata 不足；兩者都不能以 CI 或 build 成功取代。Frontend-only commit 不會單獨要求 Worker 發布。
 
 ## B. Cloudflare API（直接部署，不使用 GitHub Actions）
 
@@ -16,6 +17,7 @@
 2. API 上傳使用新的完整 Worker 模組與 Cloudflare API 正式 upload schema，metadata 需保留現有 D1 `DB` → `bento-formal`（ID `e75bc185-afb5-4a5d-abc9-81bd79525cff`）、Secrets、compatibility date `2026-09-07`、三個 cron（`0 16 * * *`、`0 8 * * *`、`30 0 15 6-12 *`）及 CORS 行為。**若 API 無法證實保留 Secrets 或原有綁定，停止，不可自行猜測 multipart metadata。**
 3. 建立新 Version 並部署（100%），不可單純重部署舊 Version。取得並核對 source=api、Version ID、Deployment ID、流量分配、bundle 相符性、設定 **after** 快照；任何缺失保留 WAITING_FOR_DELIVERY。
 4. 也可在具備授權的**本機或雲端直接 CLI** 使用 `cd worker-poc && npx wrangler deploy --config wrangler.jsonc --keep-vars`，但一樣要先完成 A，確認沒有覆蓋 bindings、Secrets 和排程。不得改走 GitHub Actions 正式部署。
+5. D1 migration drift 未完成備份／還原 Gate 並逐一套用前，不可部署依賴新 schema 的 Worker。正式流量切換後再次執行 `npm run drift:formal --prefix worker-poc`，應核對 Worker source SHA 與 D1 migration 清單；此結果仍不取代 API 功能驗收。
 
 ## C. 有界 Runtime smoke（正式部署後）
 
@@ -31,6 +33,10 @@
 **禁止：** Actions 部署、重發舊 Worker、只補一個 JS module 的部分 bundle、重建缺失的 Secrets、使用 D1 正式資料修復來掩飾 runtime 問題。
 
 此文件是程序；實際 Cloudflare API 上傳仍需符合當前 Cloudflare API schema 及完整 source/bundle 驗證，不宣稱單憑 Runbook 即自動完成正式部署。
+
+## G. 正式版本漂移檢查
+
+`worker-poc/scripts/detect-formal-drift.mjs` 僅讀取 Worker deployment/version metadata 與正式 D1 migration 名稱，不查詢訂單、使用者、帳本或付款資料，也不寫入 Cloudflare。輸出 `IN_SYNC`、`DRIFT` 或 `BLOCKED`，並在 Worker/D1 落後時列出直接可執行的下一步。缺少 version SHA、migration metadata、Cloudflare 唯讀憑證或 clean/up-to-date main 時 fail closed。它不觸發部署、不使用 GitHub Actions，也不代替正式資料備份 Gate、API acceptance 或獨立 Reviewer。
 
 
 ## E. 完整模組 API Version Uploader（Fail closed）

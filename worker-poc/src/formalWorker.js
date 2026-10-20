@@ -72,6 +72,7 @@ export const handleScheduled = async (
 };
 
 export const handleFormalRequest = async (request, env, options = {}) => {
+  const requestId = globalThis.crypto.randomUUID();
   let response;
   try {
     if (request.method === 'OPTIONS') {
@@ -153,6 +154,13 @@ export const handleFormalRequest = async (request, env, options = {}) => {
     }
     response = jsonResponse(publicError.body, publicError.status);
   }
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.set('X-Request-Id', requestId);
+  response = new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: responseHeaders
+  });
   return applyCorsPolicy(response, request, env);
 };
 

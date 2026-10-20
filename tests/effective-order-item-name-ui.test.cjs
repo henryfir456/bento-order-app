@@ -52,6 +52,40 @@ test('order summary and statistics share the Worker effective-name resolver', ()
   assert.match(statistics, /resolutionStatus/);
 });
 
+test('Worker API errors preserve a safe request trace ID for user diagnostics', async () => {
+  const { createApiClient } = await import('../src/api/apiClientCore.js');
+  const { formatApiErrorDiagnostic } = await import('../src/api/apiErrors.js');
+  const client = createApiClient({
+    env: {
+      VITE_API_TRANSPORT: 'worker',
+      VITE_WORKER_API_URL: 'https://worker.example.test'
+    },
+    authClient: { getAccessToken: () => 'synthetic-token' },
+    fetchImpl: async () => Response.json(
+      { error: 'SYNTHETIC_FAILURE', requestId: 'trace-1234-synthetic' },
+      { status: 503, headers: { 'X-Request-Id': 'trace-1234-synthetic' } }
+    )
+  });
+
+  await assert.rejects(
+    () => client.getMyAnnouncements(),
+    (error) => {
+      assert.equal(error.code, 'SYNTHETIC_FAILURE');
+      assert.equal(error.requestId, 'trace-1234-synthetic');
+      assert.equal(formatApiErrorDiagnostic(error), '（SYNTHETIC_FAILURE・追蹤碼 trace-1234-synthetic）');
+      assert.equal(formatApiErrorDiagnostic({ code: '<script>', requestId: '員工個資' }), '');
+      return true;
+    }
+  );
+});
+
+test('announcement and vendor error views render only sanitized codes and request IDs', () => {
+  const app = read('src/App.jsx');
+  const vendor = read('src/features/vendors/VendorOperationsPage.jsx');
+  assert.match(app, /formatApiErrorDiagnostic\(error\)/);
+  assert.match(vendor, /formatApiErrorDiagnostic\(requestError\)/);
+});
+
 test('order summary preserves snapshot item_name and renders display_item_name in all tabs', async () => {
   const grouping = read('src/features/admin/orderSummary.js');
   const summaryView = read('src/features/admin/AdminOrderSummary.jsx');

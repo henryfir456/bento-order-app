@@ -92,6 +92,7 @@ export const applyCorsPolicy = (response, request, env = {}) => {
   } else {
     headers.set('Access-Control-Allow-Origin', origin);
     Object.entries(CORS_HEADERS).forEach(([header, value]) => headers.set(header, value));
+    headers.set('Access-Control-Expose-Headers', 'X-Request-Id');
   }
   headers.set('Vary', 'Origin');
   return new Response(response.body, {
