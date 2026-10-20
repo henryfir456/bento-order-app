@@ -109,6 +109,28 @@ test('effective order item resolver matches stable identity and fails closed on 
   assert.equal(vendorMismatch.resolved, false);
 });
 
+test('price cannot disambiguate multiple variants under one legacy item identity', () => {
+  const resolved = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2030-03-15',
+    item: {
+      legacy_item_id: 'ITEM-SYNTHETIC',
+      item_name_snapshot: '舊快照',
+      unit_price: 80,
+      fallbackKey: 'synthetic-unknown-variant:1'
+    },
+    menuItems: [
+      menuItem({ menuItemId: 'menu-item-base', variantKey: 'BASE', price: 80 }),
+      menuItem({ menuItemId: 'menu-item-plus', variantKey: 'PLUS', price: 90 })
+    ]
+  });
+
+  assert.equal(resolved.itemName, '舊快照');
+  assert.equal(resolved.resolved, false);
+  assert.equal(resolved.resolutionStatus, 'ambiguous');
+  assert.equal(JSON.parse(resolved.identityKey).at(-1), 'synthetic-unknown-variant:1');
+});
+
 test('unresolved snapshots keep line-scoped identities so unknown menu matches cannot be merged', () => {
   const base = {
     vendor: '合成店家',
@@ -318,7 +340,7 @@ const seedSyntheticAliasRegressionHistory = () => {
       enabled, source_order
     ) VALUES
       ('menu-synthetic-flavor-old', 'version-synthetic-main-old', 'FLAVOR', 'BASE', '風味便當', 92, 1, 1),
-      ('menu-synthetic-flavor-plus', 'version-synthetic-main-old', 'FLAVOR', 'PLUS', '風味便當', 92, 1, 2),
+      ('menu-synthetic-flavor-plus', 'version-synthetic-main-old', 'FLAVOR', 'PLUS', '風味便當', 95, 1, 2),
       ('menu-synthetic-alt', 'version-synthetic-main-old', 'ALT-FLAVOR', 'BASE', 'A.風味便當', 92, 1, 3),
       ('menu-synthetic-box-old', 'version-synthetic-main-old', 'BOX', 'BASE', '方盒便當', 112, 1, 4),
       ('menu-synthetic-soup-old', 'version-synthetic-main-old', 'SOUP', 'BASE', '清湯', 51, 1, 5),
@@ -345,6 +367,9 @@ const seedSyntheticAliasRegressionHistory = () => {
   };
   addOrder('order-synthetic-old-flavor', '2030-03-13', '合成店家', '1樓', [
     { menuItemId: 'menu-synthetic-flavor-old', legacyItemId: 'FLAVOR', snapshot: '風味便當', quantity: 24, price: 92 }
+  ]);
+  addOrder('order-synthetic-unknown-variant', '2030-03-13', '合成店家', '5樓', [
+    { menuItemId: null, legacyItemId: 'FLAVOR', snapshot: '風味便當', quantity: 6, price: 92 }
   ]);
   addOrder('order-synthetic-summary', '2030-03-14', '合成店家', '2樓', [
     { menuItemId: 'menu-synthetic-flavor-new', legacyItemId: 'FLAVOR', snapshot: '風味便當', quantity: 3, price: 99 },
@@ -386,9 +411,9 @@ test('Worker APIs recompute synthetic summary and ranking by vendor, stable iden
     { lineUserId: 'synthetic-purchaser', displayName: '合成訂購者', now: new Date('2030-03-17T00:00:00.000Z') }
   );
   assert.equal(statsResult.response.status, 200);
-  assert.equal(statsResult.body.totalPortions, 44);
+  assert.equal(statsResult.body.totalPortions, 50);
   assert.equal(statsResult.body.totalOrderDays, 3);
-  assert.equal(statsResult.body.totalMealTypes, 6);
+  assert.equal(statsResult.body.totalMealTypes, 7);
   const sameVerifiedIdentity = statsResult.body.items.filter((item) => item.vendor === '合成店家'
     && item.variantKey === 'BASE'
     && item.name === 'A.風味便當'
@@ -402,6 +427,22 @@ test('Worker APIs recompute synthetic summary and ranking by vendor, stable iden
   assert.equal(statsResult.body.items.find((item) => item.vendor === '合成店家'
     && item.variantKey === 'PLUS').portions, 4);
   assert.equal(statsResult.body.items.find((item) => item.vendor === '另一合成店家').portions, 5);
+  const unresolvedVariant = statsResult.body.items.find((item) => item.resolutionStatus === 'ambiguous');
+  assert.equal(unresolvedVariant.name, '風味便當');
+  assert.equal(unresolvedVariant.portions, 6);
+  assert.equal(unresolvedVariant.variantKey, '');
+  assert.equal(unresolvedVariant.resolved, false);
+
+  const ambiguousSummary = await apiCall(
+    database,
+    '/api/admin/summary?date=2030-03-13',
+    { lineUserId: 'synthetic-admin', displayName: '合成管理者', now: new Date('2030-03-17T00:00:00.000Z') }
+  );
+  assert.equal(ambiguousSummary.response.status, 200);
+  assert.equal(ambiguousSummary.body.totalItems, 30);
+  assert.equal(ambiguousSummary.body.items.length, 2);
+  assert.deepEqual(ambiguousSummary.body.todayOrders.map((row) => row.item_name_resolved), [true, false]);
+  assert.equal(ambiguousSummary.body.todayOrders[1].item_name_resolution_status, 'ambiguous');
   assert.equal(database.get(`SELECT SUM(quantity) AS quantity, SUM(subtotal) AS amount FROM order_items`).quantity, beforeItems.quantity);
   assert.equal(database.get(`SELECT SUM(quantity) AS quantity, SUM(subtotal) AS amount FROM order_items`).amount, beforeItems.amount);
 });

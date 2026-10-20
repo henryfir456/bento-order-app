@@ -83,6 +83,8 @@ export const resolveEffectiveOrderItemName = ({
     const sameLegacyIdentity = legacyItemId
       ? catalog.filter((candidate) => text(candidate?.legacy_item_id || candidate?.item_id) === legacyItemId)
       : [];
+    const legacyVariants = new Set(sameLegacyIdentity.map((candidate) => text(candidate?.variant_key)));
+    ambiguous ||= !requestedVariant && legacyVariants.size > 1;
     const identityMatches = sameLegacyIdentity.filter((candidate) => (
       (hasStableIdentity || unitPrice === null || Number(candidate?.price) === unitPrice)
         && (!requestedVariant || text(candidate?.variant_key) === requestedVariant)
