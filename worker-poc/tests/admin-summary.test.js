@@ -75,7 +75,7 @@ test('admin and proxy summary views aggregate active orders without leaking memb
     { token: 'admin-token', lineUserId: 'admin-1' }
   );
   assert.equal(admin.response.status, 200);
-  assert.equal(admin.body.usersSummary.length, 4);
+  assert.equal(admin.body.usersSummary.filter((member) => !member.employeeId?.startsWith('TEST-PROTECTED-OWNER-')).length, 4);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ADMIN_SUMMARY_READ'").count, 1);
 
   const user = await call(
@@ -118,7 +118,7 @@ test('User, ProxyAdmin, and Admin all read order summaries while only Admin read
   assert.deepEqual(results.map(({ response }) => response.status), [200, 200, 200]);
   assert.deepEqual(results.map(({ body }) => body.requesterRole), ['User', 'ProxyAdmin', 'Admin']);
   assert.deepEqual(results.slice(0, 2).map(({ body }) => body.usersSummary), [[], []]);
-  assert.equal(results[2].body.usersSummary.length, 4);
+  assert.equal(results[2].body.usersSummary.filter((member) => !member.employeeId?.startsWith('TEST-PROTECTED-OWNER-')).length, 4);
 });
 
 test('historical summaries include completed orders while current summaries remain active-only', async () => {
@@ -156,7 +156,9 @@ test('member balances are Admin-only, token-derived, and mapped to public member
   assert.equal(admin.response.status, 200);
   assert.equal(admin.body.success, true);
   assert.equal(admin.body.requesterRole, 'Admin');
-  assert.deepEqual(admin.body.members.map((member) => ({
+  assert.deepEqual(admin.body.members
+    .filter((member) => !member.employeeId?.startsWith('TEST-PROTECTED-OWNER-'))
+    .map((member) => ({
     userId: member.userId,
     employeeId: member.employeeId,
     name: member.name,

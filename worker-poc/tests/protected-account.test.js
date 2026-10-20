@@ -264,7 +264,7 @@ test('employee login, onboarding, and old guest sessions cannot use protected em
 });
 
 test('a guest session employee ID cannot mask its linked protected canonical user', async () => {
-  const database = protectedDatabase({ lineUserId: null });
+  const database = protectedDatabase();
   const createMismatchedSession = () => createGuestSession(database, {
     userId: PROTECTED_USER_ID,
     employeeId: 'SYNTHETIC-OTHER',
@@ -299,7 +299,7 @@ test('a guest session employee ID cannot mask its linked protected canonical use
   assert.equal(bind.response.status, 403);
   assert.equal(bind.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
   assert.equal(JSON.stringify(bind.body).includes(PROTECTED_USER_ID), false);
-  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', PROTECTED_USER_ID).line_user_id, null);
+  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', PROTECTED_USER_ID).line_user_id, PROTECTED_LINE_ID);
 
   assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 3);
   assert.deepEqual(database.database.prepare('PRAGMA table_info(protected_account_access_audit)')
@@ -329,7 +329,7 @@ test('expired legacy guest sessions cannot resume protected-account access', asy
   assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', PROTECTED_USER_ID).line_user_id, PROTECTED_LINE_ID);
 });
 
-test('direct LINE sessions for inactive or unverified protected owners are denied', async (context) => {
+test('inactive or unverified protected owner mappings make the API unavailable before authentication', async (context) => {
   for (const [label, overrides] of [
     ['inactive', { active: 0 }],
     ['unverified', { verificationStatus: 'UNVERIFIED' }]
@@ -339,9 +339,9 @@ test('direct LINE sessions for inactive or unverified protected owners are denie
       const result = await call(database, '/api/me', {
         token: PROTECTED_TOKEN
       }, { fetchImpl: ownerFetch });
-      assert.equal(result.response.status, 403);
-      assert.equal(result.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
-      assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 1);
+      assert.equal(result.response.status, 503);
+      assert.equal(result.body.error, 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED');
+      assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 0);
     });
   }
 });
@@ -609,6 +609,45 @@ test('missing and ambiguous protected-account mapping ownership keeps the API un
     assert.equal(result.response.status, 503);
     assert.equal(result.body.error, 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED');
     assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 0);
+  });
+
+  await context.test('inactive, unverified, unbound, and invalid mapped owners are unavailable before business writes', async (context) => {
+    const invalidations = [
+      ['inactive', "UPDATE users SET active = 0 WHERE user_id = ?"],
+      ['unverified', "UPDATE users SET verification_status = 'UNVERIFIED' WHERE user_id = ?"],
+      ['unbound', 'UPDATE users SET line_user_id = NULL WHERE user_id = ?'],
+      ['invalid', "UPDATE users SET invalid_reason = 'INVALID_EMPLOYEE_ID' WHERE user_id = ?"]
+    ];
+
+    for (const [label, sql] of invalidations) {
+      await context.test(label, async () => {
+        const database = protectedDatabase();
+        database.run(sql, PROTECTED_USER_ID);
+        const before = {
+          users: database.get('SELECT COUNT(*) AS count FROM users').count,
+          ledger: database.get('SELECT COUNT(*) AS count FROM balance_ledger').count,
+          orders: database.get('SELECT COUNT(*) AS count FROM orders').count,
+          sessions: database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count,
+          audits: database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count
+        };
+
+        const response = await handleWithoutFixture(request('/api/auth/employee-guest', {
+          method: 'POST',
+          token: '',
+          body: { employeeId: 'SYNTHETIC-GENERAL-EMPLOYEE' }
+        }), { DB: database });
+
+        assert.equal(response.status, 503, label);
+        assert.deepEqual(await response.json(), { error: 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED' });
+        assert.deepEqual({
+          users: database.get('SELECT COUNT(*) AS count FROM users').count,
+          ledger: database.get('SELECT COUNT(*) AS count FROM balance_ledger').count,
+          orders: database.get('SELECT COUNT(*) AS count FROM orders').count,
+          sessions: database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count,
+          audits: database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count
+        }, before);
+      });
+    }
   });
 });
 

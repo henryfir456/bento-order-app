@@ -100,7 +100,8 @@ mapping table is intentionally empty in the migration: controlled setup must
 populate it only with the authorized value for the target environment. No
 mapping, user, account, order, or ledger row is seeded or changed by this
 migration. Until setup supplies exactly one `RESERVED_VENDOR_OWNER` mapping
-that resolves to exactly one canonical user, the formal Worker returns HTTP
+that resolves to exactly one active, valid, verified canonical user with an
+existing LINE binding, the formal Worker returns HTTP
 503 (`PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED`) for business API requests;
 health and CORS preflight remain available. A database read failure while
 checking readiness returns HTTP 503 (`PROTECTED_ACCOUNT_CONFIGURATION_UNAVAILABLE`).

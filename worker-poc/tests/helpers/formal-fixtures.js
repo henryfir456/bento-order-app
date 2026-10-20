@@ -34,11 +34,13 @@ export const handleFormalRequest = async (request, env, options = {}) => {
       const fixtureSuffix = randomUUID();
       entry.ownerId = `test-protected-owner-${fixtureSuffix}`;
       const employeeId = `TEST-PROTECTED-OWNER-${fixtureSuffix}`;
+      const lineUserId = `line-test-protected-owner-${fixtureSuffix}`;
       const createdAt = new Date().toISOString();
       await database.prepare(`
-        INSERT INTO users (user_id, employee_id, line_user_id, display_name, pickup_floor, active)
-        VALUES (?, ?, NULL, 'Synthetic protected configuration', '1樓', 0)
-      `).bind(entry.ownerId, employeeId).run();
+        INSERT INTO users (
+          user_id, employee_id, line_user_id, display_name, pickup_floor, active, verification_status
+        ) VALUES (?, ?, ?, 'Synthetic protected configuration', '1樓', 1, 'VERIFIED')
+      `).bind(entry.ownerId, employeeId, lineUserId).run();
       try {
         await database.prepare(`
           INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)

@@ -6,7 +6,12 @@ export const assertProtectedAccountMappingReady = async (database) => {
   try {
     const result = await database.prepare(`
       SELECT mapping.employee_id,
-             COUNT(u.user_id) AS owner_count
+             COUNT(u.user_id) AS owner_count,
+             SUM(CASE WHEN u.active = 1
+                       AND u.invalid_reason IS NULL
+                       AND u.verification_status = 'VERIFIED'
+                       AND length(trim(COALESCE(u.line_user_id, ''))) > 0
+                      THEN 1 ELSE 0 END) AS eligible_owner_count
       FROM protected_account_employee_mappings mapping
       LEFT JOIN users u
         ON UPPER(trim(u.employee_id)) = UPPER(trim(mapping.employee_id))
@@ -16,7 +21,9 @@ export const assertProtectedAccountMappingReady = async (database) => {
       LIMIT 2
     `).all();
     const rows = Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : []);
-    if (rows.length !== 1 || Number(rows[0].owner_count) !== 1) {
+    if (rows.length !== 1
+      || Number(rows[0].owner_count) !== 1
+      || Number(rows[0].eligible_owner_count) !== 1) {
       throw serviceUnavailable('PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED');
     }
   } catch (error) {

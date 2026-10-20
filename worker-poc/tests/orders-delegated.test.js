@@ -261,7 +261,9 @@ test('delegated target discovery is role-gated and returns only eligible targets
   );
   const adminBody = await adminResponse.json();
   assert.equal(adminResponse.status, 200);
-  assert.deepEqual(adminBody.targets.map((target) => target.userId), [
+  assert.deepEqual(adminBody.targets
+    .map((target) => target.userId)
+    .filter((userId) => !userId.startsWith('test-protected-owner-')), [
     'active-historical-canonical-target',
     'admin-non-line-target',
     'bound-survivor-with-history',
