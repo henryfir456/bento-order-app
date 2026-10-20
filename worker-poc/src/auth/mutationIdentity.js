@@ -11,6 +11,9 @@ export const currentIdentityPredicate = (identity, now = new Date()) => {
         WHERE current_identity.user_id = ?
           AND current_identity.line_user_id = ?
           AND current_identity.active = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = current_identity.user_id
+          )
       )`,
       params: [actor.userId, actor.lineUserId]
     };
@@ -31,6 +34,9 @@ export const currentIdentityPredicate = (identity, now = new Date()) => {
           AND current_session.revoked_at IS NULL
           AND current_session.expires_at > ?
           AND current_identity.active = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = current_identity.user_id
+          )
           AND (
             current_session.user_id = current_identity.user_id
             OR (

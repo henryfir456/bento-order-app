@@ -3,7 +3,7 @@ import { getBalanceHistory } from '../domain/ledger.js';
 import { getUserById, currentBalanceProjection } from '../db/users.js';
 import { appendAuditEvent, auditStatement } from '../db/audit.js';
 import { prepareStatement, runMutationBatch } from '../db/transactions.js';
-import { notFound } from '../http/errors.js';
+import { badRequest, conflict, notFound } from '../http/errors.js';
 import { adminBindEmployee } from '../domain/adminIdentity.js';
 import {
   getInvalidEmployeeRepairPreview,
@@ -26,7 +26,6 @@ import {
   listAdminMenuItemChanges,
   listAdminMenuVendors
 } from '../domain/menuItemChanges.js';
-import { badRequest } from '../http/errors.js';
 import { emptyResponse, jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
 import { ACTIONS, assertCan } from '../auth/permissions.js';
@@ -262,10 +261,17 @@ export const handleAdminRoute = async (request, env, {
     if (!displayName || displayName.length > 100) throw badRequest('DISPLAY_NAME_INVALID');
     const target = await getUserById(env.DB, userId);
     if (!target) throw notFound('USER_NOT_FOUND');
+    if (target.vendorPrincipal) throw notFound('USER_NOT_FOUND');
     if (target.displayName !== displayName) {
       const occurredAt = now.toISOString();
-      await runMutationBatch(env.DB, [
-        prepareStatement(env.DB, 'UPDATE users SET display_name = ?, updated_at = ? WHERE user_id = ?', [displayName, occurredAt, userId]),
+      const [updated] = await runMutationBatch(env.DB, [
+        prepareStatement(env.DB, `
+          UPDATE users SET display_name = ?, updated_at = ?
+          WHERE user_id = ?
+            AND NOT EXISTS (
+              SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+            )
+        `, [displayName, occurredAt, userId]),
         auditStatement(env.DB, {
           actorUserId: identity.authorizationActor.userId,
           actorAuthMode: identity.authorizationActor.authMode,
@@ -276,9 +282,15 @@ export const handleAdminRoute = async (request, env, {
           targetLineUserIdSnapshot: target.lineUserId,
           action: 'ADMIN_USER_NAME_UPDATED',
           metadata: { previousName: target.displayName, newName: displayName },
-          occurredAt
+          occurredAt,
+          onlyIfPriorMutation: true
         })
       ]);
+      if (Number(updated?.meta?.changes ?? updated?.changes ?? 0) !== 1) {
+        const current = await getUserById(env.DB, userId);
+        if (!current || current.vendorPrincipal) throw notFound('USER_NOT_FOUND');
+        throw conflict('USER_UPDATE_STALE');
+      }
     }
     return jsonResponse({ success: true, userId, displayName });
   }

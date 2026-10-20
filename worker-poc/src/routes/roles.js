@@ -42,6 +42,9 @@ export const assignRole = async (database, identity, targetUserInput, input, clo
   const update = prepareStatement(database, `
     UPDATE users SET role = ?, updated_at = ?
     WHERE user_id = ? AND invalid_reason IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+      )
   `, [role, occurredAt, existing.userId]);
   const audit = auditStatement(database, {
     auditId,

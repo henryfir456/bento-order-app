@@ -461,6 +461,9 @@ export const lineEmployeeBind = async (
           AND active = 1
           AND role = 'User'
           AND invalid_reason IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+          )
       `).bind(
         verifiedLineUserId,
         legacyEmployeeDisplayName(user.employeeId),
@@ -551,6 +554,9 @@ export const lineEmployeeBind = async (
           AND employee_id IS NULL
           AND active = 1
           AND invalid_reason IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+          )
       `).bind(
         employeeId,
         timestamp,
@@ -797,6 +803,9 @@ export const bindLineIdentity = async (
         updated_at = ?
     WHERE user_id = ? AND active = 1 AND line_user_id IS NULL
       AND invalid_reason IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+      )
   `, [
     verifiedLineUserId,
     legacyEmployeeDisplayName(inspected.user.employeeId),

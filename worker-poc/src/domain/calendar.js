@@ -119,6 +119,9 @@ export const cancelCalendarGroup = async (
           AND current_order.user_id = ?
           AND current_order.order_date = ?
           AND current_order.status = 'ACTIVE'
+          AND NOT EXISTS (
+            SELECT 1 FROM vendor_principals vp WHERE vp.user_id = current_order.user_id
+          )
       )`,
       params: [order.order_id, order.user_id, orderDate]
     };
@@ -165,6 +168,9 @@ export const cancelCalendarGroup = async (
       JOIN users u ON u.user_id = o.user_id
       WHERE o.order_id = ? AND o.user_id = ? AND o.order_date = ?
         AND o.status = 'ACTIVE'
+        AND NOT EXISTS (
+          SELECT 1 FROM vendor_principals vp WHERE vp.user_id = o.user_id
+        )
     `, [
       randomId('transition'),
       actor.userId,
@@ -183,6 +189,9 @@ export const cancelCalendarGroup = async (
           cancelled_auth_mode = ?,
           updated_at = ?
       WHERE order_id = ? AND user_id = ? AND order_date = ? AND status = 'ACTIVE'
+        AND NOT EXISTS (
+          SELECT 1 FROM vendor_principals vp WHERE vp.user_id = orders.user_id
+        )
     `, [
       actor.userId,
       actor.authMode,

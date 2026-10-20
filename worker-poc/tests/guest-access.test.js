@@ -21,6 +21,37 @@ const call = async (database, path, options = {}, runtime = {}) => {
   return { response, body: await response.json() };
 };
 
+const raceBeforePreparedRun = (database, sqlPattern, beforeRun) => {
+  let triggered = false;
+  return {
+    database: {
+      prepare(sql) {
+        const statement = database.prepare(sql);
+        if (!sqlPattern.test(sql)) return statement;
+        const wrap = (bound) => ({
+          async first() { return bound.first(); },
+          async all() { return bound.all(); },
+          async run() {
+            if (!triggered) {
+              triggered = true;
+              beforeRun();
+            }
+            return bound.run();
+          }
+        });
+        return {
+          bind: (...params) => wrap(statement.bind(...params)),
+          first: () => wrap(statement).first(),
+          all: () => wrap(statement).all(),
+          run: () => wrap(statement).run()
+        };
+      },
+      batch: (statements) => database.batch(statements)
+    },
+    triggered: () => triggered
+  };
+};
+
 const guestLogin = (database) => call(
   database,
   '/api/auth/employee-guest',
@@ -448,6 +479,72 @@ test('LINE employee resolution permanently binds an eligible unbound canonical o
   assert.equal(secondLogin.body.user.userId, USER_ID);
 });
 
+test('Vendor principal inserted after LINE employee-bind preflight blocks the write', async () => {
+  const database = seedGuestDatabase();
+  const race = raceBeforePreparedRun(
+    database,
+    /^\s*UPDATE users\s+SET line_user_id/i,
+    () => database.run(`
+      INSERT INTO vendor_principals (user_id, principal_role, status)
+      VALUES (?, 'Vendor', 'ACTIVE')
+    `, USER_ID)
+  );
+  const token = 'line-employee-bind-race-token';
+  const result = await call(race.database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token,
+    body: { employeeId: EMPLOYEE_ID }
+  }, { fetchImpl: profileFetch({
+    token,
+    lineUserId: 'line-employee-bind-race',
+    displayName: 'Synthetic race profile'
+  }) });
+
+  assert.equal(race.triggered(), true);
+  assert.equal(result.response.status, 409);
+  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', USER_ID).line_user_id, null);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_principals WHERE user_id = ?', USER_ID).count, 1);
+});
+
+test('Vendor principal inserted before LINE identity assigns an employee ID blocks the write', async () => {
+  const database = new SqliteD1();
+  const lineUserId = 'line-employee-id-race';
+  seedUser(database, {
+    userId: 'employee-id-race-user',
+    employeeId: null,
+    lineUserId,
+    displayName: 'Synthetic unbound LINE user',
+    role: 'User'
+  });
+  const race = raceBeforePreparedRun(
+    database,
+    /^\s*UPDATE users\s+SET employee_id/i,
+    () => database.run(`
+      INSERT INTO vendor_principals (user_id, principal_role, status)
+      VALUES ('employee-id-race-user', 'Vendor', 'ACTIVE')
+    `)
+  );
+  const token = 'line-employee-id-race-token';
+  const result = await call(race.database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token,
+    body: { employeeId: EMPLOYEE_ID }
+  }, { fetchImpl: profileFetch({
+    token,
+    lineUserId,
+    displayName: 'Synthetic race profile'
+  }) });
+
+  assert.equal(race.triggered(), true);
+  assert.equal(result.response.status, 409);
+  assert.equal(database.get(
+    'SELECT employee_id FROM users WHERE user_id = ?', 'employee-id-race-user'
+  ).employee_id, null);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM vendor_principals WHERE user_id = ?', 'employee-id-race-user'
+  ).count, 1);
+});
+
 test('LINE canonical user without employee ID must bind an employee before application access', async () => {
   const database = new SqliteD1();
   seedUser(database, {
@@ -699,6 +796,37 @@ test('LINE binding is canonical, idempotent, conflict-safe, and revokes every ol
   assert.equal(conflict.body.error, 'LINE_ALREADY_BOUND');
   assert.equal(conflictDatabase.get('SELECT line_user_id FROM users WHERE user_id = ?', USER_ID).line_user_id, null);
   assert.equal(conflictDatabase.get('SELECT revoked_at FROM employee_guest_sessions WHERE user_id = ?', USER_ID).revoked_at, null);
+});
+
+test('Vendor principal inserted before guest LINE-bind write blocks binding and session revocation', async () => {
+  const database = seedGuestDatabase();
+  const employeeLogin = await guestLogin(database);
+  const token = 'guest-line-bind-race-token';
+  const race = raceBeforePreparedRun(
+    database,
+    /^\s*UPDATE users\s+SET line_user_id/i,
+    () => database.run(`
+      INSERT INTO vendor_principals (user_id, principal_role, status)
+      VALUES (?, 'Vendor', 'ACTIVE')
+    `, USER_ID)
+  );
+  const result = await call(race.database, '/api/auth/line-bind', {
+    method: 'POST',
+    token,
+    headers: { 'X-Employee-Guest-Session': employeeLogin.body.token }
+  }, { fetchImpl: profileFetch({
+    token,
+    lineUserId: 'guest-line-bind-race',
+    displayName: 'Synthetic race profile'
+  }) });
+
+  assert.equal(race.triggered(), true);
+  assert.equal(result.response.status, 409);
+  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', USER_ID).line_user_id, null);
+  assert.equal(database.get(
+    'SELECT revoked_at FROM employee_guest_sessions WHERE user_id = ?', USER_ID
+  ).revoked_at, null);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_principals WHERE user_id = ?', USER_ID).count, 1);
 });
 
 test('SQL-only imported non-LINE canonical user converges through direct authenticated LINE binding', async () => {

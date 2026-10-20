@@ -105,3 +105,43 @@ test('role assignment cannot race an invalid employee repair', async () => {
   assert.equal(database.get('SELECT role FROM users WHERE user_id = ?', 'user-race-synthetic').role, 'User');
   assert.equal(database.get("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ROLE_UPDATED'").count, 0);
 });
+
+test('role assignment cannot race a Vendor principal becoming active', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'admin-vendor-race', role: 'Admin' });
+  seedUser(database, {
+    userId: 'vendor-role-race-target',
+    employeeId: 'SYNTHETIC-VENDOR-ROLE-RACE',
+    lineUserId: 'vendor-role-race-line',
+    role: 'User'
+  });
+  const originalBatch = database.batch.bind(database);
+  let principalInserted = false;
+  database.batch = (statements) => {
+    if (!principalInserted) {
+      database.run(`
+        INSERT INTO vendor_principals (user_id, principal_role, status)
+        VALUES ('vendor-role-race-target', 'Vendor', 'ACTIVE')
+      `);
+      principalInserted = true;
+    }
+    return originalBatch(statements);
+  };
+
+  const result = await call(
+    database,
+    '/api/admin/users/vendor-role-race-target/role',
+    { method: 'PUT', token: 'admin-vendor-race-token', body: { role: 'Admin' } },
+    { token: 'admin-vendor-race-token', lineUserId: 'admin-vendor-race' }
+  );
+
+  assert.equal(principalInserted, true);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'ROLE_UPDATE_STALE');
+  assert.equal(database.get(
+    'SELECT role FROM users WHERE user_id = ?', 'vendor-role-race-target'
+  ).role, 'User');
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ROLE_UPDATED'"
+  ).count, 0);
+});

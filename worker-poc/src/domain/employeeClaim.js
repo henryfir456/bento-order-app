@@ -206,6 +206,9 @@ const survivorGuardStatement = (database, {
     AND line_user_id = ?
     AND active = 1
     AND employee_id IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+    )
 `, [timestamp, survivorUserId, lineUserId]);
 
 const ownerReleaseStatement = (database, {
@@ -226,6 +229,9 @@ const ownerReleaseStatement = (database, {
     AND employee_id IS NOT NULL
     AND length(trim(employee_id)) > 0
     AND UPPER(trim(employee_id)) = ?
+    AND NOT EXISTS (
+      SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+    )
     AND (
       SELECT COUNT(*)
       FROM users
@@ -298,6 +304,9 @@ const ownerRetireStatement = (database, {
     AND line_user_id IS NULL
     AND employee_id IS NULL
     AND role NOT IN ('Admin', 'ProxyAdmin')
+    AND NOT EXISTS (
+      SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+    )
     AND EXISTS (
       SELECT 1
       FROM users AS survivor
@@ -322,6 +331,9 @@ const survivorAssignStatement = (database, {
     AND line_user_id = ?
     AND active = 1
     AND employee_id IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+    )
     AND EXISTS (
       SELECT 1
       FROM users AS retired_owner

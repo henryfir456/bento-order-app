@@ -94,6 +94,7 @@ export const adminBindEmployee = async (
   const timestamp = resolveClock(clock).toISOString();
   const target = await getUserById(database, targetId);
   if (!target) throw notFound('USER_NOT_FOUND');
+  if (target.vendorPrincipal) throw conflict('VENDOR_EMPLOYEE_BIND_FORBIDDEN');
   const submittedEmployeeIsProtected = await isProtectedEmployeeId(database, employeeId);
   if (submittedEmployeeIsProtected || isProtectedAccount(target)) {
     await auditProtectedAdminIntervention(database, {
@@ -132,6 +133,9 @@ export const adminBindEmployee = async (
     SET employee_id = ?, updated_at = ?
     WHERE user_id = ? AND employee_id IS NULL AND active = 1
       AND invalid_reason IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
+      )
   `, [employeeId, timestamp, target.userId]);
   const audit = auditStatement(database, auditInput({
     identity,

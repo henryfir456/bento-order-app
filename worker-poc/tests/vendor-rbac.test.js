@@ -214,6 +214,59 @@ test('employee balance ledger and top-up remain separate from Vendor accounts', 
   ).count, 0);
 });
 
+test('a Vendor principal inserted after top-up preflight blocks the employee ledger mutation', async () => {
+  const database = new SqliteD1();
+  seedUser(database, {
+    userId: 'synthetic-topup-race-target',
+    employeeId: 'SYNTHETIC-TOPUP-RACE',
+    lineUserId: 'synthetic-line-topup-race',
+    displayName: 'Synthetic top-up race target',
+    balance: 100,
+    role: 'User'
+  });
+  const racingDatabase = {
+    prepare: (...args) => database.prepare(...args),
+    batch(statements) {
+      addVendorPrincipal(database, { userId: 'synthetic-topup-race-target' });
+      return database.batch(statements);
+    }
+  };
+  const adminIdentity = {
+    actor: {
+      userId: 'synthetic-topup-race-admin',
+      employeeId: 'SYNTHETIC-TOPUP-RACE-ADMIN',
+      lineUserId: 'synthetic-topup-race-admin-line',
+      displayName: 'Synthetic top-up race admin',
+      role: 'Admin',
+      active: true,
+      authMode: 'line'
+    }
+  };
+
+  await assert.rejects(topUpBalance(racingDatabase, adminIdentity, {
+    targetUserId: 'synthetic-topup-race-target',
+    amount: 250,
+    topupMethod: 'CASH',
+    idempotencyKey: 'synthetic-topup-vendor-race'
+  }, new Date('2026-10-20T00:00:00.000Z')), {
+    code: 'VENDOR_BALANCE_FORBIDDEN'
+  });
+  assert.equal(database.get(
+    'SELECT balance FROM users WHERE user_id = ?', 'synthetic-topup-race-target'
+  ).balance, 100);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM balance_ledger WHERE user_id = ?',
+    'synthetic-topup-race-target'
+  ).count, 0);
+  assert.equal(database.get(
+    "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'BALANCE_TOP_UP'"
+  ).count, 0);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM idempotency_keys WHERE idempotency_key = ?',
+    'synthetic-topup-vendor-race'
+  ).count, 0);
+});
+
 test('suspended vendor principals and disabled vendor memberships fail closed', async () => {
   const database = new SqliteD1();
   seedVendor(database, { vendorId: 'synthetic-vendor-active', name: '合成店家啟用' });

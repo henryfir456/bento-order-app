@@ -298,6 +298,37 @@ test('claimable 139653 provisional owner transfers to LINE survivor and preserve
   ).count, 1);
 });
 
+test('a Vendor principal created after employee-claim preflight blocks the atomic transfer', async () => {
+  const database = createClaimFixture();
+  let principalInserted = false;
+  const racingDatabase = {
+    prepare: (...args) => database.prepare(...args),
+    batch(statements) {
+      if (!principalInserted) {
+        database.run(`
+          INSERT INTO vendor_principals (user_id, principal_role, status)
+          VALUES (?, 'Vendor', 'ACTIVE')
+        `, PROVISIONAL_ID);
+        principalInserted = true;
+      }
+      return database.batch(statements);
+    }
+  };
+
+  const result = await call(racingDatabase, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    body: { employeeId: EMPLOYEE_ID }
+  });
+
+  assert.equal(principalInserted, true);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.error, 'EMPLOYEE_ID_ALREADY_BOUND');
+  assertNoTransferSideEffects(database);
+  assert.equal(database.get(
+    'SELECT COUNT(*) AS count FROM vendor_principals WHERE user_id = ?', PROVISIONAL_ID
+  ).count, 1);
+});
+
 test('employee roster is ignored by claim and survivor verification status is preserved', async () => {
   const database = createClaimFixture({
     roster: [{
