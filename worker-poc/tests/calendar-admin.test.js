@@ -213,6 +213,19 @@ test('admin group cancellation rejects a pre-existing Vendor principal order wit
 
 test('admin group cancellation race with a Vendor principal leaves the whole group unchanged', async () => {
   const database = seedOrderDatabase({ balance: 100 });
+  const funded = await call(database, '/api/admin/balances/top-up', {
+    method: 'POST',
+    token: 'admin-token',
+    headers: { 'Idempotency-Key': 'synthetic-calendar-race-funding' },
+    body: {
+      targetUserId: 'user-2',
+      amount: 100,
+      topupMethod: 'CASH',
+      note: 'synthetic race fixture'
+    }
+  }, { token: 'admin-token', lineUserId: 'admin-1' });
+  assert.equal(funded.response.status, 200);
+
   const created = await callOrderRoute(
     database,
     '/api/orders',
@@ -228,6 +241,21 @@ test('admin group cancellation race with a Vendor principal leaves the whole gro
     userProfile('user-1', 'token-user-1')
   );
   assert.equal(created.response.status, 200);
+  const secondCreated = await callOrderRoute(
+    database,
+    '/api/orders',
+    {
+      method: 'POST',
+      body: {
+        targetDate: ORDER_DATE,
+        pickupFloor: '9樓',
+        items: [{ menu_item_id: 'menu-a', quantity: 1 }]
+      },
+      headers: { 'Idempotency-Key': 'synthetic-calendar-race-employee-order' }
+    },
+    userProfile('user-2', 'token-user-2')
+  );
+  assert.equal(secondCreated.response.status, 200);
 
   const originalBatch = database.batch.bind(database);
   let principalInserted = false;
@@ -255,7 +283,13 @@ test('admin group cancellation race with a Vendor principal leaves the whole gro
     'SELECT status FROM orders WHERE order_id = ?', created.body.orderId
   ).status, 'ACTIVE');
   assert.equal(database.get(
+    'SELECT status FROM orders WHERE order_id = ?', secondCreated.body.orderId
+  ).status, 'ACTIVE');
+  assert.equal(database.get(
     'SELECT balance FROM users WHERE user_id = ?', 'user-1'
+  ).balance, 20);
+  assert.equal(database.get(
+    'SELECT balance FROM users WHERE user_id = ?', 'user-2'
   ).balance, 20);
   assert.equal(database.get(
     "SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'REFUND'"

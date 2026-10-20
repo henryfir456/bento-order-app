@@ -14,6 +14,8 @@
 
 在後續獨立審查中，reviewer 於前一精確 head 重現另一個 P2：群組取消預讀 ACTIVE 訂單後，若 Vendor principal 在 batch 前出現，逐筆 Vendor fence 會跳過退款與取消，卻仍可能清空日曆並回報成功。現行修正遇到既存 Vendor 訂單時先回 409；寫入 batch 也在退款、狀態歷程、訂單取消、日曆設定與 audit 加入整組 Vendor-active fence，批次後再檢查並拒絕殘留的 Vendor ACTIVE 訂單。新增兩個合成 SQLite 測試覆蓋既存 principal 與預查後、batch 前插入 principal 的交錯，確認訂單、餘額、refund ledger、歷程、日曆設定及 audit 均不變。
 
+reviewer 隨後以一筆員工訂單加一筆競態成為 Vendor 的訂單，確認前版仍可能只寫入員工訂單的取消歷程／狀態，但不寫退款。現行修正也將整組 fence 明確加至每筆取消歷程與訂單 UPDATE；回歸資料包含這兩筆 ACTIVE 訂單，驗證任一 Vendor principal 出現時整批無部分退款、取消或 audit。
+
 每次 PR head 更新後，獨立 reviewer 與 CI 都必須對同一精確版本重新檢查；即時結果以 [PR #136](https://github.com/henryfir456/bento-order-app/pull/136) 為準。本文件不抄錄自我參照的 commit SHA。此前版本的 Actions 成功狀態不代表後續修正已驗證。
 
 ## 安全與資料範圍

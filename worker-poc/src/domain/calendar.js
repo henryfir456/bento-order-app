@@ -180,6 +180,12 @@ export const cancelCalendarGroup = async (
       WHERE o.order_id = ? AND o.user_id = ? AND o.order_date = ?
         AND o.status = 'ACTIVE'
         AND NOT EXISTS (
+          SELECT 1
+          FROM orders vendor_order
+          JOIN vendor_principals vp ON vp.user_id = vendor_order.user_id
+          WHERE vendor_order.order_date = ? AND vendor_order.status = 'ACTIVE'
+        )
+        AND NOT EXISTS (
           SELECT 1 FROM vendor_principals vp WHERE vp.user_id = o.user_id
         )
     `, [
@@ -190,6 +196,7 @@ export const cancelCalendarGroup = async (
       occurredAt,
       order.order_id,
       order.user_id,
+      orderDate,
       orderDate
     ]));
 
@@ -201,6 +208,12 @@ export const cancelCalendarGroup = async (
           updated_at = ?
       WHERE order_id = ? AND user_id = ? AND order_date = ? AND status = 'ACTIVE'
         AND NOT EXISTS (
+          SELECT 1
+          FROM orders vendor_order
+          JOIN vendor_principals vp ON vp.user_id = vendor_order.user_id
+          WHERE vendor_order.order_date = ? AND vendor_order.status = 'ACTIVE'
+        )
+        AND NOT EXISTS (
           SELECT 1 FROM vendor_principals vp WHERE vp.user_id = orders.user_id
         )
     `, [
@@ -209,6 +222,7 @@ export const cancelCalendarGroup = async (
       occurredAt,
       order.order_id,
       order.user_id,
+      orderDate,
       orderDate
     ]));
   }
