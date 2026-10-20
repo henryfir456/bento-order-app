@@ -215,6 +215,29 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
       assert.match(footprintText, /蕃茄鷹豆泥[\s\S]*?3 份/u);
       assert.match(footprintText, /C\.特餐[\s\S]*?3 份/u);
 
+      const vendorChart = JSON.parse(await evaluate('(()=>{const chart=document.querySelector("[aria-label*=店家份數甜甜圈圖]");return JSON.stringify({label:chart?.getAttribute("aria-label"),total:chart?.querySelector("[data-chart-total]")?.textContent?.trim(),details:document.querySelector("[aria-label=店家份數明細]")?.children.length})})()'));
+      assert.equal(vendorChart.label, '店家份數甜甜圈圖，共 7 份');
+      assert.equal(vendorChart.total, '7');
+      assert.ok(vendorChart.details > 0, 'Each vendor should have a readable details row.');
+
+      if (width === 375) {
+        await devtools.send('Emulation.setDeviceMetricsOverride', {
+          width: 320, height: 812, deviceScaleFactor: 1, mobile: true,
+          screenWidth: 320, screenHeight: 812
+        });
+        const longVendorName = 'SyntheticVendorNameWithoutSpaces'.repeat(20);
+        const narrowChart = JSON.parse(await evaluate(`(()=>{const section=document.querySelector('svg[aria-label*="店家份數甜甜圈圖"]')?.closest('section');const list=section?.querySelector('[aria-label="店家份數明細"]');const row=list?.querySelector('li');const name=row?.querySelector('div > span:first-child > span:last-child');const count=row?.querySelector('div > span:last-child');if(!section||!list||!row||!name||!count)return null;const original=name.textContent;name.textContent=${JSON.stringify(longVendorName)};const nameRect=name.getBoundingClientRect();const countRect=count.getBoundingClientRect();const metrics={viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,listWidth:list.clientWidth,listScrollWidth:list.scrollWidth,nameRight:nameRect.right,countLeft:countRect.left};name.textContent=original;return JSON.stringify(metrics)})()`));
+        assert.ok(narrowChart, 'The 320px chart should expose a vendor details row.');
+        assert.equal(narrowChart.viewport, 320);
+        assert.ok(narrowChart.documentWidth <= 320, 'A long synthetic vendor name must not widen the page beyond 320px.');
+        assert.ok(narrowChart.listScrollWidth <= narrowChart.listWidth, 'A long synthetic vendor name must wrap inside the details list.');
+        assert.ok(narrowChart.nameRight <= narrowChart.countLeft, 'A long synthetic vendor name must not overlap the portions count.');
+        await devtools.send('Emulation.setDeviceMetricsOverride', {
+          width, height, deviceScaleFactor: 1, mobile: true,
+          screenWidth: width, screenHeight: height
+        });
+      }
+
       await clickVisibleButton({ ariaLabel: '管理' });
       await clickVisibleButton({ text: '使用者管理' });
       await waitFor('document.querySelector("input[type=checkbox]") && document.body.innerText.includes("使用者管理中心")', '#111 member management');

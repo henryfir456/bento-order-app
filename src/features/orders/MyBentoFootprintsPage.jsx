@@ -22,9 +22,12 @@ const piePath = (startDegrees, endDegrees) => {
   return `M ${center} ${center} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY} Z`;
 };
 
-function VendorPieChart({ vendors }) {
+function VendorDonutChart({ vendors }) {
   const total = vendors.reduce((sum, item) => sum + Number(item.portions || 0), 0);
   if (!total) return null;
+  const formattedTotal = formatCount(total);
+  const chartLabel = `店家份數甜甜圈圖，共 ${formattedTotal} 份`;
+  const totalFontSize = Math.min(12, Math.max(6, 42 / (formattedTotal.length * 0.62)));
   let cursor = -90;
   const slices = vendors.map((vendor, index) => {
     const portions = Number(vendor.portions || 0);
@@ -33,6 +36,7 @@ function VendorPieChart({ vendors }) {
       ...vendor,
       color: PIE_COLORS[index % PIE_COLORS.length],
       percent: Math.round(portions / total * 100),
+      proportion: Math.min(100, Math.max(0, portions / total * 100)),
       path: vendors.length === 1 ? null : piePath(cursor, end)
     };
     cursor = end;
@@ -43,21 +47,32 @@ function VendorPieChart({ vendors }) {
     <h3 className="text-base font-bold text-[#2C4A3E]">店家份數分布</h3>
     <div className="mt-3 grid grid-cols-1 items-center gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
       <style>{`@keyframes footprints-pie-draw { from { stroke-dasharray: 0 302; } to { stroke-dasharray: 302 302; } }\n@media (prefers-reduced-motion: reduce) { .footprints-pie-reveal { animation: none !important; } }\n.footprints-pie-reveal { animation: footprints-pie-draw 650ms ease-out both; }`}</style>
-      <svg role="img" aria-label={`店家份數圓餅圖，共 ${formatCount(total)} 份`} viewBox="0 0 100 100" className="mx-auto h-44 w-44">
+      <svg role="img" aria-label={chartLabel} viewBox="0 0 100 100" className="mx-auto h-44 w-44">
+        <title>{chartLabel}</title>
         <defs><mask id="footprints-pie-mask"><circle className="footprints-pie-reveal" cx="50" cy="50" r="48" fill="none" stroke="white" strokeWidth="100" strokeDasharray="302 302" transform="rotate(-90 50 50)" /></mask></defs>
         <g mask="url(#footprints-pie-mask)">
           {slices.length === 1
             ? <circle cx="50" cy="50" r="48" fill={slices[0].color} />
             : slices.map((slice) => <path key={slice.name} d={slice.path} fill={slice.color} stroke="white" strokeWidth="0.7" />)}
         </g>
+        <circle cx="50" cy="50" r="28" fill="white" aria-hidden="true" />
+        <g aria-hidden="true" className="fill-[#2C4A3E] text-center">
+          <text data-chart-total="true" x="50" y="49" textAnchor="middle" dominantBaseline="middle" fontSize={totalFontSize} fontWeight="700">{formattedTotal}</text>
+          <text x="50" y="61" textAnchor="middle" dominantBaseline="middle" fontSize="5" fontWeight="500">總份數</text>
+        </g>
       </svg>
-      <ul className="space-y-2">
-        {slices.map((slice) => <li key={slice.name} className="flex items-center justify-between gap-3 text-sm">
-          <span className="flex min-w-0 items-center gap-2">
-            <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: slice.color }} />
-            <span className="truncate">{slice.name}</span>
-          </span>
-          <span className="shrink-0 tabular-nums text-slate-600">{formatCount(slice.portions)} 份 · {slice.percent}%</span>
+      <ul aria-label="店家份數明細" className="max-h-72 space-y-3 overflow-y-auto pr-1">
+        {slices.map((slice) => <li key={slice.name} className="min-w-0 space-y-1.5 text-sm">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <span className="flex min-w-0 flex-1 items-center gap-2">
+              <span aria-hidden="true" className="h-3 w-3 shrink-0 rounded-sm" style={{ backgroundColor: slice.color }} />
+              <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{slice.name}</span>
+            </span>
+            <span className="shrink-0 tabular-nums text-slate-600">{formatCount(slice.portions)} 份 · {slice.percent}%</span>
+          </div>
+          <div aria-hidden="true" className="ml-5 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full" style={{ width: `${slice.proportion}%`, backgroundColor: slice.color }} />
+          </div>
         </li>)}
       </ul>
     </div>
@@ -131,7 +146,7 @@ export default function MyBentoFootprintsPage({
         <SummaryCard label="不同餐點種類" value={data.totalMealTypes} />
       </div>
 
-      <VendorPieChart vendors={data.vendors || []} />
+      <VendorDonutChart vendors={data.vendors || []} />
 
       <section aria-label="餐點份數排行" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <h3 className="text-base font-bold text-[#2C4A3E]">餐點份數排行</h3>
