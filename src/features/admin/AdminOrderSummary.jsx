@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { formatSignedAmount } from '../orders/amountFormat.js';
 import { shiftDateInput } from '../../dateUtils';
-import { aggregateOrdersByItem, formatOrderItemLabel, groupOrdersByFloor, ORDER_SUMMARY_TABS } from './orderSummary.js';
+import { aggregateOrdersByItem, duplicateItemLabelKeys, formatOrderItemLabel, groupOrdersByFloor, ORDER_SUMMARY_TABS } from './orderSummary.js';
 
 export default function AdminOrderSummary({
   selectedOrderDate,
@@ -14,6 +14,7 @@ export default function AdminOrderSummary({
   const [activeTab, setActiveTab] = useState('detail');
   const totalOrdersByItem = aggregateOrdersByItem(adminSummary.todayOrders);
   const totalItemCount = totalOrdersByItem.reduce((sum, { quantity }) => sum + quantity, 0);
+  const duplicateLabels = duplicateItemLabelKeys(adminSummary.todayOrders);
 
   return (
 <>
@@ -111,6 +112,8 @@ export default function AdminOrderSummary({
                                       <div className="text-gray-600 mt-1">
                                         {formatOrderItemLabel({ itemName: o.display_item_name || o.item_name, vendor: o.item_vendor || o.vendor, variantKey: o.item_variant_key })} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
                                       </div>
+                                      {duplicateLabels.has(JSON.stringify([o.display_item_name || o.item_name || '', o.item_vendor || o.vendor || '', o.item_variant_key || ''])) && <p className="mt-1 text-[11px] text-slate-600">品項識別 {o.item_code || '不同'}</p>}
+                                      {o.item_name_resolved === false && <p className="mt-1 text-[11px] text-amber-800" title={o.item_name_resolution_status || 'not_found'}>菜單身份未確認，保留原始名稱且不與其他訂單合併</p>}
                                     </div>
                                     <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">
                                       {formatSignedAmount(o.subtotal)}
@@ -134,9 +137,9 @@ export default function AdminOrderSummary({
                               <section key={floor} className="space-y-2">
                                 <h4 className="text-sm font-bold text-emerald-800 border-b border-emerald-100 pb-1">{floor} 訂單</h4>
                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                  {items.map(({ itemName, identityKey, vendor, variantKey, quantity }) => (
+                                  {items.map(({ itemName, identityKey, vendor, variantKey, itemCode, showIdentityCode, quantity, resolved, resolutionStatus }) => (
                                     <div key={`${floor}-${identityKey}`} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
-                                      <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor, variantKey })}</span>
+                                      <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor, variantKey })}{showIdentityCode && <span className="mt-1 block text-[11px] font-medium text-slate-600">品項識別 {itemCode || '不同'}</span>}{resolved === false && <span className="mt-1 block text-[11px] font-medium text-amber-800" title={resolutionStatus}>身份未確認；原始名稱獨立保留</span>}</span>
                                       <span className="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-xs font-extrabold text-emerald-700 shadow-sm">
                                         × {quantity}
                                       </span>
@@ -157,9 +160,9 @@ export default function AdminOrderSummary({
                         ) : (
                           <>
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                              {totalOrdersByItem.map(({ itemName, identityKey, vendor, variantKey, quantity }) => (
+                              {totalOrdersByItem.map(({ itemName, identityKey, vendor, variantKey, itemCode, showIdentityCode, quantity, resolved, resolutionStatus }) => (
                                 <div key={identityKey} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
-                                  <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor, variantKey })}</span>
+                                  <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor, variantKey })}{showIdentityCode && <span className="mt-1 block text-[11px] font-medium text-slate-600">品項識別 {itemCode || '不同'}</span>}{resolved === false && <span className="mt-1 block text-[11px] font-medium text-amber-800" title={resolutionStatus}>身份未確認；原始名稱獨立保留</span>}</span>
                                   <span className="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-xs font-extrabold text-emerald-700 shadow-sm">
                                     × {quantity}
                                   </span>

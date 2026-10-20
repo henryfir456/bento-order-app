@@ -245,6 +245,9 @@ export const getOrderStatistics = async (
       identityKey: effectiveItem.identityKey,
       vendor: effectiveItem.vendor,
       variantKey: effectiveItem.variantKey,
+      itemCode: effectiveItem.itemCode,
+      resolved: effectiveItem.resolved,
+      resolutionStatus: effectiveItem.resolutionStatus,
       portions: 0
     };
     // Rows are ordered by effective order date, so retain the latest menu

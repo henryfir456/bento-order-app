@@ -131,18 +131,20 @@ test('all-time statistics exclude exact special snapshots, cancelled/refunded/fu
   assert.equal(body.endDate, '2026-02-01', 'UTC time is converted to the current Taipei date');
   assert.equal(body.totalPortions, 10);
   assert.equal(body.totalOrderDays, 3);
-  assert.equal(body.totalMealTypes, 4);
+  assert.equal(body.totalMealTypes, 5, 'unverified snapshot lines remain separate meal types');
   assert.deepEqual(Object.fromEntries(body.vendors.map(({ name, portions }) => [name, portions])), {
     店家舊: 4,
     店家甲: 3,
     店家乙: 3
   });
-  const topItem = body.items.find(({ name }) => name === '便當甲');
-  assert.equal(topItem.name, '便當甲');
-  assert.equal(topItem.portions, 3);
-  assert.equal(topItem.vendor, '店家甲');
-  assert.equal(topItem.variantKey, '');
-  assert.ok(topItem.identityKey);
+  const matchingSnapshots = body.items.filter(({ name }) => name === '便當甲');
+  assert.equal(matchingSnapshots.length, 2);
+  assert.deepEqual(matchingSnapshots.map((item) => item.portions), [2, 1]);
+  assert.equal(matchingSnapshots[0].vendor, '店家甲');
+  assert.equal(matchingSnapshots[0].variantKey, '');
+  assert.notEqual(matchingSnapshots[0].identityKey, matchingSnapshots[1].identityKey);
+  assert.ok(matchingSnapshots.every((item) => item.resolved === false
+    && item.resolutionStatus === 'not_found'));
   assert.ok(!body.items.some(({ name }) => ['手續費減免', '免費加飯', '1元', '退款餐點', '未來餐點', '取消餐點', '其他人的便當'].includes(name)));
 });
 
@@ -154,7 +156,7 @@ test('year and month statistics use server-authoritative Taipei date boundaries'
   assert.equal(year.body.endDate, '2026-02-01');
   assert.equal(year.body.totalPortions, 6);
   assert.equal(year.body.totalOrderDays, 2);
-  assert.equal(year.body.totalMealTypes, 3);
+  assert.equal(year.body.totalMealTypes, 4, 'the two unverified January lines remain separate identities');
   assert.equal(month.body.startDate, '2026-02-01');
   assert.equal(month.body.endDate, '2026-02-01');
   assert.equal(month.body.totalPortions, 3);

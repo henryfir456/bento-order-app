@@ -30,12 +30,16 @@ value for this terminal only and do not change Windows user or machine settings.
 ### #103: Admin order summary names
 
 1. Open 管理 → 訂單總覽.
-2. Check 明細, 樓層數, and 總數. Each view should show the effective display
-   name and keep different vendor / variant identities separate.
+2. Check 明細, 樓層數, and 總數. The synthetic verified menu rows should show
+   the effective display name and keep different vendor / variant identities
+   separate. Worker rows without a matching menu ID or legacy item ID retain
+   their snapshot and line identity; names and prices alone do not identify a
+   meal.
 3. The synthetic rows include `E.風味餐`, `S.小而美`, and `C.特餐(半飯)`.
    The two `E.風味餐` rows belong to the same identity across different floors.
 4. The API contract test confirms `item_name` remains the original order
-   snapshot while `display_item_name` carries the effective label.
+   snapshot while `display_item_name` carries the effective label for verified
+   identities.
 
 ### #108: Bento footprints and statistics
 
@@ -62,6 +66,25 @@ value for this terminal only and do not change Windows user or machine settings.
 
 Restart the Vite server or reload the page to reset the mock data before
 repeating #111.
+
+## Automated Worker API and isolated D1 coverage
+
+The declared `npm test --prefix worker-poc` suite applies the formal migration
+chain to an in-memory SQLite database and invokes the actual
+`handleFormalRequest` Worker entrypoint with synthetic LINE profile responses.
+It exercises `/api/admin/summary`, `/api/orders/statistics`, the invalid
+employee preview/repair/audit endpoints, authorization guards, and preservation
+of order, ledger, and balance records. Synthetic regression data verifies the
+summary total and effective label against a renamed menu version, combines
+historical and current portions only when vendor, legacy identity, and variant
+match, and keeps a same-label different identity, vendor, or variant separate.
+Its dates, quantities, and prices are synthetic and do not reproduce the
+user's screenshot values.
+
+This is Worker route + isolated SQLite D1 integration, not a Cloudflare
+Workers runtime test. The Chromium UAT above drives the local UI through the
+in-memory Mock API; it is separate UI coverage and is not evidence for the
+Worker API result.
 
 ## Isolated Cloudflare test Worker
 

@@ -15,6 +15,14 @@
 
 - Add an isolated browser-memory mock fixture and Windows local UAT steps for #103, #108, and #111. Mock repair changes are discarded on reload.
 
+## [0.17.3] - 2026-10-20
+
+### Fixed
+
+- Keep unresolved order snapshot lines in separate identity groups and expose a diagnostic in order summaries and footprints instead of merging by matching text (Issues #103 and #108).
+- Recompute footprint portions, ranks, and meal-type counts from the effective menu identity, vendor, and variant; merge renamed entries across menu versions only when their stable identity is verified (Issue #108).
+- Preserve each source order-name snapshot; after menu identity is verified, show the same effective name across detail, floor, and total views (Issue #103).
+
 ## [0.17.2] - 2026-10-17
 
 ### Added

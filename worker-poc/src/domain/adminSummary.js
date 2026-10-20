@@ -82,7 +82,9 @@ export const getAdminSummary = async (
       item_identity_key: effectiveItem.identityKey,
       item_vendor: effectiveItem.vendor,
       item_variant_key: effectiveItem.variantKey,
+      item_code: effectiveItem.itemCode,
       item_name_resolved: effectiveItem.resolved,
+      item_name_resolution_status: effectiveItem.resolutionStatus,
       quantity: Number(row.quantity),
       unit_price: Number(row.unit_price),
       subtotal: Number(row.subtotal),
@@ -105,6 +107,9 @@ export const getAdminSummary = async (
       display_item_name: order.display_item_name,
       item_vendor: order.item_vendor,
       item_variant_key: order.item_variant_key,
+      item_code: order.item_code,
+      item_name_resolved: order.item_name_resolved,
+      item_name_resolution_status: order.item_name_resolution_status,
       quantity: 0,
       totalAmount: 0
     };
