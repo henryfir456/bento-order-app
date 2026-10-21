@@ -30,7 +30,7 @@ The known MXC `D:\` launcher was not invoked in this round because the user has 
 - `PII_SCAN`: `PASS` for the added diff and all new text artifacts; `git diff --check`: `PASS`.
 - Issue, PR, commit, tests, and runbook use synthetic identities or generic identifiers. No real employee ID, LINE ID, credential, or payment data is included.
 - The user-provided formal D1 backup/export, R2 readback/hash, SQLite integrity, foreign-key, eight-table count, and Bucket Lock/Lifecycle checks were treated as `USER_EXECUTION_VERIFIED` and reused. Their raw source files were not available in this workspace and were not recopied into GitHub.
-- Independent reviewer: review is required on the final PR head; the exact head and review submission are recorded by GitHub on PR #144. No result is claimed here before that submission exists.
+- Independent review: the reviewer found a false-positive risk in the synthetic `VERIFIED` conversion test; the test now expands the conversion SQL for the same canonical owner row. The reviewer rechecked the corrected code at the current PR head and returned `PASS` with no remaining actionable findings. This retrospective-only update does not change executable code.
 
 ## 驗證
 
