@@ -795,6 +795,17 @@ test('post-cutoff cancellation creates a traceable immutable revision and does n
     now: afterCutoff
   });
   assert.equal(payment.response.status, 201, JSON.stringify(payment.body));
+  const secondPayment = await call(database, '/api/admin/vendor-payments', {
+    method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+    body: {
+      vendorId: 'synthetic-vendor-a', amountTwd: 50, transferredOn: '2026-10-20',
+      actualTransferDone: true, detailsReviewed: true,
+      idempotencyKey: 'synthetic-postcutoff-transfer-second-allocation',
+      allocations: [{ serviceDate: '2026-10-20', amountTwd: 50 }]
+    },
+    now: afterCutoff
+  });
+  assert.equal(secondPayment.response.status, 201, JSON.stringify(secondPayment.body));
   database.run("UPDATE orders SET status = 'CANCELLED', updated_at = '2026-10-20T03:01:00.000Z' WHERE order_id = 'synthetic-order-post-cutoff'");
   database.run(`
     INSERT INTO order_status_history (
@@ -852,7 +863,7 @@ test('post-cutoff cancellation creates a traceable immutable revision and does n
   assert.equal(adjusted.body.days[0].revision, 2);
   assert.equal(adjusted.body.days[0].amountTwd, 0);
   assert.equal(adjusted.body.days[0].changeReason, 'ORDER_CANCELLATION_REFUND');
-  assert.equal(adjusted.body.days[0].settlement.overAllocatedTwd, 100);
+  assert.equal(adjusted.body.days[0].settlement.overAllocatedTwd, 150);
   const correction = await call(database,
     `/api/admin/vendor-payment-allocations/${allocationId}/adjustments`, {
       method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
@@ -860,13 +871,21 @@ test('post-cutoff cancellation creates a traceable immutable revision and does n
       now: new Date('2026-10-20T03:03:00.000Z')
     });
   assert.equal(correction.response.status, 200, JSON.stringify(correction.body));
+  const secondReversal = await call(database,
+    `/api/admin/vendor-payments/${secondPayment.body.paymentId}/reversals`, {
+      method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+      body: { confirmed: true, reason: 'Synthetic second transfer cancellation reconciliation' },
+      now: new Date('2026-10-20T03:03:30.000Z')
+    });
+  assert.equal(secondReversal.response.status, 200, JSON.stringify(secondReversal.body));
+  assert.equal(secondReversal.body.status, 'REVERSED');
   const corrected = await call(database, '/api/vendor/orders?month=2026-10', {
     token: 'synthetic-vendor-token', lineUserId: 'synthetic-line-vendor-a',
     now: new Date('2026-10-20T03:04:00.000Z')
   });
   assert.equal(corrected.body.days[0].settlement.overAllocatedTwd, 0);
   assert.equal(corrected.body.days[0].settlement.registeredTransferTwd, 0);
-  assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_transfer_allocation_events').count, 1);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_transfer_allocation_events').count, 2);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_day_snapshots').count, 2);
   assert.throws(() => database.run("UPDATE vendor_day_snapshots SET amount_twd = 0"), /VENDOR_SNAPSHOT_APPEND_ONLY/);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
