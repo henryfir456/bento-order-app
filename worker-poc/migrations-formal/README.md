@@ -40,14 +40,15 @@ The migration files in this checkout are listed in execution order:
 0016_announcement_user_preferences.sql # per-user read/dismissal state and new-announcement popup eligibility
 0017_protected_account_auth_audit.sql # controlled protected-account mapping and deidentified append-only denials
 0018_vendor_principals_and_memberships.sql # separate Vendor login principals and canonical vendor scopes
-0019_vendor_order_settlements.sql # append-only daily order snapshots and manual bank-transfer allocations
+0019_vendor_order_settlements.sql # canonical order vendor ID column and append-only daily settlement records
+0020_safe_vendor_order_identity_resolution.sql # reviewed historical menu-version mapping and non-destructive vendor scoping
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all twenty files in order. Migration 0003 defaults existing users to
+all twenty-one files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`
@@ -117,20 +118,25 @@ scope requires an active membership plus an enabled `vendors` row. The Worker
 rejects Vendor principals on employee_guest sessions, employee order targets,
 and employee balance mutations. It does not map real accounts or populate
 memberships.
-Migration 0019 adds a canonical `orders.vendor_id` reference, mapping existing
-and newly inserted order rows from server-owned vendor metadata (including
-the known `合十` legacy alias) without changing order amounts or snapshots.
-Vendor order reads then filter by the authenticated membership's stable vendor
-ID. It also adds append-only, vendor-scoped daily snapshots, transfer
-registrations, date allocations, allocation corrections, and vendor
-acknowledgement/dispute/resolution/reversal history. Snapshot and payment
-records never use the employee balance ledger, store buyer identities, or
-accept bank account numbers or payment images. Allocations are constrained to
-integer TWD, the registered transfer amount, and the day's current receivable;
-later order changes create a new snapshot revision and require an explicit
-allocation correction or whole-transfer reversal to reconcile an
-over-allocation. Reversal atomically appends allocation offsets and a terminal
-payment event; it does not delete or rewrite the original transfer.
+Migration 0019 adds a nullable `orders.vendor_id` reference and the append-only
+vendor settlement records. It deliberately does not backfill historical orders
+or infer identity from `orders.vendor` text or aliases. Migration 0020 adds an
+append-only reviewed mapping from exact `menu_version_id` plus its effective
+date to a canonical `vendor_id`; vendor order and settlement reads include a
+historical order only when every line has a matching menu item/version, the
+mapping is current for that date, and all lines resolve to one vendor. Missing,
+ambiguous, mixed-vendor, mismatched-code, or future-effective rows remain
+unresolved. New Worker-created orders write `vendor_id` directly and are
+recorded in an immutable assignment table. Migration 0020 also removes the
+name/alias-driven triggers from the earlier 0019 revision without rewriting
+existing order rows. Daily snapshots, transfer registrations, date allocations,
+allocation corrections, and vendor acknowledgement/dispute/resolution/reversal
+history remain append-only and separate from the employee ledger. Allocations
+are constrained to integer TWD, the registered transfer amount, and the day's
+current resolved receivable; later order changes create a new snapshot revision
+and require an explicit allocation correction or whole-transfer reversal to
+reconcile an over-allocation. Reversal appends allocation offsets and a
+terminal payment event; it does not delete or rewrite the original transfer.
 Formal D1 application requires the later reviewed migration and backup gates;
 this repository migration is not evidence that any remote schema changed.
 
