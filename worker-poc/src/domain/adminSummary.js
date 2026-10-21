@@ -16,8 +16,8 @@ const memberRows = async (database, { includeInvalid = false } = {}) => {
            ${currentBalanceProjection('u')} AS balance,
            CASE WHEN EXISTS (
              SELECT 1
-             FROM protected_account_employee_mappings mapping
-             WHERE UPPER(trim(mapping.employee_id)) = UPPER(trim(u.employee_id))
+             FROM protected_account_user_mappings mapping
+             WHERE mapping.user_id = u.user_id
            ) THEN 1 ELSE 0 END AS is_protected_account,
            CASE WHEN u.role = 'User' AND vp.user_id IS NOT NULL
              THEN 'Vendor' ELSE u.role END AS role,

@@ -2,7 +2,6 @@ import { getUserById, getUserByLineId } from '../db/users.js';
 import { appendAuditEvent } from '../db/audit.js';
 import { forbidden } from '../http/errors.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
-import { VERIFICATION_STATUSES } from './permissions.js';
 
 export {
   hasAnyProtectedEmployeeId,
@@ -77,12 +76,10 @@ const allRows = (result) => (
  */
 export const requireProtectedLineOwner = async (database, lineUserId, clock = new Date()) => {
   const owners = allRows(await database.prepare(`
-    SELECT u.user_id
-    FROM protected_account_employee_mappings mapping
-    LEFT JOIN users u
-      ON UPPER(trim(u.employee_id)) = UPPER(trim(mapping.employee_id))
+    SELECT mapping.user_id
+    FROM protected_account_user_mappings mapping
     WHERE mapping.account_key = 'RESERVED_VENDOR_OWNER'
-    ORDER BY u.user_id
+    ORDER BY mapping.user_id
     LIMIT 2
   `).all());
   if (owners.length !== 1) {
@@ -97,7 +94,6 @@ export const requireProtectedLineOwner = async (database, lineUserId, clock = ne
   if (!user
     || !user.active
     || user.invalidReason
-    || user.verificationStatus !== VERIFICATION_STATUSES.VERIFIED
     || user.lineUserId !== lineUserId
     || !lineOwner
     || lineOwner.userId !== user.userId) {
@@ -107,9 +103,7 @@ export const requireProtectedLineOwner = async (database, lineUserId, clock = ne
         ? 'PROTECTED_ACCOUNT_INACTIVE'
         : user.invalidReason
           ? 'PROTECTED_ACCOUNT_INVALID'
-          : user.verificationStatus !== VERIFICATION_STATUSES.VERIFIED
-            ? 'PROTECTED_ACCOUNT_UNVERIFIED'
-            : 'LINE_OWNER_MISMATCH';
+          : 'LINE_OWNER_MISMATCH';
     return denyProtectedAccountAccess(database, { reason, clock });
   }
   return user;

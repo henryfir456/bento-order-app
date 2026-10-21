@@ -94,31 +94,39 @@ Migration 0016 leaves existing announcements ineligible for automatic popups,
 adds an eligibility timestamp for newly created announcements, and stores
 read and popup-dismissal timestamps independently per canonical user and
 announcement. It does not seed user preference rows.
-Migration 0017 adds a protected-account mapping table keyed by a non-sensitive
-account key, plus a separate append-only audit for denied access. The mapping
-is used by the Worker to classify the reserved account without embedding its
-employee login value in source code. The audit
-stores only a random event ID, authentication mode, constrained reason code,
-and timestamp; it has no user, employee, or LINE identity columns. The
-mapping table is intentionally empty in the migration: controlled setup must
-populate it only with the authorized value for the target environment. No
-mapping, user, account, order, or ledger row is seeded or changed by this
-migration. Until setup supplies exactly one `RESERVED_VENDOR_OWNER` mapping
-that resolves to exactly one active, valid, verified canonical user with an
-existing LINE binding, the formal Worker returns HTTP
-503 (`PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED`) for business API requests;
-health and CORS preflight remain available. A database read failure while
-checking readiness returns HTTP 503 (`PROTECTED_ACCOUNT_CONFIGURATION_UNAVAILABLE`).
-This configuration is a deployment prerequisite, and ordinary employee login
-and onboarding work once a valid mapping is configured. It follows the
+Migration 0017 adds `protected_account_user_mappings`, keyed by a non-sensitive
+account key and the canonical `users.user_id`, plus a separate append-only
+audit for denied access. `RESERVED_VENDOR_OWNER` protects the legacy LINE
+owner from Issue #122; it is not a generic Vendor-principal mapping. The
+canonical mapping preserves identity if an employee identifier changes. The
+audit stores only a random event ID, authentication mode, constrained reason
+code, and timestamp; it has no user, employee, or LINE identity columns. The
+mapping table remains empty after migration; controlled setup populates it
+only after owner authorization is established. No mapping, user, account,
+order, or ledger row is seeded or changed by migration 0017. A missing mapping
+does not globally return 503 or block unrelated business APIs. The formal
+Worker cutover must not proceed until the controlled conversion has populated
+the owner mapping; the runbook enforces that ordering before the new Worker is
+deployed. After setup, `users.user_id` is the canonical protected identity.
+`UNVERIFIED` alone does not reject the confirmed existing LINE owner, and no
+migration or conversion changes verification status. It follows the
 announcement-preference schema in migration 0016.
-Migration 0018 adds an additive Vendor principal and multi-vendor membership
-schema without changing `users.role` or assigning any identity. Worker role
-projection derives `Vendor` only from a canonical Vendor principal, and vendor
-scope requires an active membership plus an enabled `vendors` row. The Worker
-rejects Vendor principals on employee_guest sessions, employee order targets,
-and employee balance mutations. It does not map real accounts or populate
-memberships.
+
+Migration 0018 adds a separate nullable `vendor_principals.vendor_login_id`,
+case-normalized uniqueness and employee-ID collision guards, plus canonical
+Vendor memberships. Vendor login aliases are distinct from
+`users.employee_id`, `users.role`, and `vendors.vendor_id`; existing users
+remain `User` in storage. Worker role projection derives `Vendor` only from a
+Vendor principal, and API scope requires that same canonical user to have an
+active membership and the corresponding enabled `vendors` row. The Worker
+rejects Vendor principals and Vendor login aliases on employee_guest sessions,
+employee order targets, and employee balance mutations. Migration 0018 does
+not assign any identity or populate memberships. 禾拾's login alias is
+set only by the controlled, rerunnable conversion procedure in
+[`docs/VENDOR_OWNER_IDENTITY_RUNBOOK.md`](../../docs/VENDOR_OWNER_IDENTITY_RUNBOOK.md);
+that procedure preserves the canonical user ID, existing LINE binding,
+the existing employee ID, `role = User`, verification status, historical orders,
+ledger and payment records.
 Migration 0019 adds a nullable `orders.vendor_id` reference and the append-only
 vendor settlement records. It deliberately does not backfill historical orders
 or infer identity from `orders.vendor` text or aliases. Migration 0020 adds an

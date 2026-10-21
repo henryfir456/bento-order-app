@@ -62,8 +62,8 @@ const userColumns = (alias = 'u') => `
   ${currentBalanceProjection(alias)} AS balance,
   CASE WHEN EXISTS (
     SELECT 1
-    FROM protected_account_employee_mappings mapping
-    WHERE UPPER(trim(mapping.employee_id)) = UPPER(trim(${alias}.employee_id))
+    FROM protected_account_user_mappings mapping
+    WHERE mapping.user_id = ${alias}.user_id
   ) THEN 1 ELSE 0 END AS is_protected_account,
   CASE WHEN ${alias}.role = 'User' AND vp.user_id IS NOT NULL
     THEN 'Vendor' ELSE ${alias}.role END AS role,
@@ -102,6 +102,19 @@ export const getUserByEmployeeId = async (database, employeeId) => {
     FROM users u
     ${userJoins('u')}
     WHERE UPPER(trim(u.employee_id)) = ? AND length(trim(u.employee_id)) > 0
+    LIMIT 1
+  `).bind(lookupKey).first();
+  return toUser(row);
+};
+
+export const getUserByVendorLoginId = async (database, vendorLoginId) => {
+  const lookupKey = String(vendorLoginId || '').trim().toUpperCase();
+  const row = await database.prepare(`
+    SELECT ${userColumns('u')}
+    FROM users u
+    ${userJoins('u')}
+    WHERE UPPER(trim(vp.vendor_login_id)) = ?
+      AND vp.principal_role = 'Vendor'
     LIMIT 1
   `).bind(lookupKey).first();
   return toUser(row);
