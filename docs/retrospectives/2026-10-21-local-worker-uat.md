@@ -1,6 +1,6 @@
 # 2026-10-21 — Isolated local Worker UAT for formal-release drift
 
-- Repository / PR / commit: henryfir456/bento-order-app; branch is created from current main after local verification. PR URL and exact reviewed head will be added after GitHub creation.
+- Repository / PR: henryfir456/bento-order-app; [PR #141](https://github.com/henryfir456/bento-order-app/pull/141) is based on the currently verified main. Its URL identifies the exact final reviewed head.
 - Goal / changes: provide a runnable, isolated Worker + D1 alternative after the Cloudflare connector's previously reported internal error. Added synthetic local login, Admin/User/Vendor fixtures, all local schema migrations through 0019, Windows start/stop scripts, a real HTTP acceptance runner, and a development-only frontend login.
 - Delivery status: PARTIAL pending PR review and merge. The local Worker and D1 were exercised over HTTP; the Cloudflare test Worker and formal Worker were not deployed.
 
