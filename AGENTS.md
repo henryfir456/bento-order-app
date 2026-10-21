@@ -55,6 +55,17 @@
 - 本機前端連正式 Worker **不代表使用測試資料庫**；正式資料寫入（含 LINE 綁定移轉）需當次明確授權，缺合法 LINE Admin session 不得直接 D1 改寫繞過。
 - 強制閱讀並遵循 [docs/FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md](docs/FRONTEND_LOCAL_ACCEPTANCE_AND_RELEASE.md) 的階段、環境與交付模板；任何其他文件的 Netlify Gate 敘述依此區分發布責任，不改變 Worker fail-closed 安全規則。
 
+## Cloud／Windows 本機執行環境分流（強制；2026-10-21）
+本節是部署路徑選擇與故障處理規則，不構成新的正式資料寫入、Cloudflare 授權或自動部署核准；必須同時遵守本檔其餘安全 Gate、`docs/WORKER_DEPLOYMENT_POLICY.md`、`docs/FORMAL_WORKER_RELEASE.md`、`docs/DEPLOYMENT_METHODS_AND_LESSONS.md`。
+
+1. **環境辨識（每輪開始一次）**：明確標示 `CODEX_CLOUD`、`WINDOWS_LOCAL` 或 `OTHER/UNKNOWN`，以實際 OS、執行器、網路政策與工具證據判定；不得用平台名稱推定具 Cloudflare 權限。分別記錄 GitHub 讀寫、Cloudflare connector、Wrangler CLI、網路 egress、授權身分、正式資源可讀性，區分 `NETWORK_BLOCKED`／`AUTH_REQUIRED`／`CONNECTOR_ERROR`／`TOOL_UNAVAILABLE`／`GATE_BLOCKED`。
+2. **Codex Cloud**：優先完成程式、測試、Review、PR、合併與非正式 UAT。只有實測 Cloudflare API／Wrangler 在授權範圍可用且全部正式資料與發布 Gate 通過，才可走直接發布；shell TCP 失敗／HTTP 000 不是 Cloudflare 認證失敗，connector internal error 也不等於 API 永久不可用。最多一次有新證據的交叉能力測試，同一原因不得跨輪重試、繞過 proxy/allowlist，或要求使用者重複授權。
+3. **Cloudflare Workers Builds（雲端無需 Codex egress 的候選方案）**：這是 Cloudflare 原生 Git 整合，**不是 GitHub Actions**。僅在核對既有 Worker `bento-api-poc` 是否已綁定 repo、production branch=`main`、root/config=`worker-poc/wrangler.jsonc`、正確 build/deploy command、Build Token 最小權限及 D1/Secrets/Cron/CORS/compatibility 保留後，才能選用。**禁止因本條文字而直接開啟無保護的 main 自動部署**：必須先設計並驗證部署前 Gate（最新 main SHA、完整 bundle、正式備份/還原、migration 與 owner mapping、release guard），確保 Build 在 Gate 未通過時不會執行 deploy。建立 Git 連線或修改 Cloudflare production Builds 設定屬正式部署控制面變更，必須有當次明確授權與變更證據；未確認即 `NOT CONFIGURED/NOT VERIFIED`。Git push、Cloudflare Build Success、Preview、合併 main 都不等於正式部署。
+4. **Windows 本機**：若已具備合法網路路徑、Wrangler/Cloudflare API 授權及正式發布 Gate，使用 `docs/FORMAL_WORKER_RELEASE.md` 規定的直接發布；不可把本機 Mock、ADB reverse 或瀏覽器 HTTP 200 當正式證據。Cloud 不可連線時可以交付可執行、無密鑰的本機 runbook／命令，但不得把未在實際 Windows 執行的步驟記為 PASS。
+5. **路徑選擇**：先查目前已配置且可驗證的直接 API/CLI 或受控 Cloudflare Builds；若直接通道受阻，再**評估**原生 Builds，不能為了避開 Gate 任意啟用；再不行則移交已授權的本機/其他執行環境。同一失敗路徑不無限重試，也不創建新的 Mock UAT 取代正式部署。嚴禁 GitHub Actions 部署正式 Worker。
+6. **正式安全界線**：任何路徑均須先滿足正式 D1 備份 readback/hash、隔離還原、migration 順序與相容性、0017 受控 owner mapping、0019 歷史訂單非破壞性設計／核准，以及設定保留證據。不可因 Cloudflare Builds 能自動部署便跳過這些 Gate，亦不可把 Preview 作正式結算驗收。
+7. **交付證據與降級**：逐項提供 runtime 類型、選擇路徑、API/CLI/Build 可用性（實際時間及錯誤類別）、來源 main SHA、migration 實際讀值、Worker version/deployment ID 和 100% 流量及正式無副作用 API smoke。缺一則對應項 `NOT VERIFIED`／`WAITING_FOR_DELIVERY`，可標示 `CODE_MERGED` 或 `LOCAL_UAT_PASS` 但不得宣稱正式完成；在既有 #104/#139 與 retrospective 記錄最小下一步與負責環境。
+
 ## 正式後端部署技術細則（強制）
 涉及正式 Worker 部署時必須閱讀並遵循 [docs/WORKER_DEPLOYMENT_POLICY.md](docs/WORKER_DEPLOYMENT_POLICY.md)；保留既有 GitHub Actions 禁令、完整 fresh bundle、設定不遺失、Runtime smoke 及 fail-closed 要求。
 
