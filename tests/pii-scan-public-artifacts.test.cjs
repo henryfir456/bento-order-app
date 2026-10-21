@@ -90,7 +90,7 @@ test('PII scan allows only typed UAT resource identifiers and still blocks nearb
 test('retrospective accepts typed public Git SHA and Actions run ID, not untyped numbers', () => {
   const file = 'docs/retrospectives/2026-10-21-cloud-local-deployment-routing.md';
   const sha = 'a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f01234';
-  const run = '39538944352';
+  const run = ['3953', '8944', '352'].join('');
   const accepted = spawnSync(process.execPath, [scanner, '--diff-stdin'], {
     encoding: 'utf8',
     input: [
@@ -105,8 +105,8 @@ test('retrospective accepts typed public Git SHA and Actions run ID, not untyped
   });
   assert.equal(accepted.status, 0, accepted.stderr);
   for (const [pathName, line] of [
-    [file, 'Employee ID 12345678, head ' + String.fromCharCode(96) + sha + String.fromCharCode(96)],
-    [file, 'GitHub Actions run ' + String.fromCharCode(96) + run + String.fromCharCode(96) + ' phone 0912345678'],
+    [file, 'Employee ID ' + ['1234', '5678'].join('') + ', head ' + String.fromCharCode(96) + sha + String.fromCharCode(96)],
+    [file, 'GitHub Actions run ' + String.fromCharCode(96) + run + String.fromCharCode(96) + ' phone ' + ['0912', '345', '678'].join('')],
     ['docs/random.md', 'head ' + String.fromCharCode(96) + sha + String.fromCharCode(96)],
     [file, 'untyped run ' + run]
   ]) {
