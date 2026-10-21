@@ -89,7 +89,7 @@ test('PII scan allows only typed UAT resource identifiers and still blocks nearb
 
 test('retrospective accepts typed public Git SHA and Actions run ID, not untyped numbers', () => {
   const file = 'docs/retrospectives/2026-10-21-cloud-local-deployment-routing.md';
-  const sha = 'a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f01234';
+  const sha = ['a3b4', 'c5d6', 'e7f8', 'a9b0', 'c1d2', 'e3f4', 'a5b6', 'c7d8', 'e9f0', '1234'].join('');
   const run = ['3953', '8944', '352'].join('');
   const accepted = spawnSync(process.execPath, [scanner, '--diff-stdin'], {
     encoding: 'utf8',
@@ -115,5 +115,33 @@ test('retrospective accepts typed public Git SHA and Actions run ID, not untyped
     });
     assert.equal(actual.status, 1, pathName + ' ' + actual.stderr);
     assert.match(actual.stderr, /numeric employee or phone pattern/);
+  }
+});
+
+
+test('typed public evidence does not exempt LINE IDs or credentials on the same line', () => {
+  const file = 'docs/retrospectives/2026-10-21-cloud-local-deployment-routing.md';
+  const sha = ['a3b4', 'c5d6', 'e7f8', 'a9b0', 'c1d2', 'e3f4', 'a5b6', 'c7d8', 'e9f0', '1234'].join('');
+  const run = ['3953', '8944', '352'].join('');
+  const lineUserId = 'U' + 'a'.repeat(32);
+  const credential = 'ghp_' + 'A'.repeat(24);
+  const cases = [
+    [
+      'Verified commit ' + String.fromCharCode(96) + sha + String.fromCharCode(96) + ', LINE user ' + lineUserId,
+      /LINE user ID pattern/
+    ],
+    [
+      'GitHub Actions run ' + String.fromCharCode(96) + run + String.fromCharCode(96) + ', credential ' + credential,
+      /credential pattern/
+    ]
+  ];
+
+  for (const [line, expectedPattern] of cases) {
+    const result = spawnSync(process.execPath, [scanner, '--diff-stdin'], {
+      encoding: 'utf8',
+      input: diffForFile(file, line)
+    });
+    assert.equal(result.status, 1, JSON.stringify({ stdout: result.stdout, stderr: result.stderr }));
+    assert.match(result.stderr, expectedPattern);
   }
 });
