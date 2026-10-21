@@ -803,6 +803,48 @@ test('post-cutoff cancellation creates a traceable immutable revision and does n
     ) VALUES ('synthetic-transition-cancel', 'synthetic-order-post-cutoff', 'ACTIVE', 'CANCELLED',
       'synthetic-buyer-a', 'line', 'Synthetic Buyer', 'ORDER_CANCELLED', '{}', '2026-10-20T03:01:00.000Z')
   `);
+  const staleVerifiedSnapshot = database.get(`
+    SELECT amount_twd, attribution_basis FROM vendor_day_snapshots
+    WHERE vendor_id = ? AND service_date = ? ORDER BY revision DESC LIMIT 1
+  `, 'synthetic-vendor-a', '2026-10-20');
+  assert.equal(staleVerifiedSnapshot.amount_twd, 170);
+  assert.equal(staleVerifiedSnapshot.attribution_basis, 'CANONICAL_VENDOR_ATTRIBUTION_V1');
+  assert.equal(database.get(`
+    SELECT SUM(oi.subtotal) AS amount_twd
+    FROM vendor_order_vendor_attributions attribution
+    JOIN orders o ON o.order_id = attribution.order_id
+    JOIN order_items oi ON oi.order_id = o.order_id
+    WHERE attribution.vendor_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
+  `, 'synthetic-vendor-a', '2026-10-20').amount_twd, null);
+  const staleSnapshotPayment = await call(database, '/api/admin/vendor-payments', {
+    method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+    body: {
+      vendorId: 'synthetic-vendor-a', amountTwd: 1, transferredOn: '2026-10-20',
+      actualTransferDone: true, detailsReviewed: true,
+      idempotencyKey: 'synthetic-stale-snapshot-extra-payment',
+      allocations: [{ serviceDate: '2026-10-20', amountTwd: 1 }]
+    },
+    now: new Date('2026-10-20T03:02:00.000Z')
+  });
+  assert.equal(staleSnapshotPayment.response.status, 409, JSON.stringify(staleSnapshotPayment.body));
+  assert.equal(staleSnapshotPayment.body.error, 'VENDOR_DAY_RECEIVABLE_EXCEEDED');
+  assert.equal(database.get(`
+    SELECT COUNT(*) AS count FROM vendor_transfer_payments
+    WHERE idempotency_key = 'synthetic-stale-snapshot-extra-payment'
+  `).count, 0);
+
+  const allocationId = database.get(
+    'SELECT allocation_id FROM vendor_transfer_allocations WHERE payment_id = ?', payment.body.paymentId
+  ).allocation_id;
+  const staleSnapshotAdjustment = await call(database,
+    `/api/admin/vendor-payment-allocations/${allocationId}/adjustments`, {
+      method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+      body: { deltaTwd: 1, reason: 'Synthetic stale snapshot capacity regression' },
+      now: new Date('2026-10-20T03:02:30.000Z')
+    });
+  assert.equal(staleSnapshotAdjustment.response.status, 409, JSON.stringify(staleSnapshotAdjustment.body));
+  assert.equal(staleSnapshotAdjustment.body.error, 'VENDOR_ALLOCATION_ADJUSTMENT_INVALID');
+
   const adjusted = await call(database, '/api/vendor/orders?month=2026-10', {
     token: 'synthetic-vendor-token', lineUserId: 'synthetic-line-vendor-a',
     now: new Date('2026-10-20T03:02:00.000Z')
@@ -811,9 +853,6 @@ test('post-cutoff cancellation creates a traceable immutable revision and does n
   assert.equal(adjusted.body.days[0].amountTwd, 0);
   assert.equal(adjusted.body.days[0].changeReason, 'ORDER_CANCELLATION_REFUND');
   assert.equal(adjusted.body.days[0].settlement.overAllocatedTwd, 100);
-  const allocationId = database.get(
-    'SELECT allocation_id FROM vendor_transfer_allocations WHERE payment_id = ?', payment.body.paymentId
-  ).allocation_id;
   const correction = await call(database,
     `/api/admin/vendor-payment-allocations/${allocationId}/adjustments`, {
       method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
