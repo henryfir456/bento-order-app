@@ -75,7 +75,7 @@ WHEN NOT EXISTS (
       ), 0))
       FROM vendor_transfer_allocations other WHERE other.payment_id = p.payment_id
     ), 0) + NEW.delta_twd <= p.amount_twd
-    AND COALESCE((
+    AND (NEW.delta_twd <= 0 OR COALESCE((
       SELECT SUM(other.amount_twd + COALESCE((
         SELECT SUM(e.delta_twd) FROM vendor_transfer_allocation_events e
         WHERE e.allocation_id = other.allocation_id
@@ -93,6 +93,6 @@ WHEN NOT EXISTS (
     ), COALESCE((
       SELECT current.amount_twd FROM vendor_active_attributed_receivables current
       WHERE current.vendor_id = a.vendor_id AND current.service_date = a.service_date
-    ), 0))
+    ), 0)))
 )
 BEGIN SELECT RAISE(ABORT, 'VENDOR_ALLOCATION_ADJUSTMENT_INVALID'); END;
