@@ -34,13 +34,15 @@ const addOrder = (database, {
   unitPrice
 }) => {
   const totalAmount = quantity * unitPrice;
+  const canonicalVendor = database.get('SELECT vendor_id FROM vendors WHERE name = ? LIMIT 1', vendor);
   database.run(`
     INSERT INTO orders (
-      order_id, user_id, display_name_snapshot, order_date, vendor,
+      order_id, user_id, display_name_snapshot, order_date, vendor, vendor_id,
       pickup_floor, total_amount, status, created_by_user_id,
       created_auth_mode, created_at, updated_at
-    ) VALUES (?, ?, 'Synthetic Buyer Name', ?, ?, '1樓', ?, ?, ?, 'line', ?, ?)
-  `, orderId, buyerId, serviceDate, vendor, totalAmount, status, buyerId,
+    ) VALUES (?, ?, 'Synthetic Buyer Name', ?, ?, ?, '1樓', ?, ?, ?, 'line', ?, ?)
+  `, orderId, buyerId, serviceDate, vendor, canonicalVendor?.vendor_id ?? null,
+  totalAmount, status, buyerId,
   '2026-10-19T04:00:00.000Z', '2026-10-19T04:00:00.000Z');
   database.run(`
     INSERT INTO order_items (
@@ -59,6 +61,55 @@ const call = async (database, path, { method = 'GET', token, lineUserId, body, n
     }
   );
   return { response, body: await response.json() };
+};
+
+const insertHistoricalMenuVersion = (database, { vendor, versionId, menuItemId, effectiveDate, legacyItemId }) => {
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES (?, ?, ?)
+  `, versionId, vendor, effectiveDate);
+  database.run(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, variant_key, item_name,
+      price, enabled, source_order
+    ) VALUES (?, ?, ?, 'BASE', ?, 85, 1, 1)
+  `, menuItemId, versionId, legacyItemId, `Synthetic ${vendor} Meal`);
+};
+
+const insertReviewedMenuVersionMapping = (database, { vendorId, versionId, effectiveDate, eventId }) => {
+  database.run(`
+    INSERT INTO vendor_menu_version_mapping_events (
+      event_id, menu_version_id, revision, vendor_id, effective_date,
+      mapping_status, evidence_kind, reviewed_by_user_id, reviewed_at
+    ) VALUES (?, ?, 1, ?, ?, 'VERIFIED', 'MENU_VERSION_ID_EFFECTIVE_DATE', ?, ?)
+  `, eventId, versionId, vendorId, effectiveDate, 'synthetic-admin', '2026-10-20T00:00:00.000Z');
+};
+
+const insertLegacyOrder = (database, { orderId, serviceDate, itemLines, totalAmount, vendor = 'Synthetic Shared Legacy Label' }) => {
+  const buyerId = `synthetic-buyer-${orderId}`;
+  seedUser(database, {
+    userId: buyerId,
+    lineUserId: `synthetic-line-${buyerId}`,
+    employeeId: `SYNTHETIC-${orderId}`,
+    displayName: 'Synthetic Buyer'
+  });
+  database.run(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor,
+      pickup_floor, total_amount, status, created_by_user_id,
+      created_auth_mode, created_at, updated_at
+    ) VALUES (?, ?, 'Synthetic Buyer', ?, ?, '1樓', ?, 'ACTIVE',
+      ?, 'line', '2026-10-19T04:00:00.000Z', '2026-10-19T04:00:00.000Z')
+  `, orderId, buyerId, serviceDate, vendor, totalAmount, buyerId);
+  for (const [index, item] of itemLines.entries()) {
+    database.run(`
+      INSERT INTO order_items (
+        order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+        quantity, unit_price, subtotal
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, orderId, index + 1, item.menuItemId ?? null, item.legacyItemId ?? null,
+    item.name, item.quantity, item.unitPrice, item.quantity * item.unitPrice);
+  }
 };
 
 test('Vendor daily orders aggregate historical prices by Taipei service date and stay within active memberships', async () => {
@@ -159,6 +210,128 @@ test('Vendor daily orders aggregate historical prices by Taipei service date and
     lineUserId: 'synthetic-line-vendor-a'
   });
   assert.equal(forged.response.status, 403);
+});
+
+test('Vendor settlements resolve only fully mapped historical menu versions and isolate canonical vendor IDs', async () => {
+  const database = new SqliteD1();
+  seedVendor(database, { vendorId: 'synthetic-vendor-a', name: 'Synthetic Bento A' });
+  seedVendor(database, { vendorId: 'synthetic-vendor-b', name: 'Synthetic Bento B' });
+  seedUser(database, { userId: 'synthetic-admin', lineUserId: 'synthetic-line-admin', employeeId: 'SYNTHETIC-ADMIN', role: 'Admin' });
+  seedUser(database, { userId: 'synthetic-buyer', lineUserId: 'synthetic-line-buyer', employeeId: 'SYNTHETIC-BUYER' });
+  for (const [vendorId, userId, lineUserId] of [
+    ['synthetic-vendor-a', 'synthetic-vendor-principal-a', 'synthetic-line-vendor-a'],
+    ['synthetic-vendor-b', 'synthetic-vendor-principal-b', 'synthetic-line-vendor-b']
+  ]) {
+    seedUser(database, { userId, lineUserId, employeeId: null, displayName: `Synthetic ${vendorId}` });
+    addVendorPrincipal(database, { userId, vendorId });
+  }
+  database.run(`
+    INSERT INTO calendar_settings (order_date, vendor, mode)
+    VALUES ('2026-10-20', 'Synthetic Bento A', 'A'),
+      ('2026-10-21', 'Synthetic Bento B', 'A')
+  `);
+
+  insertHistoricalMenuVersion(database, {
+    vendor: 'Synthetic Bento A', versionId: 'synthetic-menu-version-a',
+    menuItemId: 'synthetic-menu-item-a', effectiveDate: '2026-10-01', legacyItemId: 'SYN-A-01'
+  });
+  insertReviewedMenuVersionMapping(database, {
+    vendorId: 'synthetic-vendor-a', versionId: 'synthetic-menu-version-a',
+    effectiveDate: '2026-10-01', eventId: 'synthetic-map-a'
+  });
+  insertHistoricalMenuVersion(database, {
+    vendor: 'Synthetic Bento B', versionId: 'synthetic-menu-version-b',
+    menuItemId: 'synthetic-menu-item-b', effectiveDate: '2026-10-01', legacyItemId: 'SYN-B-01'
+  });
+  insertReviewedMenuVersionMapping(database, {
+    vendorId: 'synthetic-vendor-b', versionId: 'synthetic-menu-version-b',
+    effectiveDate: '2026-10-01', eventId: 'synthetic-map-b'
+  });
+  insertHistoricalMenuVersion(database, {
+    vendor: 'Synthetic Bento A', versionId: 'synthetic-unmapped-version',
+    menuItemId: 'synthetic-unmapped-item', effectiveDate: '2026-10-02', legacyItemId: 'SYN-A-02'
+  });
+  insertHistoricalMenuVersion(database, {
+    vendor: 'Synthetic Bento A', versionId: 'synthetic-future-version',
+    menuItemId: 'synthetic-future-item', effectiveDate: '2026-10-21', legacyItemId: 'SYN-A-03'
+  });
+  insertReviewedMenuVersionMapping(database, {
+    vendorId: 'synthetic-vendor-a', versionId: 'synthetic-future-version',
+    effectiveDate: '2026-10-21', eventId: 'synthetic-map-future'
+  });
+
+  insertLegacyOrder(database, {
+    orderId: 'synthetic-legacy-order-a', serviceDate: '2026-10-20', totalAmount: 170,
+    itemLines: [{ menuItemId: 'synthetic-menu-item-a', legacyItemId: 'SYN-A-01', name: 'Old A label', quantity: 2, unitPrice: 85 }]
+  });
+  insertLegacyOrder(database, {
+    orderId: 'synthetic-legacy-order-b', serviceDate: '2026-10-21', totalAmount: 255,
+    itemLines: [{ menuItemId: 'synthetic-menu-item-b', legacyItemId: 'SYN-B-01', name: 'Old B label', quantity: 3, unitPrice: 85 }]
+  });
+  insertLegacyOrder(database, {
+    orderId: 'synthetic-unmapped-order', serviceDate: '2026-10-20', totalAmount: 85,
+    vendor: 'Synthetic Bento A',
+    itemLines: [{ menuItemId: null, legacyItemId: 'SYN-A-01', name: 'Synthetic Bento A Meal', quantity: 1, unitPrice: 85 }]
+  });
+  insertLegacyOrder(database, {
+    orderId: 'synthetic-unmapped-version-order', serviceDate: '2026-10-20', totalAmount: 85,
+    itemLines: [{ menuItemId: 'synthetic-unmapped-item', legacyItemId: 'SYN-A-02', name: 'Synthetic Bento A Meal', quantity: 1, unitPrice: 85 }]
+  });
+  insertLegacyOrder(database, {
+    orderId: 'synthetic-mixed-vendor-order', serviceDate: '2026-10-20', totalAmount: 170,
+    itemLines: [
+      { menuItemId: 'synthetic-menu-item-a', legacyItemId: 'SYN-A-01', name: 'Synthetic A Meal', quantity: 1, unitPrice: 85 },
+      { menuItemId: 'synthetic-menu-item-b', legacyItemId: 'SYN-B-01', name: 'Synthetic B Meal', quantity: 1, unitPrice: 85 }
+    ]
+  });
+  insertLegacyOrder(database, {
+    orderId: 'synthetic-future-menu-order', serviceDate: '2026-10-20', totalAmount: 85,
+    itemLines: [{ menuItemId: 'synthetic-future-item', legacyItemId: 'SYN-A-03', name: 'Synthetic Future Meal', quantity: 1, unitPrice: 85 }]
+  });
+  insertLegacyOrder(database, {
+    orderId: 'synthetic-mismatched-code-order', serviceDate: '2026-10-20', totalAmount: 85,
+    itemLines: [{ menuItemId: 'synthetic-menu-item-a', legacyItemId: 'SYN-A-OTHER', name: 'Synthetic Wrong Code', quantity: 1, unitPrice: 85 }]
+  });
+
+  const vendorA = await call(database, '/api/vendor/orders?month=2026-10', {
+    token: 'synthetic-vendor-token-a', lineUserId: 'synthetic-line-vendor-a'
+  });
+  const vendorB = await call(database, '/api/vendor/orders?month=2026-10', {
+    token: 'synthetic-vendor-token-b', lineUserId: 'synthetic-line-vendor-b'
+  });
+  assert.equal(vendorA.response.status, 200, JSON.stringify(vendorA.body));
+  assert.equal(vendorB.response.status, 200, JSON.stringify(vendorB.body));
+  assert.equal(vendorA.body.days.length, 1);
+  assert.equal(vendorA.body.days[0].orderCount, 1);
+  assert.equal(vendorA.body.days[0].portionCount, 2);
+  assert.equal(vendorA.body.days[0].amountTwd, 170);
+  assert.equal(vendorA.body.days[0].vendorId, 'synthetic-vendor-a');
+  assert.equal(vendorB.body.days.length, 1);
+  assert.equal(vendorB.body.days[0].orderCount, 1);
+  assert.equal(vendorB.body.days[0].amountTwd, 255);
+  assert.equal(vendorB.body.days[0].vendorId, 'synthetic-vendor-b');
+
+  const acceptedSettlement = await call(database, '/api/admin/vendor-payments', {
+    method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+    body: {
+      vendorId: 'synthetic-vendor-a', amountTwd: 170, transferredOn: '2026-10-20',
+      actualTransferDone: true, detailsReviewed: true, idempotencyKey: 'synthetic-historical-allocation',
+      allocations: [{ serviceDate: '2026-10-20', amountTwd: 170 }]
+    }
+  });
+  assert.equal(acceptedSettlement.response.status, 201, JSON.stringify(acceptedSettlement.body));
+  const overSettlement = await call(database, '/api/admin/vendor-payments', {
+    method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+    body: {
+      vendorId: 'synthetic-vendor-a', amountTwd: 171, transferredOn: '2026-10-20',
+      actualTransferDone: true, detailsReviewed: true, idempotencyKey: 'synthetic-historical-over-allocation',
+      allocations: [{ serviceDate: '2026-10-20', amountTwd: 171 }]
+    }
+  });
+  assert.equal(overSettlement.response.status, 409);
+  assert.equal(overSettlement.body.error, 'VENDOR_DAY_RECEIVABLE_EXCEEDED');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_transfer_payments').count, 1);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
 });
 
 test('Admin can record one transfer across dates, replay idempotently, and Vendor can acknowledge without touching employee ledger', async () => {
