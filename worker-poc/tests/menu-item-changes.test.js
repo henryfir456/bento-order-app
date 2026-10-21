@@ -28,7 +28,7 @@ import {
   resolveHistoricalImageDisplayUrl
 } from '../src/domain/menuImageFallback.js';
 import { SqliteD1 } from './helpers/formal-db.js';
-import { profileFetch, request, seedUser } from './helpers/formal-fixtures.js';
+import { profileFetch, request, seedUser, seedVendor } from './helpers/formal-fixtures.js';
 
 const NOW = new Date('2026-09-14T00:00:00.000Z');
 const profiles = {
@@ -969,6 +969,7 @@ test('all-disabled post-cutoff projection keeps the established empty-projection
 test('complete post-cutoff overlay is shared by order-page reads and order validation', async () => {
   const database = new SqliteD1();
   seedUsers(database);
+  seedVendor(database, { vendorId: 'vendor-overlay-cai', name: '蔡老師' });
   seedUser(database, { lineUserId: 'overlay-user', balance: 200 });
   database.run(`
     INSERT INTO calendar_settings (order_date, vendor, mode)
@@ -1242,6 +1243,7 @@ test('customer menu and order validation consume the materialized state from the
   const database = new SqliteD1();
   seedUser(database, { lineUserId: 'resolver-admin', role: 'Admin', balance: 0 });
   seedUser(database, { lineUserId: 'resolver-user', role: 'User', balance: 200 });
+  seedVendor(database, { vendorId: 'vendor-resolver-cai', name: '蔡老師' });
   database.run(`INSERT INTO calendar_settings (order_date, vendor, mode) VALUES ('2026-09-11', '蔡老師', 'A')`);
   seedChange(database, {
     id: 'resolver-change', date: '2026-09-11', code: 'E', name: 'Resolved E', price: 80,
@@ -1276,6 +1278,7 @@ test('customer menu and order validation consume the materialized state from the
 test('order validation re-resolves backdated post-cutoff changes instead of trusting an older snapshot', async () => {
   const database = new SqliteD1();
   seedUser(database, { lineUserId: 'backdated-user', role: 'User', balance: 200 });
+  seedVendor(database, { vendorId: 'vendor-backdated-cai', name: '蔡老師' });
   database.run(`
     INSERT INTO calendar_settings (order_date, vendor, mode)
     VALUES ('2026-09-14', '蔡老師', 'A')

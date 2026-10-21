@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { handleFormalRequest } from './helpers/formal-fixtures.js';
-import { profileFetch, request, seedMenuVersion, seedUser } from './helpers/formal-fixtures.js';
+import { profileFetch, request, seedMenuVersion, seedUser, seedVendor } from './helpers/formal-fixtures.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 
 const NOW = new Date('2026-09-07T01:00:00.000Z');
@@ -60,6 +60,7 @@ const guestLogin = (database) => call(
 
 const seedGuestDatabase = () => {
   const database = new SqliteD1();
+  seedVendor(database, { vendorId: 'vendor-order-guest', name: 'Vendor A' });
   seedUser(database, {
     userId: USER_ID,
     employeeId: EMPLOYEE_ID,
@@ -148,6 +149,7 @@ test('unbound active employee can order and read the order summary through a gue
   });
   assert.equal(order.response.status, 200);
   assert.equal(database.get('SELECT user_id FROM orders WHERE order_id = ?', order.body.orderId).user_id, USER_ID);
+  assert.equal(database.get('SELECT vendor_id FROM orders WHERE order_id = ?', order.body.orderId).vendor_id, 'vendor-order-guest');
   assert.equal(database.get('SELECT created_auth_mode FROM orders WHERE order_id = ?', order.body.orderId).created_auth_mode, 'employee_guest');
 
   const history = await call(database, '/api/me/balance/history?month=2026-09', {

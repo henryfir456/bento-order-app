@@ -38,12 +38,20 @@ test('order creation uses server menu prices and preserves negative balances', a
   assert.equal(result.body.success, true);
   assert.equal(result.body.newBalance, -90);
   const order = database.get(`
-    SELECT order_id, user_id, total_amount, status
+    SELECT order_id, user_id, total_amount, status, vendor_id
     FROM orders
     WHERE user_id = ?
   `, 'user-1');
   assert.equal(order.total_amount, 190);
   assert.equal(order.status, 'ACTIVE');
+  assert.equal(order.vendor_id, 'canonical-vendor-a');
+  assert.equal(database.get(`
+    SELECT vendor_id FROM canonical_order_vendor_assignments WHERE order_id = ?
+  `, order.order_id).vendor_id, 'canonical-vendor-a');
+  assert.throws(() => database.run(
+    'UPDATE orders SET vendor_id = ? WHERE order_id = ?',
+    'another-canonical-vendor', order.order_id
+  ), /ORDER_VENDOR_ID_IMMUTABLE/);
   const items = database.database.prepare(`
     SELECT menu_item_id, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal
     FROM order_items

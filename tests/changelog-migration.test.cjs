@@ -286,6 +286,8 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
   assert.equal(unreleased.length, 1);
   assert.equal(parsed[0].version, null);
   const expectedUnreleasedChanges = [
+    'Leave historical vendor IDs unresolved until an exact menu-version and effective-date mapping is reviewed; write canonical vendor IDs directly on new orders and scope settlement reads through verified attribution (Issues #104 and #139).',
+    'Ignore pre-mapping settlement snapshots and allocations until their source is verified; cap verified settlement capacity by current canonical active-order attribution so stale snapshots cannot authorize excess, without rewriting legacy settlement rows (Issues #104 and #139).',
     'Restore mobile user-management sort field and direction controls using the same ordering state as desktop, and compact mobile actions including the ledger-details entry (Issue #82).',
     'Canonicalize the known historical menu code alias `R` to `FR` so effective-name summaries and footprint totals group the same verified dish across menu versions while preserving distinct vendor and variant identities (Issues #103 and #108).',
     'Return a generated `X-Request-Id` response header and show sanitized API error codes and trace IDs for announcement and vendor failures, without changing JSON response contracts.',
@@ -359,5 +361,4 @@ test('every formal release has Traditional Chinese UI copy or an explicit legacy
   }
   assert.ok(translatedVersions.includes(packageVersion), `Missing Traditional Chinese UI translation for ${packageVersion}`);
   // Strict coverage above prevents publishing any untranslated formal release.
-
 });

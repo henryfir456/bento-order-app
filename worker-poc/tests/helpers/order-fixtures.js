@@ -1,5 +1,5 @@
 import { handleFormalRequest } from './formal-fixtures.js';
-import { profileFetch, request, seedMenuVersion, seedUser } from './formal-fixtures.js';
+import { profileFetch, request, seedMenuVersion, seedUser, seedVendor } from './formal-fixtures.js';
 import { SqliteD1 } from './formal-db.js';
 
 export const ORDER_DATE = '2026-09-08';
@@ -26,6 +26,7 @@ export const seedOrderDatabase = ({ balance = 100 } = {}) => {
     role: 'Admin',
     balance: 0
   });
+  seedVendor(database, { vendorId: 'canonical-vendor-a', name: 'Vendor A' });
   database.run(`
     INSERT INTO calendar_settings (order_date, vendor, mode)
     VALUES (?, ?, ?)

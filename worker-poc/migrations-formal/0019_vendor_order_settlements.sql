@@ -1,84 +1,141 @@
 PRAGMA foreign_keys = ON;
 
--- Bind orders to the canonical vendor entity so Vendor APIs never authorize
--- against a client-supplied or historical display name.
+-- Store canonical vendor IDs on orders created by the current Worker. Historical
+-- rows remain nullable until their immutable menu identity is explicitly reviewed.
 ALTER TABLE orders ADD COLUMN vendor_id TEXT
   REFERENCES vendors(vendor_id) ON DELETE RESTRICT;
-
-UPDATE orders
-SET vendor_id = (
-  SELECT v.vendor_id FROM vendors v
-  WHERE v.name = CASE trim(orders.vendor)
-    WHEN '合十' THEN '禾拾'
-    ELSE trim(orders.vendor)
-  END
-)
-WHERE vendor_id IS NULL
-  AND EXISTS (
-    SELECT 1 FROM vendors v
-    WHERE v.name = CASE trim(orders.vendor)
-      WHEN '合十' THEN '禾拾'
-      ELSE trim(orders.vendor)
-    END
-  );
 
 CREATE INDEX IF NOT EXISTS idx_orders_vendor_id_date_status
   ON orders(vendor_id, order_date, status);
 
-CREATE TRIGGER IF NOT EXISTS orders_vendor_id_insert_guard
-BEFORE INSERT ON orders
-WHEN NEW.vendor_id IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM vendors v
-    WHERE v.vendor_id = NEW.vendor_id
-      AND v.name = CASE trim(NEW.vendor)
-        WHEN '合十' THEN '禾拾'
-        ELSE trim(NEW.vendor)
-      END
-  )
-BEGIN SELECT RAISE(ABORT, 'ORDER_VENDOR_ID_MISMATCH'); END;
+-- A reviewed menu-version mapping is an append-only identity decision. There is
+-- deliberately no display-name or alias-based seed/backfill in this migration.
+CREATE TABLE IF NOT EXISTS vendor_menu_version_mapping_events (
+  event_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL UNIQUE,
+  menu_version_id TEXT NOT NULL REFERENCES menu_versions(menu_version_id) ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  vendor_id TEXT REFERENCES vendors(vendor_id) ON DELETE RESTRICT,
+  effective_date TEXT NOT NULL CHECK (effective_date GLOB '????-??-??'),
+  mapping_status TEXT NOT NULL CHECK (mapping_status IN ('VERIFIED', 'REVOKED')),
+  evidence_kind TEXT NOT NULL CHECK (evidence_kind = 'MENU_VERSION_ID_EFFECTIVE_DATE'),
+  reviewed_by_user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE RESTRICT,
+  reviewed_at TEXT NOT NULL,
+  UNIQUE (menu_version_id, revision),
+  CHECK ((mapping_status = 'VERIFIED' AND vendor_id IS NOT NULL)
+    OR (mapping_status = 'REVOKED' AND vendor_id IS NULL))
+);
 
-CREATE TRIGGER IF NOT EXISTS orders_vendor_id_update_guard
-BEFORE UPDATE OF vendor_id ON orders
-WHEN NEW.vendor_id IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1 FROM vendors v
-    WHERE v.vendor_id = NEW.vendor_id
-      AND v.name = CASE trim(NEW.vendor)
-        WHEN '合十' THEN '禾拾'
-        ELSE trim(NEW.vendor)
-      END
-  )
-BEGIN SELECT RAISE(ABORT, 'ORDER_VENDOR_ID_MISMATCH'); END;
+CREATE INDEX IF NOT EXISTS idx_vendor_menu_version_mapping_latest
+  ON vendor_menu_version_mapping_events(menu_version_id, revision DESC);
 
-CREATE TRIGGER IF NOT EXISTS orders_vendor_identity_after_insert
+CREATE TRIGGER IF NOT EXISTS vendor_menu_version_mapping_insert_guard
+BEFORE INSERT ON vendor_menu_version_mapping_events
+WHEN NOT EXISTS (
+  SELECT 1 FROM menu_versions mv
+  WHERE mv.menu_version_id = NEW.menu_version_id
+    AND mv.effective_date = NEW.effective_date
+) OR NEW.revision <> COALESCE((
+  SELECT MAX(previous.revision) + 1
+  FROM vendor_menu_version_mapping_events previous
+  WHERE previous.menu_version_id = NEW.menu_version_id
+), 1) OR NOT EXISTS (
+  SELECT 1 FROM users reviewer
+  WHERE reviewer.user_id = NEW.reviewed_by_user_id
+    AND reviewer.role = 'Admin' AND reviewer.active = 1
+)
+BEGIN SELECT RAISE(ABORT, 'VENDOR_MENU_VERSION_MAPPING_INVALID'); END;
+
+CREATE TRIGGER IF NOT EXISTS vendor_menu_version_mapping_immutable_update
+BEFORE UPDATE ON vendor_menu_version_mapping_events
+BEGIN SELECT RAISE(ABORT, 'VENDOR_MENU_VERSION_MAPPING_APPEND_ONLY'); END;
+CREATE TRIGGER IF NOT EXISTS vendor_menu_version_mapping_immutable_delete
+BEFORE DELETE ON vendor_menu_version_mapping_events
+BEGIN SELECT RAISE(ABORT, 'VENDOR_MENU_VERSION_MAPPING_APPEND_ONLY'); END;
+
+-- This marker distinguishes IDs written directly by the new order path from
+-- values an older version of migration 0019 may have inferred from labels.
+CREATE TABLE IF NOT EXISTS canonical_order_vendor_assignments (
+  order_id TEXT PRIMARY KEY REFERENCES orders(order_id) ON DELETE RESTRICT,
+  vendor_id TEXT NOT NULL REFERENCES vendors(vendor_id) ON DELETE RESTRICT,
+  assigned_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_canonical_order_vendor_assignments_vendor_date
+  ON canonical_order_vendor_assignments(vendor_id, assigned_at, order_id);
+
+CREATE TRIGGER IF NOT EXISTS canonical_order_vendor_assignment_insert_guard
+BEFORE INSERT ON canonical_order_vendor_assignments
+WHEN NOT EXISTS (
+  SELECT 1 FROM orders o
+  WHERE o.order_id = NEW.order_id
+    AND o.vendor_id = NEW.vendor_id
+    AND o.created_at = NEW.assigned_at
+)
+BEGIN SELECT RAISE(ABORT, 'CANONICAL_ORDER_VENDOR_ASSIGNMENT_INVALID'); END;
+
+CREATE TRIGGER IF NOT EXISTS canonical_order_vendor_assignment_after_insert
 AFTER INSERT ON orders
-WHEN NEW.vendor_id IS NULL
+WHEN NEW.vendor_id IS NOT NULL
 BEGIN
-  UPDATE orders
-  SET vendor_id = (
-    SELECT v.vendor_id FROM vendors v
-    WHERE v.name = CASE trim(NEW.vendor)
-      WHEN '合十' THEN '禾拾'
-      ELSE trim(NEW.vendor)
-    END
-  )
-  WHERE order_id = NEW.order_id;
+  INSERT INTO canonical_order_vendor_assignments (order_id, vendor_id, assigned_at)
+  VALUES (NEW.order_id, NEW.vendor_id, NEW.created_at);
 END;
 
-CREATE TRIGGER IF NOT EXISTS orders_vendor_identity_after_update
-AFTER UPDATE OF vendor ON orders
-BEGIN
-  UPDATE orders
-  SET vendor_id = (
-    SELECT v.vendor_id FROM vendors v
-    WHERE v.name = CASE trim(NEW.vendor)
-      WHEN '合十' THEN '禾拾'
-      ELSE trim(NEW.vendor)
-    END
+CREATE TRIGGER IF NOT EXISTS canonical_order_vendor_assignment_immutable_update
+BEFORE UPDATE ON canonical_order_vendor_assignments
+BEGIN SELECT RAISE(ABORT, 'CANONICAL_ORDER_VENDOR_ASSIGNMENT_APPEND_ONLY'); END;
+CREATE TRIGGER IF NOT EXISTS canonical_order_vendor_assignment_immutable_delete
+BEFORE DELETE ON canonical_order_vendor_assignments
+BEGIN SELECT RAISE(ABORT, 'CANONICAL_ORDER_VENDOR_ASSIGNMENT_APPEND_ONLY'); END;
+
+CREATE TRIGGER IF NOT EXISTS orders_vendor_id_immutable_update
+BEFORE UPDATE OF vendor_id ON orders
+WHEN NEW.vendor_id IS NOT OLD.vendor_id
+BEGIN SELECT RAISE(ABORT, 'ORDER_VENDOR_ID_IMMUTABLE'); END;
+
+-- Legacy orders enter this view only when every line points to an exact menu
+-- item/version, that version has a current reviewed vendor mapping, its
+-- effective date is no later than the service date, and all lines agree.
+CREATE VIEW IF NOT EXISTS vendor_order_vendor_attributions AS
+WITH latest_mappings AS (
+  SELECT mapping.menu_version_id, mapping.vendor_id, mapping.effective_date
+  FROM vendor_menu_version_mapping_events mapping
+  WHERE mapping.revision = (
+    SELECT MAX(latest.revision)
+    FROM vendor_menu_version_mapping_events latest
+    WHERE latest.menu_version_id = mapping.menu_version_id
   )
-  WHERE order_id = NEW.order_id;
-END;
+    AND mapping.mapping_status = 'VERIFIED'
+), resolved_items AS (
+  SELECT o.order_id, mapping.vendor_id
+  FROM orders o
+  JOIN order_items oi ON oi.order_id = o.order_id
+  JOIN menu_items mi ON mi.menu_item_id = oi.menu_item_id
+  JOIN menu_versions mv ON mv.menu_version_id = mi.menu_version_id
+  JOIN latest_mappings mapping ON mapping.menu_version_id = mv.menu_version_id
+  WHERE mapping.effective_date = mv.effective_date
+    AND mapping.effective_date <= o.order_date
+    AND (oi.legacy_item_id IS NULL OR oi.legacy_item_id = mi.legacy_item_id)
+    AND NOT EXISTS (
+      SELECT 1 FROM canonical_order_vendor_assignments direct
+      WHERE direct.order_id = o.order_id
+    )
+), resolved_legacy_orders AS (
+  SELECT resolved.order_id, MIN(resolved.vendor_id) AS vendor_id
+  FROM resolved_items resolved
+  GROUP BY resolved.order_id
+  HAVING COUNT(*) = (
+    SELECT COUNT(*) FROM order_items all_items
+    WHERE all_items.order_id = resolved.order_id
+  )
+    AND MIN(resolved.vendor_id) = MAX(resolved.vendor_id)
+)
+SELECT direct.order_id, direct.vendor_id
+FROM canonical_order_vendor_assignments direct
+UNION ALL
+SELECT historical.order_id, historical.vendor_id
+FROM resolved_legacy_orders historical;
 
 -- Read-only order snapshots and bank-transfer records are separate from the
 -- employee balance ledger. All history is append-only and contains no buyer
@@ -265,10 +322,10 @@ WHEN NEW.amount_twd + COALESCE((
   ORDER BY s.revision DESC LIMIT 1
 ), COALESCE((
   SELECT SUM(oi.subtotal)
-  FROM orders o
+  FROM vendor_order_vendor_attributions attribution
+  JOIN orders o ON o.order_id = attribution.order_id
   JOIN order_items oi ON oi.order_id = o.order_id
-  JOIN vendors v ON v.vendor_id = o.vendor_id
-  WHERE v.vendor_id = NEW.vendor_id
+  WHERE attribution.vendor_id = NEW.vendor_id
     AND o.order_date = NEW.service_date
     AND o.status = 'ACTIVE'
 ), -1))
@@ -309,10 +366,10 @@ WHEN NOT EXISTS (
       ORDER BY s.revision DESC LIMIT 1
     ), COALESCE((
       SELECT SUM(oi.subtotal)
-      FROM orders o
+      FROM vendor_order_vendor_attributions attribution
+      JOIN orders o ON o.order_id = attribution.order_id
       JOIN order_items oi ON oi.order_id = o.order_id
-      JOIN vendors v ON v.vendor_id = o.vendor_id
-      WHERE v.vendor_id = a.vendor_id
+      WHERE attribution.vendor_id = a.vendor_id
         AND o.order_date = a.service_date
         AND o.status = 'ACTIVE'
     ), -1))

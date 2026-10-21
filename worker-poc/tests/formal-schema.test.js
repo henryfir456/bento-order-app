@@ -71,7 +71,9 @@ test('formal migration creates every source-of-truth table', () => {
     'vendor_transfer_payments',
     'vendor_transfer_allocations',
     'vendor_transfer_allocation_events',
-    'vendor_payment_events'
+    'vendor_payment_events',
+    'vendor_menu_version_mapping_events',
+    'canonical_order_vendor_assignments'
   ];
 
   const actual = tableNames(database);
@@ -111,7 +113,11 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_users_invalid_reason',
     'idx_announcement_user_preferences_user_read',
     'idx_protected_account_access_audit_time',
-    'idx_vendor_memberships_vendor_status'
+    'idx_vendor_memberships_vendor_status',
+    'idx_vendor_menu_version_mapping_latest',
+    'idx_canonical_order_vendor_assignments_vendor_date',
+    'idx_vendor_day_snapshots_verified_latest',
+    'idx_vendor_transfer_allocations_verified_day'
   ];
   const actual = new Set(rows(database, `
     SELECT name
@@ -121,7 +127,7 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
   for (const indexName of expected) assert.equal(actual.has(indexName), true, indexName);
 });
 
-test('0019 resolves order rows to a canonical vendor ID and protects payment event history', () => {
+test('0019 adds nullable vendor identity without inferring historical orders from display text', () => {
   const database = openDatabase();
   const ordersColumns = tableColumns(database, 'orders');
   assert.equal(ordersColumns.get('vendor_id').type, 'TEXT');
@@ -140,16 +146,7 @@ test('0019 resolves order rows to a canonical vendor ID and protects payment eve
     '2026-10-20', '合十', '1樓', 80, 'ACTIVE', 'synthetic-vendor-buyer'
   );
   assert.equal(database.prepare('SELECT vendor_id FROM orders WHERE order_id = ?')
-    .get('synthetic-order-alias').vendor_id, 'synthetic-canonical-vendor');
-  assert.throws(() => database.prepare(`
-    INSERT INTO orders (
-      order_id, user_id, display_name_snapshot, order_date, vendor, vendor_id,
-      pickup_floor, total_amount, status, created_by_user_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    'synthetic-order-forged-scope', 'synthetic-vendor-buyer', 'Synthetic Buyer',
-    '2026-10-20', '禾拾', 'another-vendor-id', '1樓', 80, 'ACTIVE', 'synthetic-vendor-buyer'
-  ), /ORDER_VENDOR_ID_MISMATCH/);
+    .get('synthetic-order-alias').vendor_id, null);
   database.prepare(`
     INSERT INTO vendor_transfer_payments (
       payment_id, vendor_id, amount_twd, transferred_on, idempotency_key,
@@ -171,9 +168,9 @@ test('0019 resolves order rows to a canonical vendor ID and protects payment eve
     /VENDOR_PAYMENT_EVENT_APPEND_ONLY/);
 });
 
-test('0019 backfills canonical vendor IDs for existing orders without changing order money', () => {
+test('0019 leaves pre-existing order rows unchanged and unmapped', () => {
   const database = new DatabaseSync(':memory:');
-  migrationSql.slice(0, -1).forEach((sql) => database.exec(sql));
+  migrationSql.slice(0, -3).forEach((sql) => database.exec(sql));
   database.prepare('INSERT INTO users (user_id, display_name, pickup_floor, balance, role) VALUES (?, ?, ?, ?, ?)')
     .run('synthetic-vendor-buyer', 'Synthetic Buyer', '1樓', 0, 'User');
   database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
@@ -187,13 +184,246 @@ test('0019 backfills canonical vendor IDs for existing orders without changing o
     'synthetic-order-before-migration', 'synthetic-vendor-buyer', 'Synthetic Buyer',
     '2026-10-20', '合十', '1樓', 180, 'ACTIVE', 'synthetic-vendor-buyer'
   );
-  database.exec(migrationSql.at(-1));
-  const order = database.prepare('SELECT vendor_id, total_amount FROM orders WHERE order_id = ?')
+  const before = database.prepare('SELECT * FROM orders WHERE order_id = ?')
     .get('synthetic-order-before-migration');
-  assert.equal(order.vendor_id, 'synthetic-canonical-vendor');
+  database.exec(migrationSql.at(-3));
+  const order = database.prepare('SELECT * FROM orders WHERE order_id = ?')
+    .get('synthetic-order-before-migration');
+  assert.equal(order.vendor_id, null);
   assert.equal(order.total_amount, 180);
+  for (const column of ['order_id', 'user_id', 'display_name_snapshot', 'order_date', 'vendor', 'pickup_floor', 'total_amount', 'status', 'created_by_user_id']) {
+    assert.equal(order[column], before[column], column);
+  }
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM balance_ledger').get().count, 0);
   database.close();
+});
+
+test('0021 preserves old settlement rows with an unverified attribution basis', () => {
+  const database = new DatabaseSync(':memory:');
+  migrationSql.slice(0, -1).forEach((sql) => database.exec(sql));
+  database.prepare('INSERT INTO users (user_id, display_name, pickup_floor, balance, role) VALUES (?, ?, ?, ?, ?)')
+    .run('synthetic-settlement-admin', 'Synthetic Admin', '1樓', 0, 'Admin');
+  database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
+    .run('synthetic-settlement-vendor', 'Synthetic Vendor');
+  database.prepare(`
+    INSERT INTO vendor_day_snapshots (
+      snapshot_id, vendor_id, service_date, revision, snapshot_kind,
+      order_count, portion_count, amount_twd, items_json, change_reason,
+      created_by_user_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-old-snapshot', 'synthetic-settlement-vendor', '2026-10-20', 4,
+    'BASELINE', 3, 4, 320, '[]', 'Synthetic old baseline', 'synthetic-settlement-admin',
+    '2026-10-20T00:00:00.000Z'
+  );
+  database.prepare(`
+    INSERT INTO vendor_transfer_payments (
+      payment_id, vendor_id, amount_twd, transferred_on, idempotency_key,
+      request_hash, created_by_user_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-old-payment', 'synthetic-settlement-vendor', 100, '2026-10-20',
+    'synthetic-old-payment-key', '{}', 'synthetic-settlement-admin', '2026-10-20T00:01:00.000Z'
+  );
+  database.prepare(`
+    INSERT INTO vendor_transfer_allocations (
+      allocation_id, payment_id, vendor_id, service_date, amount_twd,
+      created_by_user_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-old-allocation', 'synthetic-old-payment', 'synthetic-settlement-vendor',
+    '2026-10-20', 80, 'synthetic-settlement-admin', '2026-10-20T00:02:00.000Z'
+  );
+  const beforeSnapshot = database.prepare('SELECT * FROM vendor_day_snapshots WHERE snapshot_id = ?')
+    .get('synthetic-old-snapshot');
+  const beforeAllocation = database.prepare('SELECT * FROM vendor_transfer_allocations WHERE allocation_id = ?')
+    .get('synthetic-old-allocation');
+
+  database.exec(migrationSql.at(-1));
+
+  const afterSnapshot = database.prepare('SELECT * FROM vendor_day_snapshots WHERE snapshot_id = ?')
+    .get('synthetic-old-snapshot');
+  const afterAllocation = database.prepare('SELECT * FROM vendor_transfer_allocations WHERE allocation_id = ?')
+    .get('synthetic-old-allocation');
+  for (const column of Object.keys(beforeSnapshot)) assert.equal(afterSnapshot[column], beforeSnapshot[column], column);
+  for (const column of Object.keys(beforeAllocation)) assert.equal(afterAllocation[column], beforeAllocation[column], column);
+  assert.equal(afterSnapshot.attribution_basis, null);
+  assert.equal(afterAllocation.attribution_basis, null);
+  assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+  database.close();
+});
+
+test('0020 exposes only explicitly reviewed menu-version mappings and keeps the mapping ledger append-only', () => {
+  const database = openDatabase();
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('synthetic-mapping-admin', 'Synthetic Admin', '1樓', 0, 'Admin');
+  database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
+    .run('synthetic-mapping-vendor', 'Synthetic Vendor');
+  database.prepare(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES (?, ?, ?)
+  `).run('synthetic-mapping-version', 'Synthetic Vendor', '2026-10-01');
+  database.prepare(`
+    INSERT INTO vendor_menu_version_mapping_events (
+      event_id, menu_version_id, revision, vendor_id, effective_date,
+      mapping_status, evidence_kind, reviewed_by_user_id, reviewed_at
+    ) VALUES (?, ?, ?, ?, ?, 'VERIFIED', 'MENU_VERSION_ID_EFFECTIVE_DATE', ?, ?)
+  `).run(
+    'synthetic-mapping-event', 'synthetic-mapping-version', 1,
+    'synthetic-mapping-vendor', '2026-10-01', 'synthetic-mapping-admin',
+    '2026-10-20T00:00:00.000Z'
+  );
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('synthetic-mapping-buyer', 'Synthetic Buyer', '1樓', 0, 'User');
+  database.prepare(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, item_name, price, source_order
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-mapping-item', 'synthetic-mapping-version', 'SYN-MAP-01',
+    'Synthetic Meal', 80, 1
+  );
+  database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-mapped-order', 'synthetic-mapping-buyer', 'Synthetic Buyer',
+    '2026-10-20', 'Untrusted Legacy Label', '1樓', 80, 'ACTIVE', 'synthetic-mapping-buyer'
+  );
+  database.prepare(`
+    INSERT INTO order_items (
+      order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+      quantity, unit_price, subtotal
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-mapped-order', 1, 'synthetic-mapping-item', 'SYN-MAP-01',
+    'Old snapshot', 1, 80, 80
+  );
+  assert.deepEqual(database.prepare(`
+    SELECT vendor_id FROM vendor_order_vendor_attributions WHERE order_id = ?
+  `).all('synthetic-mapped-order').map((row) => row.vendor_id), ['synthetic-mapping-vendor']);
+  database.prepare(`
+    INSERT INTO vendor_menu_version_mapping_events (
+      event_id, menu_version_id, revision, vendor_id, effective_date,
+      mapping_status, evidence_kind, reviewed_by_user_id, reviewed_at
+    ) VALUES (?, ?, 2, NULL, ?, 'REVOKED', 'MENU_VERSION_ID_EFFECTIVE_DATE', ?, ?)
+  `).run(
+    'synthetic-mapping-revocation', 'synthetic-mapping-version', '2026-10-01',
+    'synthetic-mapping-admin', '2026-10-20T00:01:00.000Z'
+  );
+  assert.deepEqual(database.prepare(`
+    SELECT vendor_id FROM vendor_order_vendor_attributions WHERE order_id = ?
+  `).all('synthetic-mapped-order'), []);
+  assert.throws(() => database.prepare(`
+    INSERT INTO vendor_menu_version_mapping_events (
+      event_id, menu_version_id, revision, vendor_id, effective_date,
+      mapping_status, evidence_kind, reviewed_by_user_id, reviewed_at
+    ) VALUES (?, ?, ?, ?, ?, 'VERIFIED', 'MENU_VERSION_ID_EFFECTIVE_DATE', ?, ?)
+  `).run(
+    'synthetic-invalid-date-event', 'synthetic-mapping-version', 2,
+    'synthetic-mapping-vendor', '2026-10-02', 'synthetic-mapping-admin',
+    '2026-10-20T00:00:00.000Z'
+  ), /VENDOR_MENU_VERSION_MAPPING_INVALID/);
+  assert.throws(() => database.prepare(`
+    UPDATE vendor_menu_version_mapping_events SET mapping_status = 'REVOKED'
+    WHERE event_id = ?
+  `).run('synthetic-mapping-event'), /APPEND_ONLY/);
+  assert.throws(() => database.prepare(`
+    DELETE FROM vendor_menu_version_mapping_events WHERE event_id = ?
+  `).run('synthetic-mapping-event'), /APPEND_ONLY/);
+  assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+});
+
+test('0020 leaves older inferred vendor IDs untouched but excludes them from scope until an item-version mapping resolves', () => {
+  const database = new DatabaseSync(':memory:');
+  migrationSql.slice(0, -2).forEach((sql) => database.exec(sql));
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-forward-admin', 'Synthetic Admin', '1樓', 0, 'Admin',
+    'synthetic-forward-buyer', 'Synthetic Buyer', '1樓', 0, 'User'
+  );
+  database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?), (?, ?)')
+    .run('synthetic-inferred-vendor', 'Synthetic Historical Label', 'synthetic-resolved-vendor', 'Synthetic Canonical Vendor');
+  database.prepare(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date)
+    VALUES (?, ?, ?)
+  `).run('synthetic-forward-version', 'Synthetic Canonical Vendor', '2026-10-01');
+  database.prepare(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, item_name, price, source_order
+    ) VALUES (?, ?, ?, ?, ?, ?)
+  `).run('synthetic-forward-item', 'synthetic-forward-version', 'SYN-FORWARD-01', 'Synthetic Meal', 80, 1);
+  database.exec('DROP TRIGGER canonical_order_vendor_assignment_after_insert');
+  database.exec(`
+    CREATE TRIGGER orders_vendor_identity_after_update
+    AFTER UPDATE OF vendor ON orders
+    BEGIN
+      UPDATE orders SET vendor_id = 'synthetic-inferred-vendor'
+      WHERE order_id = NEW.order_id;
+    END;
+  `);
+  database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, vendor_id,
+      pickup_floor, total_amount, status, created_by_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-forward-order', 'synthetic-forward-buyer', 'Synthetic Buyer',
+    '2026-10-20', 'Synthetic Historical Label', 'synthetic-inferred-vendor',
+    '1樓', 80, 'ACTIVE', 'synthetic-forward-buyer'
+  );
+  database.prepare(`
+    INSERT INTO order_items (
+      order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+      quantity, unit_price, subtotal
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-forward-order', 1, 'synthetic-forward-item', 'SYN-FORWARD-01',
+    'Old snapshot', 1, 80, 80
+  );
+  const before = database.prepare(`
+    SELECT order_id, vendor, vendor_id, total_amount FROM orders WHERE order_id = ?
+  `).get('synthetic-forward-order');
+
+  database.exec(migrationSql.at(-2));
+
+  const after = database.prepare(`
+    SELECT order_id, vendor, vendor_id, total_amount FROM orders WHERE order_id = ?
+  `).get('synthetic-forward-order');
+  assert.deepEqual(after, before);
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM canonical_order_vendor_assignments WHERE order_id = ?
+  `).get('synthetic-forward-order').count, 0);
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM vendor_order_vendor_attributions WHERE order_id = ?
+  `).get('synthetic-forward-order').count, 0);
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM sqlite_master
+    WHERE type = 'trigger' AND name = 'orders_vendor_identity_after_update'
+  `).get().count, 0);
+  database.prepare(`
+    INSERT INTO vendor_menu_version_mapping_events (
+      event_id, menu_version_id, revision, vendor_id, effective_date,
+      mapping_status, evidence_kind, reviewed_by_user_id, reviewed_at
+    ) VALUES (?, ?, 1, ?, ?, 'VERIFIED', 'MENU_VERSION_ID_EFFECTIVE_DATE', ?, ?)
+  `).run(
+    'synthetic-forward-mapping', 'synthetic-forward-version', 'synthetic-resolved-vendor',
+    '2026-10-01', 'synthetic-forward-admin', '2026-10-20T00:00:00.000Z'
+  );
+  assert.deepEqual(database.prepare(`
+    SELECT vendor_id FROM vendor_order_vendor_attributions WHERE order_id = ?
+  `).all('synthetic-forward-order').map((row) => row.vendor_id), ['synthetic-resolved-vendor']);
+  assert.equal(database.prepare(`
+    SELECT vendor_id FROM orders WHERE order_id = ?
+  `).get('synthetic-forward-order').vendor_id, 'synthetic-inferred-vendor');
 });
 
 test('0016 adds nullable popup eligibility and independent per-user preference timestamps', () => {
