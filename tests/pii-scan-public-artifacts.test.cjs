@@ -85,3 +85,35 @@ test('PII scan allows only typed UAT resource identifiers and still blocks nearb
   assert.equal(unrelatedNumericValue.status, 1, unrelatedNumericValue.stdout);
   assert.match(unrelatedNumericValue.stderr, /numeric employee or phone pattern/);
 });
+
+
+test('retrospective accepts typed public Git SHA and Actions run ID, not untyped numbers', () => {
+  const file = 'docs/retrospectives/2026-10-21-cloud-local-deployment-routing.md';
+  const sha = 'a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f01234';
+  const run = '39538944352';
+  const accepted = spawnSync(process.execPath, [scanner, '--diff-stdin'], {
+    encoding: 'utf8',
+    input: [
+      'diff --git a/' + file + ' b/' + file,
+      '--- a/' + file,
+      '+++ b/' + file,
+      '+- Verification on source commit ' + String.fromCharCode(96) + sha + String.fromCharCode(96),
+      '+- Earlier head ' + String.fromCharCode(96) + sha + String.fromCharCode(96),
+      '+- GitHub Actions run ' + String.fromCharCode(96) + run + String.fromCharCode(96) + ' had a test failure',
+      ''
+    ].join('\n')
+  });
+  assert.equal(accepted.status, 0, accepted.stderr);
+  for (const [pathName, line] of [
+    [file, 'Employee ID 12345678, head ' + String.fromCharCode(96) + sha + String.fromCharCode(96)],
+    [file, 'GitHub Actions run ' + String.fromCharCode(96) + run + String.fromCharCode(96) + ' phone 0912345678'],
+    ['docs/random.md', 'head ' + String.fromCharCode(96) + sha + String.fromCharCode(96)],
+    [file, 'untyped run ' + run]
+  ]) {
+    const actual = spawnSync(process.execPath, [scanner, '--diff-stdin'], {
+      encoding: 'utf8', input: diffForFile(pathName, line)
+    });
+    assert.equal(actual.status, 1, pathName + ' ' + actual.stderr);
+    assert.match(actual.stderr, /numeric employee or phone pattern/);
+  }
+});
