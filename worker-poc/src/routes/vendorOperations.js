@@ -62,8 +62,10 @@ const activeOrderRows = async (database, vendorId, serviceDate) => {
     SELECT o.order_id, o.order_date, o.vendor,
       oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot,
       oi.quantity, oi.unit_price, oi.subtotal
-    FROM orders o JOIN order_items oi ON oi.order_id = o.order_id
-    WHERE o.vendor_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
+    FROM orders o
+    JOIN vendor_order_vendor_attributions attribution ON attribution.order_id = o.order_id
+    JOIN order_items oi ON oi.order_id = o.order_id
+    WHERE attribution.vendor_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
     ORDER BY o.order_id, oi.line_no
   `).bind(vendorId, serviceDate).all();
   return rowsFrom(result);
@@ -111,7 +113,8 @@ const adjustmentReasonAfter = async (database, vendorId, serviceDate, snapshotAt
   const result = await database.prepare(`
     SELECT h.reason FROM order_status_history h
     JOIN orders o ON o.order_id = h.order_id
-    WHERE o.vendor_id = ? AND o.order_date = ? AND h.occurred_at > ?
+    JOIN vendor_order_vendor_attributions attribution ON attribution.order_id = o.order_id
+    WHERE attribution.vendor_id = ? AND o.order_date = ? AND h.occurred_at > ?
     ORDER BY h.occurred_at DESC, h.transition_id DESC LIMIT 20
   `).bind(vendorId, serviceDate, snapshotAt).all();
   const reasons = new Set(rowsFrom(result).map((row) => row.reason));
@@ -246,8 +249,10 @@ const settlementForDay = async (database, vendorId, serviceDate, receivableTwd) 
 const datesForMonth = async (database, vendor, bounds) => {
   const result = await database.prepare(`
     SELECT service_date FROM (
-      SELECT order_date AS service_date FROM orders
-      WHERE vendor_id = ? AND order_date >= ? AND order_date < ?
+      SELECT o.order_date AS service_date
+      FROM vendor_order_vendor_attributions attribution
+      JOIN orders o ON o.order_id = attribution.order_id
+      WHERE attribution.vendor_id = ? AND o.order_date >= ? AND o.order_date < ?
       UNION SELECT service_date FROM vendor_day_snapshots
       WHERE vendor_id = ? AND service_date >= ? AND service_date < ?
       UNION SELECT service_date FROM vendor_transfer_allocations
