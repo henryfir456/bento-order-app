@@ -295,6 +295,7 @@ test('CHANGELOG.md preserves the complete pre-migration release history', async 
     'Hide all inactive and explicitly invalid employee rows from the default Admin member list; allow only a LINE Admin outside View As to include them (Issue #111).'
   ];
   const expectedUnreleasedAdded = [
+    'Add a loopback-only Windows UAT launcher for the isolated Wrangler Worker and disposable D1, with generated local credentials, repeatable schema/seed reset, real HTTP acceptance checks, and optional USB ADB forwarding for Android. Local CORS excludes the formal frontend origin. The local test bundle has no Cloudflare account credentials, production bindings, cron triggers, or public login secrets.',
     'Protect the reserved vendor\'s existing LINE account through a controlled server-side mapping; fail closed with HTTP 503 until it resolves to exactly one active, valid, verified, LINE-bound canonical user, then block employee-only login, guest-session replay, rebinding, administrator reassignment, identity repair, and View As; redact its LINE ID from API responses and record deidentified denials without changing account or ledger records (Issue #122).',
     '以鈴鐺收件匣取代首頁固定公告卡；載入失敗只提供重試、不顯示無公告，管理頁刷新也不觸發入場彈窗；舊公告不因功能上線或編輯而彈出（Issue #121）。',
     '新增 Vendor 專用伺服器端身份與多店家成員範圍；角色及可用店家由 canonical principal 與有效 membership 派生，未新增真實帳號映射（Issue #123）。',
