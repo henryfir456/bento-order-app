@@ -4,6 +4,13 @@
 - Problem: Codex Cloud shell observed curl exit 7/HTTP 000, connector internal error, Wrangler unauthenticated; the same block repeatedly prevented formal release. None proves Cloudflare API universally or permanently unavailable.
 - Research: official Cloudflare Workers Builds Git integration, production branch selection and custom build/deploy configuration documented at https://developers.cloudflare.com/workers/ci-cd/builds/git-integration/ , https://developers.cloudflare.com/workers/ci-cd/builds/build-branches/ and https://developers.cloudflare.com/workers/ci-cd/builds/configuration/ . Workers Builds is not GitHub Actions.
 - Fix: Add mandatory runtime capability matrix and bounded path-selection/fallback to AGENTS.md. Builders must not turn on unconditional main auto-deploy or bypass D1 backup/migration/identity gates.
-- Verification actually performed: fetched AGENTS.md from GitHub main and created documentation-only branch/PR. No CI, PII_SCAN, independent review or deployment attempted in this turn; all NOT RUN. No production changes.
-- Remaining: independent reviewer, PII_SCAN and documentation checks; inspect existing Worker Builds configuration and formal backup/migration gates before any runtime deployment.
+- Verification on source commit `53c24ece577b714dd64099bd02dfb386da9f0298` (base `e8c01025914e06b871e89261de4b0f7ec59c16a4`):
+  - `node --test tests/changelog-migration.test.cjs`: PASS, 3/3, exit 0 (Node v24.19.0). The exact main snapshot reproduced the pre-existing failure: the expected Unreleased fixture omitted one launcher entry already present in CHANGELOG.md. This PR adds that missing expectation; no app behavior or release version changed.
+  - `node --test tests/v0.15.7-docs.test.cjs`: PASS, 1/1, exit 0 against exact base release files.
+  - `node --test tests/pii-scan-public-artifacts.test.cjs`: PASS, 4/4, exit 0.
+  - PII_SCAN on the full PR diff and new retrospective: PASS; `git diff --check` from exact base to the PR tree: PASS, exit 0.
+  - GitHub Actions run `39538944352` for earlier head `708c3182fe434e556afab1787586218994d19f9c` failed only at the changelog fixture assertion; the other listed workflow steps, including lint and build, passed. The stale fixture is fixed locally and the Actions run was not manually rerun.
+  - Independent reviewer on head `708c3182fe434e556afab1787586218994d19f9c`: REQUEST CHANGES for missing CI evidence only; policy diff itself had no weakening. Re-review is required on the final head.
+  - No Worker, D1, R2, Cloudflare Builds, Secrets, or production deployment changed.
+- Remaining: independently review the final head and obtain current branch-protection/ruleset/required-check evidence; the available GitHub connector exposes repo permissions and merge methods but no current branch-protection/ruleset query. The repository's 2026-10-19 settings snapshot is not current enough under AGENTS.md.
 - P1 recommendation: build a fail-closed Cloudflare Builds release command and verify it against isolated environment before enabling production-branch automation; otherwise use a separately authorized direct CLI/API release host.
