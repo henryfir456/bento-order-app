@@ -28,8 +28,17 @@ test('formal drift report blocks Worker deployment when D1 migration state is be
   const report = compareFormalReleaseState({
     sourceSha,
     deployedSourceSha: deployedSha,
-    changedFiles: ['worker-poc/src/domain/ordersRead.js', 'worker-poc/migrations-formal/0019_vendor_order_settlements.sql'],
-    expectedMigrations: ['0018_vendor_principals_and_memberships', '0019_vendor_order_settlements.sql'],
+    changedFiles: [
+      'worker-poc/src/domain/orders.js',
+      'worker-poc/src/routes/vendorOperations.js',
+      'worker-poc/migrations-formal/0019_vendor_order_settlements.sql',
+      'worker-poc/migrations-formal/0020_safe_vendor_order_identity_resolution.sql'
+    ],
+    expectedMigrations: [
+      '0018_vendor_principals_and_memberships',
+      '0019_vendor_order_settlements.sql',
+      '0020_safe_vendor_order_identity_resolution.sql'
+    ],
     appliedMigrations: ['0018_vendor_principals_and_memberships'],
     deploymentId: 'synthetic-deployment',
     versionId: 'synthetic-version'
@@ -39,7 +48,10 @@ test('formal drift report blocks Worker deployment when D1 migration state is be
   assert.equal(report.worker.status, 'RELEASE_REQUIRED');
   assert.equal(report.worker.releaseRequired, true);
   assert.equal(report.database.status, 'DRIFT');
-  assert.deepEqual(report.database.missingMigrations, ['0019_vendor_order_settlements']);
+  assert.deepEqual(report.database.missingMigrations, [
+    '0019_vendor_order_settlements',
+    '0020_safe_vendor_order_identity_resolution'
+  ]);
   assert.ok(report.actions.some((action) => action.includes('backup and restore gate')));
   assert.ok(report.actions.some((action) => action.includes('directly with Wrangler')));
 });
