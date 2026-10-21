@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { getCustomerMenu } from '../src/domain/menu.js';
 import { runAutomaticDailyOpening } from '../src/domain/automaticOpening.js';
 import { handleFormalRequest } from './helpers/formal-fixtures.js';
-import { profileFetch, request, seedMenuVersion, seedUser } from './helpers/formal-fixtures.js';
+import { profileFetch, request, seedMenuVersion, seedUser, seedVendor } from './helpers/formal-fixtures.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 
 const NOW = new Date('2026-09-17T01:00:00.000Z');
@@ -35,6 +35,7 @@ const call = async (database, path, options = {}) => {
 
 const seed921Database = async () => {
   const database = new SqliteD1();
+  seedVendor(database, { vendorId: 'vendor-order-921', name: '禾拾' });
   seedUser(database, {
     userId: USER_ID,
     employeeId: '009921',
@@ -98,6 +99,7 @@ test('9/21 automatic opening and normalized menu bootstrap preserve safe order m
   });
   assert.equal(first.response.status, 200);
   assert.equal(first.body.newBalance, 145);
+  assert.equal(database.get('SELECT vendor_id FROM orders WHERE order_id = ?', first.body.orderId).vendor_id, 'vendor-order-921');
 
   const refreshedPage = await call(database, '/api/order-page?targetDate=2026-09-21');
   assert.equal(refreshedPage.response.status, 200);
