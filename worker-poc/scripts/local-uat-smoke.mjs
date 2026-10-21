@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { normalizeLocalUatApiBase } from '../src/localUatSmokeUrl.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dataDirectory = resolve(here, '..', '.local-uat');
-const apiBase = String(process.argv[2] || 'http://127.0.0.1:8787').replace(/\/+$/u, '');
+const apiBase = normalizeLocalUatApiBase(process.argv[2] || 'http://127.0.0.1:8787');
 const reportFile = resolve(dataDirectory, 'acceptance-report.json');
 const FORMAL_FRONTEND_ORIGIN = 'https://stirring-pony-3571ac.netlify.app';
 const VENDOR_ONE = `V${String(1).padStart(5, '0')}`;
