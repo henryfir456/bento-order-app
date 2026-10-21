@@ -109,6 +109,8 @@ if ($adb) {
         & $adb.Source -s $deviceSerial reverse tcp:8787 tcp:8787 | Out-Null
         $workerReverse = $LASTEXITCODE -eq 0
         if (-not ($frontendReverse -and $workerReverse)) {
+            & $adb.Source -s $deviceSerial reverse --remove tcp:5173 2>$null | Out-Null
+            & $adb.Source -s $deviceSerial reverse --remove tcp:8787 2>$null | Out-Null
             $deviceSerial = $null
             Write-Host 'ADB port forwarding failed. The PC URL is available; reconnect Android by USB and rerun this launcher.' -ForegroundColor Yellow
         }
