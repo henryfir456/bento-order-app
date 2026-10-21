@@ -14,6 +14,18 @@ CREATE INDEX IF NOT EXISTS idx_vendor_day_snapshots_verified_latest
 CREATE INDEX IF NOT EXISTS idx_vendor_transfer_allocations_verified_day
   ON vendor_transfer_allocations(vendor_id, service_date, attribution_basis, payment_id);
 
+-- A verified snapshot is an upper bound only while current active orders still
+-- support it. Recompute canonical receivables from the attribution view so an
+-- append-only snapshot cannot authorize payments after an order is cancelled.
+CREATE VIEW IF NOT EXISTS vendor_active_attributed_receivables AS
+SELECT attribution.vendor_id, o.order_date AS service_date,
+  SUM(oi.subtotal) AS amount_twd
+FROM vendor_order_vendor_attributions attribution
+JOIN orders o ON o.order_id = attribution.order_id
+JOIN order_items oi ON oi.order_id = o.order_id
+WHERE o.status = 'ACTIVE'
+GROUP BY attribution.vendor_id, o.order_date;
+
 -- Legacy snapshots are excluded from the receivable limit. If no verified
 -- snapshot exists, calculate from the reviewed order-attribution view only.
 DROP TRIGGER IF EXISTS vendor_transfer_allocations_day_receivable;
@@ -27,19 +39,17 @@ WHEN NEW.amount_twd + COALESCE((
   FROM vendor_transfer_allocations a
   WHERE a.vendor_id = NEW.vendor_id AND a.service_date = NEW.service_date
 ), 0) > COALESCE((
-  SELECT s.amount_twd FROM vendor_day_snapshots s
+  SELECT MIN(s.amount_twd, COALESCE(current.amount_twd, 0))
+  FROM vendor_day_snapshots s
+  LEFT JOIN vendor_active_attributed_receivables current
+    ON current.vendor_id = s.vendor_id AND current.service_date = s.service_date
   WHERE s.vendor_id = NEW.vendor_id AND s.service_date = NEW.service_date
     AND s.attribution_basis = 'CANONICAL_VENDOR_ATTRIBUTION_V1'
   ORDER BY s.revision DESC LIMIT 1
 ), COALESCE((
-  SELECT SUM(oi.subtotal)
-  FROM vendor_order_vendor_attributions attribution
-  JOIN orders o ON o.order_id = attribution.order_id
-  JOIN order_items oi ON oi.order_id = o.order_id
-  WHERE attribution.vendor_id = NEW.vendor_id
-    AND o.order_date = NEW.service_date
-    AND o.status = 'ACTIVE'
-), -1))
+  SELECT current.amount_twd FROM vendor_active_attributed_receivables current
+  WHERE current.vendor_id = NEW.vendor_id AND current.service_date = NEW.service_date
+), 0))
 BEGIN SELECT RAISE(ABORT, 'VENDOR_DAY_RECEIVABLE_EXCEEDED'); END;
 
 DROP TRIGGER IF EXISTS vendor_transfer_allocation_events_capacity;
@@ -73,18 +83,16 @@ WHEN NOT EXISTS (
       FROM vendor_transfer_allocations other
       WHERE other.vendor_id = a.vendor_id AND other.service_date = a.service_date
     ), 0) + NEW.delta_twd <= COALESCE((
-      SELECT s.amount_twd FROM vendor_day_snapshots s
+      SELECT MIN(s.amount_twd, COALESCE(current.amount_twd, 0))
+      FROM vendor_day_snapshots s
+      LEFT JOIN vendor_active_attributed_receivables current
+        ON current.vendor_id = s.vendor_id AND current.service_date = s.service_date
       WHERE s.vendor_id = a.vendor_id AND s.service_date = a.service_date
         AND s.attribution_basis = 'CANONICAL_VENDOR_ATTRIBUTION_V1'
       ORDER BY s.revision DESC LIMIT 1
     ), COALESCE((
-      SELECT SUM(oi.subtotal)
-      FROM vendor_order_vendor_attributions attribution
-      JOIN orders o ON o.order_id = attribution.order_id
-      JOIN order_items oi ON oi.order_id = o.order_id
-      WHERE attribution.vendor_id = a.vendor_id
-        AND o.order_date = a.service_date
-        AND o.status = 'ACTIVE'
-    ), -1))
+      SELECT current.amount_twd FROM vendor_active_attributed_receivables current
+      WHERE current.vendor_id = a.vendor_id AND current.service_date = a.service_date
+    ), 0))
 )
 BEGIN SELECT RAISE(ABORT, 'VENDOR_ALLOCATION_ADJUSTMENT_INVALID'); END;
