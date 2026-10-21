@@ -10,6 +10,7 @@ import { deadlineAt, isDateOnly } from '../domain/deadlines.js';
 import { getActiveVendorIdsForPrincipal } from '../domain/vendorMemberships.js';
 
 const text = (value) => String(value ?? '').trim();
+const VERIFIED_VENDOR_ATTRIBUTION = 'CANONICAL_VENDOR_ATTRIBUTION_V1';
 const rowsFrom = (result) => (Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : []));
 const safeInteger = (value) => Number.isSafeInteger(Number(value)) ? Number(value) : null;
 const validMonth = (value) => /^\d{4}-(0[1-9]|1[0-2])$/.test(text(value));
@@ -127,9 +128,9 @@ const readLatestSnapshot = async (database, vendorId, serviceDate) => database.p
   SELECT snapshot_id, revision, snapshot_kind, order_count, portion_count,
     amount_twd, items_json, change_reason, created_at
   FROM vendor_day_snapshots
-  WHERE vendor_id = ? AND service_date = ?
+  WHERE vendor_id = ? AND service_date = ? AND attribution_basis = ?
   ORDER BY revision DESC LIMIT 1
-`).bind(vendorId, serviceDate).first();
+`).bind(vendorId, serviceDate, VERIFIED_VENDOR_ATTRIBUTION).first();
 
 const appendSnapshotIfNeeded = async (database, identity, vendor, serviceDate, aggregate, now) => {
   const existing = await readLatestSnapshot(database, vendor.vendor_id, serviceDate);
@@ -139,7 +140,11 @@ const appendSnapshotIfNeeded = async (database, identity, vendor, serviceDate, a
     && Number(existing.amount_twd) === aggregate.amountTwd
     && existing.items_json === JSON.stringify(aggregate.items)) return existing;
 
-  const revision = Number(existing?.revision || 0) + 1;
+  const highestRevision = await database.prepare(`
+    SELECT MAX(revision) AS revision FROM vendor_day_snapshots
+    WHERE vendor_id = ? AND service_date = ?
+  `).bind(vendor.vendor_id, serviceDate).first();
+  const revision = Number(highestRevision?.revision || 0) + 1;
   const snapshotId = randomId('vendor_snapshot');
   const reason = existing
     ? await adjustmentReasonAfter(database, vendor.vendor_id, serviceDate, existing.created_at)
@@ -149,13 +154,14 @@ const appendSnapshotIfNeeded = async (database, identity, vendor, serviceDate, a
     INSERT OR IGNORE INTO vendor_day_snapshots (
       snapshot_id, vendor_id, service_date, revision, snapshot_kind,
       order_count, portion_count, amount_twd, items_json, change_reason,
-      created_by_user_id, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      created_by_user_id, created_at, attribution_basis
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `, [
     snapshotId, vendor.vendor_id, serviceDate, revision,
     existing ? 'ADJUSTMENT' : 'BASELINE',
     aggregate.orderCount, aggregate.portionCount, aggregate.amountTwd,
-    JSON.stringify(aggregate.items), reason, identity.actor.userId, createdAt
+    JSON.stringify(aggregate.items), reason, identity.actor.userId, createdAt,
+    VERIFIED_VENDOR_ATTRIBUTION
   ]);
   const audit = auditStatement(database, {
     actorUserId: identity.actor.userId,
@@ -186,7 +192,8 @@ const paymentRowsForDay = async (database, vendorId, serviceDate) => {
       COALESCE((${latestPaymentEventQuery}), 'REGISTERED') AS payment_status,
       (SELECT MIN(primary_allocation.service_date)
         FROM vendor_transfer_allocations primary_allocation
-        WHERE primary_allocation.payment_id = p.payment_id) AS primary_service_date,
+        WHERE primary_allocation.payment_id = p.payment_id
+          AND primary_allocation.attribution_basis = '${VERIFIED_VENDOR_ATTRIBUTION}') AS primary_service_date,
       COALESCE((SELECT e.reason FROM vendor_payment_events e
         WHERE e.payment_id = p.payment_id AND e.event_type = 'DISPUTED'
         ORDER BY e.event_sequence DESC LIMIT 1), '') AS dispute_reason,
@@ -204,12 +211,19 @@ const paymentRowsForDay = async (database, vendorId, serviceDate) => {
         ), 0))
         FROM vendor_transfer_allocations allocation
         WHERE allocation.payment_id = p.payment_id
+          AND allocation.attribution_basis = '${VERIFIED_VENDOR_ATTRIBUTION}'
       ), 0) END AS unallocated_twd
     FROM vendor_transfer_payments p
     JOIN vendor_transfer_allocations a ON a.payment_id = p.payment_id
     WHERE a.vendor_id = ? AND a.service_date = ?
+      AND a.attribution_basis = ?
+      AND NOT EXISTS (
+        SELECT 1 FROM vendor_transfer_allocations unverified
+        WHERE unverified.payment_id = p.payment_id
+          AND unverified.attribution_basis IS NOT '${VERIFIED_VENDOR_ATTRIBUTION}'
+      )
     ORDER BY p.transferred_on DESC, p.created_at DESC, p.payment_id
-  `).bind(vendorId, serviceDate).all();
+  `).bind(vendorId, serviceDate, VERIFIED_VENDOR_ATTRIBUTION).all();
   return rowsFrom(result).map((row) => ({
     paymentId: row.payment_id,
     allocationId: row.allocation_id,
@@ -255,8 +269,10 @@ const datesForMonth = async (database, vendor, bounds) => {
       WHERE attribution.vendor_id = ? AND o.order_date >= ? AND o.order_date < ?
       UNION SELECT service_date FROM vendor_day_snapshots
       WHERE vendor_id = ? AND service_date >= ? AND service_date < ?
+        AND attribution_basis = '${VERIFIED_VENDOR_ATTRIBUTION}'
       UNION SELECT service_date FROM vendor_transfer_allocations
       WHERE vendor_id = ? AND service_date >= ? AND service_date < ?
+        AND attribution_basis = '${VERIFIED_VENDOR_ATTRIBUTION}'
     ) ORDER BY service_date DESC
   `).bind(vendor.vendor_id, bounds.start, bounds.end,
     vendor.vendor_id, bounds.start, bounds.end,
@@ -353,6 +369,23 @@ const paymentById = async (database, paymentId) => database.prepare(`
   WHERE payment_id = ? LIMIT 1
 `).bind(paymentId).first();
 
+const vendorPaymentById = async (database, paymentId) => database.prepare(`
+  SELECT p.payment_id, p.vendor_id, p.amount_twd, p.transferred_on
+  FROM vendor_transfer_payments p
+  WHERE p.payment_id = ?
+    AND EXISTS (
+      SELECT 1 FROM vendor_transfer_allocations a
+      WHERE a.payment_id = p.payment_id
+        AND a.attribution_basis = ?
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM vendor_transfer_allocations a
+      WHERE a.payment_id = p.payment_id
+        AND a.attribution_basis IS NOT ?
+    )
+  LIMIT 1
+`).bind(paymentId, VERIFIED_VENDOR_ATTRIBUTION, VERIFIED_VENDOR_ATTRIBUTION).first();
+
 const currentPaymentStatus = async (database, paymentId) => {
   const row = await database.prepare(`
     SELECT event_type FROM vendor_payment_events
@@ -402,10 +435,11 @@ const postAdminTransfer = async (database, identity, body, now) => {
     statements.push(prepareStatement(database, `
       INSERT INTO vendor_transfer_allocations (
         allocation_id, payment_id, vendor_id, service_date, amount_twd,
-        created_by_user_id, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        created_by_user_id, created_at, attribution_basis
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [randomId('vendor_allocation'), paymentId, vendor.vendor_id,
-      allocation.serviceDate, allocation.amountTwd, identity.actor.userId, createdAt]));
+      allocation.serviceDate, allocation.amountTwd, identity.actor.userId, createdAt,
+      VERIFIED_VENDOR_ATTRIBUTION]));
   }
   statements.push(auditStatement(database, {
     actorUserId: identity.actor.userId,
@@ -442,7 +476,7 @@ const postAdminTransfer = async (database, identity, body, now) => {
 };
 
 const postVendorPaymentEvent = async (database, identity, vendorIds, paymentId, eventType, reason, now) => {
-  const payment = await paymentById(database, paymentId);
+  const payment = await vendorPaymentById(database, paymentId);
   if (!payment || !vendorIds.includes(String(payment.vendor_id))) throw notFound('PAYMENT_NOT_FOUND');
   const currentStatus = await currentPaymentStatus(database, paymentId);
   if (currentStatus !== 'REGISTERED') throw conflict('PAYMENT_RESPONSE_ALREADY_RECORDED');
