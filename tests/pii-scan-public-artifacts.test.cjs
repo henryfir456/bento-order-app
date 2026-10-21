@@ -133,6 +133,10 @@ test('typed public evidence does not exempt LINE IDs or credentials on the same 
     [
       'GitHub Actions run ' + String.fromCharCode(96) + run + String.fromCharCode(96) + ', credential ' + credential,
       /credential pattern/
+    ],
+    [
+      'GitHub Actions run ' + String.fromCharCode(96) + run + String.fromCharCode(96) + ', Bearer ' + 'A'.repeat(24),
+      /non-synthetic bearer token/
     ]
   ];
 
