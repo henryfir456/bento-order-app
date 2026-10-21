@@ -34,6 +34,8 @@ import ProvisionalEmployeeOnboarding from './components/ProvisionalEmployeeOnboa
 import PickupFloorModal from './components/PickupFloorModal';
 import ViewAsBanner from './components/ViewAsBanner';
 import DevAuthBadge from './components/DevAuthBadge';
+import LocalUatBadge from './components/LocalUatBadge';
+import LocalUatLogin from './components/LocalUatLogin';
 import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
@@ -3583,6 +3585,14 @@ export default function App() {
               </button>
             ))}
             <DevAuthBadge mode={authClient.mode} mockUser={authClient.mockUser} />
+            <LocalUatBadge
+              mode={authClient.mode}
+              role={authUser?.role}
+              onSwitch={() => {
+                authClient.logoutLocalUat();
+                window.location.reload();
+              }}
+            />
             {!isVendorAccount && displayFloor && (isViewAsMode ? (
               <span className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
                 {displayFloor}
@@ -3625,6 +3635,21 @@ export default function App() {
 
       <main className="w-full max-w-xl min-w-0 mx-auto flex-1 p-4">
         {apiClient.transport === 'worker'
+          && authClient.isLocalUat
+          && [AUTH_STATES.AUTH_REQUIRED, AUTH_STATES.AUTH_FAILED].includes(authState)
+          && !loading
+          && (
+            <LocalUatLogin
+              initialError={authState === AUTH_STATES.AUTH_FAILED ? authError : ''}
+              onLogin={async ({ role, password }) => {
+                await authClient.loginLocalUat({ role, password });
+                window.location.reload();
+              }}
+            />
+          )}
+
+        {apiClient.transport === 'worker'
+          && !authClient.isLocalUat
           && [AUTH_STATES.AUTH_REQUIRED, AUTH_STATES.AUTH_FAILED].includes(authState)
           && !loading
           && (

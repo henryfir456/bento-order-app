@@ -120,6 +120,18 @@ Switching the `VITE_MOCK_USER` role requires restarting Vite on the same
 origin; only the synthetic Vendor payment fixture is kept in local storage for
 that flow.
 
+### 隔離 Worker + D1 UAT（Windows）
+
+此流程會啟動完整本機 Wrangler Worker、可重設的本機 D1，以及連到該 Worker 的前端。它使用合成 Admin、User 和兩個 Vendor 身分，不部署或綁定任何 Cloudflare 資源，也不使用正式資料或金流。
+
+在 repository 根目錄以 PowerShell 執行：
+
+    powershell -ExecutionPolicy Bypass -File .\local-uat-start.ps1
+
+啟動器會套用本機 migration、重建合成 seed、隨機產生本機密碼，然後輸出前端 http://localhost:5173、Worker API http://localhost:8787 和本機憑證檔路徑。請從該檔選擇測試身份並輸入密碼；憑證不會寫入 GitHub。若已連接且只偵測到一台啟用 USB 偵錯的 Android 手機，啟動器會用 ADB reverse 安全轉送兩個 loopback 埠，在手機瀏覽器開啟相同的前端 URL。服務只監聽 127.0.0.1。
+
+驗證 Worker API 可在另一個 PowerShell 視窗執行 npm run uat:smoke --prefix worker-poc。要停止服務並移除該手機的轉送，執行 .\local-uat-stop.ps1。重新啟動會刪除並重建的範圍只有 worker-poc\.local-uat\state 本機測試資料庫。
+
 ## 身份與傳輸邊界
 
 - `src/auth/` 負責 LIFF 與員工訪客 authentication；Worker 以 Bearer token 判定 canonical identity。

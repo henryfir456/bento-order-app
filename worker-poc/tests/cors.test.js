@@ -103,6 +103,13 @@ test('production CORS allows the Netlify origin and Authorization header', async
   assertCorsAllowed(response, PRODUCTION_FRONTEND_ORIGIN);
 });
 
+test('local CORS does not grant the production frontend origin', async () => {
+  const response = await callMe(PRODUCTION_FRONTEND_ORIGIN, localEnv(LOCAL_DEVELOPMENT_ORIGIN));
+
+  assert.equal(response.status, 200);
+  assertCorsDenied(response);
+});
+
 test('Worker errors carry a generated request ID header and CORS exposes the trace header', async () => {
   const response = await callFormal('/api/me');
   const body = await response.json();
