@@ -22,12 +22,28 @@ import {
   projectionItemId,
   resolveEffectiveMenuState
 } from './menuItemChanges.js';
+import { compatibilityVendorCandidates } from './menuVendors.js';
 
 const VALID_FLOORS = new Set(['1樓', '9樓']);
 const ORDER_OPERATION = 'CREATE_OR_REPLACE_ORDER';
 const CANCEL_OPERATION = 'CANCEL_ORDER';
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
+const rowsFrom = (result) => (Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : []));
+
+const canonicalVendorIdForNewOrder = async (database, configuredVendor) => {
+  const candidates = compatibilityVendorCandidates(configuredVendor);
+  if (!candidates.length) throw notFound('ORDER_VENDOR_NOT_FOUND');
+  const placeholders = candidates.map(() => '?').join(', ');
+  const result = await database.prepare(`
+    SELECT vendor_id FROM vendors
+    WHERE name IN (${placeholders})
+    ORDER BY vendor_id
+  `).bind(...candidates).all();
+  const matches = rowsFrom(result);
+  if (matches.length !== 1) throw notFound('ORDER_VENDOR_NOT_FOUND');
+  return String(matches[0].vendor_id);
+};
 
 const getInputValue = (input, ...keys) => {
   for (const key of keys) {
@@ -160,6 +176,7 @@ const assertOrderRequest = async (database, identity, input, clock) => {
 
   const setting = await currentSetting(database, targetDate);
   if (!setting || !text(setting.vendor)) throw notFound('ORDER_PAGE_SETTING_NOT_FOUND');
+  const vendorId = await canonicalVendorIdForNewOrder(database, setting.vendor);
   const now = resolveClock(clock);
   const requestedTargetUserId = normalizeTargetUserId(
     getInputValue(input, 'targetUserId', 'target_user_id')
@@ -196,6 +213,7 @@ const assertOrderRequest = async (database, identity, input, clock) => {
     pickupFloor,
     note,
     setting,
+    vendorId,
     items,
     replaceExisting,
     activeOrder,
@@ -242,6 +260,7 @@ const mapTransactionFailure = (error) => {
 const buildOrderStatements = (database, context, actor, details) => {
   const {
     targetDate,
+    vendorId,
     pickupFloor,
     note,
     items,
@@ -403,12 +422,12 @@ const buildOrderStatements = (database, context, actor, details) => {
   const insertOrder = prepareStatement(database, `${menuCte(items)}
     INSERT INTO orders (
       order_id, user_id, employee_id_snapshot, line_user_id_snapshot,
-      display_name_snapshot, order_date, vendor, pickup_floor, note,
+      display_name_snapshot, order_date, vendor, vendor_id, pickup_floor, note,
       total_amount, status, created_by_user_id, created_auth_mode,
       created_at, updated_at
     )
     SELECT ?, ?, u.employee_id, u.line_user_id, u.display_name, ?, cs.vendor,
-           ?, ?,
+           ?, ?, ?,
            CASE WHEN (SELECT COUNT(*) FROM priced) = ?
                 THEN (SELECT SUM(quantity * price) FROM priced)
                 ELSE NULL END,
@@ -427,6 +446,7 @@ const buildOrderStatements = (database, context, actor, details) => {
     orderId,
     targetUserId,
     targetDate,
+    vendorId,
     pickupFloor,
     note,
     items.length,
