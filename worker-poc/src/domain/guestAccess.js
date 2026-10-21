@@ -1,5 +1,11 @@
 import { badRequest, conflict, forbidden, unauthorized } from '../http/errors.js';
-import { getUserByEmployeeId, getUserById, getUserByLineId, publicUser } from '../db/users.js';
+import {
+  getUserByEmployeeId,
+  getUserById,
+  getUserByLineId,
+  getUserByVendorLoginId,
+  publicUser
+} from '../db/users.js';
 import { createGuestSession, inspectGuestSession } from '../auth/guestSession.js';
 import {
   denyProtectedAccountAccess,
@@ -64,6 +70,22 @@ const statementChanges = (result) => Number(
   result?.meta?.changes ?? result?.changes ?? 0
 );
 
+const isVendorLoginIdentifier = (value) => /^V[0-9]{5}$/.test(value);
+
+const requireVendorLineOwner = async (database, vendorLoginId, lineUserId) => {
+  const user = await getUserByVendorLoginId(database, vendorLoginId);
+  if (!user) return null;
+  if (!user.active || user.invalidReason === 'INVALID_EMPLOYEE_ID') {
+    throw forbidden('VENDOR_SCOPE_FORBIDDEN');
+  }
+  if (!user.vendorAccessActive) throw forbidden('VENDOR_SCOPE_FORBIDDEN');
+  const lineOwner = await getUserByLineId(database, lineUserId);
+  if (!lineOwner || lineOwner.userId !== user.userId || user.lineUserId !== lineUserId) {
+    throw forbidden('VENDOR_LINE_OWNER_REQUIRED');
+  }
+  return user;
+};
+
 const guestStatusFor = (user) => (
   user?.verificationStatus === VERIFICATION_STATUSES.UNVERIFIED
     ? 'UNVERIFIED_EMPLOYEE'
@@ -112,6 +134,9 @@ export const employeeGuestLogin = async (
   clock = new Date()
 ) => {
   const employeeId = employeeIdText(employeeIdInput);
+  if (isVendorLoginIdentifier(employeeId)) {
+    throw forbidden('VENDOR_EMPLOYEE_GUEST_FORBIDDEN');
+  }
   if (await isProtectedEmployeeId(database, employeeId)) {
     return denyProtectedAccountAccess(database, {
       authMode: 'employee_guest',
@@ -302,6 +327,23 @@ export const lineEmployeeLookup = async (
 ) => {
   const employeeId = employeeIdText(employeeIdInput);
   const verifiedLineUserId = lineIdText(lineUserId);
+  const vendorUser = await requireVendorLineOwner(database, employeeId, verifiedLineUserId);
+  if (vendorUser) {
+    return {
+      success: true,
+      status: 'FOUND',
+      resolution: 'VENDOR_PRINCIPAL',
+      ownershipChanged: false,
+      identityState: publicUser(vendorUser).identityState,
+      verificationStatus: vendorUser.verificationStatus,
+      authMode: 'line',
+      employeeId,
+      user: publicUser(vendorUser)
+    };
+  }
+  if (isVendorLoginIdentifier(employeeId)) {
+    throw forbidden('VENDOR_LINE_OWNER_REQUIRED');
+  }
   if (await isProtectedEmployeeId(database, employeeId)) {
     const user = await requireProtectedLineOwner(database, verifiedLineUserId, clock);
     return {
@@ -433,6 +475,11 @@ export const lineEmployeeBind = async (
 ) => {
   const employeeId = employeeIdText(employeeIdInput);
   const verifiedLineUserId = lineIdText(lineUserId);
+  const vendorUser = await requireVendorLineOwner(database, employeeId, verifiedLineUserId);
+  if (vendorUser) return lineBindingResult(vendorUser, 'ALREADY_BOUND');
+  if (isVendorLoginIdentifier(employeeId)) {
+    throw forbidden('VENDOR_LINE_OWNER_REQUIRED');
+  }
   if (await isProtectedEmployeeId(database, employeeId)) {
     const user = await requireProtectedLineOwner(database, verifiedLineUserId, clock);
     return lineBindingResult(user, 'ALREADY_BOUND');

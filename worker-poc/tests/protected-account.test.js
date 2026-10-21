@@ -1,28 +1,39 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { createGuestSession } from '../src/auth/guestSession.js';
+import { createGuestSession, hashGuestToken } from '../src/auth/guestSession.js';
 import { claimProvisionalEmployee } from '../src/domain/employeeClaim.js';
 import { handleFormalRequest } from './helpers/formal-fixtures.js';
 import { handleFormalRequest as handleWithoutFixture } from '../src/formalWorker.js';
-import { profileFetch, request, seedUser } from './helpers/formal-fixtures.js';
+import { profileFetch, request, seedUser, seedVendor } from './helpers/formal-fixtures.js';
 import { SqliteD1 } from './helpers/formal-db.js';
 
 const NOW = new Date('2026-10-20T12:00:00.000Z');
 const PROTECTED_USER_ID = 'synthetic-protected-user';
 const PROTECTED_LINE_ID = 'line-synthetic-protected-owner';
 const PROTECTED_TOKEN = 'synthetic-protected-token';
+const LEGACY_EMPLOYEE_ID = 'SYNTHETIC-LEGACY-EMPLOYEE';
+const VENDOR_LOGIN_ID = ['V123', '45'].join('');
 const protectedEmployeeId = () => 'SYNTHETIC-PROTECTED-EMPLOYEE';
 
-const mapProtectedAccount = (database, employeeId = protectedEmployeeId()) => {
+const mapProtectedAccount = (database, userId = PROTECTED_USER_ID) => {
   database.run(`
-    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
     VALUES ('RESERVED_VENDOR_OWNER', ?, ?)
-  `, employeeId, NOW.toISOString());
+  `, userId, NOW.toISOString());
 };
 
 const call = async (database, path, options = {}, runtime = {}) => {
   const response = await handleFormalRequest(
+    request(path, options),
+    { DB: database },
+    { now: runtime.now || NOW, fetchImpl: runtime.fetchImpl || profileFetch() }
+  );
+  return { response, body: await response.json() };
+};
+
+const callWithoutFixture = async (database, path, options = {}, runtime = {}) => {
+  const response = await handleWithoutFixture(
     request(path, options),
     { DB: database },
     { now: runtime.now || NOW, fetchImpl: runtime.fetchImpl || profileFetch() }
@@ -55,6 +66,32 @@ const adminFetch = profileFetch({
   lineUserId: 'line-synthetic-admin',
   displayName: 'Synthetic Admin'
 });
+
+let legacySessionSequence = 0;
+const seedLegacyGuestSession = async (
+  database,
+  { userId, employeeId, status = 'VERIFIED', clock = NOW, lifetimeMs = 8 * 60 * 60 * 1000 } = {}
+) => {
+  legacySessionSequence += 1;
+  const token = `eg_synthetic_legacy_${legacySessionSequence}`;
+  const createdAt = new Date(clock);
+  const expiresAt = new Date(createdAt.getTime() + lifetimeMs);
+  await database.prepare(`
+    INSERT INTO employee_guest_sessions (
+      session_id, token_hash, user_id, employee_id, auth_mode, status,
+      created_at, expires_at
+    ) VALUES (?, ?, ?, ?, 'employee_guest', ?, ?, ?)
+  `).bind(
+    `synthetic-legacy-session-${legacySessionSequence}`,
+    await hashGuestToken(token),
+    userId,
+    employeeId,
+    status,
+    createdAt.toISOString(),
+    expiresAt.toISOString()
+  ).run();
+  return { token, expiresAt: expiresAt.toISOString() };
+};
 
 const strangerFetch = profileFetch({
   token: 'synthetic-stranger-token',
@@ -100,7 +137,7 @@ test('protected account permits only the active verified account’s existing LI
   assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 0);
 });
 
-test('empty or dangling protected-account mapping blocks APIs before identity or ledger changes', async () => {
+test('missing protected-owner configuration does not block ordinary users and dangling owners are rejected by the schema', async () => {
   const emptyMappingDatabase = new SqliteD1();
   seedUser(emptyMappingDatabase, {
     userId: 'synthetic-general-employee',
@@ -108,42 +145,21 @@ test('empty or dangling protected-account mapping blocks APIs before identity or
     lineUserId: null,
     displayName: 'Synthetic General Employee'
   });
-  const before = {
-    users: emptyMappingDatabase.get('SELECT COUNT(*) AS count FROM users').count,
-    ledger: emptyMappingDatabase.get('SELECT COUNT(*) AS count FROM balance_ledger').count,
-    orders: emptyMappingDatabase.get('SELECT COUNT(*) AS count FROM orders').count
-  };
   const emptyMapping = await handleWithoutFixture(request('/api/auth/employee-guest', {
     method: 'POST',
     token: '',
     body: { employeeId: 'SYNTHETIC-GENERAL-EMPLOYEE' }
   }), { DB: emptyMappingDatabase });
-  assert.equal(emptyMapping.status, 503);
-  assert.deepEqual(await emptyMapping.json(), { error: 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED' });
-  assert.deepEqual({
-    users: emptyMappingDatabase.get('SELECT COUNT(*) AS count FROM users').count,
-    ledger: emptyMappingDatabase.get('SELECT COUNT(*) AS count FROM balance_ledger').count,
-    orders: emptyMappingDatabase.get('SELECT COUNT(*) AS count FROM orders').count,
-    sessions: emptyMappingDatabase.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count
-  }, { ...before, sessions: 0 });
-
-  const danglingMappingDatabase = new SqliteD1();
-  seedUser(danglingMappingDatabase, {
-    userId: 'synthetic-general-employee',
-    employeeId: 'SYNTHETIC-GENERAL-EMPLOYEE',
-    lineUserId: null,
-    displayName: 'Synthetic General Employee'
+  assert.equal(emptyMapping.status, 201);
+  assert.deepEqual(await emptyMapping.json().then((body) => ({ status: body.status })), {
+    status: 'VERIFIED'
   });
-  mapProtectedAccount(danglingMappingDatabase, 'SYNTHETIC-NO-CANONICAL-USER');
-  const danglingMapping = await handleWithoutFixture(request('/api/auth/employee-guest', {
-    method: 'POST',
-    token: '',
-    body: { employeeId: 'SYNTHETIC-GENERAL-EMPLOYEE' }
-  }), { DB: danglingMappingDatabase });
-  assert.equal(danglingMapping.status, 503);
-  assert.deepEqual(await danglingMapping.json(), { error: 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED' });
-  assert.equal(danglingMappingDatabase.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
-  assert.equal(danglingMappingDatabase.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
+  assert.equal(emptyMappingDatabase.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 1);
+
+  assert.throws(() => emptyMappingDatabase.run(`
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
+    VALUES ('RESERVED_VENDOR_OWNER', ?, ?)
+  `, 'SYNTHETIC-NO-CANONICAL-USER', NOW.toISOString()), /FOREIGN KEY/i);
 
   const configuredDatabase = protectedDatabase();
   const generalEmployee = await call(configuredDatabase, '/api/auth/employee-guest', {
@@ -153,6 +169,105 @@ test('empty or dangling protected-account mapping blocks APIs before identity or
   });
   assert.equal(generalEmployee.response.status, 200);
   assert.equal(generalEmployee.body.identityState, 'NEW_PROVISIONAL_EMPLOYEE');
+});
+
+test('vendor login resolves only to the existing LINE-bound Vendor user and keeps UNVERIFIED unchanged', async () => {
+  const database = new SqliteD1();
+  const userId = 'synthetic-protected-user';
+  const oldEmployeeLogin = LEGACY_EMPLOYEE_ID;
+  const lineUserId = 'line-synthetic-protected-owner';
+  seedUser(database, {
+    userId,
+    employeeId: oldEmployeeLogin,
+    lineUserId,
+    displayName: 'Synthetic Vendor Owner',
+    verificationStatus: 'UNVERIFIED'
+  });
+  seedVendor(database, { vendorId: 'synthetic-canonical-vendor', name: 'Synthetic Vendor' });
+  database.run(`
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
+    VALUES ('RESERVED_VENDOR_OWNER', ?, ?)
+  `, userId, NOW.toISOString());
+  database.run(`
+    INSERT INTO vendor_principals (user_id, vendor_login_id, principal_role, status)
+    VALUES (?, ?, 'Vendor', 'ACTIVE')
+  `, userId, VENDOR_LOGIN_ID);
+  database.run(`
+    INSERT INTO vendor_memberships (user_id, vendor_id, status)
+    VALUES (?, 'synthetic-canonical-vendor', 'ACTIVE')
+  `, userId);
+
+  const lookup = await callWithoutFixture(database, '/api/auth/line-employee-lookup', {
+    method: 'POST',
+    token: PROTECTED_TOKEN,
+    body: { employeeId: VENDOR_LOGIN_ID }
+  }, { fetchImpl: ownerFetch });
+  assert.equal(lookup.response.status, 200);
+  assert.equal(lookup.body.status, 'FOUND');
+  assert.equal(lookup.body.resolution, 'VENDOR_PRINCIPAL');
+  assert.equal(lookup.body.ownershipChanged, false);
+  assert.equal(lookup.body.verificationStatus, 'UNVERIFIED');
+
+  const vendorContext = await callWithoutFixture(database, '/api/vendor/context', {
+    token: PROTECTED_TOKEN
+  }, { fetchImpl: ownerFetch });
+  assert.equal(vendorContext.response.status, 200);
+  assert.deepEqual(vendorContext.body.vendorIds, ['synthetic-canonical-vendor']);
+
+  for (const employeeId of [oldEmployeeLogin, VENDOR_LOGIN_ID]) {
+    const guestLogin = await callWithoutFixture(database, '/api/auth/employee-guest', {
+      method: 'POST',
+      body: { employeeId }
+    });
+    assert.equal(guestLogin.response.status, 403, employeeId);
+  }
+  await assert.rejects(createGuestSession(database, {
+    employeeId: VENDOR_LOGIN_ID,
+    clock: NOW
+  }), { code: 'VENDOR_EMPLOYEE_GUEST_FORBIDDEN' });
+
+  const stranger = await callWithoutFixture(database, '/api/auth/line-employee-lookup', {
+    method: 'POST',
+    token: 'synthetic-stranger-token',
+    body: { employeeId: VENDOR_LOGIN_ID }
+  }, {
+    fetchImpl: profileFetch({ token: 'synthetic-stranger-token', lineUserId: 'line-synthetic-stranger' })
+  });
+  assert.equal(stranger.response.status, 403);
+  const strangerBind = await callWithoutFixture(database, '/api/auth/line-employee-bind', {
+    method: 'POST',
+    token: 'synthetic-stranger-token',
+    body: { employeeId: VENDOR_LOGIN_ID, displayName: 'Must Not Rebind', pickupFloor: '9樓' }
+  }, {
+    fetchImpl: profileFetch({ token: 'synthetic-stranger-token', lineUserId: 'line-synthetic-stranger' })
+  });
+  assert.equal(strangerBind.response.status, 403);
+  assert.equal(database.get('SELECT employee_id FROM users WHERE user_id = ?', userId).employee_id, oldEmployeeLogin);
+  assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', userId).line_user_id, lineUserId);
+  assert.equal(database.get('SELECT verification_status FROM users WHERE user_id = ?', userId).verification_status, 'UNVERIFIED');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_principals WHERE vendor_login_id = ?', VENDOR_LOGIN_ID).count, 1);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
+});
+
+test('an unconfigured protected-owner mapping does not block an ordinary LINE user', async () => {
+  const database = new SqliteD1();
+  seedUser(database, {
+    userId: 'synthetic-general-user',
+    employeeId: 'SYNTHETIC-GENERAL-EMPLOYEE',
+    lineUserId: 'line-synthetic-general-user',
+    displayName: 'Synthetic General User'
+  });
+  const result = await callWithoutFixture(database, '/api/me', {
+    token: 'synthetic-general-token'
+  }, {
+    fetchImpl: profileFetch({
+      token: 'synthetic-general-token',
+      lineUserId: 'line-synthetic-general-user'
+    })
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.user.userId, 'synthetic-general-user');
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_user_mappings').count, 0);
 });
 
 test('stranger lookup and bind fail closed without changing identity ownership', async () => {
@@ -212,7 +327,13 @@ test('employee login, onboarding, and old guest sessions cannot use protected em
   assert.equal(guestLogin.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
   assert.equal(database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count, 0);
 
-  const lineBindSession = await createGuestSession(database, {
+  await assert.rejects(createGuestSession(database, {
+    userId: PROTECTED_USER_ID,
+    employeeId: protectedEmployeeId(),
+    status: 'VERIFIED',
+    clock: NOW
+  }), { code: 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED' });
+  const lineBindSession = await seedLegacyGuestSession(database, {
     userId: PROTECTED_USER_ID,
     employeeId: protectedEmployeeId(),
     status: 'VERIFIED',
@@ -236,7 +357,7 @@ test('employee login, onboarding, and old guest sessions cannot use protected em
   assert.equal(foreignReplay.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
   assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', PROTECTED_USER_ID).line_user_id, PROTECTED_LINE_ID);
 
-  const onboardingSession = await createGuestSession(database, {
+  const onboardingSession = await seedLegacyGuestSession(database, {
     userId: PROTECTED_USER_ID,
     employeeId: protectedEmployeeId(),
     status: 'VERIFIED',
@@ -251,7 +372,7 @@ test('employee login, onboarding, and old guest sessions cannot use protected em
   assert.equal(onboarding.response.status, 403);
   assert.equal(onboarding.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
 
-  const oldSession = await createGuestSession(database, {
+  const oldSession = await seedLegacyGuestSession(database, {
     userId: PROTECTED_USER_ID,
     employeeId: protectedEmployeeId(),
     status: 'VERIFIED',
@@ -265,7 +386,7 @@ test('employee login, onboarding, and old guest sessions cannot use protected em
 
 test('a guest session employee ID cannot mask its linked protected canonical user', async () => {
   const database = protectedDatabase();
-  const createMismatchedSession = () => createGuestSession(database, {
+  const createMismatchedSession = () => seedLegacyGuestSession(database, {
     userId: PROTECTED_USER_ID,
     employeeId: 'SYNTHETIC-OTHER',
     status: 'VERIFIED',
@@ -316,11 +437,12 @@ test('a guest session employee ID cannot mask its linked protected canonical use
 
 test('expired legacy guest sessions cannot resume protected-account access', async () => {
   const database = protectedDatabase();
-  const expired = await createGuestSession(database, {
+  const expired = await seedLegacyGuestSession(database, {
     userId: PROTECTED_USER_ID,
     employeeId: protectedEmployeeId(),
     status: 'VERIFIED',
-    clock: new Date('2026-10-19T00:00:00.000Z')
+    clock: new Date('2026-10-19T00:00:00.000Z'),
+    lifetimeMs: 60 * 60 * 1000
   });
   const result = await call(database, '/api/me', { token: expired.token });
   assert.equal(result.response.status, 401);
@@ -329,21 +451,25 @@ test('expired legacy guest sessions cannot resume protected-account access', asy
   assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', PROTECTED_USER_ID).line_user_id, PROTECTED_LINE_ID);
 });
 
-test('inactive or unverified protected owner mappings make the API unavailable before authentication', async (context) => {
-  for (const [label, overrides] of [
-    ['inactive', { active: 0 }],
-    ['unverified', { verificationStatus: 'UNVERIFIED' }]
-  ]) {
-    await context.test(label, async () => {
-      const database = protectedDatabase(overrides);
-      const result = await call(database, '/api/me', {
-        token: PROTECTED_TOKEN
-      }, { fetchImpl: ownerFetch });
-      assert.equal(result.response.status, 503);
-      assert.equal(result.body.error, 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED');
-      assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 0);
-    });
-  }
+test('protected-owner readiness stays scoped and does not require VERIFIED status', async (context) => {
+  await context.test('inactive owner is denied at the owner request', async () => {
+    const database = protectedDatabase({ active: 0 });
+    const result = await call(database, '/api/me', {
+      token: PROTECTED_TOKEN
+    }, { fetchImpl: ownerFetch });
+    assert.equal(result.response.status, 403);
+    assert.equal(result.body.error, 'PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
+  });
+
+  await context.test('active UNVERIFIED owner can use the existing LINE binding', async () => {
+    const database = protectedDatabase({ verificationStatus: 'UNVERIFIED' });
+    const result = await call(database, '/api/me', {
+      token: PROTECTED_TOKEN
+    }, { fetchImpl: ownerFetch });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.user.verificationStatus, 'UNVERIFIED');
+    assert.equal(database.get('SELECT verification_status FROM users WHERE user_id = ?', PROTECTED_USER_ID).verification_status, 'UNVERIFIED');
+  });
 });
 
 test('authorized admin transfer preview and submission cannot move protected LINE ownership', async () => {
@@ -578,43 +704,23 @@ test('View As cannot enter a protected account and the authorized Admin attempt 
   assert.equal(database.get('SELECT reason_code FROM protected_account_access_audit').reason_code, 'PROTECTED_ACCOUNT_VIEW_AS_BLOCKED');
 });
 
-test('missing and ambiguous protected-account mapping ownership keeps the API unavailable', async (context) => {
-  await context.test('missing', async () => {
-    const database = new SqliteD1();
-    mapProtectedAccount(database);
+test('protected owner validation is scoped to that owner and accepts UNVERIFIED without changing it', async (context) => {
+  await context.test('active, bound UNVERIFIED owner remains the same LINE principal', async () => {
+    const database = protectedDatabase({ verificationStatus: 'UNVERIFIED' });
     const result = await call(database, '/api/auth/line-employee-lookup', {
       method: 'POST',
-      token: 'synthetic-stranger-token',
+      token: PROTECTED_TOKEN,
       body: { employeeId: protectedEmployeeId() }
-    }, { fetchImpl: strangerFetch });
-    assert.equal(result.response.status, 503);
-    assert.equal(result.body.error, 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED');
-    assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 0);
+    }, { fetchImpl: ownerFetch });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.verificationStatus, 'UNVERIFIED');
+    assert.equal(database.get('SELECT verification_status FROM users WHERE user_id = ?', PROTECTED_USER_ID).verification_status, 'UNVERIFIED');
+    assert.equal(database.get('SELECT line_user_id FROM users WHERE user_id = ?', PROTECTED_USER_ID).line_user_id, PROTECTED_LINE_ID);
   });
 
-  await context.test('ambiguous', async () => {
-    const database = protectedDatabase();
-    database.exec('DROP INDEX users_employee_id_normalized_unique');
-    seedUser(database, {
-      userId: 'synthetic-protected-alias',
-      employeeId: ` ${protectedEmployeeId()} `,
-      lineUserId: 'line-synthetic-protected-alias',
-      displayName: 'Synthetic Alias'
-    });
-    const result = await call(database, '/api/auth/line-employee-lookup', {
-      method: 'POST',
-      token: 'synthetic-stranger-token',
-      body: { employeeId: protectedEmployeeId() }
-    }, { fetchImpl: strangerFetch });
-    assert.equal(result.response.status, 503);
-    assert.equal(result.body.error, 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED');
-    assert.equal(database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count, 0);
-  });
-
-  await context.test('inactive, unverified, unbound, and invalid mapped owners are unavailable before business writes', async (context) => {
+  await context.test('inactive, unbound, and invalid mapped owners are denied only at the protected operation', async (context) => {
     const invalidations = [
       ['inactive', "UPDATE users SET active = 0 WHERE user_id = ?"],
-      ['unverified', "UPDATE users SET verification_status = 'UNVERIFIED' WHERE user_id = ?"],
       ['unbound', 'UPDATE users SET line_user_id = NULL WHERE user_id = ?'],
       ['invalid', "UPDATE users SET invalid_reason = 'INVALID_EMPLOYEE_ID' WHERE user_id = ?"]
     ];
@@ -631,21 +737,20 @@ test('missing and ambiguous protected-account mapping ownership keeps the API un
           audits: database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count
         };
 
-        const response = await handleWithoutFixture(request('/api/auth/employee-guest', {
+        const response = await handleWithoutFixture(request('/api/auth/line-employee-lookup', {
           method: 'POST',
-          token: '',
-          body: { employeeId: 'SYNTHETIC-GENERAL-EMPLOYEE' }
-        }), { DB: database });
+          token: PROTECTED_TOKEN,
+          body: { employeeId: protectedEmployeeId() }
+        }), { DB: database }, { fetchImpl: ownerFetch });
 
-        assert.equal(response.status, 503, label);
-        assert.deepEqual(await response.json(), { error: 'PROTECTED_ACCOUNT_CONFIGURATION_REQUIRED' });
+        assert.equal(response.status, 403, label);
         assert.deepEqual({
           users: database.get('SELECT COUNT(*) AS count FROM users').count,
           ledger: database.get('SELECT COUNT(*) AS count FROM balance_ledger').count,
           orders: database.get('SELECT COUNT(*) AS count FROM orders').count,
           sessions: database.get('SELECT COUNT(*) AS count FROM employee_guest_sessions').count,
           audits: database.get('SELECT COUNT(*) AS count FROM protected_account_access_audit').count
-        }, before);
+        }, { ...before, audits: before.audits + 1 });
       });
     }
   });

@@ -66,6 +66,13 @@
 6. **正式安全界線**：任何路徑均須先滿足正式 D1 備份 readback/hash、隔離還原、migration 順序與相容性、0017 受控 owner mapping、0019 歷史訂單非破壞性設計／核准，以及設定保留證據。不可因 Cloudflare Builds 能自動部署便跳過這些 Gate，亦不可把 Preview 作正式結算驗收。
 7. **交付證據與降級**：逐項提供 runtime 類型、選擇路徑、API/CLI/Build 可用性（實際時間及錯誤類別）、來源 main SHA、migration 實際讀值、Worker version/deployment ID 和 100% 流量及正式無副作用 API smoke。缺一則對應項 `NOT VERIFIED`／`WAITING_FOR_DELIVERY`，可標示 `CODE_MERGED` 或 `LOCAL_UAT_PASS` 但不得宣稱正式完成；在既有 #104/#139 與 retrospective 記錄最小下一步與負責環境。
 
+## CODEX_EXECUTOR_BLOCKED 工具故障降級（強制；2026-10-21）
+- `CODEX_EXECUTOR_BLOCKED` 表示該執行器／launcher 不可用；不代表 Windows 或使用者電腦故障。已知反覆失敗的 MXC `D:\` launcher 不得以同一 launcher 重試，也不得要求使用者修復或建立 `D:`。
+- 遇到阻塞後，繼續可透過 GitHub API 完成的讀取、程式／文件修改、測試證據整理、Issue 更新、獨立審查及 PR 工作。真正依賴本機的工作，提供 PowerShell 7／5.1 相容命令或已版本控制且不含密鑰的腳本。
+- 明確區分 `AGENT_EXECUTION_NOT_RUN` 與 `USER_EXECUTION_VERIFIED`。建立、修改或交付腳本不等於腳本已執行；只有使用者或 agent 實際執行並提供可驗證結果後，才可標示 `USER_EXECUTION_VERIFIED`／`PASS`。
+- 沿用本對話已提供且仍適用的執行證據，不要求使用者重做相同檢查。工具失敗不得推定 Windows 故障、繞過既有安全 Gate、擴大網路／憑證權限，或把未執行步驟記為通過。
+- 若相同 launcher 已明確失敗，之後只可在出現新的執行器或能力證據時改用新路徑；不得重試同一 launcher 取得相同錯誤。
+
 ## 正式後端部署技術細則（強制）
 涉及正式 Worker 部署時必須閱讀並遵循 [docs/WORKER_DEPLOYMENT_POLICY.md](docs/WORKER_DEPLOYMENT_POLICY.md)；保留既有 GitHub Actions 禁令、完整 fresh bundle、設定不遺失、Runtime smoke 及 fail-closed 要求。
 

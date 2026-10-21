@@ -7,10 +7,22 @@ import { DatabaseSync } from 'node:sqlite';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const migrationDirectory = join(here, '..', 'migrations-formal');
-const migrationSql = readdirSync(migrationDirectory)
+const legacyEmployeeId = 'SYNTHETIC-LEGACY-EMPLOYEE';
+const vendorLoginId = (suffix = '45') => `V123${suffix}`;
+const migrationFiles = readdirSync(migrationDirectory)
   .filter((name) => name.endsWith('.sql'))
-  .sort()
+  .sort();
+const migrationSql = migrationFiles
   .map((name) => readFileSync(join(migrationDirectory, name), 'utf8'));
+const vendorOwnerConversionSqlTemplate = readFileSync(
+  join(here, '..', 'scripts', 'configure-vendor-owner.sql'),
+  'utf8'
+);
+const vendorOwnerConversionSql = vendorOwnerConversionSqlTemplate
+  .replaceAll('{{OWNER_USER_ID}}', "'synthetic-legacy-owner'")
+  .replaceAll('{{LEGACY_EMPLOYEE_ID}}', `'${legacyEmployeeId}'`)
+  .replaceAll('{{VENDOR_LOGIN_ID}}', `'${vendorLoginId()}'`)
+  .replaceAll('{{VENDOR_NAME}}', "'禾拾'");
 
 const openDatabase = () => {
   const database = new DatabaseSync(':memory:');
@@ -63,7 +75,7 @@ test('formal migration creates every source-of-truth table', () => {
     'vendor_daily_flavors',
     'vendor_daily_flavor_sync_runs',
     'taiwan_government_holidays',
-    'protected_account_employee_mappings',
+    'protected_account_user_mappings',
     'protected_account_access_audit',
     'vendor_principals',
     'vendor_memberships',
@@ -114,6 +126,7 @@ test('formal migration creates lookup indexes for concurrency-sensitive data', (
     'idx_announcement_user_preferences_user_read',
     'idx_protected_account_access_audit_time',
     'idx_vendor_memberships_vendor_status',
+    'idx_vendor_principals_login_id_unique',
     'idx_vendor_menu_version_mapping_latest',
     'idx_canonical_order_vendor_assignments_vendor_date',
     'idx_vendor_day_snapshots_verified_latest',
@@ -443,15 +456,15 @@ test('0016 adds nullable popup eligibility and independent per-user preference t
 test('0018 adds separate Vendor principal and multi-vendor membership constraints', () => {
   const database = openDatabase();
   database.prepare(`
-    INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
-    VALUES (?, ?, ?, ?, ?)
-  `).run('synthetic-vendor-user', '合成廠商使用者', '1樓', 0, 'User');
+    INSERT INTO users (user_id, employee_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run('synthetic-vendor-user', 'SYNTHETIC-EMPLOYEE-ID', '合成廠商使用者', '1樓', 0, 'User');
   database.prepare(`
     INSERT INTO vendors (vendor_id, name) VALUES (?, ?), (?, ?)
   `).run('synthetic-vendor-a', '合成店家 A', 'synthetic-vendor-b', '合成店家 B');
   database.prepare(`
-    INSERT INTO vendor_principals (user_id) VALUES (?)
-  `).run('synthetic-vendor-user');
+    INSERT INTO vendor_principals (user_id, vendor_login_id) VALUES (?, ?)
+  `).run('synthetic-vendor-user', vendorLoginId());
   database.prepare(`
     INSERT INTO vendor_memberships (user_id, vendor_id) VALUES (?, ?), (?, ?)
   `).run(
@@ -495,6 +508,136 @@ test('0018 adds separate Vendor principal and multi-vendor membership constraint
   assert.equal(database.prepare(
     'SELECT role FROM users WHERE user_id = ?'
   ).get('synthetic-vendor-user').role, 'User');
+  assert.equal(database.prepare(
+    'SELECT vendor_login_id FROM vendor_principals WHERE user_id = ?'
+  ).get('synthetic-vendor-user').vendor_login_id, vendorLoginId());
+  database.prepare(`
+    INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('synthetic-vendor-user-two', '合成廠商使用者二', '1樓', 0, 'User');
+  database.prepare(`
+    INSERT INTO vendor_principals (user_id, vendor_login_id) VALUES (?, ?)
+  `).run('synthetic-vendor-user-two', vendorLoginId('46'));
+  assert.throws(() => database.prepare(`
+    UPDATE vendor_principals SET vendor_login_id = ? WHERE user_id = ?
+  `).run(vendorLoginId(), 'synthetic-vendor-user-two'), /UNIQUE|constraint/i);
+  assert.throws(() => database.prepare(`
+    UPDATE vendor_principals SET vendor_login_id = ? WHERE user_id = ?
+  `).run('SYNTHETIC-EMPLOYEE-ID', 'synthetic-vendor-user-two'), /VENDOR_LOGIN_ID_COLLIDES_EMPLOYEE_ID/);
+  assert.throws(() => database.prepare(`
+    UPDATE users SET employee_id = ? WHERE user_id = ?
+  `).run(vendorLoginId('46'), 'synthetic-vendor-user-two'), /VENDOR_LOGIN_ID_COLLIDES_EMPLOYEE_ID/);
+  assert.throws(() => database.prepare(`
+    UPDATE vendor_principals SET vendor_login_id = ? WHERE user_id = ?
+  `).run(`v${vendorLoginId('47').slice(1).toLowerCase()}`, 'synthetic-vendor-user-two'), /CHECK|constraint/i);
+  database.prepare('UPDATE users SET line_user_id = ? WHERE user_id = ?')
+    .run('line-synthetic-vendor-user', 'synthetic-vendor-user');
+  assert.throws(() => database.prepare(`
+    UPDATE users SET line_user_id = ? WHERE user_id = ?
+  `).run('line-synthetic-vendor-user', 'synthetic-vendor-user-two'), /UNIQUE|constraint/i);
+});
+
+test('controlled vendor conversion is idempotent and preserves canonical identity and history', () => {
+  const database = openDatabase();
+  database.prepare(`
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor,
+      balance, role, active, verification_status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-legacy-owner', legacyEmployeeId, 'line-synthetic-owner',
+    'Synthetic禾拾 Owner', '1樓', 275, 'User', 1, 'UNVERIFIED'
+  );
+  database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
+    .run('canonical-vendor-heshi', '禾拾');
+  database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, order_date, vendor, pickup_floor, total_amount,
+      status, created_by_user_id, created_auth_mode, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-owner-history-order', 'synthetic-legacy-owner', legacyEmployeeId,
+    'line-synthetic-owner', 'Synthetic禾拾 Owner', '2026-10-01', '禾拾',
+    '1樓', 90, 'COMPLETED', 'synthetic-legacy-owner', 'line',
+    '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z'
+  );
+  database.prepare(`
+    INSERT INTO balance_ledger (
+      transaction_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, amount, balance_after, type, auth_mode, occurred_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-owner-history-ledger', 'synthetic-legacy-owner', legacyEmployeeId,
+    'line-synthetic-owner', 'Synthetic禾拾 Owner', 90, 275, 'TOPUP', 'line',
+    '2026-10-01T00:00:00.000Z'
+  );
+
+  const before = {
+    user: { ...database.prepare(`
+      SELECT user_id, employee_id, line_user_id, role, verification_status, active
+      FROM users WHERE user_id = ?
+    `).get('synthetic-legacy-owner') },
+    orders: database.prepare('SELECT * FROM orders WHERE order_id = ?')
+      .all('synthetic-owner-history-order').map((row) => ({ ...row })),
+    ledger: database.prepare('SELECT * FROM balance_ledger WHERE transaction_id = ?')
+      .all('synthetic-owner-history-ledger').map((row) => ({ ...row }))
+  };
+
+  database.exec(vendorOwnerConversionSql);
+  database.exec(vendorOwnerConversionSql);
+
+  const after = {
+    user: { ...database.prepare(`
+      SELECT user_id, employee_id, line_user_id, role, verification_status, active
+      FROM users WHERE user_id = ?
+    `).get('synthetic-legacy-owner') },
+    orders: database.prepare('SELECT * FROM orders WHERE order_id = ?')
+      .all('synthetic-owner-history-order').map((row) => ({ ...row })),
+    ledger: database.prepare('SELECT * FROM balance_ledger WHERE transaction_id = ?')
+      .all('synthetic-owner-history-ledger').map((row) => ({ ...row }))
+  };
+  assert.deepEqual(after.user, before.user);
+  assert.deepEqual(after.orders, before.orders);
+  assert.deepEqual(after.ledger, before.ledger);
+  assert.equal(database.prepare(`
+    SELECT user_id FROM protected_account_user_mappings
+    WHERE account_key = 'RESERVED_VENDOR_OWNER'
+  `).get().user_id, 'synthetic-legacy-owner');
+  assert.equal(database.prepare(`
+    SELECT vendor_login_id FROM vendor_principals WHERE user_id = ?
+  `).get('synthetic-legacy-owner').vendor_login_id, vendorLoginId());
+  assert.equal(database.prepare(`
+    SELECT vendor_id FROM vendor_memberships WHERE user_id = ? AND status = 'ACTIVE'
+  `).get('synthetic-legacy-owner').vendor_id, 'canonical-vendor-heshi');
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM vendor_principals WHERE vendor_login_id = ?
+  `).get(vendorLoginId()).count, 1);
+  assert.equal(database.prepare(`
+    SELECT COUNT(*) AS count FROM vendor_memberships WHERE user_id = ?
+  `).get('synthetic-legacy-owner').count, 1);
+
+  const unverifiedGuard = openDatabase();
+  unverifiedGuard.prepare(`
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor,
+      balance, role, active, verification_status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    'synthetic-verified-owner', legacyEmployeeId, 'line-synthetic-verified',
+    'Synthetic verified owner', '1樓', 0, 'User', 1, 'VERIFIED'
+  );
+  unverifiedGuard.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
+    .run('canonical-vendor-he-shi', '禾拾');
+  const verifiedOwnerConversionSql = vendorOwnerConversionSqlTemplate
+    .replaceAll('{{OWNER_USER_ID}}', "'synthetic-verified-owner'")
+    .replaceAll('{{LEGACY_EMPLOYEE_ID}}', `'${legacyEmployeeId}'`)
+    .replaceAll('{{VENDOR_LOGIN_ID}}', `'${vendorLoginId()}'`)
+    .replaceAll('{{VENDOR_NAME}}', "'禾拾'");
+  unverifiedGuard.exec(verifiedOwnerConversionSql);
+  assert.equal(unverifiedGuard.prepare('SELECT COUNT(*) AS count FROM protected_account_user_mappings').get().count, 0);
+  assert.equal(unverifiedGuard.prepare('SELECT COUNT(*) AS count FROM vendor_principals').get().count, 0);
+  assert.equal(unverifiedGuard.prepare('SELECT COUNT(*) AS count FROM vendor_memberships').get().count, 0);
 });
 
 test('0015 adds a constrained invalid employee marker without rewriting existing user rows', () => {
@@ -520,20 +663,28 @@ test('0015 adds a constrained invalid employee marker without rewriting existing
 
 test('0017 adds a deidentified append-only protected-account access audit', () => {
   const database = openDatabase();
-  const mappingColumns = tableColumns(database, 'protected_account_employee_mappings');
-  assert.deepEqual([...mappingColumns.keys()], ['account_key', 'employee_id', 'created_at']);
+  const mappingColumns = tableColumns(database, 'protected_account_user_mappings');
+  assert.deepEqual([...mappingColumns.keys()], ['account_key', 'user_id', 'created_at']);
   database.prepare(`
-    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
+    VALUES (?, ?, ?, ?, ?)
+  `).run('synthetic-protected-user', '合成受保護使用者', '1樓', 0, 'User');
+  database.prepare(`
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
     VALUES (?, ?, ?)
-  `).run('RESERVED_VENDOR_OWNER', 'SYNTHETIC-PROTECTED-EMPLOYEE', '2026-10-20T12:00:00.000Z');
+  `).run('RESERVED_VENDOR_OWNER', 'synthetic-protected-user', '2026-10-20T12:00:00.000Z');
   assert.throws(() => database.prepare(`
-    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
     VALUES (?, ?, ?)
-  `).run('ANOTHER_SYNTHETIC_ACCOUNT', 'SYNTHETIC-PROTECTED-EMPLOYEE', '2026-10-20T12:00:00.000Z'), /UNIQUE|constraint/i);
+  `).run('SECOND_SYNTHETIC_ACCOUNT', 'synthetic-protected-user', '2026-10-20T12:00:00.000Z'), /UNIQUE|constraint/i);
   assert.throws(() => database.prepare(`
-    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
     VALUES (?, ?, ?)
-  `).run('', 'SYNTHETIC-OTHER-EMPLOYEE', '2026-10-20T12:00:00.000Z'), /CHECK|constraint/i);
+  `).run('', 'synthetic-other-protected-user', '2026-10-20T12:00:00.000Z'), /CHECK|constraint/i);
+  assert.throws(() => database.prepare(`
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
+    VALUES (?, ?, ?)
+  `).run('MISSING_SYNTHETIC_USER', 'missing-synthetic-user', '2026-10-20T12:00:00.000Z'), /FOREIGN KEY|constraint/i);
 
   const columns = tableColumns(database, 'protected_account_access_audit');
   assert.deepEqual([...columns.keys()], ['event_id', 'auth_mode', 'reason_code', 'occurred_at']);
@@ -556,6 +707,69 @@ test('0017 adds a deidentified append-only protected-account access audit', () =
     DELETE FROM protected_account_access_audit WHERE event_id = ?
   `).run('synthetic-audit-event'), /append-only/i);
   assert.deepEqual(database.prepare('PRAGMA foreign_key_check').all(), []);
+});
+
+test('migrations from 0014 to latest preserve synthetic orders and ledger rows', () => {
+  const database = new DatabaseSync(':memory:');
+  const firstNewMigration = migrationFiles.findIndex((name) => name.startsWith('0015_'));
+  assert.ok(firstNewMigration > 0);
+  migrationSql.slice(0, firstNewMigration).forEach((sql) => database.exec(sql));
+
+  database.prepare(`
+    INSERT INTO users (
+      user_id, employee_id, line_user_id, display_name, pickup_floor,
+      balance, role, active, verification_status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('synthetic-migration-user', 'SYNTHETIC-MIGRATION-EMPLOYEE',
+    'line-synthetic-migration-user', '合成遷移使用者', '1樓', 90, 'User', 1, 'UNVERIFIED');
+  database.prepare(`
+    INSERT INTO orders (
+      order_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, order_date, vendor, pickup_floor, total_amount,
+      status, created_by_user_id, created_auth_mode, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run('synthetic-migration-order', 'synthetic-migration-user',
+    'SYNTHETIC-MIGRATION-EMPLOYEE', 'line-synthetic-migration-user',
+    '合成遷移使用者', '2026-10-01', 'Synthetic Vendor Label', '1樓', 90,
+    'COMPLETED', 'synthetic-migration-user', 'line',
+    '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z');
+  database.prepare(`
+    INSERT INTO balance_ledger (
+      transaction_id, user_id, amount, balance_after, type, auth_mode, occurred_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run('synthetic-migration-ledger', 'synthetic-migration-user', 90, 90,
+    'TOPUP', 'line', '2026-10-01T00:00:00.000Z');
+
+  const before = {
+    user: database.prepare(`SELECT user_id, employee_id, line_user_id, display_name,
+      pickup_floor, balance, role, active, verification_status FROM users WHERE user_id = ?`)
+      .get('synthetic-migration-user'),
+    orders: database.prepare(`SELECT order_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, order_date, vendor, pickup_floor, total_amount, status,
+      created_by_user_id, created_auth_mode, created_at, updated_at
+      FROM orders WHERE user_id = ? ORDER BY order_id`).all('synthetic-migration-user').map((row) => ({ ...row })),
+    ledger: database.prepare('SELECT * FROM balance_ledger WHERE user_id = ? ORDER BY transaction_id')
+      .all('synthetic-migration-user').map((row) => ({ ...row }))
+  };
+  migrationSql.slice(firstNewMigration).forEach((sql) => database.exec(sql));
+  const after = {
+    user: database.prepare(`SELECT user_id, employee_id, line_user_id, display_name,
+      pickup_floor, balance, role, active, verification_status FROM users WHERE user_id = ?`)
+      .get('synthetic-migration-user'),
+    orders: database.prepare(`SELECT order_id, user_id, employee_id_snapshot, line_user_id_snapshot,
+      display_name_snapshot, order_date, vendor, pickup_floor, total_amount, status,
+      created_by_user_id, created_auth_mode, created_at, updated_at, vendor_id
+      FROM orders WHERE user_id = ? ORDER BY order_id`).all('synthetic-migration-user').map((row) => ({ ...row })),
+    ledger: database.prepare('SELECT * FROM balance_ledger WHERE user_id = ? ORDER BY transaction_id')
+      .all('synthetic-migration-user').map((row) => ({ ...row }))
+  };
+  const { vendor_id: _vendorId, ...historicalOrder } = after.orders[0];
+  assert.deepEqual(after.user, before.user);
+  assert.deepEqual([historicalOrder], before.orders);
+  assert.deepEqual(after.ledger, before.ledger);
+  assert.equal(after.orders[0].vendor_id, null);
+  assert.equal(database.prepare("SELECT verification_status FROM users WHERE user_id = ?")
+    .get('synthetic-migration-user').verification_status, 'UNVERIFIED');
 });
 
 test('0010 backfills canonical vendors without duplicating historical aliases', () => {

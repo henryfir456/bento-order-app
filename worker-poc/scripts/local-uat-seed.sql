@@ -11,8 +11,8 @@ INSERT INTO users (
   ('local-uat-vendor-two', 'LOCAL-UAT-VENDOR-TWO', 'local-uat-line-vendor-two', '合成 Vendor V' || printf('%05d', 2), '1樓', 0, 'User', 1, 'VERIFIED', NULL),
   ('local-uat-protected-owner', 'LOCAL-UAT-PROTECTED-OWNER', 'local-uat-line-protected-owner', '合成受保護帳號 Owner', '1樓', 0, 'User', 1, 'VERIFIED', NULL);
 
-INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
-VALUES ('RESERVED_VENDOR_OWNER', 'LOCAL-UAT-PROTECTED-OWNER', '2026-10-21T00:00:00.000Z');
+INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
+VALUES ('RESERVED_VENDOR_OWNER', 'local-uat-protected-owner', '2026-10-21T00:00:00.000Z');
 
 INSERT INTO vendors (vendor_id, name, description, enabled)
 VALUES

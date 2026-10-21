@@ -13,10 +13,9 @@ import { handleReadOnlyRequest } from './routes/readOnly.js';
 import { runAutomaticDailyOpening } from './domain/automaticOpening.js';
 import { runCaiTeacherDailyFlavorSync } from './domain/dailyFlavors.js';
 import { syncTaiwanGovernmentHolidays } from './domain/taiwanHolidays.js';
-import { HttpError, toPublicError } from './http/errors.js';
+import { HttpError, serviceUnavailable, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
 import { asNumber } from './contract.js';
-import { assertProtectedAccountMappingReady } from './auth/protectedAccountPolicy.js';
 
 const AUTOMATIC_OPENING_LOG_EVENT = 'automatic_daily_group_opening';
 const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
@@ -94,7 +93,14 @@ export const handleFormalRequest = async (request, env, options = {}) => {
         }, 503);
       }
     } else {
-      await assertProtectedAccountMappingReady(env?.DB);
+      // Probe only D1 availability. Protected-owner configuration is checked
+      // lazily by the identity workflows that need it and never gates all APIs.
+      try {
+        const ready = await env?.DB?.prepare('SELECT 1 AS ready').first();
+        if (Number(ready?.ready) !== 1) throw new Error('D1 probe returned no row');
+      } catch {
+        throw serviceUnavailable('DATABASE_UNAVAILABLE');
+      }
       const authResponse = await handleAuthRoute(request, env, options);
       if (authResponse) response = authResponse;
       if (!response) {

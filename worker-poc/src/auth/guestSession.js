@@ -1,6 +1,7 @@
 import { forbidden, unauthorized } from '../http/errors.js';
 import { randomId, resolveClock } from '../db/transactions.js';
 import { currentBalanceProjection, toUser } from '../db/users.js';
+import { isProtectedEmployeeId, isProtectedUserId } from './protectedAccountPolicy.js';
 
 const DEFAULT_LIFETIME_MS = 8 * 60 * 60 * 1000;
 const GUEST_TOKEN_PREFIX = 'eg_';
@@ -72,6 +73,10 @@ export const createGuestSession = async (
   if (!Number.isSafeInteger(lifetimeMs) || lifetimeMs <= 0) {
     throw new TypeError('Guest session lifetime must be a positive safe integer.');
   }
+  if (await isProtectedUserId(database, userId)
+    || await isProtectedEmployeeId(database, employeeId)) {
+    throw forbidden('PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED');
+  }
   const createdAt = resolveClock(clock);
   const expiresAt = new Date(createdAt.getTime() + lifetimeMs);
   const token = randomToken();
@@ -97,6 +102,12 @@ export const createGuestSession = async (
       WHERE (vendor_user.user_id = ? AND ? IS NOT NULL)
          OR (UPPER(trim(vendor_user.employee_id)) = UPPER(trim(?)) AND ? IS NOT NULL)
     )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM vendor_principals vp
+      WHERE UPPER(trim(vp.vendor_login_id)) = UPPER(trim(?))
+        AND ? IS NOT NULL
+    )
   `).bind(
     randomId('guest'),
     await hashGuestToken(token),
@@ -112,6 +123,8 @@ export const createGuestSession = async (
     userId,
     userId,
     employeeId,
+    employeeId,
+    employeeId,
     employeeId
   ).run();
   const changes = Number(result?.meta?.changes ?? result?.changes ?? 0);
@@ -124,7 +137,14 @@ export const createGuestSession = async (
          OR (UPPER(trim(vendor_user.employee_id)) = UPPER(trim(?)) AND ? IS NOT NULL)
       LIMIT 1
     `).bind(userId, userId, employeeId, employeeId).first();
-    if (vendorPrincipal) throw forbidden('VENDOR_EMPLOYEE_GUEST_FORBIDDEN');
+    const vendorAlias = await database.prepare(`
+      SELECT 1
+      FROM vendor_principals
+      WHERE UPPER(trim(vendor_login_id)) = UPPER(trim(?))
+        AND ? IS NOT NULL
+      LIMIT 1
+    `).bind(employeeId, employeeId).first();
+    if (vendorPrincipal || vendorAlias) throw forbidden('VENDOR_EMPLOYEE_GUEST_FORBIDDEN');
     throw forbidden('INVALID_EMPLOYEE_ID');
   }
   return { token, expiresAt: expiresAt.toISOString() };

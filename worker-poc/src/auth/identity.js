@@ -13,6 +13,7 @@ import { inspectGuestSession, isGuestToken } from './guestSession.js';
 import {
   denyProtectedAccountAccess,
   hasAnyProtectedEmployeeId,
+  isProtectedAccount,
   requireProtectedLineOwner
 } from './protectedAccounts.js';
 
@@ -102,7 +103,8 @@ export const resolveLineIdentity = async (
   if (!token) throw unauthorized();
   const profile = await fetchLineProfile(token, fetchImpl);
   let user = await getUserByLineId(database, profile.lineUserId);
-  if (await hasAnyProtectedEmployeeId(database, user?.employeeId)) {
+  if (isProtectedAccount(user)
+    || await hasAnyProtectedEmployeeId(database, user?.employeeId)) {
     user = await requireProtectedLineOwner(database, profile.lineUserId, clock);
   }
   if (user?.invalidReason === 'INVALID_EMPLOYEE_ID') {

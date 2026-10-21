@@ -1,9 +1,13 @@
-CREATE TABLE protected_account_employee_mappings (
+PRAGMA foreign_keys = ON;
+
+-- RESERVED_VENDOR_OWNER is the protected legacy LINE owner from issue #122.
+-- It identifies the canonical user row so an employee/login identifier can
+-- change without changing who owns the existing LINE binding.
+CREATE TABLE protected_account_user_mappings (
   account_key TEXT PRIMARY KEY,
-  employee_id TEXT NOT NULL UNIQUE,
+  user_id TEXT NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE RESTRICT,
   created_at TEXT NOT NULL,
-  CHECK (length(trim(account_key)) > 0),
-  CHECK (length(trim(employee_id)) > 0)
+  CHECK (length(trim(account_key)) > 0)
 );
 
 CREATE TABLE protected_account_access_audit (

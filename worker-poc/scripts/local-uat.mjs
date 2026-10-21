@@ -158,7 +158,7 @@ const resetLocalDatabase = () => {
     '--command',
     "SELECT (SELECT name FROM d1_migrations ORDER BY name DESC LIMIT 1) AS last_migration, (SELECT COUNT(*) FROM users WHERE user_id LIKE 'local-uat-%') AS synthetic_users, (SELECT COUNT(*) FROM vendors WHERE vendor_id IN ('"
       + vendorOneId + "', '" + vendorTwoId
-      + "')) AS synthetic_vendors, (SELECT COUNT(*) FROM protected_account_employee_mappings WHERE employee_id = 'LOCAL-UAT-PROTECTED-OWNER') AS synthetic_owner_mappings, (SELECT COUNT(*) FROM orders WHERE order_id LIKE 'local-uat-%') AS synthetic_orders, (SELECT COUNT(*) FROM vendor_transfer_payments WHERE payment_id LIKE 'SYNTHETIC-UAT-%') AS synthetic_payments;"
+      + "')) AS synthetic_vendors, (SELECT COUNT(*) FROM protected_account_user_mappings WHERE user_id = 'local-uat-protected-owner') AS synthetic_owner_mappings, (SELECT COUNT(*) FROM orders WHERE order_id LIKE 'local-uat-%') AS synthetic_orders, (SELECT COUNT(*) FROM vendor_transfer_payments WHERE payment_id LIKE 'SYNTHETIC-UAT-%') AS synthetic_payments;"
   ], { capture: true });
   let verification;
   try {

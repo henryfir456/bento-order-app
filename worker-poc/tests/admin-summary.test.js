@@ -248,9 +248,9 @@ test('admin member APIs do not expose the LINE ID of a protected account', async
     displayName: 'Synthetic protected account'
   });
   database.run(`
-    INSERT INTO protected_account_employee_mappings (account_key, employee_id, created_at)
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
     VALUES ('RESERVED_VENDOR_OWNER', ?, ?)
-  `, 'SYNTHETIC-PROTECTED-EMPLOYEE', '2026-10-20T12:00:00.000Z');
+  `, 'synthetic-protected-user', '2026-10-20T12:00:00.000Z');
 
   const balances = await call(
     database,
