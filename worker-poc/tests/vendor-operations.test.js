@@ -334,6 +334,110 @@ test('Vendor settlements resolve only fully mapped historical menu versions and 
   assert.equal(database.get('SELECT COUNT(*) AS count FROM balance_ledger').count, 0);
 });
 
+test('Vendor operations ignore stale snapshots and cannot allocate against unverified receivables', async () => {
+  const database = new SqliteD1();
+  seedVendor(database, { vendorId: 'synthetic-vendor-a', name: 'Synthetic Bento A' });
+  seedUser(database, {
+    userId: 'synthetic-vendor-principal-a', lineUserId: 'synthetic-line-vendor-a', employeeId: null
+  });
+  addVendorPrincipal(database, { userId: 'synthetic-vendor-principal-a', vendorId: 'synthetic-vendor-a' });
+  seedUser(database, {
+    userId: 'synthetic-buyer-a', lineUserId: 'synthetic-line-buyer-a', employeeId: 'SYNTHETIC-BUYER-A'
+  });
+  seedUser(database, {
+    userId: 'synthetic-admin', lineUserId: 'synthetic-line-admin', employeeId: 'SYNTHETIC-ADMIN', role: 'Admin'
+  });
+  database.run('INSERT INTO calendar_settings (order_date, vendor, mode) VALUES (?, ?, \'A\')',
+    '2026-10-20', 'Synthetic Bento A');
+  addOrder(database, {
+    orderId: 'synthetic-current-vendor-order', buyerId: 'synthetic-buyer-a', serviceDate: '2026-10-20',
+    vendor: 'Synthetic Bento A', itemName: 'Synthetic Bento A Meal', quantity: 2, unitPrice: 85
+  });
+
+  const estimate = await call(database, '/api/vendor/orders?month=2026-10', {
+    token: 'synthetic-vendor-token', lineUserId: 'synthetic-line-vendor-a',
+    now: new Date('2026-10-20T00:00:00.000Z')
+  });
+  const estimatedDay = estimate.body.days[0];
+  assert.equal(estimatedDay.amountTwd, 170);
+  database.run(`
+    INSERT INTO vendor_day_snapshots (
+      snapshot_id, vendor_id, service_date, revision, snapshot_kind,
+      order_count, portion_count, amount_twd, items_json, change_reason,
+      created_by_user_id, created_at
+    ) VALUES (?, ?, ?, ?, 'BASELINE', ?, ?, ?, ?, ?, ?, ?)
+  `, 'synthetic-unverified-snapshot', 'synthetic-vendor-a', '2026-10-20', 7,
+  estimatedDay.orderCount, estimatedDay.portionCount, estimatedDay.amountTwd,
+  JSON.stringify(estimatedDay.items), 'Synthetic stale cross-vendor detail',
+  'synthetic-admin', '2026-10-20T00:30:00.000Z');
+  database.run(`
+    INSERT INTO vendor_day_snapshots (
+      snapshot_id, vendor_id, service_date, revision, snapshot_kind,
+      order_count, portion_count, amount_twd, items_json, change_reason,
+      created_by_user_id, created_at
+    ) VALUES (?, ?, ?, ?, 'BASELINE', ?, ?, ?, '[]', ?, ?, ?)
+  `, 'synthetic-unverified-high-snapshot', 'synthetic-vendor-a', '2026-10-21', 1,
+  9, 9, 900, 'Synthetic stale high receivable', 'synthetic-admin', '2026-10-20T00:31:00.000Z');
+  database.run(`
+    INSERT INTO vendor_transfer_payments (
+      payment_id, vendor_id, amount_twd, transferred_on, idempotency_key,
+      request_hash, created_by_user_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `, 'synthetic-unverified-payment', 'synthetic-vendor-a', 100, '2026-10-20',
+  'synthetic-old-payment-key', '{}', 'synthetic-admin', '2026-10-20T00:32:00.000Z');
+  database.run(`
+    INSERT INTO vendor_transfer_allocations (
+      allocation_id, payment_id, vendor_id, service_date, amount_twd,
+      created_by_user_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, 'synthetic-unverified-allocation', 'synthetic-unverified-payment', 'synthetic-vendor-a',
+  '2026-10-20', 50, 'synthetic-admin', '2026-10-20T00:33:00.000Z');
+
+  const afterCutoff = new Date('2026-10-20T03:00:00.000Z');
+  const verifiedRead = await call(database, '/api/vendor/orders?month=2026-10', {
+    token: 'synthetic-vendor-token', lineUserId: 'synthetic-line-vendor-a', now: afterCutoff
+  });
+  const verifiedDay = verifiedRead.body.days.find((day) => day.serviceDate === '2026-10-20');
+  assert.equal(verifiedDay.amountTwd, 170);
+  assert.equal(verifiedDay.changeReason, 'AFTER_CUTOFF_BASELINE');
+  assert.equal(verifiedDay.revision, 8);
+  assert.equal(verifiedDay.settlement.registeredTransferTwd, 0);
+  assert.deepEqual(verifiedDay.settlement.transfers, []);
+  const staleAcknowledgement = await call(database,
+    '/api/vendor/payments/synthetic-unverified-payment/acknowledgement', {
+      method: 'POST', token: 'synthetic-vendor-token', lineUserId: 'synthetic-line-vendor-a', now: afterCutoff
+    });
+  assert.equal(staleAcknowledgement.response.status, 404);
+  assert.equal(database.get(`
+    SELECT change_reason FROM vendor_day_snapshots WHERE snapshot_id = ?
+  `, 'synthetic-unverified-snapshot').change_reason, 'Synthetic stale cross-vendor detail');
+  assert.equal(database.get(`
+    SELECT COUNT(*) AS count FROM vendor_day_snapshots
+    WHERE vendor_id = ? AND service_date = ?
+  `, 'synthetic-vendor-a', '2026-10-20').count, 2);
+  assert.equal(database.get(`
+    SELECT attribution_basis FROM vendor_day_snapshots
+    WHERE vendor_id = ? AND service_date = ? AND revision = ?
+  `, 'synthetic-vendor-a', '2026-10-20', 8).attribution_basis, 'CANONICAL_VENDOR_ATTRIBUTION_V1');
+
+  const blockedPayment = await call(database, '/api/admin/vendor-payments', {
+    method: 'POST', token: 'synthetic-admin-token', lineUserId: 'synthetic-line-admin',
+    body: {
+      vendorId: 'synthetic-vendor-a', amountTwd: 100, transferredOn: '2026-10-21',
+      actualTransferDone: true, detailsReviewed: true,
+      idempotencyKey: 'synthetic-unverified-snapshot-allocation',
+      allocations: [{ serviceDate: '2026-10-21', amountTwd: 100 }]
+    },
+    now: afterCutoff
+  });
+  assert.equal(blockedPayment.response.status, 409);
+  assert.equal(blockedPayment.body.error, 'VENDOR_DAY_RECEIVABLE_EXCEEDED');
+  assert.equal(database.get(`
+    SELECT COUNT(*) AS count FROM vendor_transfer_payments
+    WHERE idempotency_key = ?
+  `, 'synthetic-unverified-snapshot-allocation').count, 0);
+});
+
 test('Admin can record one transfer across dates, replay idempotently, and Vendor can acknowledge without touching employee ledger', async () => {
   const database = new SqliteD1();
   seedVendor(database, { vendorId: 'synthetic-vendor-a', name: 'Synthetic Bento A' });
