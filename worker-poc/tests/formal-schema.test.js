@@ -629,7 +629,12 @@ test('controlled vendor conversion is idempotent and preserves canonical identit
   );
   unverifiedGuard.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
     .run('canonical-vendor-he-shi', '禾拾');
-  unverifiedGuard.exec(vendorOwnerConversionSql);
+  const verifiedOwnerConversionSql = vendorOwnerConversionSqlTemplate
+    .replaceAll('{{OWNER_USER_ID}}', "'synthetic-verified-owner'")
+    .replaceAll('{{LEGACY_EMPLOYEE_ID}}', `'${legacyEmployeeId}'`)
+    .replaceAll('{{VENDOR_LOGIN_ID}}', `'${vendorLoginId()}'`)
+    .replaceAll('{{VENDOR_NAME}}', "'禾拾'");
+  unverifiedGuard.exec(verifiedOwnerConversionSql);
   assert.equal(unverifiedGuard.prepare('SELECT COUNT(*) AS count FROM protected_account_user_mappings').get().count, 0);
   assert.equal(unverifiedGuard.prepare('SELECT COUNT(*) AS count FROM vendor_principals').get().count, 0);
   assert.equal(unverifiedGuard.prepare('SELECT COUNT(*) AS count FROM vendor_memberships').get().count, 0);
