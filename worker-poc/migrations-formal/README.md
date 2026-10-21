@@ -135,13 +135,16 @@ allocations with a NULL attribution basis so they cannot be used by Vendor
 reads or authorize new allocations; new Worker-generated snapshots and
 allocations carry a canonical attribution marker. A verified snapshot only
 caps the receivable while current active orders still support it: both
-allocation insertion and adjustment triggers use the lower of the latest
-verified snapshot and the current canonical-attributed active-order total.
-Without a verified snapshot, triggers use the current total alone. This
-prevents an append-only snapshot from authorizing new allocations after an
-order is cancelled, while remaining conservative if orders are added after the
-snapshot. New snapshots append at a revision above all historical rows; old
-settlement data is never edited or deleted. Transfer registrations,
+allocation insertion and positive allocation adjustments are limited by the
+lower of the latest verified snapshot and current canonical-attributed
+active-order total. Without a verified snapshot, triggers use the current total
+alone. Negative adjustments may reduce an allocation only to zero or above,
+even when other existing allocations temporarily keep the day's total above
+the current receivable; this allows safe incremental correction and reversal.
+These rules prevent an append-only snapshot from authorizing new allocations
+after an order is cancelled, while remaining conservative if orders are added
+after the snapshot. New snapshots append at a revision above all historical
+rows; old settlement data is never edited or deleted. Transfer registrations,
 date allocations, allocation corrections, and vendor acknowledgement/dispute/resolution/reversal
 history remain append-only and separate from the employee ledger. Allocations
 are constrained to integer TWD, the registered transfer amount, and the day's
