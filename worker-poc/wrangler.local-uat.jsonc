@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bento-order-app-local-uat-only",
+  "main": "src/localUatWorker.js",
+  "compatibility_date": "2026-09-07",
+  "workers_dev": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bento-order-app-local-uat-only",
+      "database_id": "abcdefab-cdef-4abc-8def-abcdefabcdef",
+      "migrations_dir": "migrations-formal"
+    }
+  ],
+  "vars": {
+    "LOCAL_UAT_MODE": "1",
+    "CORS_MODE": "local",
+    "DEV_ALLOWED_ORIGINS": "http://localhost:5173",
+    "APP_ORIGIN": "http://localhost:5173"
+  },
+  "triggers": {
+    "crons": []
+  }
+}

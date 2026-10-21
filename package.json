@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test:auth-recovery": "node --test tests/auth-startup-recovery.test.cjs",
-    "test:line-binding": "node --test tests/line-binding-state.test.cjs"
+    "test:line-binding": "node --test tests/line-binding-state.test.cjs",
+    "test:local-uat": "node --test tests/local-uat-auth-mode.test.cjs"
   },
   "dependencies": {
     "@line/liff": "^2.31.0",

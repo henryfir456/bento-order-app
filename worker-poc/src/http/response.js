@@ -39,11 +39,9 @@ const normalizeExactOrigin = (value) => {
 };
 
 const resolveAllowedOrigins = (env = {}) => {
-  const allowedOrigins = new Set([
-    PRODUCTION_FRONTEND_ORIGIN,
-    LOCAL_DEVELOPMENT_ORIGIN,
-    LOOPBACK_DEVELOPMENT_ORIGIN
-  ]);
+  const allowedOrigins = new Set(isLocalCorsMode(env)
+    ? [LOCAL_DEVELOPMENT_ORIGIN, LOOPBACK_DEVELOPMENT_ORIGIN]
+    : [PRODUCTION_FRONTEND_ORIGIN, LOCAL_DEVELOPMENT_ORIGIN, LOOPBACK_DEVELOPMENT_ORIGIN]);
   if (!isExplicitDevOrTestCorsMode(env)) return allowedOrigins;
 
   String(env.DEV_ALLOWED_ORIGINS || '')
