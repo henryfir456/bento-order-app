@@ -21,11 +21,20 @@ const isUatResourceIdentifier = (file, line) => file === 'worker-poc/wrangler.ua
     || /^\s*"database_id"\s*:\s*"[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}"\s*,?\s*$/iu.test(line)
   );
 
+const maskTypedPublicEvidence = (file, line) => {
+  // Mask only typed public GitHub evidence in dated retrospectives; scan all neighboring text.
+  if (!/^docs\/retrospectives\/\d{4}-\d{2}-\d{2}-[a-z0-9-]+\.md$/u.test(file)) return line;
+  return line
+    .replace(/\b(commit|head|base)\s+`[a-f0-9]{40}`/giu, (match) => match.replace(/`[a-f0-9]{40}`/iu, '`PUBLIC_GIT_SHA`'))
+    .replace(/\bGitHub Actions run\s+`\d{8,15}`/giu, (match) => match.replace(/`\d{8,15}`/u, '`PUBLIC_ACTION_RUN`'));
+};
+
 const scanLine = (file, index, line) => {
+  const numericSafeLine = maskTypedPublicEvidence(file, line);
   for (const [label, pattern] of checks) {
     if (label === 'numeric employee or phone pattern' && isUatResourceIdentifier(file, line)) continue;
     if (label === 'numeric employee or phone pattern' && isVerifiedDeploymentCommitSha(file, line)) continue;
-    if (pattern.test(line)) findings.push({ file, line: index + 1, label });
+    if (pattern.test(label === 'numeric employee or phone pattern' ? numericSafeLine : line)) findings.push({ file, line: index + 1, label });
     pattern.lastIndex = 0;
   }
 };
