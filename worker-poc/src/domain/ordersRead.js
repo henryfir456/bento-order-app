@@ -241,13 +241,28 @@ export const getOrderStatistics = async (
     const portions = Number(row.quantity || 0);
     const vendor = String(effectiveItem.vendor || row.vendor || '未命名店家');
     const name = String(effectiveItem.itemName || '');
+    // An unresolved line keeps its own snapshot rather than joining a verified
+    // menu item, but repeated orders of the same raw label are one footprint
+    // row: group them by vendor, item code, variant, original name and unit
+    // price. The price stays in the key because one legacy code was reused for
+    // different dishes at different prices.
+    const groupKey = effectiveItem.resolved
+      ? effectiveItem.identityKey
+      : JSON.stringify([
+        effectiveItem.vendor,
+        'snapshot',
+        HISTORICAL_MENU_ITEM_CODE_ALIASES[effectiveItem.itemCode] || effectiveItem.itemCode,
+        effectiveItem.variantKey,
+        name,
+        Number(row.unit_price)
+      ]);
     totalPortions += portions;
     days.add(row.order_date);
-    mealTypes.add(effectiveItem.identityKey);
+    mealTypes.add(groupKey);
     vendorsByName.set(vendor, (vendorsByName.get(vendor) || 0) + portions);
-    const existing = itemsByIdentity.get(effectiveItem.identityKey) || {
+    const existing = itemsByIdentity.get(groupKey) || {
       name,
-      identityKey: effectiveItem.identityKey,
+      identityKey: groupKey,
       vendor: effectiveItem.vendor,
       variantKey: effectiveItem.variantKey,
       itemCode: effectiveItem.itemCode,
@@ -259,7 +274,7 @@ export const getOrderStatistics = async (
     // label when the same stable meal identity was renamed over time.
     existing.name = name;
     existing.portions += portions;
-    itemsByIdentity.set(effectiveItem.identityKey, existing);
+    itemsByIdentity.set(groupKey, existing);
   }
 
   const byPortionsThenName = (left, right) => (

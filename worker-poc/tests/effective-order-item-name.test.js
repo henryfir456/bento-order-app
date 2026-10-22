@@ -626,7 +626,7 @@ test('Worker APIs recompute synthetic summary and ranking by vendor, stable iden
   assert.equal(database.get(`SELECT SUM(quantity) AS quantity, SUM(subtotal) AS amount FROM order_items`).amount, beforeItems.amount);
 });
 
-test('Worker summary and statistics expose unresolved identity diagnostics without merging equal snapshots', async () => {
+test('Worker summary keeps equal unresolved snapshots apart while statistics group them into one footprint row', async () => {
   const database = new SqliteD1();
   seedUser(database, { lineUserId: 'synthetic-purchaser', displayName: '合成訂購者' });
   seedUser(database, { lineUserId: 'synthetic-admin', displayName: '合成管理者', role: 'Admin' });
@@ -658,8 +658,9 @@ test('Worker summary and statistics expose unresolved identity diagnostics witho
   });
   assert.equal(statistics.response.status, 200);
   assert.equal(statistics.body.totalPortions, 3);
-  assert.equal(statistics.body.totalMealTypes, 2);
-  assert.equal(statistics.body.items.length, 2);
+  assert.equal(statistics.body.totalMealTypes, 1);
+  assert.equal(statistics.body.items.length, 1);
+  assert.equal(statistics.body.items[0].portions, 3);
   assert.ok(statistics.body.items.every((item) => item.resolved === false
     && item.resolutionStatus === 'not_found'));
 });
