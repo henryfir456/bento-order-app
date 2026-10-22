@@ -70,8 +70,48 @@ export const handleScheduled = async (
   return result;
 };
 
+const LINE_API_HOST = 'api.line.me';
+
+const hostOf = (input) => {
+  try {
+    return new URL(typeof input === 'string' ? input : input?.url).host;
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Durations only (no identities or payload), so a browser's network panel can
+ * show where a request's time goes: the D1 probe approximates one D1 round
+ * trip and `line` is the time spent verifying LINE access tokens.
+ */
+const createServerTiming = (fetchImpl = (...args) => globalThis.fetch(...args)) => {
+  const startedAt = performance.now();
+  const totals = { probe: null, line: 0, lineCount: 0 };
+  const timedFetch = async (input, init) => {
+    if (hostOf(input) !== LINE_API_HOST) return fetchImpl(input, init);
+    const lineStartedAt = performance.now();
+    try {
+      return await fetchImpl(input, init);
+    } finally {
+      totals.line += performance.now() - lineStartedAt;
+      totals.lineCount += 1;
+    }
+  };
+  const header = () => {
+    const entries = [];
+    if (totals.probe !== null) entries.push(`d1-probe;dur=${totals.probe.toFixed(1)}`);
+    if (totals.lineCount) entries.push(`line;desc="${totals.lineCount}";dur=${totals.line.toFixed(1)}`);
+    entries.push(`total;dur=${(performance.now() - startedAt).toFixed(1)}`);
+    return entries.join(', ');
+  };
+  return { totals, timedFetch, header };
+};
+
 export const handleFormalRequest = async (request, env, options = {}) => {
   const requestId = globalThis.crypto.randomUUID();
+  const timing = createServerTiming(options.fetchImpl);
+  options = { ...options, fetchImpl: timing.timedFetch };
   let response;
   try {
     if (request.method === 'OPTIONS') {
@@ -95,11 +135,14 @@ export const handleFormalRequest = async (request, env, options = {}) => {
     } else {
       // Probe only D1 availability. Protected-owner configuration is checked
       // lazily by the identity workflows that need it and never gates all APIs.
+      const probeStartedAt = performance.now();
       try {
         const ready = await env?.DB?.prepare('SELECT 1 AS ready').first();
         if (Number(ready?.ready) !== 1) throw new Error('D1 probe returned no row');
       } catch {
         throw serviceUnavailable('DATABASE_UNAVAILABLE');
+      } finally {
+        timing.totals.probe = performance.now() - probeStartedAt;
       }
       const authResponse = await handleAuthRoute(request, env, options);
       if (authResponse) response = authResponse;
@@ -162,6 +205,7 @@ export const handleFormalRequest = async (request, env, options = {}) => {
   }
   const responseHeaders = new Headers(response.headers);
   responseHeaders.set('X-Request-Id', requestId);
+  responseHeaders.set('Server-Timing', timing.header());
   response = new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

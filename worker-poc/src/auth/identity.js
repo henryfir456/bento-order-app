@@ -159,8 +159,10 @@ export const resolveCanonicalIdentity = async (
     throw new Error('D1 binding is unavailable.');
   }
 
-  const guest = await inspectGuestSession(env.DB, token, { now });
   if (isGuestToken(token)) {
+    // Only employee guest tokens can match a session row; LINE tokens skip
+    // this read entirely.
+    const guest = await inspectGuestSession(env.DB, token, { now });
     if (viewAsTarget(new URL(request.url))) throw forbidden('VIEW_AS_FORBIDDEN');
     if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
     if (await hasAnyProtectedEmployeeId(env.DB,

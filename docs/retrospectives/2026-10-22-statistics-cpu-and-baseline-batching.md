@@ -33,3 +33,9 @@
 - 使用者實測正式足跡頁約 2 秒，比之前快。以每次 D1 讀取加固定延遲的本機模擬檢查往返結構：一次統計請求有 10 次**全部循序**的 D1 往返（驗證 4 次：D1 probe、session、使用者、受保護帳號；統計 6 次：訂單、穩定身份 ×2 批、版本、baseline、變更列）。推測正式環境每次往返約 150–200 ms，NOT VERIFIED。
 - 修正（後續 PR）：穩定身份各批、變更列、各廠商版本改為同時讀取，baseline 各批也同時讀取。統計段 6 → 3 個循序往返，整體 10 → 7。新增測試以每次讀取 40 ms 延遲計算循序波數：原始碼 11 波（fail），修正後 ≤ 7（pass，連跑 5 次穩定）。
 - 未處理（需使用者決定）：Worker 未啟用 Smart Placement，若 Worker 在離 D1 很遠的邊緣節點執行，每次往返都要跨區；每個 API 請求開頭的 `SELECT 1` D1 probe 也是一次完整往返，屬全域 fail-closed 設計，不在本輪更動。
+
+## 後續：LINE 驗證路徑（PR #153 部署後約 1.7–1.8 秒）
+- 評估：除員編 `eg_` session 外，每支 API 每次請求都以 LINE access token 呼叫 `api.line.me/v2/profile`，無快取；另外 LINE 請求也會先查一次 `employee_guest_sessions`，結果從未使用（LINE token 不可能符合 `eg_` session）。
+- 使用者核准第 1 項（後續 PR）：LINE 請求不再查員編 session（每次 −1 D1 往返，無安全取捨）；回應加上 `Server-Timing`（`d1-probe` ≈ 單次 D1 往返、`line` = LINE 驗證耗時與次數、`total`），只含毫秒數；允許來源加 `Timing-Allow-Origin`。
+- RED（原始碼）：`worker-poc/tests/request-timing.test.js` 4 項中 3 項 fail；GREEN 4/4；`npm test --prefix worker-poc` 639/639。根目錄 `tests/*.test.cjs` 全跑有 24 項既有失敗，main 上相同，不在 `agent.yaml` 清單內；清單內 133/133 PASS。
+- 待實測後決定：LINE 驗證短暫快取（token 雜湊 → LINE 使用者，約 5 分鐘，權限仍每次讀 D1）或改用 ID Token／自家 session（需安全審查）。
