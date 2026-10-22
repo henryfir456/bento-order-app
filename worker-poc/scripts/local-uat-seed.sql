@@ -64,18 +64,18 @@ INSERT INTO menu_items (
 
 INSERT INTO orders (
   order_id, user_id, employee_id_snapshot, line_user_id_snapshot,
-  display_name_snapshot, order_date, vendor, pickup_floor, note,
+  display_name_snapshot, order_date, vendor, vendor_id, pickup_floor, note,
   total_amount, status, created_by_user_id, created_auth_mode,
   created_at, updated_at
 ) VALUES
   ('local-uat-order-user-old', 'local-uat-user', 'LOCAL-UAT-USER', 'local-uat-line-user',
-   '合成 User', '2026-10-10', '合成測試店家甲', '9樓', '[SYNTHETIC UAT] historical menu aliases',
+   '合成 User', '2026-10-10', '合成測試店家甲', printf('V%05d', 1), '9樓', '[SYNTHETIC UAT] historical menu aliases',
    660, 'COMPLETED', 'local-uat-user', 'line', '2026-10-10T01:00:00.000Z', '2026-10-10T01:00:00.000Z'),
   ('local-uat-order-user-current', 'local-uat-user', 'LOCAL-UAT-USER', 'local-uat-line-user',
-   '合成 User', '2026-10-20', '合成測試店家甲', '9樓', '[SYNTHETIC UAT] active test order',
+   '合成 User', '2026-10-20', '合成測試店家甲', printf('V%05d', 1), '9樓', '[SYNTHETIC UAT] active test order',
    1410, 'ACTIVE', 'local-uat-user', 'line', '2026-10-20T01:00:00.000Z', '2026-10-20T01:00:00.000Z'),
   ('local-uat-order-vendor-two', 'local-uat-admin', 'LOCAL-UAT-ADMIN', 'local-uat-line-admin',
-   '合成 Admin', '2026-10-20', '合成測試店家乙', '1樓', '[SYNTHETIC UAT] isolation canary',
+   '合成 Admin', '2026-10-20', '合成測試店家乙', printf('V%05d', 2), '1樓', '[SYNTHETIC UAT] isolation canary',
    120, 'ACTIVE', 'local-uat-admin', 'line', '2026-10-20T01:05:00.000Z', '2026-10-20T01:05:00.000Z');
 
 INSERT INTO order_items (
@@ -103,8 +103,9 @@ INSERT INTO vendor_transfer_payments (
 
 INSERT INTO vendor_transfer_allocations (
   allocation_id, payment_id, vendor_id, service_date,
-  amount_twd, created_by_user_id, created_at
+  amount_twd, created_by_user_id, created_at, attribution_basis
 ) VALUES (
   'SYNTHETIC-UAT-ALLOCATION-ONE', 'SYNTHETIC-UAT-PAYMENT-ONE',
-  (SELECT vendor_id FROM vendors WHERE name = '合成測試店家甲'), '2026-10-20', 100, 'local-uat-admin', '2026-10-21T00:00:00.000Z'
+  (SELECT vendor_id FROM vendors WHERE name = '合成測試店家甲'), '2026-10-20', 100, 'local-uat-admin', '2026-10-21T00:00:00.000Z',
+  'CANONICAL_VENDOR_ATTRIBUTION_V1'
 );
