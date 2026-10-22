@@ -762,3 +762,40 @@ test('the legacy identity mapping fails closed when its target variant is absent
   const noVariant = resolve([row('a', ''), row('b', '')]);
   assert.equal(noVariant.resolved, false);
 });
+
+test('a resolved legacy row without a variant shares one identity with its normalized BASE row', () => {
+  const resolveLine = (menuItems, item) => resolveEffectiveOrderItemName({
+    vendor: '禾拾', orderDate: '2026-09-14',
+    item: { stable_identity: true, item_name_snapshot: '舊快照', unit_price: 100, fallbackKey: 'synthetic-grouping:1', ...item },
+    menuItems
+  });
+  const legacy = resolveLine(
+    [menuItem({ menuItemId: 'legacy-h1', legacyItemId: 'H1', variantKey: '', name: '蕃茄鷹豆泥', price: 100, vendor: '禾拾' })],
+    { menu_item_id: 'legacy-h1', legacy_item_id: 'H1' }
+  );
+  const normalized = resolveLine(
+    [menuItem({ menuItemId: 'base-h1', legacyItemId: 'H1', variantKey: 'BASE', name: '蕃茄鷹豆泥', price: 100, vendor: '禾拾' })],
+    { menu_item_id: 'base-h1', legacy_item_id: 'H1', variant_key: 'BASE' }
+  );
+  assert.equal(legacy.resolved, true);
+  assert.equal(normalized.resolved, true);
+  assert.equal(legacy.identityKey, normalized.identityKey);
+  assert.equal(legacy.variantKey, 'BASE');
+
+  // A half-rice legacy code keeps its own code, so it is never merged into BASE.
+  const half = resolveLine(
+    [menuItem({ menuItemId: 'legacy-h1h', legacyItemId: 'H1H', variantKey: '', name: '蕃茄鷹豆泥(半飯)', price: 100, vendor: '禾拾' })],
+    { menu_item_id: 'legacy-h1h', legacy_item_id: 'H1H' }
+  );
+  assert.equal(half.resolved, true);
+  assert.notEqual(half.identityKey, normalized.identityKey);
+
+  // Vendors or codes without a reviewed mapping keep an empty variant.
+  const unmapped = resolveEffectiveOrderItemName({
+    vendor: '合成店家', orderDate: '2026-09-14',
+    item: { menu_item_id: 'syn', legacy_item_id: 'ITEM-SYNTHETIC', stable_identity: true, item_name_snapshot: 'x', unit_price: 80, fallbackKey: 'synthetic-unmapped:1' },
+    menuItems: [menuItem({ menuItemId: 'syn', legacyItemId: 'ITEM-SYNTHETIC', variantKey: '', vendor: '合成店家' })]
+  });
+  assert.equal(unmapped.resolved, true);
+  assert.equal(unmapped.variantKey, '');
+});
