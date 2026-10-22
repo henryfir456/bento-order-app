@@ -2,6 +2,29 @@
 
 **生產目標**：`bento-api-poc`；唯一正式入口 `worker-poc/src/formalWorker.js`。本程序只從最新 **main** 產出新 bundle，不能用舊部署/舊 Script 或單一來源檔替代。
 
+## 0. 已實際驗證的發布路徑（2026-10-22；證據見 Issue #145）
+
+正式 Worker 實際以下列路徑發布兩次（main `c8b42fe`、`f7c5047`），**這是目前採用且已驗證的路徑**；下文 B.1–B.3 與 E 的「API 版本上傳器」從未以真實環境驗收，僅為受保護的試驗工具，不得當作已驗證的發布器。
+
+1. 在乾淨的 `main`：`git fetch origin main`、`git status --short` 為空、`HEAD` 等於 `origin/main`。
+2. `npm test --prefix worker-poc` 通過。
+3. 記錄 before：`wrangler deployments status --config wrangler.jsonc`（Version ID、流量）。
+4. D1 有待套用 migration 時，先完成 [D1 備份與 migration Runbook](D1_BACKUP_AND_MIGRATION_RUNBOOK.md)，再 `wrangler d1 migrations apply bento-formal --remote`，讀回 migration 清單、`quick_check`、`foreign_key_check` 與主要表筆數。
+5. 在 `worker-poc` 以 repo 鎖定版本的 Wrangler（`node ./node_modules/wrangler/bin/wrangler.js`）執行 `deploy --config wrangler.jsonc --keep-vars --message "<說明>"`；`--keep-vars` 保留既有環境變數，`wrangler.jsonc` 內的 D1 binding 與 cron 隨部署帶入。
+6. 讀回 `deployments status`：新 Version ID、100% 流量，核對 D1 binding 與三個 cron 仍在。
+7. `BENTO_WORKER_BASE_URL=<Worker URL> node worker-poc/scripts/formal-release-smoke.mjs` 與 `npm run smoke:cors --prefix worker-poc`；沒有合法測試身分時 View As 項目標 `NOT_VERIFIED`。
+8. 有統計、清單等讀取路徑變更時，以合法登入身分量測正式 API 耗時並記錄；本機 SQLite 測試沒有網路延遲，不能代替正式耗時。
+9. 結果寫入追蹤 Issue；Netlify 前端由使用者自行發布。
+
+### Windows 本機已知注意事項
+- `scripts/prepare-formal-release.mjs` 以不經 shell 的 `spawnSync('npx', …)` 呼叫 Wrangler，在 Windows 因找不到 `npx` 而失敗（`ENOENT`）。該腳本尚未修正；上列路徑不依賴它，release manifest 因此不會產生。
+- 腳本若以 `Read-Host -AsSecureString` 取得值，必須在**真實互動式 console**（獨立的 Windows PowerShell／Windows Terminal）執行；內嵌終端機或管線 stdin 會立即回傳空字串或卡住。不要把腳本的敏感提示以管線餵入。
+- `wrangler d1 export` 會把約一小時有效的簽名下載 URL 印在輸出；不得貼進 Issue、PR、聊天或紀錄檔。
+- GitHub 可能因 email 隱私設定拒絕推送；commit 作者改用 GitHub noreply 位址。
+- `gh` 未安裝時，依 workspace 工具政策先確認既有工具，再以官方套件安裝並由使用者登入。
+- 部署預設會啟用 `workers.dev` 的 Preview URLs（`wrangler.jsonc` 未指定 `preview_urls`）；是否關閉屬另案決定。
+- 受保護帳號（`RESERVED_VENDOR_OWNER`）不允許 Admin「檢視身分」，被擋時 Worker 回 `PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED` 並寫入審計；Vendor 登入只能由該 LINE 持有人驗證。
+
 ## A. Fresh build / preflight（本階段不部署）
 
 1. 在獨立、乾淨的 main checkout 執行 `git fetch origin main`、`git status --short`、`git rev-parse HEAD`；SHA 必須等於目前遠端 main。任何不乾淨或非 main 的狀態停止，保護使用者資料。
@@ -11,7 +34,9 @@
 5. 確認 bundle 包含本次修改以及全部依賴；發布前必須取得可上傳的所有 bundle 部件（例如 Wrangler 產出的 Worker 模組、附帶二進位或靜態資產），不能只上傳第一個 JS 檔。檢查且排除 release evidence 中意外夾帶的機密。不要提交 bundle 到 GitHub。
 6. 在同一個 clean/up-to-date `main` checkout 執行 `npm run drift:formal --prefix worker-poc`。此唯讀檢查比對目前 main 的 Worker runtime 檔案變更、正式 deployment/version 的 `workers/commit_sha` 註記，以及正式 D1 `d1_migrations` 清單。`DRIFT` 會列出需部署或缺少的 migration，`BLOCKED` 表示 metadata 不足；兩者都不能以 CI 或 build 成功取代。Frontend-only commit 不會單獨要求 Worker 發布。
 
-## B. Cloudflare API（直接部署，不使用 GitHub Actions）
+## B. Cloudflare API／CLI（直接部署，不使用 GitHub Actions）
+
+> 已驗證路徑是上方第 0 節（B.4 的 Wrangler CLI）。B.1–B.3 的 API 上傳路徑尚未以真實環境驗收，採用前須先以未發布版本實測。
 
 1. Cloudflare API 先唯讀查 `/accounts/{account_id}/workers/scripts/bento-api-poc/deployments`、Worker 設定與綁定、Secrets metadata、排程；做 **before** 快照。
 2. API 上傳使用新的完整 Worker 模組與 Cloudflare API 正式 upload schema，metadata 需保留現有 D1 `DB` → `bento-formal`（ID `e75bc185-afb5-4a5d-abc9-81bd79525cff`）、Secrets、compatibility date `2026-09-07`、三個 cron（`0 16 * * *`、`0 8 * * *`、`30 0 15 6-12 *`）及 CORS 行為。**若 API 無法證實保留 Secrets 或原有綁定，停止，不可自行猜測 multipart metadata。**
@@ -39,7 +64,7 @@
 `worker-poc/scripts/detect-formal-drift.mjs` 僅讀取 Worker deployment/version metadata 與正式 D1 migration 名稱，不查詢訂單、使用者、帳本或付款資料，也不寫入 Cloudflare。輸出 `IN_SYNC`、`DRIFT` 或 `BLOCKED`，並在 Worker/D1 落後時列出直接可執行的下一步。缺少 version SHA、migration metadata、Cloudflare 唯讀憑證或 clean/up-to-date main 時 fail closed。它不觸發部署、不使用 GitHub Actions，也不代替正式資料備份 Gate、API acceptance 或獨立 Reviewer。
 
 
-## E. 完整模組 API Version Uploader（Fail closed）
+## E. 完整模組 API Version Uploader（Fail closed；試驗工具，尚未驗收）
 
 `worker-poc/scripts/upload-formal-version.mjs` 可讀取 `BENTO_RELEASE_MANIFEST` 指向的 bundle manifest，使用 Node `FormData` / `Blob` 原始 bytes 建構每個 module part，加上 `metadata`（main_module / bindings inherit / compatibility_date / source SHA），在送出前逐一驗證 SHA256、檔名、MIME、大小；**預設僅 dry-run，不向 Cloudflare 發出請求**。
 
