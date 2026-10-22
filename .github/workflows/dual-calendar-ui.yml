@@ -52,7 +52,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: node --test tests/dual-calendar-ui.test.cjs tests/modern-calendar-v01520.test.cjs tests/user-center-compact-v01521.test.cjs tests/user-center-v01522.test.cjs tests/admin-return-modal-v01523.test.cjs tests/bottom-navigation-v01524.test.cjs
+      - run: node --test tests/dual-calendar-ui.test.cjs tests/modern-calendar-v01520.test.cjs tests/user-center-compact-v01521.test.cjs tests/user-center-v01522.test.cjs tests/admin-return-modal-v01523.test.cjs tests/bottom-navigation-v01524.test.cjs tests/vendor-view-as-ui.test.cjs
       - run: node --test tests/changelog-migration.test.cjs
       - run: npm run lint
       - run: npm run build

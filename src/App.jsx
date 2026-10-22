@@ -2873,7 +2873,8 @@ export default function App() {
   };
 
   const handleSelectViewAs = (user) => {
-    if (!user || !canAuth('viewAsUser')) return;
+    // The Worker rejects View As for protected Vendor accounts; do not enter a view that cannot load.
+    if (!user || !canAuth('viewAsUser') || user.role === 'Vendor') return;
     setViewAsUser(user);
     setDelegatedOrderUser(null);
     setShowViewAsModal(false);
