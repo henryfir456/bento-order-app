@@ -39,3 +39,8 @@
 - 使用者核准第 1 項（後續 PR）：LINE 請求不再查員編 session（每次 −1 D1 往返，無安全取捨）；回應加上 `Server-Timing`（`d1-probe` ≈ 單次 D1 往返、`line` = LINE 驗證耗時與次數、`total`），只含毫秒數；允許來源加 `Timing-Allow-Origin`。
 - RED（原始碼）：`worker-poc/tests/request-timing.test.js` 4 項中 3 項 fail；GREEN 4/4；`npm test --prefix worker-poc` 639/639。根目錄 `tests/*.test.cjs` 全跑有 24 項既有失敗，main 上相同，不在 `agent.yaml` 清單內；清單內 133/133 PASS。
 - 待實測後決定：LINE 驗證短暫快取（token 雜湊 → LINE 使用者，約 5 分鐘，權限仍每次讀 D1）或改用 ID Token／自家 session（需安全審查）。
+
+## 後續：實測 Server-Timing（PR #154 部署後）
+- 使用者登入後足跡統計：`d1-probe` 114 ms、`line` 154 ms、`total` 896 ms；其餘約 5 次循序 D1 往返（每次約 115 ms）。
+- 使用者只核准「D1 probe 與 LINE 驗證並行」（後續 PR）：非 `eg_` bearer token 的請求在 probe 執行時先開始 LINE profile 請求，第一個相同 token 的身分驗證直接取用該回應；probe 仍在任何路由前完成，失敗仍回 503。預估每支 LINE API 約 −110 ms。
+- 未做（使用者決定暫不處理）：合併使用者與受保護帳號查詢、LINE 驗證快取。

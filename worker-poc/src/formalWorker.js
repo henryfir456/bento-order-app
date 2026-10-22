@@ -16,6 +16,9 @@ import { syncTaiwanGovernmentHolidays } from './domain/taiwanHolidays.js';
 import { HttpError, serviceUnavailable, toPublicError } from './http/errors.js';
 import { applyCorsPolicy, emptyResponse, jsonResponse } from './http/response.js';
 import { asNumber } from './contract.js';
+import { bearerToken } from './auth/identity.js';
+import { isGuestToken } from './auth/guestSession.js';
+import { PROFILE_URL as LINE_PROFILE_URL } from './auth/lineProfile.js';
 
 const AUTOMATIC_OPENING_LOG_EVENT = 'automatic_daily_group_opening';
 const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
@@ -72,12 +75,20 @@ export const handleScheduled = async (
 
 const LINE_API_HOST = 'api.line.me';
 
+const urlOf = (input) => (typeof input === 'string' ? input : String(input?.url || ''));
+
 const hostOf = (input) => {
   try {
-    return new URL(typeof input === 'string' ? input : input?.url).host;
+    return new URL(urlOf(input)).host;
   } catch {
     return '';
   }
+};
+
+const authorizationOf = (init) => {
+  const headers = init?.headers;
+  if (!headers) return '';
+  return typeof headers.get === 'function' ? headers.get('Authorization') || '' : headers.Authorization || '';
 };
 
 /**
@@ -88,8 +99,8 @@ const hostOf = (input) => {
 const createServerTiming = (fetchImpl = (...args) => globalThis.fetch(...args)) => {
   const startedAt = performance.now();
   const totals = { probe: null, line: 0, lineCount: 0 };
-  const timedFetch = async (input, init) => {
-    if (hostOf(input) !== LINE_API_HOST) return fetchImpl(input, init);
+  let prefetchedProfile = null;
+  const timedLineFetch = async (input, init) => {
     const lineStartedAt = performance.now();
     try {
       return await fetchImpl(input, init);
@@ -97,6 +108,32 @@ const createServerTiming = (fetchImpl = (...args) => globalThis.fetch(...args)) 
       totals.line += performance.now() - lineStartedAt;
       totals.lineCount += 1;
     }
+  };
+  const timedFetch = async (input, init) => {
+    if (hostOf(input) !== LINE_API_HOST) return fetchImpl(input, init);
+    if (prefetchedProfile
+      && urlOf(input) === LINE_PROFILE_URL
+      && authorizationOf(init) === prefetchedProfile.authorization) {
+      // Hand the early profile response to the first identity check that
+      // asks for this exact token; any later call fetches normally.
+      const { response } = prefetchedProfile;
+      prefetchedProfile = null;
+      return response;
+    }
+    return timedLineFetch(input, init);
+  };
+  /**
+   * Start LINE token verification while the D1 probe runs. The probe still
+   * completes (or fails with 503) before any route runs; only the network
+   * wait for LINE overlaps with it.
+   */
+  timedFetch.prefetchLineProfile = (token) => {
+    const authorization = 'Bearer ' + token;
+    const response = timedLineFetch(LINE_PROFILE_URL, { headers: { Authorization: authorization } });
+    // An unused or failed prefetch must not surface as an unhandled rejection;
+    // the identity check that consumes it still sees the rejection.
+    response.catch(() => {});
+    prefetchedProfile = { authorization, response };
   };
   const header = () => {
     const entries = [];
@@ -135,6 +172,8 @@ export const handleFormalRequest = async (request, env, options = {}) => {
     } else {
       // Probe only D1 availability. Protected-owner configuration is checked
       // lazily by the identity workflows that need it and never gates all APIs.
+      const token = bearerToken(request);
+      if (token && !isGuestToken(token)) timing.timedFetch.prefetchLineProfile(token);
       const probeStartedAt = performance.now();
       try {
         const ready = await env?.DB?.prepare('SELECT 1 AS ready').first();
