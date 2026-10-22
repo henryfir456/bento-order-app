@@ -105,7 +105,7 @@ export const resolveEffectiveOrderItemName = ({
       const narrowed = mapped
         ? catalog.filter((candidate) => (
           canonicalLegacyItemId(candidate?.legacy_item_id || candidate?.item_id) === mapped.item_code
-            && text(candidate?.variant_key).toUpperCase() === mapped.variant_key
+            && text(candidate?.variant_key) === mapped.variant_key
         ))
         : [];
       if (narrowed.length === 1) {
