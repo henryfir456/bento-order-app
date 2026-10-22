@@ -31,8 +31,10 @@ foreach ($target in $targets) {
 $deviceSerial = [string]$processState.DeviceSerial
 $adb = Get-Command adb -ErrorAction SilentlyContinue
 if ($deviceSerial -and $adb) {
-    & $adb.Source -s $deviceSerial reverse --remove tcp:5173 2>$null | Out-Null
-    & $adb.Source -s $deviceSerial reverse --remove tcp:8787 2>$null | Out-Null
+    $frontendPort = if ($processState.FrontendPort) { [int]$processState.FrontendPort } else { 5173 }
+    $workerPort = if ($processState.WorkerPort) { [int]$processState.WorkerPort } else { 8787 }
+    & $adb.Source -s $deviceSerial reverse --remove "tcp:$frontendPort" 2>$null | Out-Null
+    & $adb.Source -s $deviceSerial reverse --remove "tcp:$workerPort" 2>$null | Out-Null
 }
 
 Remove-Item -LiteralPath $stateFile -Force -ErrorAction SilentlyContinue

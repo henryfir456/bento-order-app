@@ -128,7 +128,7 @@ that flow.
 
     powershell -ExecutionPolicy Bypass -File .\local-uat-start.ps1
 
-啟動器會套用本機 migration、重建合成 seed、隨機產生本機密碼，然後輸出前端 http://localhost:5173、Worker API http://localhost:8787 和本機憑證檔路徑。請從該檔選擇測試身份並輸入密碼；憑證不會寫入 GitHub。若已連接且只偵測到一台啟用 USB 偵錯的 Android 手機，啟動器會用 ADB reverse 安全轉送兩個 loopback 埠，在手機瀏覽器開啟相同的前端 URL。服務只監聽 127.0.0.1。
+啟動器會套用本機 migration、重建合成 seed、隨機產生本機密碼，然後輸出前端 URL（預設 http://localhost:5173）、Worker API（預設 http://localhost:8787）和本機憑證檔路徑。預設埠已被其他程式（例如一般的 `npm run dev`）佔用時，啟動器不會關閉那個程式，而是自動改用 5173–5199 與 8787–8799 中下一個空的埠，並把實際網址印出來。請從該檔選擇測試身份並輸入密碼；憑證不會寫入 GitHub。若已連接且只偵測到一台啟用 USB 偵錯的 Android 手機，啟動器會用 ADB reverse 安全轉送兩個 loopback 埠，在手機瀏覽器開啟相同的前端 URL。服務只監聽 127.0.0.1。
 
 驗證 Worker API 可在另一個 PowerShell 視窗執行 npm run uat:smoke --prefix worker-poc。要停止服務並移除該手機的轉送，執行 .\local-uat-stop.ps1。重新啟動會刪除並重建的範圍只有 worker-poc\.local-uat\state 本機測試資料庫。
 
