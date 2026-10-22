@@ -89,6 +89,7 @@ function SummaryCard({ label, value }) {
 export default function MyBentoFootprintsPage({
   data,
   loading,
+  refreshing = false,
   error,
   period,
   onPeriodChange,
@@ -119,7 +120,7 @@ export default function MyBentoFootprintsPage({
       <div>
         <h2 className="text-xl font-bold text-[#2C4A3E]">我的便當足跡</h2>
         {isViewAsMode && <p role="status" className="mt-1 rounded-lg bg-amber-50 p-2 text-sm text-amber-800">目前為唯讀身分檢視，顯示受檢視者的便當足跡。</p>}
-        <p className="mt-1 text-sm text-slate-500">{periodLabel}</p>
+        <p className="mt-1 text-sm text-slate-500">{periodLabel}{refreshing ? <span role="status" className="ml-2 text-xs text-slate-400">更新中…</span> : null}</p>
       </div>
       <div className="grid grid-cols-3 gap-2 rounded-xl bg-slate-100 p-1" role="group" aria-label="統計期間">
         {PERIODS.map(({ value, label }) => <button

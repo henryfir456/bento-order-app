@@ -183,6 +183,10 @@ export default function App() {
   const [footprintsError, setFootprintsError] = useState('');
   const [footprintsPeriod, setFootprintsPeriod] = useState('all');
   const footprintsRequestRef = useRef(0);
+  const [footprintsRefreshing, setFootprintsRefreshing] = useState(false);
+  // Last successful statistics per subject and period, shown immediately while
+  // a fresh read runs so switching periods or returning to the tab does not wait.
+  const footprintsCacheRef = useRef(new Map());
   const [selectedCalendarKey, setSelectedCalendarKey] = useState('');
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
@@ -374,9 +378,11 @@ export default function App() {
     historyRequestRef.current += 1;
     myOrdersRequestRef.current += 1;
     footprintsRequestRef.current += 1;
+    footprintsCacheRef.current.clear();
     setFootprintsData(null);
     setFootprintsError('');
     setFootprintsLoading(false);
+    setFootprintsRefreshing(false);
     setFootprintsPeriod('all');
     setMyOrdersList([]);
     setMyOrdersError('');
@@ -2178,9 +2184,13 @@ export default function App() {
   const refreshBentoFootprints = async (period = footprintsPeriod) => {
     if (authState !== AUTH_STATES.REGISTERED || !authUserId) return;
     const requestId = ++footprintsRequestRef.current;
-    setFootprintsLoading(true);
+    const subjectUserId = viewAsUser?.userId || authUserId;
+    const cacheKey = JSON.stringify([subjectUserId, period]);
+    const cached = footprintsCacheRef.current.get(cacheKey) || null;
+    setFootprintsLoading(!cached);
+    setFootprintsRefreshing(Boolean(cached));
     setFootprintsError('');
-    setFootprintsData(null);
+    setFootprintsData(cached);
     try {
       const res = await apiClient.getOrderStatistics({ period, viewAsUserId: viewAsUser?.userId || null });
       const data = await res.json();
@@ -2190,14 +2200,22 @@ export default function App() {
         || !Number.isFinite(Number(data.totalMealTypes))
         || !Array.isArray(data.vendors)
         || !Array.isArray(data.items)) throw new Error('READ_FAILED');
-      if (requestId === footprintsRequestRef.current) setFootprintsData({ ...data, _subjectUserId: viewAsUser?.userId || authUserId });
-    } catch {
+      const nextData = { ...data, _subjectUserId: subjectUserId };
       if (requestId === footprintsRequestRef.current) {
+        footprintsCacheRef.current.set(cacheKey, nextData);
+        setFootprintsData(nextData);
+      }
+    } catch {
+      // Keep showing the last successful result when a background refresh fails.
+      if (requestId === footprintsRequestRef.current && !cached) {
         setFootprintsError('便當足跡讀取失敗，請稍後重試。');
         setFootprintsData(null);
       }
     } finally {
-      if (requestId === footprintsRequestRef.current) setFootprintsLoading(false);
+      if (requestId === footprintsRequestRef.current) {
+        setFootprintsLoading(false);
+        setFootprintsRefreshing(false);
+      }
     }
   };
 
@@ -2206,6 +2224,7 @@ export default function App() {
     footprintsRequestRef.current += 1;
     setFootprintsData(null);
     setFootprintsLoading(false);
+    setFootprintsRefreshing(false);
     setFootprintsError('');
     if (viewMode === 'footprints' && authState === AUTH_STATES.REGISTERED && authUser?.userId) {
       void refreshBentoFootprints(footprintsPeriod);
@@ -3890,6 +3909,7 @@ export default function App() {
             data={footprintsData?._subjectUserId === (viewAsUser?.userId || authUserId) ? footprintsData : null}
             isViewAsMode={isViewAsMode}
             loading={footprintsLoading}
+            refreshing={footprintsRefreshing}
             error={footprintsError}
             period={footprintsPeriod}
             onPeriodChange={(period) => {

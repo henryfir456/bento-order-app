@@ -1,5 +1,8 @@
 import { getCustomerMenu, HISTORICAL_MENU_ITEM_CODE_ALIASES } from './menu.js';
-import { normalizeLegacyMenuIdentity } from './menuItemChanges.js';
+import {
+  normalizeLegacyMenuIdentity,
+  prefetchCompatibilityMenuBaselines
+} from './menuItemChanges.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 import { isDateOnly } from './deadlines.js';
 
@@ -156,7 +159,9 @@ export const createEffectiveOrderItemNameResolver = (database) => {
   const loadMenu = (normalizedVendor, orderDate) => getCustomerMenu(database, {
     vendor: normalizedVendor,
     targetDate: orderDate,
-    readCache
+    readCache,
+    // Name resolution never reads image URLs, so skip the image fallback read.
+    includeDisplayImages: false
   });
   const resolve = async ({ vendor, orderDate, item } = {}) => {
     const normalizedVendor = normalizeMenuVendor(vendor) || text(vendor);
@@ -238,6 +243,9 @@ export const createEffectiveOrderItemNameResolver = (database) => {
       if (!normalizedVendor || !isDateOnly(entry?.orderDate)) return;
       pairs.set(identity(normalizedVendor, entry.orderDate), [normalizedVendor, entry.orderDate]);
     });
+    await prefetchCompatibilityMenuBaselines(database, [...pairs.entries()]
+      .filter(([key]) => !menus.has(key))
+      .map(([, [normalizedVendor, orderDate]]) => ({ vendor: normalizedVendor, targetDate: orderDate })), readCache);
     await Promise.all([...pairs.entries()].map(([key, [normalizedVendor, orderDate]]) => {
       if (!menus.has(key)) menus.set(key, loadMenu(normalizedVendor, orderDate));
       return menus.get(key);

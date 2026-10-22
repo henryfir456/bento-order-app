@@ -196,12 +196,27 @@ const sourceKindsFor = (vendor, targetDate) => {
   };
 };
 
-const resolveRows = (rows, { vendor, targetDate }) => {
+/**
+ * normalizedChange is pure, so a request that resolves many dates over one
+ * cached change read can normalize each raw row once. Selected rows are copied
+ * before they leave the resolver so no caller shares the memoized objects.
+ */
+const normalizedChangeFor = (rawRow, memo) => {
+  if (!memo) return normalizedChange(rawRow);
+  let row = memo.get(rawRow);
+  if (!row) {
+    row = normalizedChange(rawRow);
+    memo.set(rawRow, row);
+  }
+  return row;
+};
+
+const resolveRows = (rows, { vendor, targetDate, memo = null }) => {
   const normalizedVendor = normalizeMenuVendor(vendor);
   const { authority, sourceKinds } = sourceKindsFor(normalizedVendor, targetDate);
   const selected = new Map();
   for (const rawRow of rows) {
-    const row = normalizedChange(rawRow);
+    const row = normalizedChangeFor(rawRow, memo);
     if (row.identity_schema_version !== LEGACY_IDENTITY_SCHEMA_VERSION) continue;
     if (row.vendor !== normalizedVendor || text(rawRow.effective_date) > targetDate) continue;
     if (!sourceKinds.includes(rawRow.source_kind)) continue;
@@ -217,7 +232,7 @@ const resolveRows = (rows, { vendor, targetDate }) => {
   return {
     authority,
     sourceKinds,
-    rows: [...selected.values()].sort((left, right) => (
+    rows: [...selected.values()].map((row) => (memo ? { ...row } : row)).sort((left, right) => (
       left.display_order - right.display_order
       || left.item_code.localeCompare(right.item_code)
       || left.variant_key.localeCompare(right.variant_key)
@@ -226,11 +241,11 @@ const resolveRows = (rows, { vendor, targetDate }) => {
   };
 };
 
-const resolveNormalizedRows = (rows, { vendor, targetDate }) => {
+const resolveNormalizedRows = (rows, { vendor, targetDate, memo = null }) => {
   const normalizedVendor = normalizeMenuVendor(vendor);
   const selected = new Map();
   for (const rawRow of rows) {
-    const row = normalizedChange(rawRow);
+    const row = normalizedChangeFor(rawRow, memo);
     if (row.identity_schema_version !== NORMALIZED_IDENTITY_SCHEMA_VERSION) continue;
     if (row.vendor !== normalizedVendor || text(row.effective_date) > targetDate) continue;
     if (row.source_kind !== ADMIN_SOURCE_KIND) continue;
@@ -243,7 +258,7 @@ const resolveNormalizedRows = (rows, { vendor, targetDate }) => {
       selected.set(key, row);
     }
   }
-  return [...selected.values()].sort((left, right) => (
+  return [...selected.values()].map((row) => (memo ? { ...row } : row)).sort((left, right) => (
     left.display_order - right.display_order
     || left.item_code.localeCompare(right.item_code)
     || left.variant_key.localeCompare(right.variant_key)
@@ -397,6 +412,53 @@ export const getCompatibilityMenuBaseline = async (
   };
 };
 
+// D1 allows at most 100 bound parameters per statement.
+const BASELINE_BATCH_SIZE = 90;
+
+/**
+ * Warm `readCache` with the baseline items of every menu version that the
+ * given vendor/date pairs resolve to, in batched reads instead of one read per
+ * version. Rows keep the per-version order of getCompatibilityMenuBaseline.
+ */
+export const prefetchCompatibilityMenuBaselines = async (database, pairs = [], readCache) => {
+  if (!readCache) return;
+  const versionIds = new Set();
+  for (const { vendor, targetDate } of pairs) {
+    const normalizedVendor = normalizeMenuVendor(vendor);
+    const normalizedDate = text(targetDate);
+    if (!normalizedVendor || !isDateOnly(normalizedDate)) continue;
+    const version = await compatibilityVersion(database, normalizedVendor, normalizedDate, readCache);
+    if (version && !readCache.has(`baseline:${version.menu_version_id}`)) {
+      versionIds.add(version.menu_version_id);
+    }
+  }
+  const ids = [...versionIds];
+  for (let index = 0; index < ids.length; index += BASELINE_BATCH_SIZE) {
+    const chunk = ids.slice(index, index + BASELINE_BATCH_SIZE);
+    const batch = database.prepare(`
+      SELECT menu_version_id, menu_item_id, legacy_item_id, variant_key, item_name, price,
+             enabled, note, image_url, source_order, created_at, updated_at
+      FROM menu_items
+      WHERE menu_version_id IN (${chunk.map(() => '?').join(', ')})
+      ORDER BY menu_version_id ASC, source_order ASC, menu_item_id ASC
+    `).bind(...chunk).all().then((result) => {
+      const byVersion = new Map(chunk.map((id) => [id, []]));
+      rowsFrom(result).forEach(({ menu_version_id: versionId, ...row }) => {
+        byVersion.get(versionId)?.push(row);
+      });
+      return byVersion;
+    });
+    // A failed batch rejects through the awaited call below; mark the derived
+    // per-version promises handled so they do not also surface as unhandled.
+    chunk.forEach((id) => {
+      const versionRows = batch.then((byVersion) => ({ results: byVersion.get(id) }));
+      versionRows.catch(() => {});
+      readCache.set(`baseline:${id}`, versionRows);
+    });
+    await batch;
+  }
+};
+
 const attachCompatibilityIds = (rows, baselineRows) => rows.map((row) => {
   const matches = baselineRows.filter((baseline) => (
     baseline.vendor === row.vendor
@@ -492,13 +554,16 @@ export const resolveMenuItemChanges = async (
     WHERE mic.vendor IN (${placeholders}) AND mic.effective_date <= ?
     ORDER BY mic.effective_date DESC, mis.sequence_number DESC, mic.menu_item_change_id DESC
   `).bind(...vendors, normalizedDate).all();
+  const memo = readCache ? readThrough(readCache, 'normalized-change-rows', () => new WeakMap()) : null;
   const legacy = resolveRows(rowsFrom(result), {
     vendor: normalizedVendor,
-    targetDate: normalizedDate
+    targetDate: normalizedDate,
+    memo
   });
   const normalized = resolveNormalizedRows(rowsFrom(result), {
     vendor: normalizedVendor,
-    targetDate: normalizedDate
+    targetDate: normalizedDate,
+    memo
   });
   return {
     ...legacy,
@@ -555,7 +620,7 @@ const applyHistoricalImageFallback = (database, rows, readCache = null) => (
 
 export const resolveEffectiveMenuState = async (
   database,
-  { vendor, targetDate, readCache = null } = {}
+  { vendor, targetDate, readCache = null, includeDisplayImages = true } = {}
 ) => {
   const changes = await resolveMenuItemChanges(database, { vendor, targetDate, readCache });
   const baseline = await getCompatibilityMenuBaseline(database, { vendor, targetDate, readCache });
@@ -576,7 +641,9 @@ export const resolveEffectiveMenuState = async (
       baselineRows: effectiveBaselineRows,
       changeRows: effectiveChangeRows
     });
-  const displayRows = changes.authority === 'sql_historical'
+  // The image fallback reads every current menu item; callers that only need
+  // item identities and names (order statistics) skip it.
+  const displayRows = changes.authority === 'sql_historical' && includeDisplayImages
     ? await applyHistoricalImageFallback(database, rows, readCache)
     : rows;
   return {

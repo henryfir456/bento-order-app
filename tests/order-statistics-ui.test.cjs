@@ -74,3 +74,16 @@ test('vendor donut chart shows the center total and respects reduced motion', ()
   assert.match(page, /aria-hidden="true" className="ml-5 h-1\.5/);
   assert.match(page, /isViewAsMode/);
 });
+
+test('footprints show the last result per subject and period while refreshing', () => {
+  const app = read('src/App.jsx');
+  const page = read('src/features/orders/MyBentoFootprintsPage.jsx');
+  const methodStart = app.indexOf('const refreshBentoFootprints = async');
+  const refreshMethod = app.slice(methodStart, app.indexOf('\n  useEffect', methodStart));
+  assert.match(refreshMethod, /JSON\.stringify\(\[subjectUserId, period\]\)/);
+  assert.match(refreshMethod, /setFootprintsLoading\(!cached\)/);
+  assert.match(refreshMethod, /footprintsCacheRef\.current\.set\(cacheKey, nextData\)/);
+  const clearStart = app.indexOf('const clearIdentityData = () => {');
+  assert.match(app.slice(clearStart, app.indexOf('\n  };', clearStart)), /footprintsCacheRef\.current\.clear\(\)/);
+  assert.match(page, /refreshing \? <span role="status"/);
+});
