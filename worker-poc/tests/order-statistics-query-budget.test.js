@@ -243,3 +243,134 @@ test('statistics D1 round trips do not grow with the number of distinct order da
     `statistics used ${database.queryCount} D1 queries for 80 order dates`
   );
 });
+
+const seedDailyMenuVersions = (database, { vendor, dayCount }) => {
+  // Live menus store one menu version per business date.
+  for (let day = 0; day < dayCount; day += 1) {
+    const date = isoDate(day);
+    const versionId = `daily-${vendor}-${date}`;
+    seedMenuVersion(database, { menuVersionId: versionId, vendor, effectiveDate: date });
+    for (let index = 0; index < 3; index += 1) {
+      database.run(`
+        INSERT INTO menu_items (
+          menu_item_id, menu_version_id, legacy_item_id, item_name, price,
+          enabled, note, image_url, source_order
+        ) VALUES (?, ?, ?, ?, 80, 1, '', '', ?)
+      `, `${versionId}-${index}`, versionId, `D${index}`, `Daily meal ${index} ${date}`, index + 1);
+    }
+    const orderId = `order-daily-${vendor}-${day}`;
+    database.run(`
+      INSERT INTO orders (
+        order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+        total_amount, status, created_by_user_id, created_auth_mode
+      ) VALUES (?, 'user-1', 'Synthetic Buyer', ?, ?, '1樓', 80, 'COMPLETED', 'user-1', 'line')
+    `, orderId, date, vendor);
+    database.run(`
+      INSERT INTO order_items (
+        order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+        quantity, unit_price, subtotal
+      ) VALUES (?, 1, ?, ?, 'Snapshot meal', 1, 80, 80)
+    `, orderId, `${versionId}-${day % 3}`, `D${day % 3}`);
+  }
+};
+
+const statisticsFor = async (database) => {
+  database.queryCount = 0;
+  const response = await handleFormalRequest(
+    request('/api/orders/statistics?period=all', { token: 'token-user' }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token: 'token-user', lineUserId: 'user-1' }), now: NOW }
+  );
+  assert.equal(response.status, 200);
+  return response.json();
+};
+
+test('statistics batch the baseline items of per-date menu versions', async () => {
+  const countFor = async (dayCount) => {
+    const database = new CountingD1();
+    seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+    seedDailyMenuVersions(database, { vendor: 'Vendor A', dayCount });
+    const body = await statisticsFor(database);
+    assert.equal(body.totalPortions, dayCount);
+    assert.ok(body.items.every((item) => item.resolved), 'every daily order resolves to its own menu');
+    return database.queryCount;
+  };
+  const small = await countFor(8);
+  const large = await countFor(120);
+  // One baseline read per daily menu version made this grow by one query per
+  // order date; only the batch chunk count may grow now (120 IDs: 3 + 2 chunks).
+  assert.ok(large - small <= 4, `query count grew from ${small} to ${large}`);
+});
+
+test('prefetched baselines return exactly the same effective menu as per-date reads', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+  seedDailyMenuVersions(database, { vendor: 'Vendor A', dayCount: 40 });
+  seedManyDates(database, { vendor: HISTORICAL_MENU_VENDOR, dayCount: 20, startOffset: 0, menuItemPrefix: 'hist' });
+  const { getCustomerMenu } = await import('../src/domain/menu.js');
+  const { prefetchCompatibilityMenuBaselines } = await import('../src/domain/menuItemChanges.js');
+  const readCache = new Map();
+  const pairs = [];
+  for (let day = 0; day < 45; day += 1) {
+    for (const vendor of ['Vendor A', HISTORICAL_MENU_VENDOR, 'Vendor Without Menu']) {
+      pairs.push({ vendor, targetDate: isoDate(day) });
+    }
+  }
+  await prefetchCompatibilityMenuBaselines(database, pairs, readCache);
+  for (const { vendor, targetDate } of pairs) {
+    assert.deepEqual(
+      await getCustomerMenu(database, { vendor, targetDate, readCache }),
+      await getCustomerMenu(database, { vendor, targetDate }),
+      `${vendor} ${targetDate}`
+    );
+  }
+});
+
+test('statistics skip the current-menu image read that name resolution never uses', async () => {
+  const database = new CountingD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+  database.run(`
+    INSERT INTO import_batches (batch_id, source_hash, importer_version, status)
+    VALUES ('sql-menu-batch', 'sql-menu-source', 'legacy-sql-menu', 'REVIEWED')
+  `);
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date, source_batch_id)
+    VALUES ('sql-menu-jan', ?, '2026-01-01', 'sql-menu-batch')
+  `, HISTORICAL_MENU_VENDOR);
+  database.run(`
+    INSERT INTO menu_item_changes (
+      menu_item_change_id, effective_date, vendor, item_code, variant_key,
+      item_name, price, enabled, image_url, note, display_order, source_kind
+    ) VALUES ('change-sql-a', '2026-01-01', ?, 'A', '', 'A.風味便當', 80, 1, '', '', 1, 'legacy_sql')
+  `, HISTORICAL_MENU_VENDOR);
+  database.run(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, item_name, price, enabled, source_order
+    ) VALUES ('sql-a', 'sql-menu-jan', 'A', 'A.風味便當', 80, 1, 1)
+  `);
+  database.run(`
+    INSERT INTO orders (
+      order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id, created_auth_mode
+    ) VALUES ('order-sql', 'user-1', 'Synthetic Buyer', '2026-01-05', ?, '1樓', 80, 'COMPLETED', 'user-1', 'line')
+  `, HISTORICAL_MENU_VENDOR);
+  database.run(`
+    INSERT INTO order_items (
+      order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+      quantity, unit_price, subtotal
+    ) VALUES ('order-sql', 1, 'sql-a', 'A', 'A.風味便當', 1, 80, 80)
+  `);
+  const statements = [];
+  const prepare = database.prepare.bind(database);
+  database.prepare = (sql) => {
+    statements.push(sql);
+    return prepare(sql);
+  };
+  const body = await statisticsFor(database);
+  assert.equal(body.totalPortions, 1);
+  assert.equal(body.items[0].resolved, true);
+  assert.ok(
+    statements.every((sql) => !/LEFT JOIN import_batches/.test(sql)),
+    'statistics must not read every current menu item for image fallback'
+  );
+});
