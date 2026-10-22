@@ -1,5 +1,5 @@
 # 2026-10-22 — 足跡統計 API 逾時（D1 往返次數）
-- Repository、分支、PR、Commit SHA：`henryfir456/bento-order-app`、`perf/statistics-menu-read-cache`；PR／head SHA 待 GitHub 建立及 reviewer 核對。
+- Repository、分支、PR、Commit SHA：`henryfir456/bento-order-app`、`perf/statistics-menu-read-cache`、[PR #146](https://github.com/henryfir456/bento-order-app/pull/146)；最終 head SHA 以 PR 頁面為準。獨立審查（非作者）對 `a160663` 結論 APPROVE_WITH_NITS，無 blocker／major；其 minor 意見（prefetch 失敗時未處理的 rejection、缺少 menu_item_changes 與 50 筆以上 ID 的測試、格式錯字、本欄位）已於後續 commit 處理。
 - 本輪目標／實際修改：正式 Worker 部署（main `c8b42fe`）後，Admin 開啟「我的便當足跡」時 `/api/orders/statistics` 逾時。以每次請求範圍的唯讀快取及批次查詢，減少有效餐點名稱解析的 D1 往返；不改回傳內容、不改 schema、不改歷史訂單。
 - 交付狀態：PARTIAL；程式與本地測試完成，修正後的正式 Worker 部署與線上實測 NOT VERIFIED。
 
@@ -15,8 +15,8 @@
 
 ## 驗證
 - 修正前 RED（同一測試檔、原始碼）：`node --test tests/order-statistics-query-budget.test.js`，exit 1，2 fail／1 pass：80 個不同廠商日期使用 253 次 D1 查詢；8→60 日查詢數由 61 增至 373。
-- 修正後 GREEN（同一命令）：exit 0，3 pass／0 fail。含「快取與逐日查詢的有效菜單 deepEqual」覆蓋歷史廠商 SQL 版本、GAS 版本、無菜單廠商，共 150 組廠商／日期。
-- `npm test --prefix worker-poc`：PASS，623/623，exit 0（含既有 vendor-rbac、vendor-operations、effective-order-item-name、historical-menu、menu-item-changes、order-statistics）。
+- 修正後 GREEN（同一命令）：exit 0，5 pass／0 fail。含「快取與逐日查詢的有效菜單 deepEqual」覆蓋歷史廠商 SQL 版本、GAS 版本、無菜單廠商（150 組廠商／日期），以及 admin／GAS 變更列同日平手與停用的 60 個日期；另有 120 筆（超過單批 50 個 ID）含 NULL 菜單 ID 的統計案例。deepEqual 兩項是修正後的等價性檢查，在原始碼上也會通過（原始碼忽略 `readCache`），RED 由兩個查詢預算測試提供。
+- `npm test --prefix worker-poc`：PASS，625/625，exit 0（含既有 vendor-rbac、vendor-operations、effective-order-item-name、historical-menu、menu-item-changes、order-statistics）。
 - 未執行：根目錄前端 lint／build（本輪僅改 worker-poc，前端未變）。
 - 正式 Worker 部署、修正後正式 API 耗時、Admin 足跡頁實測：NOT VERIFIED。
 

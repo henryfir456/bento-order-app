@@ -54,7 +54,7 @@ const readThrough = (readCache, key, load) => {
   return readCache.get(key);
 };
 
-const identityKey =(vendor, itemCode, variantKey) => (
+const identityKey = (vendor, itemCode, variantKey) => (
   `${vendor}\u0000${itemCode}\u0000${variantKey}`
 );
 

@@ -125,6 +125,79 @@ test('cached menu reads return exactly the same effective menu as per-date reads
   }
 });
 
+test('cached menu reads match per-date reads when admin and GAS change rows tie on effective date', async () => {
+  const database = new SqliteD1();
+  seedMenuVersion(database, {
+    menuVersionId: 'version-changes',
+    vendor: 'Vendor A',
+    effectiveDate: '2026-09-01'
+  });
+  database.run(`
+    INSERT INTO menu_items (
+      menu_item_id, menu_version_id, legacy_item_id, item_name, price, enabled, source_order
+    ) VALUES ('item-base', 'version-changes', 'A1', 'Base meal', 80, 1, 1)
+  `);
+  const insertChange = (id, date, sourceKind, name, price, enabled = 1, code = 'A1') => database.run(`
+    INSERT INTO menu_item_changes (
+      menu_item_change_id, effective_date, vendor, item_code, variant_key,
+      item_name, price, enabled, image_url, note, display_order, source_kind
+    ) VALUES (?, ?, 'Vendor A', ?, '', ?, ?, ?, '', '', 1, ?)
+  `, id, date, code, name, price, enabled, sourceKind);
+  insertChange('change-gas', '2026-09-20', 'gas_compatibility', 'GAS rename', 82);
+  insertChange('change-admin-a', '2026-10-05', 'admin', 'Admin rename A', 85);
+  insertChange('change-admin-b', '2026-10-05', 'admin', 'Admin new item', 86, 1, 'A2');
+  insertChange('change-admin-off', '2026-10-15', 'admin', 'Admin disabled', 86, 0);
+  const { getCustomerMenu } = await import('../src/domain/menu.js');
+  const readCache = new Map();
+  for (let offset = 0; offset < 60; offset += 1) {
+    const targetDate = new Date(Date.UTC(2026, 8, 1 + offset)).toISOString().slice(0, 10);
+    assert.deepEqual(
+      await getCustomerMenu(database, { vendor: 'Vendor A', targetDate, readCache }),
+      await getCustomerMenu(database, { vendor: 'Vendor A', targetDate }),
+      targetDate
+    );
+  }
+});
+
+test('statistics batches more than one identity chunk and keeps unknown item IDs unresolved', async () => {
+  const database = new CountingD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+  seedMenuVersion(database, { menuVersionId: 'version-many', vendor: 'Vendor A', effectiveDate: '2026-01-01' });
+  for (let index = 0; index < 120; index += 1) {
+    const orderId = `order-many-${index}`;
+    const known = index % 2 === 0;
+    if (known) {
+      database.run(`
+        INSERT INTO menu_items (
+          menu_item_id, menu_version_id, legacy_item_id, item_name, price, enabled, source_order
+        ) VALUES (?, 'version-many', ?, ?, 80, 1, ?)
+      `, `many-${index}`, `code-${index}`, `Meal ${index}`, index + 1);
+    }
+    database.run(`
+      INSERT INTO orders (
+        order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+        total_amount, status, created_by_user_id, created_auth_mode
+      ) VALUES (?, 'user-1', 'Synthetic Buyer', ?, 'Vendor A', '1樓', 80, 'COMPLETED', 'user-1', 'line')
+    `, orderId, isoDate(index % 28));
+    database.run(`
+      INSERT INTO order_items (
+        order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+        quantity, unit_price, subtotal
+      ) VALUES (?, 1, ?, ?, ?, 1, 80, 80)
+    `, orderId, known ? `many-${index}` : null, `code-${index}`, `Meal ${index}`);
+  }
+  database.queryCount = 0;
+  const response = await handleFormalRequest(
+    request('/api/orders/statistics?period=all', { token: 'token-user' }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token: 'token-user', lineUserId: 'user-1' }), now: NOW }
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.totalPortions, 120);
+  assert.ok(database.queryCount <= 25, `statistics used ${database.queryCount} D1 queries`);
+});
+
 test('statistics query count stays flat as order dates grow', async () => {
   const countFor = async (dayCount) => {
     const database = new CountingD1();

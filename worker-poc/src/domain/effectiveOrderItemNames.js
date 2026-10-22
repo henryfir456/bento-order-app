@@ -199,7 +199,13 @@ export const createEffectiveOrderItemNameResolver = (database) => {
         const rows = Array.isArray(result?.results) ? result.results : [];
         return new Map(rows.map((row) => [text(row.menu_item_id), row]));
       });
-      ids.forEach((id) => historicalIdentities.set(id, batch.then((rows) => rows.get(id) ?? null)));
+      // A failed batch rejects through the awaited call below; mark the derived
+      // per-ID promises handled so they do not also surface as unhandled.
+      ids.forEach((id) => {
+        const identityRow = batch.then((rows) => rows.get(id) ?? null);
+        identityRow.catch(() => {});
+        historicalIdentities.set(id, identityRow);
+      });
       await batch;
     }
     const pairs = new Map();
