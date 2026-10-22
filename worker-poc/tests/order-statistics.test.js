@@ -131,20 +131,19 @@ test('all-time statistics exclude exact special snapshots, cancelled/refunded/fu
   assert.equal(body.endDate, '2026-02-01', 'UTC time is converted to the current Taipei date');
   assert.equal(body.totalPortions, 10);
   assert.equal(body.totalOrderDays, 3);
-  assert.equal(body.totalMealTypes, 5, 'unverified snapshot lines remain separate meal types');
+  assert.equal(body.totalMealTypes, 4, 'unverified lines with the same raw label are one meal type');
   assert.deepEqual(Object.fromEntries(body.vendors.map(({ name, portions }) => [name, portions])), {
     店家舊: 4,
     店家甲: 3,
     店家乙: 3
   });
   const matchingSnapshots = body.items.filter(({ name }) => name === '便當甲');
-  assert.equal(matchingSnapshots.length, 2);
-  assert.deepEqual(matchingSnapshots.map((item) => item.portions), [2, 1]);
+  assert.equal(matchingSnapshots.length, 1, 'repeated unverified lines are one footprint row');
+  assert.equal(matchingSnapshots[0].portions, 3);
   assert.equal(matchingSnapshots[0].vendor, '店家甲');
   assert.equal(matchingSnapshots[0].variantKey, '');
-  assert.notEqual(matchingSnapshots[0].identityKey, matchingSnapshots[1].identityKey);
-  assert.ok(matchingSnapshots.every((item) => item.resolved === false
-    && item.resolutionStatus === 'not_found'));
+  assert.equal(matchingSnapshots[0].resolved, false);
+  assert.equal(matchingSnapshots[0].resolutionStatus, 'not_found');
   assert.ok(!body.items.some(({ name }) => ['手續費減免', '免費加飯', '1元', '退款餐點', '未來餐點', '取消餐點', '其他人的便當'].includes(name)));
 });
 
@@ -156,7 +155,7 @@ test('year and month statistics use server-authoritative Taipei date boundaries'
   assert.equal(year.body.endDate, '2026-02-01');
   assert.equal(year.body.totalPortions, 6);
   assert.equal(year.body.totalOrderDays, 2);
-  assert.equal(year.body.totalMealTypes, 4, 'the two unverified January lines remain separate identities');
+  assert.equal(year.body.totalMealTypes, 3, 'the two unverified January lines share one raw label');
   assert.equal(month.body.startDate, '2026-02-01');
   assert.equal(month.body.endDate, '2026-02-01');
   assert.equal(month.body.totalPortions, 3);
@@ -206,4 +205,32 @@ test('Admin View As reads selected purchaser; normal User cannot forge View As',
   assert.equal(forbidden.body.error, 'VIEW_AS_FORBIDDEN');
   const ambiguous = await stats(database, '/api/orders/statistics?viewAs=user-1&viewAs=user-2', admin);
   assert.equal(ambiguous.response.status, 400);
+});
+
+test('unverified lines group by vendor, raw label and price across orders, never across labels', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Purchaser' });
+  const lines = [
+    ['week-1', '2026-01-05', '店家甲', '特餐(半飯)', 85],
+    ['week-2', '2026-01-12', '店家甲', '特餐(半飯)', 85],
+    ['week-3', '2026-01-19', '店家甲', '特餐(半飯)', 90],
+    ['week-4', '2026-01-26', '店家甲', '特餐', 95],
+    ['week-5', '2026-01-27', '店家乙', '特餐(半飯)', 85]
+  ];
+  lines.forEach(([orderId, date, vendor, name, price]) => addOrder(database, {
+    orderId, date, vendor, items: [{ name, quantity: 1, price }]
+  }));
+  const { body } = await stats(database);
+  assert.equal(body.totalPortions, 5);
+  assert.equal(body.totalMealTypes, 4);
+  const rows = body.items.map(({ name, vendor, portions, resolved }) => [name, vendor, portions, resolved]);
+  assert.equal(rows[0][2], 2, 'the repeated same-price label ranks first as one row');
+  const sortRows = (list) => [...list].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  assert.deepEqual(sortRows(rows), sortRows([
+    ['特餐(半飯)', '店家甲', 2, false],
+    ['特餐', '店家甲', 1, false],
+    ['特餐(半飯)', '店家甲', 1, false],
+    ['特餐(半飯)', '店家乙', 1, false]
+  ]));
+  assert.equal(new Set(body.items.map(({ identityKey }) => identityKey)).size, 4);
 });
