@@ -121,11 +121,20 @@ export const resolveEffectiveOrderItemName = ({
   };
 };
 
+// D1 allows at most 100 bound parameters per statement.
+const IDENTITY_BATCH_SIZE = 50;
+
 /** Cache effective vendor/date menus while resolving any number of snapshots. */
 export const createEffectiveOrderItemNameResolver = (database) => {
   const menus = new Map();
   const historicalIdentities = new Map();
-  return async ({ vendor, orderDate, item } = {}) => {
+  const readCache = new Map();
+  const loadMenu = (normalizedVendor, orderDate) => getCustomerMenu(database, {
+    vendor: normalizedVendor,
+    targetDate: orderDate,
+    readCache
+  });
+  const resolve = async ({ vendor, orderDate, item } = {}) => {
     const normalizedVendor = normalizeMenuVendor(vendor) || text(vendor);
     const cacheKey = identity(normalizedVendor, orderDate);
     let sourceItem = { ...item };
@@ -164,9 +173,45 @@ export const createEffectiveOrderItemNameResolver = (database) => {
       return resolveEffectiveOrderItemName({ vendor: normalizedVendor, orderDate, item: sourceItem });
     }
     if (!menus.has(cacheKey)) {
-      menus.set(cacheKey, getCustomerMenu(database, { vendor: normalizedVendor, targetDate: orderDate }));
+      menus.set(cacheKey, loadMenu(normalizedVendor, orderDate));
     }
     const menuItems = await menus.get(cacheKey);
     return resolveEffectiveOrderItemName({ vendor: normalizedVendor, orderDate, item: sourceItem, menuItems });
   };
+
+  /**
+   * Warm the per-request caches for many snapshots at once: one batched read
+   * for stable item identities, then the distinct vendor/date menus. Results
+   * are identical to resolving lazily; it only removes sequential D1 round trips.
+   */
+  resolve.prefetch = async (entries = []) => {
+    const menuItemIds = [...new Set(entries
+      .map((entry) => text(entry?.item?.menu_item_id))
+      .filter((id) => id && !historicalIdentities.has(id)))];
+    for (let index = 0; index < menuItemIds.length; index += IDENTITY_BATCH_SIZE) {
+      const ids = menuItemIds.slice(index, index + IDENTITY_BATCH_SIZE);
+      const batch = database.prepare(`
+        SELECT mi.menu_item_id, mv.vendor, mi.legacy_item_id, mi.variant_key
+        FROM menu_items mi
+        JOIN menu_versions mv ON mv.menu_version_id = mi.menu_version_id
+        WHERE mi.menu_item_id IN (${ids.map(() => '?').join(', ')})
+      `).bind(...ids).all().then((result) => {
+        const rows = Array.isArray(result?.results) ? result.results : [];
+        return new Map(rows.map((row) => [text(row.menu_item_id), row]));
+      });
+      ids.forEach((id) => historicalIdentities.set(id, batch.then((rows) => rows.get(id) ?? null)));
+      await batch;
+    }
+    const pairs = new Map();
+    entries.forEach((entry) => {
+      const normalizedVendor = normalizeMenuVendor(entry?.vendor) || text(entry?.vendor);
+      if (!normalizedVendor || !isDateOnly(entry?.orderDate)) return;
+      pairs.set(identity(normalizedVendor, entry.orderDate), [normalizedVendor, entry.orderDate]);
+    });
+    await Promise.all([...pairs.entries()].map(([key, [normalizedVendor, orderDate]]) => {
+      if (!menus.has(key)) menus.set(key, loadMenu(normalizedVendor, orderDate));
+      return menus.get(key);
+    }));
+  };
+  return resolve;
 };
