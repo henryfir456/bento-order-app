@@ -121,8 +121,15 @@ export const resolveEffectiveOrderItemName = ({
   }
 
   const resolved = matches[0];
-  const variantKey = text(resolved.variant_key || requestedVariant);
   const stableCode = canonicalLegacyItemId(resolved.legacy_item_id || resolved.item_id);
+  let variantKey = text(resolved.variant_key || requestedVariant);
+  if (!variantKey && stableCode) {
+    // A menu row from before the variant split has no variant. When the reviewed
+    // mapping keeps the same code and only adds a variant, group it with that
+    // variant's normalized rows so one dish is not counted under two identities.
+    const mapped = normalizeLegacyMenuIdentity({ vendor: normalizedVendor, itemCode: stableCode });
+    if (mapped && mapped.item_code === stableCode) variantKey = mapped.variant_key;
+  }
   const stableId = stableCode
     ? identity(normalizedVendor, 'menu', stableCode, variantKey)
     : identity(normalizedVendor, 'menu-id', resolved.menu_item_id);
