@@ -422,17 +422,17 @@ const BASELINE_BATCH_SIZE = 90;
  */
 export const prefetchCompatibilityMenuBaselines = async (database, pairs = [], readCache) => {
   if (!readCache) return;
-  const versionIds = new Set();
-  for (const { vendor, targetDate } of pairs) {
+  // Different vendors read their version lists concurrently.
+  const versions = await Promise.all(pairs.map(({ vendor, targetDate }) => {
     const normalizedVendor = normalizeMenuVendor(vendor);
     const normalizedDate = text(targetDate);
-    if (!normalizedVendor || !isDateOnly(normalizedDate)) continue;
-    const version = await compatibilityVersion(database, normalizedVendor, normalizedDate, readCache);
-    if (version && !readCache.has(`baseline:${version.menu_version_id}`)) {
-      versionIds.add(version.menu_version_id);
-    }
-  }
-  const ids = [...versionIds];
+    if (!normalizedVendor || !isDateOnly(normalizedDate)) return null;
+    return compatibilityVersion(database, normalizedVendor, normalizedDate, readCache);
+  }));
+  const ids = [...new Set(versions
+    .filter((version) => version && !readCache.has(`baseline:${version.menu_version_id}`))
+    .map((version) => version.menu_version_id))];
+  const batches = [];
   for (let index = 0; index < ids.length; index += BASELINE_BATCH_SIZE) {
     const chunk = ids.slice(index, index + BASELINE_BATCH_SIZE);
     const batch = database.prepare(`
@@ -455,8 +455,24 @@ export const prefetchCompatibilityMenuBaselines = async (database, pairs = [], r
       versionRows.catch(() => {});
       readCache.set(`baseline:${id}`, versionRows);
     });
-    await batch;
+    batches.push(batch);
   }
+  await Promise.all(batches);
+};
+
+/** Warm `readCache` with the change rows of every given vendor concurrently. */
+export const prefetchMenuItemChanges = async (database, vendors = [], readCache) => {
+  if (!readCache) return;
+  const vendorSets = new Map();
+  vendors.forEach((vendor) => {
+    const normalizedVendor = normalizeMenuVendor(vendor);
+    if (!normalizedVendor) return;
+    const candidates = historicalMenuRowVendorCandidates(normalizedVendor);
+    vendorSets.set(candidates.join('\u0000'), candidates);
+  });
+  await Promise.all([...vendorSets.values()].map((candidates) => (
+    readAllMenuItemChangeRows(database, candidates, readCache)
+  )));
 };
 
 const attachCompatibilityIds = (rows, baselineRows) => rows.map((row) => {
@@ -518,6 +534,25 @@ export const resolveMenuItemChangesFromRows = (rows = [], options = {}) => {
   };
 };
 
+// Unbounded by date for the request cache; resolveRows/resolveNormalizedRows
+// re-apply the effective-date bound in memory.
+const readAllMenuItemChangeRows = (database, vendors, readCache) => readThrough(
+  readCache,
+  `changes:${vendors.join('\u0000')}`,
+  () => database.prepare(`
+    SELECT mic.menu_item_change_id, mic.effective_date, mic.vendor, mic.item_code, mic.variant_key,
+           item_name, price, enabled, image_url, note, display_order,
+           source_kind, source_batch_id, source_table, source_row,
+           source_record_id, updated_by_user_id, created_at, updated_at,
+           mic.identity_schema_version, mis.sequence_number
+    FROM menu_item_changes mic
+    LEFT JOIN menu_item_change_sequence mis
+      ON mis.menu_item_change_id = mic.menu_item_change_id
+    WHERE mic.vendor IN (${vendors.map(() => '?').join(', ')})
+    ORDER BY mic.effective_date DESC, mis.sequence_number DESC, mic.menu_item_change_id DESC
+  `).bind(...vendors).all()
+);
+
 export const resolveMenuItemChanges = async (
   database,
   { vendor, targetDate, readCache = null } = {}
@@ -531,18 +566,7 @@ export const resolveMenuItemChanges = async (
   const placeholders = vendors.map(() => '?').join(', ');
   // resolveRows/resolveNormalizedRows re-apply the effective-date bound in
   // memory, so a cached unbounded read (same ORDER BY) is equivalent.
-  const result = readCache ? await readThrough(readCache, `changes:${vendors.join('\u0000')}`, () => database.prepare(`
-    SELECT mic.menu_item_change_id, mic.effective_date, mic.vendor, mic.item_code, mic.variant_key,
-           item_name, price, enabled, image_url, note, display_order,
-           source_kind, source_batch_id, source_table, source_row,
-           source_record_id, updated_by_user_id, created_at, updated_at,
-           mic.identity_schema_version, mis.sequence_number
-    FROM menu_item_changes mic
-    LEFT JOIN menu_item_change_sequence mis
-      ON mis.menu_item_change_id = mic.menu_item_change_id
-    WHERE mic.vendor IN (${placeholders})
-    ORDER BY mic.effective_date DESC, mis.sequence_number DESC, mic.menu_item_change_id DESC
-  `).bind(...vendors).all()) : await database.prepare(`
+  const result = readCache ? await readAllMenuItemChangeRows(database, vendors, readCache) : await database.prepare(`
     SELECT mic.menu_item_change_id, mic.effective_date, mic.vendor, mic.item_code, mic.variant_key,
            item_name, price, enabled, image_url, note, display_order,
            source_kind, source_batch_id, source_table, source_row,
