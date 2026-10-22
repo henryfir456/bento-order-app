@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiClient } from '../../api/apiClient';
 import { formatApiErrorDiagnostic } from '../../api/apiErrors';
-import { canRecordVendorTransfer, isVendorEnabled } from './vendorOperationsPolicy';
+import { canRecordVendorTransfer, isVendorEnabled, vendorOperationsView } from './vendorOperationsPolicy';
 
 const taipeiToday = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -58,10 +58,12 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
   const [adjustments, setAdjustments] = useState({});
   const [reversals, setReversals] = useState({});
   const [busyKey, setBusyKey] = useState('');
+  const [vendorPreview, setVendorPreview] = useState(false);
+  const view = vendorOperationsView(role, vendorPreview);
   const requestRef = useRef(0);
   const idempotencyRef = useRef({ payload: '', key: createKey() });
   const selectedVendor = vendors.find((vendor) => vendor.id === vendorId);
-  const canRecordTransfer = canRecordVendorTransfer(role, selectedVendor);
+  const canRecordTransfer = view.adminControls && canRecordVendorTransfer(role, selectedVendor);
 
   const load = useCallback(async () => {
     if (!isVendor && (!isAdmin || !vendorId)) return;
@@ -230,8 +232,8 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
           {transfer.resolution && <p className="mt-2 text-sm text-emerald-800">處理結果：{transfer.resolution}</p>}
           {transfer.reversalReason && <p className="mt-2 text-sm text-rose-800">沖正原因：{transfer.reversalReason}</p>}
         </div>
-        {isVendor && transfer.status === 'REGISTERED' && (
-          <button type="button" disabled={Boolean(busyKey)}
+        {view.vendorLayout && transfer.status === 'REGISTERED' && (
+          <button type="button" disabled={Boolean(busyKey) || !view.vendorActionsEnabled}
             onClick={() => void performAction(`ack-${transfer.paymentId}`, async () => {
               await readResponse(await apiClient.acknowledgeVendorPayment({ paymentId: transfer.paymentId }));
             })}
@@ -240,14 +242,14 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
           </button>
         )}
       </div>
-      {isVendor && transfer.status === 'REGISTERED' && (
+      {view.vendorLayout && transfer.status === 'REGISTERED' && (
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <label className="sr-only" htmlFor={`dispute-${transfer.paymentId}`}>轉帳爭議原因</label>
           <input id={`dispute-${transfer.paymentId}`} type="text" maxLength={500}
-            value={disputeReasons[transfer.paymentId] || ''}
+            value={disputeReasons[transfer.paymentId] || ''} disabled={!view.vendorActionsEnabled}
             onChange={(event) => setDisputeReasons((current) => ({ ...current, [transfer.paymentId]: event.target.value }))}
             placeholder="有差異時請填寫原因" className="min-h-10 min-w-0 flex-1 rounded-lg border border-slate-300 px-3 text-sm" />
-          <button type="button" disabled={Boolean(busyKey) || !String(disputeReasons[transfer.paymentId] || '').trim()}
+          <button type="button" disabled={Boolean(busyKey) || !view.vendorActionsEnabled || !String(disputeReasons[transfer.paymentId] || '').trim()}
             onClick={() => void performAction(`dispute-${transfer.paymentId}`, async () => {
               await readResponse(await apiClient.disputeVendorPayment({
                 paymentId: transfer.paymentId, reason: disputeReasons[transfer.paymentId]
@@ -258,7 +260,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
           </button>
         </div>
       )}
-      {isAdmin && transfer.status === 'DISPUTED' && (
+      {view.adminControls && transfer.status === 'DISPUTED' && (
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <label className="sr-only" htmlFor={`resolve-${transfer.paymentId}`}>爭議處理結果</label>
           <input id={`resolve-${transfer.paymentId}`} type="text" maxLength={500}
@@ -276,7 +278,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
           </button>
         </div>
       )}
-      {isAdmin && transfer.allocationId && transfer.status !== 'REVERSED' && (
+      {view.adminControls && transfer.allocationId && transfer.status !== 'REVERSED' && (
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_2fr_auto]">
           <label className="sr-only" htmlFor={`adjust-${transfer.allocationId}`}>分攤修正金額</label>
           <input id={`adjust-${transfer.allocationId}`} type="number" step="1"
@@ -308,7 +310,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
           </button>
         </div>
       )}
-      {isAdmin && transfer.isPrimaryTransferRow && transfer.status !== 'REVERSED' && (
+      {view.adminControls && transfer.isPrimaryTransferRow && transfer.status !== 'REVERSED' && (
         <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
           <label className="sr-only" htmlFor={`reverse-${transfer.paymentId}`}>整筆轉帳沖正原因</label>
           <input id={`reverse-${transfer.paymentId}`} type="text" maxLength={500}
@@ -351,7 +353,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
       <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-[#2C4A3E]">{isVendor ? '每日訂單與轉帳' : '廠商訂單與轉帳'}</h2>
+            <h2 className="text-xl font-bold text-[#2C4A3E]">{view.vendorLayout ? '每日訂單與轉帳' : '廠商訂單與轉帳'}</h2>
             <p className="mt-1 text-sm text-slate-600">{vendorName || (isAdmin ? '選擇廠商查看' : '依已授權廠商範圍顯示')}</p>
           </div>
           {mock && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-extrabold text-amber-900">LOCAL MOCK · 非 LINE／非實際 API</span>}
@@ -377,13 +379,21 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
             {loading ? '載入中…' : '重新整理'}
           </button>
         </div>
+        {isAdmin && <label className="mt-3 flex min-h-11 items-center gap-2 rounded-lg bg-slate-50 px-3 text-sm font-medium text-slate-700">
+          <input type="checkbox" checked={vendorPreview} onChange={(event) => setVendorPreview(event.target.checked)} />
+          以廠商視角預覽（唯讀）
+        </label>}
       </div>
+
+      {view.previewing && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+        廠商視角預覽：顯示{vendorName ? `「${vendorName}」` : '這家廠商'}登入後看到的畫面。管理功能已隱藏，「確認收到」與「提出爭議」只有廠商本人能操作。
+      </p>}
 
       {!error && <p className="text-xs text-slate-500">
         轉帳對帳與訂單履行狀態分開顯示。
       </p>}
 
-      {isAdmin && selectedVendor && !isVendorEnabled(selectedVendor) && (
+      {view.adminControls && selectedVendor && !isVendorEnabled(selectedVendor) && (
         <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
           此廠商已停用；仍可檢視歷史對帳，但不能登記新轉帳。
         </p>
