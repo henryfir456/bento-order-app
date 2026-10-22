@@ -43,6 +43,17 @@ const rowsFrom = (result) => (
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
 
+/**
+ * Optional per-resolution read cache. Callers that resolve many vendor/date
+ * pairs in one read-only request pass one Map so date-independent tables are
+ * loaded once and filtered in memory instead of re-queried per date.
+ */
+const readThrough = (readCache, key, load) => {
+  if (!readCache) return load();
+  if (!readCache.has(key)) readCache.set(key, load());
+  return readCache.get(key);
+};
+
 const identityKey = (vendor, itemCode, variantKey) => (
   `${vendor}\u0000${itemCode}\u0000${variantKey}`
 );
@@ -309,10 +320,36 @@ const normalizeCompatibilityRow = (row, version) => ({
   persisted_menu_item_id: row.menu_item_id
 });
 
-const compatibilityVersion = async (database, vendor, targetDate) => {
+const compatibilityVersion = async (database, vendor, targetDate, readCache = null) => {
   const normalizedVendor = normalizeMenuVendor(vendor);
   const vendors = compatibilityVendorCandidates(normalizedVendor);
   const placeholders = vendors.map(() => '?').join(', ');
+  if (readCache) {
+    // Same ordering as the per-date queries below; the date bound is applied
+    // in memory so one query serves every date of the request.
+    const historical = isHistoricalMenuVendor(normalizedVendor) && targetDate <= HISTORICAL_MENU_CUTOFF;
+    const versions = await readThrough(readCache, `versions:${historical}:${vendors.join('\u0000')}`, async () => {
+      const result = historical
+        ? await database.prepare(`
+          SELECT mv.menu_version_id, mv.vendor, mv.effective_date,
+                 ib.importer_version, mv.source_batch_id
+          FROM menu_versions mv
+          JOIN import_batches ib ON ib.batch_id = mv.source_batch_id
+          WHERE mv.vendor IN (${placeholders})
+            AND ib.importer_version = ?
+          ORDER BY mv.effective_date DESC, mv.menu_version_id DESC
+        `).bind(...vendors, HISTORICAL_MENU_IMPORTER_VERSION).all()
+        : await database.prepare(`
+          SELECT menu_version_id, vendor, effective_date, source_batch_id
+          FROM menu_versions
+          WHERE vendor IN (${placeholders})
+          ORDER BY effective_date DESC, menu_version_id DESC
+        `).bind(...vendors).all();
+      return rowsFrom(result);
+    });
+    const bound = historical ? `${targetDate.slice(0, 7)}-01` : targetDate;
+    return versions.find((version) => version.effective_date <= bound) || null;
+  }
   if (isHistoricalMenuVendor(normalizedVendor) && targetDate <= HISTORICAL_MENU_CUTOFF) {
     const effectiveMonth = `${targetDate.slice(0, 7)}-01`;
     return database.prepare(`
@@ -336,21 +373,24 @@ const compatibilityVersion = async (database, vendor, targetDate) => {
   `).bind(...vendors, targetDate).first();
 };
 
-export const getCompatibilityMenuBaseline = async (database, { vendor, targetDate } = {}) => {
+export const getCompatibilityMenuBaseline = async (
+  database,
+  { vendor, targetDate, readCache = null } = {}
+) => {
   const normalizedVendor = normalizeMenuVendor(vendor);
   const normalizedDate = text(targetDate);
   if (!normalizedVendor || !isDateOnly(normalizedDate)) {
     throw badRequest('MENU_CHANGE_RESOLUTION_INPUT_INVALID');
   }
-  const version = await compatibilityVersion(database, normalizedVendor, normalizedDate);
+  const version = await compatibilityVersion(database, normalizedVendor, normalizedDate, readCache);
   if (!version) return { version: null, rows: [] };
-  const result = await database.prepare(`
+  const result = await readThrough(readCache, `baseline:${version.menu_version_id}`, () => database.prepare(`
     SELECT menu_item_id, legacy_item_id, variant_key, item_name, price,
            enabled, note, image_url, source_order, created_at, updated_at
     FROM menu_items
     WHERE menu_version_id = ?
     ORDER BY source_order ASC, menu_item_id ASC
-  `).bind(version.menu_version_id).all();
+  `).bind(version.menu_version_id).all());
   return {
     version,
     rows: rowsFrom(result).map((row) => normalizeCompatibilityRow(row, version))
@@ -416,7 +456,10 @@ export const resolveMenuItemChangesFromRows = (rows = [], options = {}) => {
   };
 };
 
-export const resolveMenuItemChanges = async (database, { vendor, targetDate } = {}) => {
+export const resolveMenuItemChanges = async (
+  database,
+  { vendor, targetDate, readCache = null } = {}
+) => {
   const normalizedVendor = normalizeMenuVendor(vendor);
   const normalizedDate = text(targetDate);
   if (!normalizedVendor || !isDateOnly(normalizedDate)) {
@@ -424,7 +467,20 @@ export const resolveMenuItemChanges = async (database, { vendor, targetDate } = 
   }
   const vendors = historicalMenuRowVendorCandidates(normalizedVendor);
   const placeholders = vendors.map(() => '?').join(', ');
-  const result = await database.prepare(`
+  // resolveRows/resolveNormalizedRows re-apply the effective-date bound in
+  // memory, so a cached unbounded read (same ORDER BY) is equivalent.
+  const result = readCache ? await readThrough(readCache, `changes:${vendors.join('\u0000')}`, () => database.prepare(`
+    SELECT mic.menu_item_change_id, mic.effective_date, mic.vendor, mic.item_code, mic.variant_key,
+           item_name, price, enabled, image_url, note, display_order,
+           source_kind, source_batch_id, source_table, source_row,
+           source_record_id, updated_by_user_id, created_at, updated_at,
+           mic.identity_schema_version, mis.sequence_number
+    FROM menu_item_changes mic
+    LEFT JOIN menu_item_change_sequence mis
+      ON mis.menu_item_change_id = mic.menu_item_change_id
+    WHERE mic.vendor IN (${placeholders})
+    ORDER BY mic.effective_date DESC, mis.sequence_number DESC, mic.menu_item_change_id DESC
+  `).bind(...vendors).all()) : await database.prepare(`
     SELECT mic.menu_item_change_id, mic.effective_date, mic.vendor, mic.item_code, mic.variant_key,
            item_name, price, enabled, image_url, note, display_order,
            source_kind, source_batch_id, source_table, source_row,
@@ -452,8 +508,8 @@ export const resolveMenuItemChanges = async (database, { vendor, targetDate } = 
   };
 };
 
-const getLatestCurrentMenuImageRows = async (database) => {
-  const result = await database.prepare(`
+const getLatestCurrentMenuImageRows = async (database, readCache = null) => {
+  const result = await readThrough(readCache, 'current-image-rows', () => database.prepare(`
     SELECT mv.menu_version_id, mv.vendor AS version_vendor,
            mv.effective_date AS version_effective_date,
            mv.source_batch_id AS version_source_batch_id,
@@ -466,7 +522,7 @@ const getLatestCurrentMenuImageRows = async (database) => {
     WHERE ib.importer_version IS NULL OR ib.importer_version <> ?
     ORDER BY mv.effective_date DESC, mv.menu_version_id DESC,
              mi.source_order ASC, mi.menu_item_id ASC
-  `).bind(HISTORICAL_MENU_IMPORTER_VERSION).all();
+  `).bind(HISTORICAL_MENU_IMPORTER_VERSION).all());
   const selectedVersionByVendor = new Map();
   const rows = [];
   for (const rawRow of rowsFrom(result)) {
@@ -484,8 +540,8 @@ const getLatestCurrentMenuImageRows = async (database) => {
   return rows;
 };
 
-const projectDisplayImageRows = async (database, rows) => {
-  const currentRows = await getLatestCurrentMenuImageRows(database);
+const projectDisplayImageRows = async (database, rows, readCache = null) => {
+  const currentRows = await getLatestCurrentMenuImageRows(database, readCache);
   const currentImageIndex = buildHistoricalImageFallbackIndex(currentRows);
   return rows.map((row) => ({
     ...row,
@@ -493,11 +549,16 @@ const projectDisplayImageRows = async (database, rows) => {
   }));
 };
 
-const applyHistoricalImageFallback = (database, rows) => projectDisplayImageRows(database, rows);
+const applyHistoricalImageFallback = (database, rows, readCache = null) => (
+  projectDisplayImageRows(database, rows, readCache)
+);
 
-export const resolveEffectiveMenuState = async (database, { vendor, targetDate } = {}) => {
-  const changes = await resolveMenuItemChanges(database, { vendor, targetDate });
-  const baseline = await getCompatibilityMenuBaseline(database, { vendor, targetDate });
+export const resolveEffectiveMenuState = async (
+  database,
+  { vendor, targetDate, readCache = null } = {}
+) => {
+  const changes = await resolveMenuItemChanges(database, { vendor, targetDate, readCache });
+  const baseline = await getCompatibilityMenuBaseline(database, { vendor, targetDate, readCache });
   const useNormalizedIdentity = changes.authority !== 'sql_historical'
     && text(targetDate) >= NORMALIZED_MENU_START_DATE;
   const effectiveBaselineRows = useNormalizedIdentity
@@ -516,7 +577,7 @@ export const resolveEffectiveMenuState = async (database, { vendor, targetDate }
       changeRows: effectiveChangeRows
     });
   const displayRows = changes.authority === 'sql_historical'
-    ? await applyHistoricalImageFallback(database, rows)
+    ? await applyHistoricalImageFallback(database, rows, readCache)
     : rows;
   return {
     ...changes,

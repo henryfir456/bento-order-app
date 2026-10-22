@@ -218,6 +218,11 @@ export const getOrderStatistics = async (
   const itemsByIdentity = new Map();
   let totalPortions = 0;
   const resolveName = createEffectiveOrderItemNameResolver(database);
+  await resolveName.prefetch(rowsFrom(result).map((row) => ({
+    vendor: row.vendor,
+    orderDate: row.order_date,
+    item: { menu_item_id: row.menu_item_id }
+  })));
 
   for (const row of rowsFrom(result)) {
     const effectiveItem = await resolveName({

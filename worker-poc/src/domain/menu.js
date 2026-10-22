@@ -117,9 +117,9 @@ const menuFromChanges = (resolution) => {
 
 export const getCustomerMenu = async (
   database,
-  { vendor, targetDate } = {}
+  { vendor, targetDate, readCache = null } = {}
 ) => {
-  const resolution = await resolveEffectiveMenuState(database, { vendor, targetDate });
+  const resolution = await resolveEffectiveMenuState(database, { vendor, targetDate, readCache });
   const fromChanges = menuFromChanges(resolution);
   if (fromChanges) return fromChanges;
   return [];
