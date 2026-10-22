@@ -88,6 +88,33 @@ test('Admin can read disabled vendor history but cannot start a new transfer', a
   assert.match(page, /getAdminVendorOperations\(\{ month, vendorId \}\)/);
 });
 
+test('Admin vendor preview shows the Vendor layout without Admin controls or Vendor actions', async () => {
+  const page = read('src/features/vendors/VendorOperationsPage.jsx');
+  const { vendorOperationsView } = await import('../src/features/vendors/vendorOperationsPolicy.js');
+
+  assert.deepEqual(vendorOperationsView('Admin', false), {
+    previewing: false, vendorLayout: false, adminControls: true, vendorActionsEnabled: false
+  });
+  assert.deepEqual(vendorOperationsView('Admin', true), {
+    previewing: true, vendorLayout: true, adminControls: false, vendorActionsEnabled: false
+  });
+  assert.deepEqual(vendorOperationsView('Vendor', false), {
+    previewing: false, vendorLayout: true, adminControls: false, vendorActionsEnabled: true
+  });
+  // A non-Admin cannot turn preview on.
+  assert.equal(vendorOperationsView('Vendor', true).previewing, false);
+  assert.equal(vendorOperationsView('User', true).vendorLayout, false);
+
+  assert.match(page, /以廠商視角預覽（唯讀）/);
+  assert.match(page, /view\.adminControls && canRecordVendorTransfer\(role, selectedVendor\)/);
+  // Data still comes from the Admin read API while previewing.
+  assert.match(page, /getAdminVendorOperations\(\{ month, vendorId \}\)/);
+  // Acknowledge and dispute stay disabled unless the signed-in user is the Vendor.
+  assert.match(page, /disabled=\{Boolean\(busyKey\) \|\| !view\.vendorActionsEnabled\}/);
+  assert.match(page, /disabled=\{Boolean\(busyKey\) \|\| !view\.vendorActionsEnabled \|\| /);
+  assert.doesNotMatch(page, /\{isAdmin && transfer\./);
+});
+
 test('local Mock keeps disabled vendor settlement history read-only', async () => {
   const { createMockGasApi } = await import('../src/api/mockGasApi.js');
   const { getMockSessionState } = await import('../src/auth/mockData.js');
