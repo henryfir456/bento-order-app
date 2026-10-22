@@ -799,3 +799,67 @@ test('a resolved legacy row without a variant shares one identity with its norma
   assert.equal(unmapped.resolved, true);
   assert.equal(unmapped.variantKey, '');
 });
+
+test('legacy variant grouping only fires for the reviewed same-code mappings of the right vendor', () => {
+  const resolveFor = (vendor, row, item = {}) => resolveEffectiveOrderItemName({
+    vendor, orderDate: '2026-09-14',
+    item: { menu_item_id: row.menuItemId, legacy_item_id: row.legacyItemId, stable_identity: true, item_name_snapshot: 'x', unit_price: 100, fallbackKey: `synthetic-${row.menuItemId}:1`, ...item },
+    menuItems: [menuItem({ ...row, vendor })]
+  });
+  const key = (vendor, legacyItemId, variantKey) => JSON.stringify([vendor, 'menu', legacyItemId, variantKey]);
+
+  // 蔡老師 C / S without a variant join their BASE rows.
+  for (const code of ['C', 'S']) {
+    const blank = resolveFor('蔡老師', { menuItemId: `blank-${code}`, legacyItemId: code, variantKey: '' });
+    assert.equal(blank.identityKey, key('蔡老師', code, 'BASE'));
+  }
+  // Codes whose mapping changes the code are not folded into another code's BASE identity.
+  for (const code of ['C95', 'EP', 'A95']) {
+    const blank = resolveFor('蔡老師', { menuItemId: `blank-${code}`, legacyItemId: code, variantKey: '' });
+    assert.equal(blank.variantKey, '', code);
+    assert.equal(blank.identityKey, key('蔡老師', code, ''), code);
+  }
+  // 蔡老師 has no mapping for the 禾拾 H-code space.
+  const crossVendor = resolveFor('蔡老師', { menuItemId: 'blank-h1', legacyItemId: 'H1', variantKey: '' });
+  assert.equal(crossVendor.variantKey, '');
+  // A row that already carries any variant keeps it.
+  const plus = resolveFor('蔡老師', { menuItemId: 'plus-e', legacyItemId: 'E', variantKey: 'PLUS' });
+  assert.equal(plus.variantKey, 'PLUS');
+  const requestedHalf = resolveFor('禾拾', { menuItemId: 'half-h1', legacyItemId: 'H1', variantKey: 'HALF' }, { variant_key: 'HALF' });
+  assert.equal(requestedHalf.variantKey, 'HALF');
+});
+
+test('statistics show one dish when its legacy menu row has no variant and its later row is BASE', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+  const seedVersion = (versionId, effectiveDate, menuItemId, variantKey, name) => {
+    database.run(`INSERT INTO menu_versions (menu_version_id, vendor, effective_date) VALUES (?, '禾拾', ?)`, versionId, effectiveDate);
+    database.run(`
+      INSERT INTO menu_items (menu_item_id, menu_version_id, legacy_item_id, variant_key, item_name, price, enabled, source_order)
+      VALUES (?, ?, 'H1', ?, ?, 100, 1, 1)
+    `, menuItemId, versionId, variantKey, name);
+  };
+  seedVersion('version-legacy-h1', '2026-09-12', 'item-legacy-h1', '', '蕃茄鷹豆泥');
+  seedVersion('version-base-h1', '2026-09-17', 'item-base-h1', 'BASE', '蕃茄鷹豆泥');
+  [['order-before', '2026-09-14', 'item-legacy-h1'], ['order-after', '2026-09-21', 'item-base-h1']].forEach(([orderId, date, menuItemId]) => {
+    database.run(`
+      INSERT INTO orders (order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor, total_amount, status, created_by_user_id, created_auth_mode)
+      VALUES (?, 'user-1', 'Synthetic Buyer', ?, '禾拾', '1樓', 100, 'COMPLETED', 'user-1', 'line')
+    `, orderId, date);
+    database.run(`
+      INSERT INTO order_items (order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal)
+      VALUES (?, 1, ?, 'H1', '番茄鷹豆泥', 1, 100, 100)
+    `, orderId, menuItemId);
+  });
+  const response = await handleFormalRequest(
+    request('/api/orders/statistics?period=all', { token: 'token-user' }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token: 'token-user', lineUserId: 'user-1' }), now: new Date('2026-10-22T02:00:00.000Z') }
+  );
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.totalPortions, 2);
+  assert.equal(body.totalMealTypes, 1);
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].portions, 2);
+});
