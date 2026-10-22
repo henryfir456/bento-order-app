@@ -25,7 +25,7 @@ const loadMemberManagement = () => {
 };
 
 const member = (overrides) => ({
-  userId: 'synthetic-user', employeeId: '001234', name: 'Synthetic Employee', role: 'User',
+  userId: 'synthetic-user', employeeId: 'T0001', name: 'Synthetic Employee', role: 'User',
   active: true, lineBound: true, floor: '1樓', balance: 0, authSource: 'LINE', identityState: 'VERIFIED', ...overrides
 });
 const render = (members, props = {}) => renderToStaticMarkup(React.createElement(loadMemberManagement(), {
@@ -41,6 +41,17 @@ test('Vendor accounts cannot be opened with View As from the phone card or the d
   // One enabled control per layout (desktop table + phone card) for the ordinary employee only.
   assert.equal(enabledViewAs(markup), 2, markup);
   assert.equal((markup.match(/廠商帳號不可檢視身分/g) || []).length >= 2, true, markup);
+});
+
+test('the View As selection modal gives Vendor rows the same disabled control and explanation', () => {
+  const app = require('node:fs').readFileSync(path.join(__dirname, '../src/App.jsx'), 'utf8');
+  const modal = app.slice(app.indexOf("viewAsModalMode === 'view' && (user.role === 'Vendor'"));
+  assert.ok(modal.length < app.length, 'modal Vendor branch missing');
+  const vendorBranch = modal.slice(0, modal.indexOf('handleSelectViewAs(user)'));
+  assert.match(vendorBranch, /disabled/);
+  assert.match(vendorBranch, /廠商帳號不可檢視身分/);
+  // handleSelectViewAs itself also refuses Vendor targets.
+  assert.match(app, /!canAuth\('viewAsUser'\) \|\| user\.role === 'Vendor'\) return;/);
 });
 
 test('ordinary employees keep the View As control in both layouts', () => {

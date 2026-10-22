@@ -357,7 +357,7 @@ export default function MemberBalanceManagement({
     {canViewAsUser && (user.role === 'Vendor'
       ? <span className="flex flex-col items-start gap-0.5">
         <button type="button" disabled aria-disabled="true" className="cursor-not-allowed rounded-lg bg-slate-300 px-2 py-1.5 text-xs font-bold text-slate-500">檢視身分</button>
-        <span className="text-[11px] text-gray-500">廠商帳號不可檢視身分</span>
+        <span className="text-xs text-gray-500">廠商帳號不可檢視身分</span>
       </span>
       : <button type="button" onClick={() => onViewAsUser(user)} className="rounded-lg bg-slate-700 px-2 py-1.5 text-xs font-bold text-white">檢視身分</button>)}
     {canDelegateOrder && <button type="button" onClick={() => onDelegateOrderUser(user)} className="rounded-lg bg-sky-700 px-2 py-1.5 text-xs font-bold text-white">代點餐</button>}

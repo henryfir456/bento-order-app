@@ -4293,7 +4293,19 @@ export default function App() {
                       <span className="whitespace-nowrap">· {user.role || 'User'}</span>
                     </span>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {viewAsModalMode === 'view' && (
+                      {viewAsModalMode === 'view' && (user.role === 'Vendor' ? (
+                        <span className="flex flex-col items-start gap-0.5">
+                          <button
+                            type="button"
+                            disabled
+                            aria-disabled="true"
+                            className="cursor-not-allowed rounded-lg bg-slate-300 px-2.5 py-1.5 text-xs font-bold text-slate-500"
+                          >
+                            👁 檢視
+                          </button>
+                          <span className="text-xs text-gray-500">廠商帳號不可檢視身分</span>
+                        </span>
+                      ) : (
                         <button
                           type="button"
                           onClick={() => handleSelectViewAs(user)}
@@ -4301,7 +4313,7 @@ export default function App() {
                         >
                           👁 檢視
                         </button>
-                      )}
+                      ))}
                       {viewAsModalMode === 'view' && can('viewMemberBalances') && apiClient.transport === 'worker' && user.userId && (
                         <button type="button" onClick={() => setViewAsLedgerUser(user)} className="rounded-lg border border-emerald-700 px-2.5 py-1.5 text-xs font-bold text-emerald-800">💰 餘額與交易明細</button>
                       )}
