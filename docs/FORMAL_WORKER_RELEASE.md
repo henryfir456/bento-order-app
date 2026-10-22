@@ -8,21 +8,23 @@
 
 1. 在乾淨的 `main`：`git fetch origin main`、`git status --short` 為空、`HEAD` 等於 `origin/main`。
 2. `npm test --prefix worker-poc` 通過。
-3. 記錄 before：`wrangler deployments status --config wrangler.jsonc`（Version ID、流量）。
-4. D1 有待套用 migration 時，先完成 [D1 備份與 migration Runbook](D1_BACKUP_AND_MIGRATION_RUNBOOK.md)，再 `wrangler d1 migrations apply bento-formal --remote`，讀回 migration 清單、`quick_check`、`foreign_key_check` 與主要表筆數。
-5. 在 `worker-poc` 以 repo 鎖定版本的 Wrangler（`node ./node_modules/wrangler/bin/wrangler.js`）執行 `deploy --config wrangler.jsonc --keep-vars --message "<說明>"`；`--keep-vars` 保留既有環境變數，`wrangler.jsonc` 內的 D1 binding 與 cron 隨部署帶入。
+3. 記錄 before：`wrangler deployments status --config wrangler.jsonc`（Version ID、流量），並記下目前的 D1 binding、cron 與 Secrets 名稱，作為 before／after 設定比對。
+4. D1 有待套用 migration 時，先完成 [D1 備份與 migration Runbook](D1_BACKUP_AND_MIGRATION_RUNBOOK.md)，再依該 Runbook 以 `npm run db:migrations:remote --prefix worker-poc` 套用（不可繞過其中的 `require-database-id` 檢查），讀回 migration 清單、`quick_check`、`foreign_key_check` 與主要表筆數。
+5. **從 `worker-poc` 目錄**以 repo 鎖定版本的 Wrangler（`node ./node_modules/wrangler/bin/wrangler.js`，視為標準呼叫方式）執行 `deploy --config wrangler.jsonc --keep-vars --message "<說明>"`；`--keep-vars` 保留 dashboard 設定的 vars（Secrets 不受 deploy 影響，仍需在 before／after 比對名稱），`wrangler.jsonc` 內的 D1 binding 與 cron 隨部署帶入。
 6. 讀回 `deployments status`：新 Version ID、100% 流量，核對 D1 binding 與三個 cron 仍在。
 7. `BENTO_WORKER_BASE_URL=<Worker URL> node worker-poc/scripts/formal-release-smoke.mjs` 與 `npm run smoke:cors --prefix worker-poc`；沒有合法測試身分時 View As 項目標 `NOT_VERIFIED`。
 8. 有統計、清單等讀取路徑變更時，以合法登入身分量測正式 API 耗時並記錄；本機 SQLite 測試沒有網路延遲，不能代替正式耗時。
 9. 結果寫入追蹤 Issue；Netlify 前端由使用者自行發布。
 
+與其他章節的關係：本路徑**不使用 GitHub Actions 部署**（見 [WORKER_DEPLOYMENT_POLICY.md](WORKER_DEPLOYMENT_POLICY.md)）；A.2 的 lint／build 屬前端，Worker 變更以步驟 2 的 Worker 測試為準；A.4 的 release manifest 因 Windows 問題（見下）未產生，B.1–B.3 的 API 上傳未採用；A.6／B.5 的 `drift:formal` 需唯讀 Cloudflare API token，沒有 token 時標 `BLOCKED`，不能當作 PASS。
+
 ### Windows 本機已知注意事項
-- `scripts/prepare-formal-release.mjs` 以不經 shell 的 `spawnSync('npx', …)` 呼叫 Wrangler，在 Windows 因找不到 `npx` 而失敗（`ENOENT`）。該腳本尚未修正；上列路徑不依賴它，release manifest 因此不會產生。
+- `scripts/prepare-formal-release.mjs` 以不經 shell 的 `execFileSync('npx', …)` 呼叫 Wrangler，在 Windows 上實際出現 `spawnSync npx ENOENT`（`npx` 在 Windows 是 `npx.cmd`）。該腳本尚未修正；上列路徑不依賴它，release manifest 因此不會產生。
 - 腳本若以 `Read-Host -AsSecureString` 取得值，必須在**真實互動式 console**（獨立的 Windows PowerShell／Windows Terminal）執行；內嵌終端機或管線 stdin 會立即回傳空字串或卡住。不要把腳本的敏感提示以管線餵入。
 - `wrangler d1 export` 會把約一小時有效的簽名下載 URL 印在輸出；不得貼進 Issue、PR、聊天或紀錄檔。
 - GitHub 可能因 email 隱私設定拒絕推送；commit 作者改用 GitHub noreply 位址。
 - `gh` 未安裝時，依 workspace 工具政策先確認既有工具，再以官方套件安裝並由使用者登入。
-- 部署預設會啟用 `workers.dev` 的 Preview URLs（`wrangler.jsonc` 未指定 `preview_urls`）；是否關閉屬另案決定。
+- Wrangler 部署時警告：`workers.dev` 路由啟用且 `wrangler.jsonc` 未指定 `preview_urls`，Preview URLs 會預設啟用（依該警告，未另行讀回驗證）；是否關閉屬另案決定。
 - 受保護帳號（`RESERVED_VENDOR_OWNER`）不允許 Admin「檢視身分」，被擋時 Worker 回 `PROTECTED_ACCOUNT_LINE_AUTH_REQUIRED` 並寫入審計；Vendor 登入只能由該 LINE 持有人驗證。
 
 ## A. Fresh build / preflight（本階段不部署）
@@ -41,7 +43,7 @@
 1. Cloudflare API 先唯讀查 `/accounts/{account_id}/workers/scripts/bento-api-poc/deployments`、Worker 設定與綁定、Secrets metadata、排程；做 **before** 快照。
 2. API 上傳使用新的完整 Worker 模組與 Cloudflare API 正式 upload schema，metadata 需保留現有 D1 `DB` → `bento-formal`（ID `e75bc185-afb5-4a5d-abc9-81bd79525cff`）、Secrets、compatibility date `2026-09-07`、三個 cron（`0 16 * * *`、`0 8 * * *`、`30 0 15 6-12 *`）及 CORS 行為。**若 API 無法證實保留 Secrets 或原有綁定，停止，不可自行猜測 multipart metadata。**
 3. 建立新 Version 並部署（100%），不可單純重部署舊 Version。取得並核對 source=api、Version ID、Deployment ID、流量分配、bundle 相符性、設定 **after** 快照；任何缺失保留 WAITING_FOR_DELIVERY。
-4. 也可在具備授權的**本機或雲端直接 CLI** 使用 `cd worker-poc && npx wrangler deploy --config wrangler.jsonc --keep-vars`，但一樣要先完成 A，確認沒有覆蓋 bindings、Secrets 和排程。不得改走 GitHub Actions 正式部署。
+4. 也可在具備授權的**本機或雲端直接 CLI** 使用 `cd worker-poc && npx wrangler deploy --config wrangler.jsonc --keep-vars`（標準呼叫方式見第 0 節，Windows 上以 repo 鎖定的 `node ./node_modules/wrangler/bin/wrangler.js` 為準），但一樣要先完成必要的 preflight（第 0 節步驟 1–3），確認沒有覆蓋 bindings、Secrets 和排程。不得改走 GitHub Actions 正式部署。
 5. D1 migration drift 未完成備份／還原 Gate 並逐一套用前，不可部署依賴新 schema 的 Worker。正式流量切換後再次執行 `npm run drift:formal --prefix worker-poc`，應核對 Worker source SHA 與 D1 migration 清單；此結果仍不取代 API 功能驗收。
 
 ## C. 有界 Runtime smoke（正式部署後）
