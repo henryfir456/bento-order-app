@@ -1,4 +1,5 @@
 import { getCustomerMenu, HISTORICAL_MENU_ITEM_CODE_ALIASES } from './menu.js';
+import { normalizeLegacyMenuIdentity } from './menuItemChanges.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 import { isDateOnly } from './deadlines.js';
 
@@ -96,6 +97,22 @@ export const resolveEffectiveOrderItemName = ({
       hasStableIdentity || unitPrice === null || Number(candidate?.price) === unitPrice
     ));
     matches = ambiguous ? [] : identityMatches;
+    if ((ambiguous || matches.length === 0) && hasStableIdentity && !requestedVariant) {
+      // The order's own menu item (verified by its stored ID) predates a split of
+      // this code into explicit variants. Use only the reviewed legacy mapping,
+      // never the label or price, to pick the matching variant.
+      const mapped = normalizeLegacyMenuIdentity({ vendor: normalizedVendor, itemCode: legacyItemId });
+      const narrowed = mapped
+        ? catalog.filter((candidate) => (
+          canonicalLegacyItemId(candidate?.legacy_item_id || candidate?.item_id) === mapped.item_code
+            && text(candidate?.variant_key) === mapped.variant_key
+        ))
+        : [];
+      if (narrowed.length === 1) {
+        matches = narrowed;
+        ambiguous = false;
+      }
+    }
   }
   if (matches.length !== 1) {
     // Names and prices alone are not identity evidence. Keep the snapshot

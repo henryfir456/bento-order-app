@@ -663,3 +663,102 @@ test('Worker summary and statistics expose unresolved identity diagnostics witho
   assert.ok(statistics.body.items.every((item) => item.resolved === false
     && item.resolutionStatus === 'not_found'));
 });
+
+test('a verified legacy item whose menu variant was split later resolves through the reviewed legacy identity mapping', () => {
+  const catalog = [
+    menuItem({ menuItemId: 'new-base', legacyItemId: 'H1', variantKey: 'BASE', name: '番茄鷹豆泥', price: 100, vendor: '禾拾' }),
+    menuItem({ menuItemId: 'new-half', legacyItemId: 'H1', variantKey: 'HALF', name: '番茄鷹豆泥(半飯)', price: 100, vendor: '禾拾' })
+  ];
+  const base = resolveEffectiveOrderItemName({
+    vendor: '禾拾',
+    orderDate: '2026-09-21',
+    item: { menu_item_id: 'old-menu-item', legacy_item_id: 'H1', variant_key: '', stable_identity: true, item_name_snapshot: '舊快照', unit_price: 100, fallbackKey: 'synthetic-h1:1' },
+    menuItems: catalog
+  });
+  assert.equal(base.resolved, true);
+  assert.equal(base.itemName, '番茄鷹豆泥');
+  assert.equal(base.variantKey, 'BASE');
+
+  const half = resolveEffectiveOrderItemName({
+    vendor: '禾拾',
+    orderDate: '2026-09-21',
+    item: { menu_item_id: 'old-menu-item-half', legacy_item_id: 'H1H', variant_key: '', stable_identity: true, item_name_snapshot: '舊快照', unit_price: 100, fallbackKey: 'synthetic-h1h:1' },
+    menuItems: catalog
+  });
+  assert.equal(half.resolved, true);
+  assert.equal(half.variantKey, 'HALF');
+});
+
+test('the legacy identity mapping never applies without a verified stable identity or for an unmapped vendor', () => {
+  const catalog = [
+    menuItem({ menuItemId: 'new-base', legacyItemId: 'H1', variantKey: 'BASE', vendor: '禾拾' }),
+    menuItem({ menuItemId: 'new-half', legacyItemId: 'H1', variantKey: 'HALF', vendor: '禾拾' })
+  ];
+  const unverified = resolveEffectiveOrderItemName({
+    vendor: '禾拾',
+    orderDate: '2026-09-21',
+    item: { legacy_item_id: 'H1', item_name_snapshot: '番茄鷹豆泥', unit_price: 100, fallbackKey: 'synthetic-unverified:1' },
+    menuItems: catalog
+  });
+  assert.equal(unverified.resolved, false);
+  assert.equal(unverified.resolutionStatus, 'ambiguous');
+
+  const otherVendor = resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2026-09-21',
+    item: { menu_item_id: 'old', legacy_item_id: 'H1', variant_key: '', stable_identity: true, item_name_snapshot: 'x', unit_price: 100, fallbackKey: 'synthetic-other:1' },
+    menuItems: catalog.map((entry) => ({ ...entry, vendor: '合成店家' }))
+  });
+  assert.equal(otherVendor.resolved, false);
+  assert.equal(otherVendor.resolutionStatus, 'ambiguous');
+
+  const halfWithoutCode = resolveEffectiveOrderItemName({
+    vendor: '禾拾',
+    orderDate: '2026-09-21',
+    item: { menu_item_id: 'old', legacy_item_id: 'H1', variant_key: '', stable_identity: true, item_name_snapshot: '番茄鷹豆泥(半飯)', unit_price: 100, fallbackKey: 'synthetic-name:1' },
+    menuItems: catalog
+  });
+  // The label says half, but only the verified code is evidence: code H1 maps to BASE.
+  assert.equal(halfWithoutCode.variantKey, 'BASE');
+});
+
+test('the legacy identity mapping fails closed when its target variant is absent, duplicated or disabled', () => {
+  const verified = (legacyItemId = 'H1') => ({
+    menu_item_id: 'old-menu-item', legacy_item_id: legacyItemId, variant_key: '', stable_identity: true,
+    item_name_snapshot: '舊快照', unit_price: 100, fallbackKey: 'synthetic-closed:1'
+  });
+  const resolve = (menuItems, item = verified()) => resolveEffectiveOrderItemName({
+    vendor: '禾拾', orderDate: '2026-09-21', item, menuItems
+  });
+  const row = (id, variantKey, extra = {}) => menuItem({
+    menuItemId: id, legacyItemId: 'H1', variantKey, vendor: '禾拾', ...extra
+  });
+
+  // The mapped BASE variant is not in the effective menu.
+  const absent = resolve([row('half', 'HALF'), row('plus', 'PLUS')]);
+  assert.equal(absent.resolved, false);
+  assert.equal(absent.resolutionStatus, 'ambiguous');
+
+  // Two enabled rows share the mapped code and variant.
+  const duplicated = resolve([row('base-a', 'BASE'), row('base-b', 'BASE'), row('half', 'HALF')]);
+  assert.equal(duplicated.resolved, false);
+  assert.equal(duplicated.resolutionStatus, 'ambiguous');
+
+  // The mapped HALF row is disabled, so a half-rice legacy code cannot resolve.
+  const disabled = resolve([row('base', 'BASE'), { ...row('half', 'HALF'), enabled: false }], verified('H1H'));
+  assert.equal(disabled.resolved, false);
+  assert.equal(disabled.resolutionStatus, 'not_found');
+
+  // Only BASE exists, so the half-rice legacy code stays unresolved.
+  const onlyBase = resolve([row('base', 'BASE')], verified('H1H'));
+  assert.equal(onlyBase.resolved, false);
+  assert.equal(onlyBase.resolutionStatus, 'not_found');
+
+  // An explicit variant on the snapshot is never overridden by the mapping.
+  const explicit = resolve([row('base', 'BASE'), row('half', 'HALF')], { ...verified(), variant_key: 'STANDARD' });
+  assert.equal(explicit.resolved, false);
+
+  // Catalog rows without a variant cannot be chosen by the mapping.
+  const noVariant = resolve([row('a', ''), row('b', '')]);
+  assert.equal(noVariant.resolved, false);
+});
