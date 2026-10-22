@@ -120,6 +120,10 @@ Switching the `VITE_MOCK_USER` role requires restarting Vite on the same
 origin; only the synthetic Vendor payment fixture is kept in local storage for
 that flow.
 
+### 只看廠商畫面（Windows，一鍵）
+
+在 repository 根目錄雙擊 `vendor-preview.bat`。它會用本機 Mock 模式、以合成廠商身分啟動前端（5180–5199 中第一個空的埠，不影響其他開發伺服器），並自動開啟瀏覽器。不需要 Worker、LINE 或任何正式帳號；輸出同時存到 `vendor-preview.log`。關閉視窗即停止。
+
 ### 隔離 Worker + D1 UAT（Windows）
 
 此流程會啟動完整本機 Wrangler Worker、可重設的本機 D1，以及連到該 Worker 的前端。它使用合成 Admin、User 和兩個 Vendor 身分，不部署或綁定任何 Cloudflare 資源，也不使用正式資料或金流。
