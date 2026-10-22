@@ -374,3 +374,47 @@ test('statistics skip the current-menu image read that name resolution never use
     'statistics must not read every current menu item for image fallback'
   );
 });
+
+class LatencyD1 extends SqliteD1 {
+  starts = [];
+
+  prepare(sql) {
+    const statement = super.prepare(sql);
+    const delayed = (execute) => async (...args) => {
+      this.starts.push(performance.now());
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return execute(...args);
+    };
+    const wrapBound = (bound) => ({
+      first: delayed(bound.first),
+      all: delayed(bound.all),
+      run: delayed(bound.run)
+    });
+    return {
+      bind: (...params) => wrapBound(statement.bind(...params)),
+      first: delayed(statement.first),
+      all: delayed(statement.all),
+      run: delayed(statement.run)
+    };
+  }
+}
+
+test('statistics issue independent menu reads concurrently', async () => {
+  const database = new LatencyD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+  seedDailyMenuVersions(database, { vendor: 'Vendor A', dayCount: 60 });
+  seedManyDates(database, { vendor: HISTORICAL_MENU_VENDOR, dayCount: 20, startOffset: 100, menuItemPrefix: 'hist' });
+  const response = await handleFormalRequest(
+    request('/api/orders/statistics?period=all', { token: 'token-user' }),
+    { DB: database },
+    { fetchImpl: profileFetch({ token: 'token-user', lineUserId: 'user-1' }), now: NOW }
+  );
+  assert.equal(response.status, 200);
+  // Count sequential waves: reads that start within one simulated round trip
+  // of each other ran concurrently.
+  const waves = database.starts.sort((left, right) => left - right)
+    .reduce((count, start, index, starts) => count + (index === 0 || start - starts[index - 1] > 20 ? 1 : 0), 0);
+  // Authentication uses 4 sequential reads; statistics add the order read, one
+  // concurrent wave of identities/changes/versions, and one baseline wave.
+  assert.ok(waves <= 7, `statistics used ${waves} sequential D1 round trips`);
+});

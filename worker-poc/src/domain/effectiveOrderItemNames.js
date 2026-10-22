@@ -1,7 +1,8 @@
 import { getCustomerMenu, HISTORICAL_MENU_ITEM_CODE_ALIASES } from './menu.js';
 import {
   normalizeLegacyMenuIdentity,
-  prefetchCompatibilityMenuBaselines
+  prefetchCompatibilityMenuBaselines,
+  prefetchMenuItemChanges
 } from './menuItemChanges.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 import { isDateOnly } from './deadlines.js';
@@ -217,6 +218,7 @@ export const createEffectiveOrderItemNameResolver = (database) => {
     const menuItemIds = [...new Set(entries
       .map((entry) => text(entry?.item?.menu_item_id))
       .filter((id) => id && !historicalIdentities.has(id)))];
+    const identityBatches = [];
     for (let index = 0; index < menuItemIds.length; index += IDENTITY_BATCH_SIZE) {
       const ids = menuItemIds.slice(index, index + IDENTITY_BATCH_SIZE);
       const batch = database.prepare(`
@@ -235,7 +237,7 @@ export const createEffectiveOrderItemNameResolver = (database) => {
         identityRow.catch(() => {});
         historicalIdentities.set(id, identityRow);
       });
-      await batch;
+      identityBatches.push(batch);
     }
     const pairs = new Map();
     entries.forEach((entry) => {
@@ -243,9 +245,15 @@ export const createEffectiveOrderItemNameResolver = (database) => {
       if (!normalizedVendor || !isDateOnly(entry?.orderDate)) return;
       pairs.set(identity(normalizedVendor, entry.orderDate), [normalizedVendor, entry.orderDate]);
     });
-    await prefetchCompatibilityMenuBaselines(database, [...pairs.entries()]
-      .filter(([key]) => !menus.has(key))
-      .map(([, [normalizedVendor, orderDate]]) => ({ vendor: normalizedVendor, targetDate: orderDate })), readCache);
+    const pendingPairs = [...pairs.entries()].filter(([key]) => !menus.has(key));
+    // Identities, change rows and menu versions are independent reads, so run
+    // them concurrently; each sequential D1 round trip adds network latency.
+    await Promise.all([
+      ...identityBatches,
+      prefetchMenuItemChanges(database, pendingPairs.map(([, [normalizedVendor]]) => normalizedVendor), readCache),
+      prefetchCompatibilityMenuBaselines(database, pendingPairs
+        .map(([, [normalizedVendor, orderDate]]) => ({ vendor: normalizedVendor, targetDate: orderDate })), readCache)
+    ]);
     await Promise.all([...pairs.entries()].map(([key, [normalizedVendor, orderDate]]) => {
       if (!menus.has(key)) menus.set(key, loadMenu(normalizedVendor, orderDate));
       return menus.get(key);
