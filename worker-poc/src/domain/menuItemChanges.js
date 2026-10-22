@@ -63,6 +63,34 @@ const normalizedIdentity = (itemCode, variantKey) => ({
   variant_key: variantKey
 });
 
+// Reviewed historical (蔡老師) code → normalized identity mapping.
+const HISTORICAL_LEGACY_IDENTITIES = new Map([
+  ['S', normalizedIdentity('S', 'BASE')],
+  ['SH', normalizedIdentity('S', 'HALF')],
+  ['S_HALF', normalizedIdentity('S', 'HALF')],
+  ['C', normalizedIdentity('C', 'BASE')],
+  ['CH', normalizedIdentity('C', 'HALF')],
+  ['C95', normalizedIdentity('C', 'BASE')],
+  ['C95_HALF', normalizedIdentity('C', 'HALF')],
+  ['CP', normalizedIdentity('CM', 'BASE')],
+  ['CPH', normalizedIdentity('CM', 'HALF')],
+  ['C120', normalizedIdentity('CM', 'BASE')],
+  ['C120_HALF', normalizedIdentity('CM', 'HALF')],
+  ['E', normalizedIdentity('E', 'BASE')],
+  ['EP', normalizedIdentity('E', 'PLUS')],
+  ['E_PLUS', normalizedIdentity('E', 'PLUS')],
+  ['A', normalizedIdentity('A', 'BASE')],
+  ['A95', normalizedIdentity('A', 'BASE')],
+  ['A95_PLUS', normalizedIdentity('A', 'PLUS')],
+  ['A120', normalizedIdentity('AM', 'BASE')],
+  ['A120_PLUS', normalizedIdentity('AM', 'PLUS')],
+  ['APP', normalizedIdentity('AM', 'PLUS')],
+  ['B', normalizedIdentity('B', 'BASE')],
+  ['B_HALF', normalizedIdentity('B', 'HALF')],
+  ['FR', normalizedIdentity('FR', 'BASE')],
+  ['R', normalizedIdentity('FR', 'BASE')]
+]);
+
 /**
  * Project a legacy menu code into the normalized identity only for a future
  * normalized menu projection. The stored historical row is never rewritten.
@@ -78,32 +106,7 @@ export const normalizeLegacyMenuIdentity = ({ vendor, itemCode, variantKey = '',
   if (!code) return null;
 
   const direct = normalizedVendor === HISTORICAL_MENU_VENDOR
-    ? new Map([
-      ['S', normalizedIdentity('S', 'BASE')],
-      ['SH', normalizedIdentity('S', 'HALF')],
-      ['S_HALF', normalizedIdentity('S', 'HALF')],
-      ['C', normalizedIdentity('C', 'BASE')],
-      ['CH', normalizedIdentity('C', 'HALF')],
-      ['C95', normalizedIdentity('C', 'BASE')],
-      ['C95_HALF', normalizedIdentity('C', 'HALF')],
-      ['CP', normalizedIdentity('CM', 'BASE')],
-      ['CPH', normalizedIdentity('CM', 'HALF')],
-      ['C120', normalizedIdentity('CM', 'BASE')],
-      ['C120_HALF', normalizedIdentity('CM', 'HALF')],
-      ['E', normalizedIdentity('E', 'BASE')],
-      ['EP', normalizedIdentity('E', 'PLUS')],
-      ['E_PLUS', normalizedIdentity('E', 'PLUS')],
-      ['A', normalizedIdentity('A', 'BASE')],
-      ['A95', normalizedIdentity('A', 'BASE')],
-      ['A95_PLUS', normalizedIdentity('A', 'PLUS')],
-      ['A120', normalizedIdentity('AM', 'BASE')],
-      ['A120_PLUS', normalizedIdentity('AM', 'PLUS')],
-      ['APP', normalizedIdentity('AM', 'PLUS')],
-      ['B', normalizedIdentity('B', 'BASE')],
-      ['B_HALF', normalizedIdentity('B', 'HALF')],
-      ['FR', normalizedIdentity('FR', 'BASE')],
-      ['R', normalizedIdentity('FR', 'BASE')]
-    ])
+    ? HISTORICAL_LEGACY_IDENTITIES
     : new Map();
   if (direct.has(codeKey)) return direct.get(codeKey);
 
@@ -126,6 +129,21 @@ export const normalizeLegacyMenuIdentity = ({ vendor, itemCode, variantKey = '',
     return normalizedIdentity(code, variant);
   }
   return null;
+};
+
+/**
+ * Whether the reviewed legacy mapping splits this vendor's normalized item code
+ * into a HALF (半飯) variant, i.e. the dish is known to have a half-rice option.
+ */
+export const legacyItemHasHalfVariant = ({ vendor, itemCode } = {}) => {
+  const normalizedVendor = normalizeMenuVendor(vendor);
+  const code = text(itemCode).toUpperCase();
+  if (!code) return false;
+  if (normalizedVendor === HISTORICAL_MENU_VENDOR) {
+    return [...HISTORICAL_LEGACY_IDENTITIES.values()]
+      .some((mapped) => mapped.item_code === code && mapped.variant_key === 'HALF');
+  }
+  return normalizedVendor === HE_SHI_MENU_VENDOR && /^H[1-5]$/.test(code);
 };
 
 const legacyCodeCannotBeUsedForNormalizedIdentity = (itemCode) => new Set([

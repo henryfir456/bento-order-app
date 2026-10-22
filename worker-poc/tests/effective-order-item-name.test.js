@@ -864,3 +864,111 @@ test('statistics show one dish when its legacy menu row has no variant and its l
   assert.equal(body.items.length, 1);
   assert.equal(body.items[0].portions, 2);
 });
+
+const seedHeShiSplitChanges = (database) => {
+  [['change-h3-base', 'BASE', '紅麴豆腐', 1], ['change-h3-half', 'HALF', '紅麴豆腐(半飯)', 2]].forEach(([id, variant, name, order]) => database.run(`
+    INSERT INTO menu_item_changes (
+      menu_item_change_id, effective_date, vendor, item_code, variant_key,
+      item_name, price, enabled, image_url, note, display_order,
+      source_kind, source_record_id, identity_schema_version
+    ) VALUES (?, '2026-09-17', '禾拾', 'H3', ?, ?, 100, 1, '', '', ?, 'admin', ?, 2)
+  `, id, variant, name, order, id));
+};
+
+test('footprint statistics count old base-code 半飯 lines as the HALF dish only with menu-item or name evidence', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+  seedUser(database, { lineUserId: 'synthetic-admin', displayName: '合成管理者', role: 'Admin' });
+  database.run(`
+    INSERT INTO menu_versions (menu_version_id, vendor, effective_date) VALUES
+      ('version-legacy', '禾拾', '2026-09-12'),
+      ('version-split', '禾拾', '2026-09-17'),
+      ('version-other', '合成店家', '2026-09-12')
+  `);
+  database.run(`
+    INSERT INTO menu_items (menu_item_id, menu_version_id, legacy_item_id, variant_key, item_name, price, enabled, source_order) VALUES
+      ('item-legacy-h3', 'version-legacy', 'H3', '', '紅麴豆腐', 100, 1, 1),
+      ('item-legacy-h3h', 'version-legacy', 'H3H', '', '紅麴豆腐(半飯)', 100, 1, 2),
+      ('item-legacy-h2h', 'version-legacy', 'H2H', '', '其他合成餐點(半飯)', 100, 1, 3),
+      ('item-split-h3', 'version-split', 'H3', 'BASE', '紅麴豆腐', 100, 1, 1),
+      ('item-split-h3-half', 'version-split', 'H3', 'HALF', '紅麴豆腐(半飯)', 100, 1, 2),
+      ('item-other', 'version-other', 'X1', '', '合成餐點', 100, 1, 1)
+  `);
+  seedHeShiSplitChanges(database);
+  const lines = [
+    // Verified HALF menu item.
+    ['order-verified-half', '2026-09-21', '禾拾', 'item-split-h3-half', 'H3', '紅麴豆腐(半飯)'],
+    // Line code H3 but its own menu item is H3H: menu-item evidence.
+    ['order-mismatch-half', '2026-09-14', '禾拾', 'item-legacy-h3h', 'H3', '紅麴豆腐(半飯)'],
+    // No menu item ID, ambiguous after the split, name says 半飯: name evidence.
+    ['order-name-half', '2026-09-18', '禾拾', null, 'H3', '紅麴豆腐(半飯)'],
+    // No menu item ID and no 半飯 in the name: stays unconfirmed.
+    ['order-name-plain', '2026-09-18', '禾拾', null, 'H3', '紅麴豆腐'],
+    // Its menu item is another dish's HALF: not evidence for H3.
+    ['order-other-dish', '2026-09-14', '禾拾', 'item-legacy-h2h', 'H3', '紅麴豆腐(半飯)'],
+    // A vendor without a reviewed half-rice mapping never infers.
+    ['order-other-vendor', '2026-09-14', '合成店家', null, 'H3', '合成餐點(半飯)']
+  ];
+  lines.forEach(([orderId, date, vendor, menuItemId, legacyItemId, name]) => {
+    database.run(`
+      INSERT INTO orders (order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor, total_amount, status, created_by_user_id, created_auth_mode)
+      VALUES (?, 'user-1', 'Synthetic Buyer', ?, ?, '1樓', 100, 'COMPLETED', 'user-1', 'line')
+    `, orderId, date, vendor);
+    database.run(`
+      INSERT INTO order_items (order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal)
+      VALUES (?, 1, ?, ?, ?, 1, 100, 100)
+    `, orderId, menuItemId, legacyItemId, name);
+  });
+  const now = new Date('2026-10-22T02:00:00.000Z');
+  const { response, body } = await apiCall(database, '/api/orders/statistics?period=all', { lineUserId: 'user-1', now });
+  assert.equal(response.status, 200);
+  assert.equal(body.totalPortions, 6);
+  const half = body.items.filter((item) => item.vendor === '禾拾' && item.variantKey === 'HALF');
+  assert.equal(half.length, 1, 'verified and inferred 半飯 lines are one dish');
+  assert.equal(half[0].portions, 3);
+  assert.equal(half[0].name, '紅麴豆腐(半飯)');
+  assert.equal(half[0].itemCode, 'H3');
+  assert.equal(half[0].resolved, true);
+  const unconfirmed = body.items.filter((item) => item.resolved === false);
+  assert.deepEqual(unconfirmed.map((item) => [item.vendor, item.name, item.portions]).sort(), [
+    ['合成店家', '合成餐點(半飯)', 1],
+    ['禾拾', '紅麴豆腐(半飯)', 1],
+    ['禾拾', '紅麴豆腐', 1]
+  ]);
+  assert.equal(body.totalMealTypes, 4);
+
+  const summary = await apiCall(database, '/api/admin/summary?date=2026-09-18', {
+    lineUserId: 'synthetic-admin', displayName: '合成管理者', now
+  });
+  assert.equal(summary.response.status, 200);
+  assert.ok(summary.body.todayOrders.every((row) => row.item_name_resolved === false),
+    'Admin summary does not apply the footprint-only 半飯 rule');
+});
+
+test('footprint 半飯 inference alone keeps the line marked as inferred, not verified', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+  database.run(`INSERT INTO menu_versions (menu_version_id, vendor, effective_date) VALUES ('version-split', '禾拾', '2026-09-17')`);
+  database.run(`
+    INSERT INTO menu_items (menu_item_id, menu_version_id, legacy_item_id, variant_key, item_name, price, enabled, source_order) VALUES
+      ('item-split-h3', 'version-split', 'H3', 'BASE', '紅麴豆腐', 100, 1, 1),
+      ('item-split-h3-half', 'version-split', 'H3', 'HALF', '紅麴豆腐(半飯)', 100, 1, 2)
+  `);
+  seedHeShiSplitChanges(database);
+  database.run(`
+    INSERT INTO orders (order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor, total_amount, status, created_by_user_id, created_auth_mode)
+    VALUES ('order-name-half', 'user-1', 'Synthetic Buyer', '2026-09-18', '禾拾', '1樓', 100, 'COMPLETED', 'user-1', 'line')
+  `);
+  database.run(`
+    INSERT INTO order_items (order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal)
+    VALUES ('order-name-half', 1, NULL, 'H3', '紅麴豆腐(半飯)', 2, 100, 200)
+  `);
+  const { body } = await apiCall(database, '/api/orders/statistics?period=all', {
+    lineUserId: 'user-1', now: new Date('2026-10-22T02:00:00.000Z')
+  });
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].portions, 2);
+  assert.equal(body.items[0].variantKey, 'HALF');
+  assert.equal(body.items[0].resolved, false);
+  assert.equal(body.items[0].resolutionStatus, 'inferred_half_rice');
+});

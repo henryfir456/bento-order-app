@@ -1,5 +1,6 @@
 import { getCustomerMenu, HISTORICAL_MENU_ITEM_CODE_ALIASES } from './menu.js';
 import {
+  legacyItemHasHalfVariant,
   normalizeLegacyMenuIdentity,
   prefetchCompatibilityMenuBaselines,
   prefetchMenuItemChanges
@@ -67,7 +68,8 @@ export const resolveEffectiveOrderItemName = ({
     itemCode: legacyItemId,
     resolved: false,
     resolutionStatus,
-    orderDate
+    orderDate,
+    ...(item?.stored_menu_identity ? { storedMenuIdentity: item.stored_menu_identity } : {})
   });
   if (!hasVendor || !isDateOnly(orderDate)) return fallback({ resolutionStatus: 'missing_context' });
   if (item?.stable_identity_vendor_mismatch === true
@@ -149,6 +151,48 @@ export const resolveEffectiveOrderItemName = ({
   };
 };
 
+/**
+ * Footprint statistics only (never Admin summaries or vendor settlement): an
+ * unresolved order line whose snapshot code is a dish's base code is counted
+ * as that dish's HALF (半飯) variant when either
+ * - its own stored menu item is that dish's HALF item (identity_mismatch), or
+ * - it has no menu item ID and its snapshot name says 半飯,
+ * and the reviewed legacy mapping says the dish has a HALF variant. Returns the
+ * same identity key a verified HALF menu item gets, or null.
+ */
+export const footprintHalfRiceIdentity = (effectiveItem, item = {}) => {
+  if (!effectiveItem || effectiveItem.resolved !== false) return null;
+  const vendor = effectiveItem.vendor;
+  const base = normalizeLegacyMenuIdentity({
+    vendor,
+    itemCode: canonicalLegacyItemId(item?.legacy_item_id || item?.item_id)
+  });
+  if (!base || base.variant_key !== 'BASE'
+    || !legacyItemHasHalfVariant({ vendor, itemCode: base.item_code })) return null;
+  let evidence = null;
+  const stored = effectiveItem.storedMenuIdentity;
+  if (effectiveItem.resolutionStatus === 'identity_mismatch' && stored
+    && normalizeMenuVendor(stored.vendor) === vendor) {
+    const storedIdentity = normalizeLegacyMenuIdentity({
+      vendor,
+      itemCode: stored.legacyItemId,
+      variantKey: stored.variantKey
+    });
+    if (storedIdentity?.item_code === base.item_code && storedIdentity.variant_key === 'HALF') {
+      evidence = 'menu_item';
+    }
+  } else if (!text(item?.menu_item_id) && itemNameFor(item).includes('半飯')) {
+    evidence = 'name';
+  }
+  if (!evidence) return null;
+  return {
+    identityKey: identity(vendor, 'menu', base.item_code, 'HALF'),
+    itemCode: base.item_code,
+    variantKey: 'HALF',
+    evidence
+  };
+};
+
 // D1 allows at most 100 bound parameters per statement.
 const IDENTITY_BATCH_SIZE = 50;
 
@@ -188,7 +232,15 @@ export const createEffectiveOrderItemNameResolver = (database) => {
         if (normalizeMenuVendor(stableIdentity.vendor) !== normalizedVendor
           || (snapshotLegacyId && snapshotLegacyId !== storedLegacyId)
           || (snapshotVariant && snapshotVariant !== storedVariant)) {
-          sourceItem = { ...sourceItem, stable_identity_mismatch: true };
+          sourceItem = {
+            ...sourceItem,
+            stable_identity_mismatch: true,
+            stored_menu_identity: {
+              vendor: text(stableIdentity.vendor),
+              legacyItemId: text(stableIdentity.legacy_item_id),
+              variantKey: text(stableIdentity.variant_key)
+            }
+          };
         } else {
           sourceItem = {
             ...sourceItem,

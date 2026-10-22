@@ -87,3 +87,10 @@ test('footprints show the last result per subject and period while refreshing', 
   assert.match(app.slice(clearStart, app.indexOf('\n  };', clearStart)), /footprintsCacheRef\.current\.clear\(\)/);
   assert.match(page, /refreshing \? <span role="status"/);
 });
+
+test('footprints labels inferred 半飯 rows apart from unconfirmed rows', () => {
+  const page = read('src/features/orders/MyBentoFootprintsPage.jsx');
+  assert.match(page, /item\.resolutionStatus === 'inferred_half_rice'/);
+  assert.match(page, /舊訂單推定為半飯/);
+  assert.match(page, /身份未確認，依原始名稱合併計算/);
+});
