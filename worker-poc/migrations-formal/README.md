@@ -43,13 +43,14 @@ The migration files in this checkout are listed in execution order:
 0019_vendor_order_settlements.sql # canonical order vendor ID column and append-only daily settlement records
 0020_safe_vendor_order_identity_resolution.sql # reviewed historical menu-version mapping and non-destructive vendor scoping
 0021_verified_vendor_settlement_sources.sql # keep historical snapshots/allocations untrusted until verified
+0022_vendor_legacy_name_attribution.sql # reviewed shop-name attribution of whole legacy orders
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw
 SQL: D1 must record each file in `d1_migrations` once. The local test database initializer
 detects an already-canonical `users.user_id` table and skips reapplying the
 chain when reopening an existing local database. A fresh local database applies
-all twenty-two files in order. Migration 0003 defaults existing users to
+all twenty-three files in order. Migration 0003 defaults existing users to
 `VERIFIED`, adds the nullable provisional guest-session shape, and preserves
 old Worker guest-session inserts that omit the new columns.
 Migration 0004 creates an empty, provenance-bearing `employee_roster`

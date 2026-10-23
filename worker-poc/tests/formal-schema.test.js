@@ -14,6 +14,7 @@ const migrationFiles = readdirSync(migrationDirectory)
   .sort();
 const migrationSql = migrationFiles
   .map((name) => readFileSync(join(migrationDirectory, name), 'utf8'));
+const migrationIndexOf = (prefix) => migrationFiles.findIndex((name) => name.startsWith(prefix));
 const vendorOwnerConversionSqlTemplate = readFileSync(
   join(here, '..', 'scripts', 'configure-vendor-owner.sql'),
   'utf8'
@@ -183,7 +184,7 @@ test('0019 adds nullable vendor identity without inferring historical orders fro
 
 test('0019 leaves pre-existing order rows unchanged and unmapped', () => {
   const database = new DatabaseSync(':memory:');
-  migrationSql.slice(0, -3).forEach((sql) => database.exec(sql));
+  migrationSql.slice(0, migrationIndexOf('0019_')).forEach((sql) => database.exec(sql));
   database.prepare('INSERT INTO users (user_id, display_name, pickup_floor, balance, role) VALUES (?, ?, ?, ?, ?)')
     .run('synthetic-vendor-buyer', 'Synthetic Buyer', '1樓', 0, 'User');
   database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
@@ -199,7 +200,7 @@ test('0019 leaves pre-existing order rows unchanged and unmapped', () => {
   );
   const before = database.prepare('SELECT * FROM orders WHERE order_id = ?')
     .get('synthetic-order-before-migration');
-  database.exec(migrationSql.at(-3));
+  database.exec(migrationSql[migrationIndexOf('0019_')]);
   const order = database.prepare('SELECT * FROM orders WHERE order_id = ?')
     .get('synthetic-order-before-migration');
   assert.equal(order.vendor_id, null);
@@ -213,7 +214,7 @@ test('0019 leaves pre-existing order rows unchanged and unmapped', () => {
 
 test('0021 preserves old settlement rows with an unverified attribution basis', () => {
   const database = new DatabaseSync(':memory:');
-  migrationSql.slice(0, -1).forEach((sql) => database.exec(sql));
+  migrationSql.slice(0, migrationIndexOf('0021_')).forEach((sql) => database.exec(sql));
   database.prepare('INSERT INTO users (user_id, display_name, pickup_floor, balance, role) VALUES (?, ?, ?, ?, ?)')
     .run('synthetic-settlement-admin', 'Synthetic Admin', '1樓', 0, 'Admin');
   database.prepare('INSERT INTO vendors (vendor_id, name) VALUES (?, ?)')
@@ -252,7 +253,7 @@ test('0021 preserves old settlement rows with an unverified attribution basis', 
   const beforeAllocation = database.prepare('SELECT * FROM vendor_transfer_allocations WHERE allocation_id = ?')
     .get('synthetic-old-allocation');
 
-  database.exec(migrationSql.at(-1));
+  database.exec(migrationSql[migrationIndexOf('0021_')]);
 
   const afterSnapshot = database.prepare('SELECT * FROM vendor_day_snapshots WHERE snapshot_id = ?')
     .get('synthetic-old-snapshot');
@@ -355,7 +356,7 @@ test('0020 exposes only explicitly reviewed menu-version mappings and keeps the 
 
 test('0020 leaves older inferred vendor IDs untouched but excludes them from scope until an item-version mapping resolves', () => {
   const database = new DatabaseSync(':memory:');
-  migrationSql.slice(0, -2).forEach((sql) => database.exec(sql));
+  migrationSql.slice(0, migrationIndexOf('0020_')).forEach((sql) => database.exec(sql));
   database.prepare(`
     INSERT INTO users (user_id, display_name, pickup_floor, balance, role)
     VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
@@ -406,7 +407,7 @@ test('0020 leaves older inferred vendor IDs untouched but excludes them from sco
     SELECT order_id, vendor, vendor_id, total_amount FROM orders WHERE order_id = ?
   `).get('synthetic-forward-order');
 
-  database.exec(migrationSql.at(-2));
+  database.exec(migrationSql[migrationIndexOf('0020_')]);
 
   const after = database.prepare(`
     SELECT order_id, vendor, vendor_id, total_amount FROM orders WHERE order_id = ?

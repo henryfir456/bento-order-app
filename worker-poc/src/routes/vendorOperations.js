@@ -739,7 +739,7 @@ export const handleVendorOperationsRoute = async (request, env, {
     const vendor = await activeVendorForId(env.DB, vendorId);
     if (!vendor) throw notFound('VENDOR_NOT_FOUND');
     return jsonResponse(request.method === 'POST'
-      ? await applyVendorHistoryImport(env.DB, identity, vendor, safeInteger(body.expectedVersions), now)
+      ? await applyVendorHistoryImport(env.DB, identity, vendor, { versions: safeInteger(body.expectedVersions ?? 0), names: safeInteger(body.expectedNames ?? 0) }, now)
       : await previewVendorHistoryImport(env.DB, vendor, now));
   }
 

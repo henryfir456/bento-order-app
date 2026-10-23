@@ -343,8 +343,8 @@ const createGasOperations = ({ gasApi, authClient }) => ({
     );
     throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'getVendorHistoryImport', 'Vendor history import is implemented only by Worker and local Mock transports.');
   },
-  applyVendorHistoryImport: ({ vendorId, expectedVersions } = {}) => {
-    if (authClient?.isMock) return gasApi.post({ action: 'applyVendorHistoryImport', vendorId, expectedVersions });
+  applyVendorHistoryImport: ({ vendorId, expectedVersions, expectedNames } = {}) => {
+    if (authClient?.isMock) return gasApi.post({ action: 'applyVendorHistoryImport', vendorId, expectedVersions, expectedNames });
     throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'applyVendorHistoryImport', 'Vendor history import is implemented only by Worker and local Mock transports.');
   },
   recordVendorPayment: (payload = {}) => {
@@ -635,8 +635,8 @@ const createWorkerOperations = ({ workerRequest }) => ({
   getVendorHistoryImport: ({ vendorId } = {}) => workerRequest(
     'getVendorHistoryImport', 'GET', '/api/admin/vendor-history-import', { query: { vendorId } }
   ),
-  applyVendorHistoryImport: ({ vendorId, expectedVersions } = {}) => workerRequest(
-    'applyVendorHistoryImport', 'POST', '/api/admin/vendor-history-import', { body: { vendorId, expectedVersions } }
+  applyVendorHistoryImport: ({ vendorId, expectedVersions, expectedNames } = {}) => workerRequest(
+    'applyVendorHistoryImport', 'POST', '/api/admin/vendor-history-import', { body: { vendorId, expectedVersions, expectedNames } }
   ),
   recordVendorPayment: (payload = {}) => workerRequest(
     'recordVendorPayment', 'POST', '/api/admin/vendor-payments', { body: payload }
