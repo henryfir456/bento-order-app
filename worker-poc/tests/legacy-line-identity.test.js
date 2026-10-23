@@ -135,3 +135,17 @@ test('canonical identities are append-only, reviewed by an Admin, and revised in
   assert.throws(() => database.run('DELETE FROM order_line_canonical_identities'), /APPEND_ONLY/);
   assert.equal(database.get('SELECT COUNT(*) AS n FROM order_line_current_identities').n, 1);
 });
+
+test('risky orders are listed with every line and its planned decision', async () => {
+  const { riskyOrdersCsv } = await import('../scripts/legacy-line-identity-plan.mjs');
+  const csv = riskyOrdersCsv(plan([
+    line({ order_id: 'ok' }),
+    line({ order_id: 'half', line_no: 1 }),
+    line({ order_id: 'half', line_no: 2, code: 'ZZ', name: '未知' }),
+    line({ order_id: 'mix', line_no: 1 }),
+    line({ order_id: 'mix', line_no: 2, code: 'H1', name: '蕃茄鷹豆泥' })
+  ]));
+  assert.ok(!csv.includes(',ok,'));
+  assert.equal(csv.trim().split('\r\n').length, 1 + 4);
+  assert.ok(csv.includes('店家不一致') && csv.includes('部分行需確認') && csv.includes('需確認：'));
+});

@@ -2,6 +2,7 @@
 // Reads the current order lines, applies the reviewed rules, and writes
 //   - apply-identities.sql  INSERT statements (NOT executed by this script)
 //   - needs-review.csv      lines the rules could not settle
+//   - risky-orders.csv      every line of orders with mixed vendors or unsettled lines
 //   - plan-summary.md       counts per rule/vendor and risky orders
 //
 //   node scripts/legacy-line-identity-plan.mjs --remote --reviewer <admin user_id> [--out <dir>]
@@ -36,6 +37,21 @@ const reviewCsv = (reviews) => `﻿${[
   ].map((cell) => (/[",\n]/.test(String(cell)) ? `"${String(cell).replaceAll('"', '""')}"` : cell)).join(','))
 ].join('\r\n')}\r\n`;
 
+const cell = (value) => (/[",\n]/.test(String(value ?? '')) ? `"${String(value).replaceAll('"', '""')}"` : String(value ?? ''));
+
+/** Every line of orders that would not be attributed cleanly, with its planned decision. */
+export const riskyOrdersCsv = ({ writes, reviews, mixedOrders, partialOrders }) => {
+  const risky = new Map([...mixedOrders.map((id) => [id, '店家不一致']), ...partialOrders.map((id) => [id, '部分行需確認'])]);
+  const lines = [...writes.map((row) => ({ row, decision: row.lineKind === 'ADJUSTMENT' ? '非餐點' : `${row.vendorId} ${row.itemCode}/${row.variantKey}` })),
+    ...reviews.map((row) => ({ row, decision: `需確認：${row.reason}` }))]
+    .filter(({ row }) => risky.has(row.orderId))
+    .sort((a, b) => a.row.orderId.localeCompare(b.row.orderId) || a.row.lineNo - b.row.lineNo);
+  return `\uFEFF${['風險,訂單,行,日期,狀態,店家,代碼,名稱,份數,計畫',
+    ...lines.map(({ row, decision }) => [risky.get(row.orderId), row.orderId, row.lineNo, row.source.order_date,
+      row.source.order_status, row.source.order_vendor, row.source.code, row.source.name, row.source.quantity, decision].map(cell).join(','))
+  ].join('\r\n')}\r\n`;
+};
+
 const parseArgs = (argv) => {
   const args = { remote: false, localDb: '', reviewer: '', out: resolve(workerRoot, '.legacy-identity-report') };
   for (let index = 0; index < argv.length; index += 1) {
@@ -61,6 +77,7 @@ const main = async () => {
   const sqlPath = resolve(args.out, 'apply-identities.sql');
   writeFileSync(sqlPath, `${sql.join('\n')}\n`, 'utf8');
   writeFileSync(resolve(args.out, 'needs-review.csv'), reviewCsv(plan.reviews), 'utf8');
+  writeFileSync(resolve(args.out, 'risky-orders.csv'), riskyOrdersCsv(plan), 'utf8');
   const summary = summarize(plan);
   writeFileSync(resolve(args.out, 'plan-summary.md'), summary, 'utf8');
   console.log(summary);
