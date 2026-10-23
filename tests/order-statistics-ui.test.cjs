@@ -88,9 +88,17 @@ test('footprints show the last result per subject and period while refreshing', 
   assert.match(page, /refreshing \? <span role="status"/);
 });
 
-test('footprints labels inferred 半飯 rows apart from unconfirmed rows', () => {
+test('footprints and order summary show variants as dish names, not BASE/HALF codes', async () => {
   const page = read('src/features/orders/MyBentoFootprintsPage.jsx');
-  assert.match(page, /item\.resolutionStatus === 'inferred_half_rice'/);
-  assert.match(page, /舊訂單推定為半飯/);
+  assert.match(page, /dishLabel\(\{ name: item\.name, variantKey: item\.variantKey \}\)/);
+  assert.doesNotMatch(page, /inferred_half_rice|舊訂單推定為半飯/);
   assert.match(page, /身份未確認，依原始名稱合併計算/);
+  const { dishLabel } = await import('../src/dishLabel.js');
+  assert.equal(dishLabel({ name: 'C.特餐', variantKey: 'BASE' }), 'C.特餐');
+  assert.equal(dishLabel({ name: 'C.特餐', variantKey: 'HALF' }), 'C.特餐（半飯）');
+  assert.equal(dishLabel({ name: 'C.特餐(半飯)', variantKey: 'HALF' }), 'C.特餐(半飯)');
+  assert.equal(dishLabel({ name: '風味便當', variantKey: 'PLUS' }), '風味便當（加量）');
+  const { formatOrderItemLabel } = await import('../src/features/admin/orderSummary.js');
+  assert.equal(formatOrderItemLabel({ itemName: '紅麴豆腐', vendor: '禾拾', variantKey: 'HALF' }), '紅麴豆腐（半飯） · 禾拾');
+  assert.equal(formatOrderItemLabel({ itemName: '紅麴豆腐', vendor: '禾拾', variantKey: 'BASE' }), '紅麴豆腐 · 禾拾');
 });

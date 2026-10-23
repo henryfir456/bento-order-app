@@ -940,3 +940,26 @@ test('footprint and Admin summary read reviewed line identities: one HALF dish, 
   assert.equal(byOrder.get('order-adjustment').item_name_resolution_status, 'adjustment');
   assert.equal(byOrder.get('order-unreviewed').item_name_resolved, false);
 });
+
+test('a reviewed line whose dish was not on the order-date menu shows the current menu name', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'user-1', displayName: 'Synthetic Buyer' });
+  seedUser(database, { userId: 'synthetic-admin', lineUserId: 'synthetic-admin', displayName: '合成管理者', role: 'Admin' });
+  database.run(`INSERT INTO vendors (vendor_id, name) VALUES ('V-HESHI', '禾拾')`);
+  seedHeShiSplitChanges(database);
+  database.run(`
+    INSERT INTO orders (order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor, total_amount, status, created_by_user_id, created_auth_mode)
+    VALUES ('order-old', 'user-1', 'Synthetic Buyer', '2026-08-01', '蔡老師', '1樓', 100, 'COMPLETED', 'user-1', 'legacy_import')
+  `);
+  database.run(`
+    INSERT INTO order_items (order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal)
+    VALUES ('order-old', 1, NULL, 'H2', '紅麴腐乳板豆腐', 1, 100, 100)
+  `);
+  seedReviewedIdentity(database, 'order-old', 1, ['MEAL', 'V-HESHI', 'H3', 'BASE']);
+  const { body } = await apiCall(database, '/api/orders/statistics?period=all', {
+    lineUserId: 'user-1', now: new Date('2026-10-22T02:00:00.000Z')
+  });
+  assert.equal(body.items.length, 1);
+  assert.deepEqual([body.items[0].name, body.items[0].vendor, body.items[0].variantKey, body.items[0].resolved],
+    ['紅麴豆腐', '禾拾', 'BASE', true]);
+});
