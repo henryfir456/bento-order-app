@@ -96,7 +96,8 @@ test('footprints and order summary show variants as dish names, not BASE/HALF co
   const { dishLabel } = await import('../src/dishLabel.js');
   assert.equal(dishLabel({ name: 'C.特餐', variantKey: 'BASE' }), 'C.特餐');
   assert.equal(dishLabel({ name: 'C.特餐', variantKey: 'HALF' }), 'C.特餐（半飯）');
-  assert.equal(dishLabel({ name: 'C.特餐(半飯)', variantKey: 'HALF' }), 'C.特餐(半飯)');
+  assert.equal(dishLabel({ name: 'C.特餐（半飯）', variantKey: 'HALF' }), 'C.特餐（半飯）');
+  assert.equal(dishLabel({ name: 'C.特餐(半飯)', variantKey: 'HALF' }), 'C.特餐（半飯）');
   assert.equal(dishLabel({ name: '風味便當', variantKey: 'PLUS' }), '風味便當（加量）');
   const { formatOrderItemLabel } = await import('../src/features/admin/orderSummary.js');
   assert.equal(formatOrderItemLabel({ itemName: '紅麴豆腐', vendor: '禾拾', variantKey: 'HALF' }), '紅麴豆腐（半飯） · 禾拾');

@@ -444,8 +444,9 @@ test('admin summary API resolves the effective name consistently and keeps quant
   assert.deepEqual(summary.todayOrders.map((order) => order.item_name), [
     '番茄鷹豆泥', '番茄鷹豆泥', '番茄鷹豆泥'
   ]);
+  // The renamed dish shows its current menu name, not the name of its order date.
   assert.deepEqual(summary.todayOrders.map((order) => order.display_item_name), [
-    '蕃茄鷹豆泥', '蕃茄鷹豆泥', '蕃茄鷹豆泥'
+    '蕃茄鷹豆泥', '蕃茄鷹豆泥', '最新合成餐點'
   ]);
   assert.equal(new Set(summary.todayOrders.map((order) => order.item_identity_key)).size, 3);
   assert.equal(database.get(`SELECT SUM(quantity) AS quantity, SUM(subtotal) AS amount FROM order_items`).quantity, beforeItems.quantity);
