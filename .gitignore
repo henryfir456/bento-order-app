@@ -26,3 +26,4 @@ dist-ssr
 .env.development
 gas/*.xlsx
 worker-poc/.local-uat/
+worker-poc/.legacy-identity-report/
