@@ -337,6 +337,16 @@ const createGasOperations = ({ gasApi, authClient }) => ({
     );
     throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'getAdminVendorOperations', 'Vendor operations are implemented only by Worker and local Mock transports.');
   },
+  getVendorHistoryImport: ({ vendorId } = {}) => {
+    if (authClient?.isMock) return gasApi.get(
+      `?action=getVendorHistoryImport&vendorId=${encodeURIComponent(String(vendorId || ''))}&t=${Date.now()}`
+    );
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'getVendorHistoryImport', 'Vendor history import is implemented only by Worker and local Mock transports.');
+  },
+  applyVendorHistoryImport: ({ vendorId, expectedVersions } = {}) => {
+    if (authClient?.isMock) return gasApi.post({ action: 'applyVendorHistoryImport', vendorId, expectedVersions });
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'applyVendorHistoryImport', 'Vendor history import is implemented only by Worker and local Mock transports.');
+  },
   recordVendorPayment: (payload = {}) => {
     if (authClient?.isMock) return gasApi.post({ action: 'recordVendorPayment', ...payload });
     throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'recordVendorPayment', 'Vendor payments are implemented only by Worker and local Mock transports.');
@@ -621,6 +631,12 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   getAdminVendorOperations: ({ month, vendorId } = {}) => workerRequest(
     'getAdminVendorOperations', 'GET', '/api/admin/vendor-operations', { query: { month, vendorId } }
+  ),
+  getVendorHistoryImport: ({ vendorId } = {}) => workerRequest(
+    'getVendorHistoryImport', 'GET', '/api/admin/vendor-history-import', { query: { vendorId } }
+  ),
+  applyVendorHistoryImport: ({ vendorId, expectedVersions } = {}) => workerRequest(
+    'applyVendorHistoryImport', 'POST', '/api/admin/vendor-history-import', { body: { vendorId, expectedVersions } }
   ),
   recordVendorPayment: (payload = {}) => workerRequest(
     'recordVendorPayment', 'POST', '/api/admin/vendor-payments', { body: payload }

@@ -192,6 +192,7 @@ test('Vendor daily orders aggregate historical prices by Taipei service date and
     settlement: {
       receivableTwd: 170,
       registeredTransferTwd: 0,
+      historicalSettledTwd: 0,
       unregisteredDifferenceTwd: 170,
       overAllocatedTwd: 0,
       pendingConfirmationTwd: 0,

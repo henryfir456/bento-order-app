@@ -3,6 +3,7 @@ import { apiClient } from '../../api/apiClient';
 import { formatApiErrorDiagnostic } from '../../api/apiErrors';
 import { canRecordVendorTransfer, isVendorEnabled, vendorOperationsView } from './vendorOperationsPolicy';
 import VendorDaySummary from './VendorDaySummary';
+import VendorHistoryImport from './VendorHistoryImport';
 import { currency, dayStatusLabel, formatTaipeiTime } from './vendorDayFormat';
 
 const taipeiToday = () => new Intl.DateTimeFormat('en-CA', {
@@ -127,11 +128,12 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
     portions: result.portions + Number(day.portionCount || 0),
     receivable: result.receivable + Number(day.settlement?.receivableTwd || day.amountTwd || 0),
     registered: result.registered + Number(day.settlement?.registeredTransferTwd || 0),
+    historical: result.historical + Number(day.settlement?.historicalSettledTwd || 0),
     unregistered: result.unregistered + Number(day.settlement?.unregisteredDifferenceTwd || 0),
     pending: result.pending + Number(day.settlement?.pendingConfirmationTwd || 0),
     confirmed: result.confirmed + Number(day.settlement?.confirmedTwd || 0),
     disputed: result.disputed + Number(day.settlement?.disputedTwd || 0)
-  }), { orderDays: 0, amount: 0, orders: 0, portions: 0, receivable: 0, registered: 0, unregistered: 0, pending: 0, confirmed: 0, disputed: 0 }), [days]);
+  }), { orderDays: 0, amount: 0, orders: 0, portions: 0, receivable: 0, registered: 0, historical: 0, unregistered: 0, pending: 0, confirmed: 0, disputed: 0 }), [days]);
 
   const performAction = async (key, action) => {
     setBusyKey(key);
@@ -498,6 +500,10 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
 
       {actionMessage && <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{actionMessage}</p>}
       {actionError && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-900">{actionError}</p>}
+      {view.adminControls && selectedVendor && isVendorEnabled(selectedVendor) && (
+        <VendorHistoryImport key={vendorId} vendorId={vendorId} vendorName={selectedVendor.name} onImported={() => void load()} />
+      )}
+
       {error && <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
         <p>{error}</p><button type="button" onClick={() => void load()} className="mt-2 min-h-10 rounded-lg border border-rose-300 px-3 font-bold">重試</button>
       </div>}
@@ -516,7 +522,8 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
         {[
           ['應收', totals.receivable], ['已登記轉帳', totals.registered],
           ['未登記差額', totals.unregistered], ['待廠商確認', totals.pending],
-          ['廠商已確認', totals.confirmed], ['爭議中', totals.disputed]
+          ['廠商已確認', totals.confirmed], ['爭議中', totals.disputed],
+          ...(totals.historical > 0 ? [['歷史已結清', totals.historical]] : [])
         ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-3">
           <div className="text-xs text-slate-500">{label}</div><div className="mt-1 font-bold tabular-nums text-slate-800">{currency(value)}</div>
         </div>)}

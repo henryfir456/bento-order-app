@@ -8,6 +8,7 @@ import { createEffectiveOrderItemNameResolver } from '../domain/effectiveOrderIt
 import { compatibilityVendorCandidates } from '../domain/menuVendors.js';
 import { deadlineAt, isDateOnly } from '../domain/deadlines.js';
 import { getActiveVendorIdsForPrincipal } from '../domain/vendorMemberships.js';
+import { applyVendorHistoryImport, previewVendorHistoryImport } from '../domain/vendorHistory.js';
 
 const text = (value) => String(value ?? '').trim();
 const VERIFIED_VENDOR_ATTRIBUTION = 'CANONICAL_VENDOR_ATTRIBUTION_V1';
@@ -239,13 +240,15 @@ const paymentRowsForDay = async (database, vendorId, serviceDate) => {
   }));
 };
 
-const settlementForDay = async (database, vendorId, serviceDate, receivableTwd) => {
+const settlementForDay = async (database, vendorId, serviceDate, receivableTwd, historical = false) => {
   const transfers = await paymentRowsForDay(database, vendorId, serviceDate);
   const registeredTransferTwd = transfers.reduce((sum, entry) => sum + entry.allocatedAmountTwd, 0);
+  const historicalSettledTwd = historical ? Math.max(0, receivableTwd - registeredTransferTwd) : 0;
   return {
     receivableTwd,
     registeredTransferTwd,
-    unregisteredDifferenceTwd: Math.max(0, receivableTwd - registeredTransferTwd),
+    historicalSettledTwd,
+    unregisteredDifferenceTwd: Math.max(0, receivableTwd - registeredTransferTwd - historicalSettledTwd),
     overAllocatedTwd: Math.max(0, registeredTransferTwd - receivableTwd),
     pendingConfirmationTwd: transfers
       .filter((entry) => entry.status === 'REGISTERED')
@@ -280,15 +283,32 @@ const datesForMonth = async (database, vendor, bounds) => {
   return rowsFrom(result).map((row) => String(row.service_date));
 };
 
+// A day is historical when every attributed order came from the imported
+// legacy history (menu version mapping) and none was placed with a canonical
+// vendor_id. Henry treats those days as paid on the day (historical import,
+// option A): no payment rows exist and none are fabricated.
+const isHistoricalDay = async (database, vendorId, serviceDate) => {
+  const row = await database.prepare(`
+    SELECT COUNT(*) AS order_count,
+      SUM(CASE WHEN direct.order_id IS NULL THEN 0 ELSE 1 END) AS direct_count
+    FROM vendor_order_vendor_attributions attribution
+    JOIN orders o ON o.order_id = attribution.order_id
+    LEFT JOIN canonical_order_vendor_assignments direct ON direct.order_id = o.order_id
+    WHERE attribution.vendor_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
+  `).bind(vendorId, serviceDate).first();
+  return Number(row?.order_count || 0) > 0 && Number(row?.direct_count || 0) === 0;
+};
+
 const buildDay = async (database, identity, vendor, serviceDate, now, resolveName) => {
   const mode = await calendarMode(database, vendor.name, serviceDate);
   const cutoff = mode ? deadlineAt(serviceDate, mode) : null;
   const cutoffPassed = Boolean(cutoff && now.getTime() > cutoff.getTime());
   const current = await aggregateDay(database, vendor, serviceDate, resolveName);
+  const historical = await isHistoricalDay(database, vendor.vendor_id, serviceDate);
   let displayed = current;
   let revision = 0;
   let changeReason = null;
-  if (cutoffPassed) {
+  if (cutoffPassed && !historical) {
     const snapshot = await appendSnapshotIfNeeded(database, identity, vendor, serviceDate, current, now);
     displayed = {
       orderCount: Number(snapshot.order_count),
@@ -304,15 +324,15 @@ const buildDay = async (database, identity, vendor, serviceDate, now, resolveNam
     vendorId: vendor.vendor_id,
     vendorName: vendor.name,
     cutoffAt: cutoff?.toISOString() || null,
-    cutoffPassed,
-    source: cutoffPassed ? 'SNAPSHOT' : 'ESTIMATE',
+    cutoffPassed: cutoffPassed || historical,
+    source: historical ? 'HISTORY' : cutoffPassed ? 'SNAPSHOT' : 'ESTIMATE',
     revision,
     changeReason,
     orderCount: displayed.orderCount,
     portionCount: displayed.portionCount,
     amountTwd: displayed.amountTwd,
     items: displayed.items,
-    settlement: await settlementForDay(database, vendor.vendor_id, serviceDate, displayed.amountTwd)
+    settlement: await settlementForDay(database, vendor.vendor_id, serviceDate, displayed.amountTwd, historical)
   };
 };
 
@@ -693,8 +713,22 @@ export const handleVendorOperationsRoute = async (request, env, {
     && /^\/api\/admin\/vendor-payments\/[^/]+\/reversals$/.test(url.pathname);
   const adminAdjust = request.method === 'POST'
     && /^\/api\/admin\/vendor-payment-allocations\/[^/]+\/adjustments$/.test(url.pathname);
+  const historyImport = url.pathname === '/api/admin/vendor-history-import'
+    && ['GET', 'POST'].includes(request.method);
   if (!vendorRead && !adminRead && !adminCreate && !vendorAck && !vendorDispute
-    && !adminResolve && !adminReverse && !adminAdjust) return null;
+    && !adminResolve && !adminReverse && !adminAdjust && !historyImport) return null;
+
+  if (historyImport) {
+    const identity = await adminIdentity(request, env, { fetchImpl, now });
+    const body = request.method === 'POST' ? await parseJson(request) : {};
+    const vendorId = text(request.method === 'POST' ? body.vendorId : url.searchParams.get('vendorId'));
+    if (!vendorId) throw badRequest('VENDOR_ID_REQUIRED');
+    const vendor = await activeVendorForId(env.DB, vendorId);
+    if (!vendor) throw notFound('VENDOR_NOT_FOUND');
+    return jsonResponse(request.method === 'POST'
+      ? await applyVendorHistoryImport(env.DB, identity, vendor, safeInteger(body.expectedVersions), now)
+      : await previewVendorHistoryImport(env.DB, vendor, now));
+  }
 
   if (vendorRead) {
     if ([...url.searchParams.keys()].some((key) => key !== 'month')) throw forbidden('VENDOR_SCOPE_FORBIDDEN');
