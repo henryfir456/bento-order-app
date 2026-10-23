@@ -59,22 +59,31 @@ const requireVendorIdentity = async (request, env, { fetchImpl, now }, action) =
   return { identity, vendorIds };
 };
 
-const activeOrderRows = async (database, vendorId, serviceDate) => {
+// One read for the whole month: every attributed ACTIVE order line, with a
+// flag for orders placed with a canonical vendor_id (non-historical).
+const activeOrderRowsForMonth = async (database, vendorId, bounds) => {
   const result = await database.prepare(`
     SELECT o.order_id, o.order_date, o.vendor,
       oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot,
-      oi.quantity, oi.unit_price, oi.subtotal
+      oi.quantity, oi.unit_price, oi.subtotal,
+      CASE WHEN direct.order_id IS NULL THEN 0 ELSE 1 END AS is_direct
     FROM orders o
     JOIN vendor_order_vendor_attributions attribution ON attribution.order_id = o.order_id
     JOIN order_items oi ON oi.order_id = o.order_id
-    WHERE attribution.vendor_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
-    ORDER BY o.order_id, oi.line_no
-  `).bind(vendorId, serviceDate).all();
-  return rowsFrom(result);
+    LEFT JOIN canonical_order_vendor_assignments direct ON direct.order_id = o.order_id
+    WHERE attribution.vendor_id = ? AND o.order_date >= ? AND o.order_date < ? AND o.status = 'ACTIVE'
+    ORDER BY o.order_date, o.order_id, oi.line_no
+  `).bind(vendorId, bounds.start, bounds.end).all();
+  const byDate = new Map();
+  for (const row of rowsFrom(result)) {
+    const date = String(row.order_date);
+    if (!byDate.has(date)) byDate.set(date, []);
+    byDate.get(date).push(row);
+  }
+  return byDate;
 };
 
-const aggregateDay = async (database, vendor, serviceDate, resolveName) => {
-  const rows = await activeOrderRows(database, vendor.vendor_id, serviceDate);
+const aggregateDay = async (vendor, serviceDate, rows, resolveName) => {
   const items = new Map();
   for (const row of rows) {
     const resolved = await resolveName({ vendor: vendor.name, orderDate: serviceDate, item: row });
@@ -100,15 +109,20 @@ const aggregateDay = async (database, vendor, serviceDate, resolveName) => {
   };
 };
 
-const calendarMode = async (database, vendorName, serviceDate) => {
+const calendarModesForMonth = async (database, vendorName, bounds) => {
   const vendorNames = compatibilityVendorCandidates(vendorName);
   const placeholders = vendorNames.map(() => '?').join(', ');
-  const row = await database.prepare(`
-    SELECT mode FROM calendar_settings
-    WHERE order_date = ? AND vendor IN (${placeholders})
-    ORDER BY CASE WHEN vendor = ? THEN 0 ELSE 1 END LIMIT 1
-  `).bind(serviceDate, ...vendorNames, vendorNames[0]).first();
-  return row?.mode === 'B' ? 'B' : row?.mode === 'A' ? 'A' : null;
+  const result = await database.prepare(`
+    SELECT order_date, mode FROM calendar_settings
+    WHERE order_date >= ? AND order_date < ? AND vendor IN (${placeholders})
+    ORDER BY order_date, CASE WHEN vendor = ? THEN 0 ELSE 1 END
+  `).bind(bounds.start, bounds.end, ...vendorNames, vendorNames[0]).all();
+  const modes = new Map();
+  for (const row of rowsFrom(result)) {
+    const date = String(row.order_date);
+    if (!modes.has(date)) modes.set(date, row.mode === 'B' ? 'B' : row.mode === 'A' ? 'A' : null);
+  }
+  return modes;
 };
 
 const adjustmentReasonAfter = async (database, vendorId, serviceDate, snapshotAt) => {
@@ -240,8 +254,7 @@ const paymentRowsForDay = async (database, vendorId, serviceDate) => {
   }));
 };
 
-const settlementForDay = async (database, vendorId, serviceDate, receivableTwd, historical = false) => {
-  const transfers = await paymentRowsForDay(database, vendorId, serviceDate);
+const settlementForDay = (transfers, receivableTwd, historical = false) => {
   const registeredTransferTwd = transfers.reduce((sum, entry) => sum + entry.allocatedAmountTwd, 0);
   const historicalSettledTwd = historical ? Math.max(0, receivableTwd - registeredTransferTwd) : 0;
   return {
@@ -287,24 +300,14 @@ const datesForMonth = async (database, vendor, bounds) => {
 // legacy history (menu version mapping) and none was placed with a canonical
 // vendor_id. Henry treats those days as paid on the day (historical import,
 // option A): no payment rows exist and none are fabricated.
-const isHistoricalDay = async (database, vendorId, serviceDate) => {
-  const row = await database.prepare(`
-    SELECT COUNT(*) AS order_count,
-      SUM(CASE WHEN direct.order_id IS NULL THEN 0 ELSE 1 END) AS direct_count
-    FROM vendor_order_vendor_attributions attribution
-    JOIN orders o ON o.order_id = attribution.order_id
-    LEFT JOIN canonical_order_vendor_assignments direct ON direct.order_id = o.order_id
-    WHERE attribution.vendor_id = ? AND o.order_date = ? AND o.status = 'ACTIVE'
-  `).bind(vendorId, serviceDate).first();
-  return Number(row?.order_count || 0) > 0 && Number(row?.direct_count || 0) === 0;
-};
+const isHistoricalDay = (rows) => rows.length > 0 && rows.every((row) => Number(row.is_direct) === 0);
 
-const buildDay = async (database, identity, vendor, serviceDate, now, resolveName) => {
-  const mode = await calendarMode(database, vendor.name, serviceDate);
+const buildDay = async (database, identity, vendor, serviceDate, now, { rows, mode, resolveName }) => {
+  const transfersPromise = paymentRowsForDay(database, vendor.vendor_id, serviceDate);
   const cutoff = mode ? deadlineAt(serviceDate, mode) : null;
   const cutoffPassed = Boolean(cutoff && now.getTime() > cutoff.getTime());
-  const current = await aggregateDay(database, vendor, serviceDate, resolveName);
-  const historical = await isHistoricalDay(database, vendor.vendor_id, serviceDate);
+  const current = await aggregateDay(vendor, serviceDate, rows, resolveName);
+  const historical = isHistoricalDay(rows);
   let displayed = current;
   let revision = 0;
   let changeReason = null;
@@ -332,18 +335,28 @@ const buildDay = async (database, identity, vendor, serviceDate, now, resolveNam
     portionCount: displayed.portionCount,
     amountTwd: displayed.amountTwd,
     items: displayed.items,
-    settlement: await settlementForDay(database, vendor.vendor_id, serviceDate, displayed.amountTwd, historical)
+    settlement: settlementForDay(await transfersPromise, displayed.amountTwd, historical)
   };
 };
 
+// Month reads happen once up front and the days are then built concurrently:
+// every sequential D1 round trip costs ~0.1 s, and a month has ~20 days.
 const operationsForVendor = async (database, identity, vendor, month, now) => {
   const bounds = monthBounds(month);
-  const dates = await datesForMonth(database, vendor, bounds);
   const resolveName = createEffectiveOrderItemNameResolver(database);
-  const days = [];
-  for (const serviceDate of dates) {
-    days.push(await buildDay(database, identity, vendor, serviceDate, now, resolveName));
-  }
+  const [dates, rowsByDate, modes] = await Promise.all([
+    datesForMonth(database, vendor, bounds),
+    activeOrderRowsForMonth(database, vendor.vendor_id, bounds),
+    calendarModesForMonth(database, vendor.name, bounds)
+  ]);
+  await resolveName.prefetch([...rowsByDate.entries()].flatMap(([orderDate, rows]) => (
+    rows.map((item) => ({ vendor: vendor.name, orderDate, item }))
+  )));
+  const days = await Promise.all(dates.map((serviceDate) => buildDay(database, identity, vendor, serviceDate, now, {
+    rows: rowsByDate.get(serviceDate) || [],
+    mode: modes.get(serviceDate) || null,
+    resolveName
+  })));
   return { success: true, month, vendor: { id: vendor.vendor_id, name: vendor.name }, days };
 };
 
