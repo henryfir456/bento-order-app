@@ -28,12 +28,14 @@ const randomToken = () => {
   )).join('');
 };
 
+// The vendor owner may also be a protected account (its old employee login is
+// blocked). That protection guards employee-ID access to the user; this path
+// grants only the read-only Vendor scope, so it does not check it.
 const requireUsableVendor = async (database, code) => {
   const user = await getUserByVendorLoginId(database, code);
   if (!user
     || !user.active
     || user.invalidReason
-    || user.isProtectedAccount
     || user.role !== 'Vendor'
     || !user.vendorPrincipal
     || !user.vendorAccessActive) {
