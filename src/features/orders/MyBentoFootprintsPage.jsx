@@ -1,4 +1,5 @@
 import React from 'react';
+import { vendorItemLabel } from '../vendors/vendorDayFormat.js';
 
 const PERIODS = [
   { value: 'all', label: '全部' },
@@ -155,7 +156,7 @@ export default function MyBentoFootprintsPage({
           {(data.items || []).map((item, index) => <li key={item.identityKey || `${item.vendor || ''}-${item.name}-${item.variantKey || ''}`} className="flex min-h-12 items-center justify-between gap-3 py-2 text-sm">
             <span className="flex min-w-0 items-center gap-3">
               <span className="w-6 shrink-0 text-center font-semibold tabular-nums text-slate-500">{index + 1}</span>
-              <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{item.name}</span><span className="block truncate text-xs text-slate-500">{[item.vendor, item.variantKey].filter(Boolean).join(' · ')}</span>{duplicateItemLabels.has(JSON.stringify([item.name || '', item.vendor || '', item.variantKey || ''])) && <span className="block text-xs text-slate-600">品項識別 {item.itemCode || '不同'}</span>}{item.resolutionStatus === 'inferred_half_rice'
+              <span className="min-w-0"><span className="block truncate font-medium text-slate-800">{vendorItemLabel({ name: item.name, variantKey: item.variantKey })}</span><span className="block truncate text-xs text-slate-500">{item.vendor || ''}</span>{duplicateItemLabels.has(JSON.stringify([item.name || '', item.vendor || '', item.variantKey || ''])) && <span className="block text-xs text-slate-600">品項識別 {item.itemCode || '不同'}</span>}{item.resolutionStatus === 'inferred_half_rice'
                 ? <span className="block text-xs text-slate-600" title={item.resolutionStatus}>舊訂單推定為半飯</span>
                 : item.resolved === false && <span className="block text-xs text-amber-800" title={item.resolutionStatus}>身份未確認，依原始名稱合併計算</span>}</span>
             </span>

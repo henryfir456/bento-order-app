@@ -611,3 +611,13 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
     }
   }
 });
+
+test('footprints and Admin order summary use the same Chinese variant labels as vendors', async () => {
+  const { formatOrderItemLabel } = await import('../src/features/admin/orderSummary.js');
+  assert.equal(formatOrderItemLabel({ itemName: '合成豆腐', vendor: '合成店家', variantKey: 'BASE' }), '合成豆腐 · 合成店家');
+  assert.equal(formatOrderItemLabel({ itemName: '合成豆腐', vendor: '合成店家', variantKey: 'HALF' }), '合成豆腐（半飯） · 合成店家');
+  assert.equal(formatOrderItemLabel({ itemName: '合成特餐(半飯)', vendor: '合成店家', variantKey: 'HALF' }), '合成特餐(半飯) · 合成店家');
+  const page = fs.readFileSync(path.join(__dirname, '..', 'src/features/orders/MyBentoFootprintsPage.jsx'), 'utf8');
+  assert.match(page, /vendorItemLabel\(\{ name: item\.name, variantKey: item\.variantKey \}\)/);
+  assert.doesNotMatch(page, /\[item\.vendor, item\.variantKey\]/);
+});

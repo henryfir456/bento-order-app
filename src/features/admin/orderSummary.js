@@ -1,3 +1,4 @@
+import { vendorItemLabel } from '../vendors/vendorDayFormat.js';
 const floorNumber = (floor) => {
   const match = String(floor || '').match(/^(\d+)/);
   return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
@@ -39,7 +40,7 @@ export const duplicateItemLabelKeys = (orders = []) => {
 };
 
 export const formatOrderItemLabel = ({ itemName, vendor, variantKey } = {}) => (
-  `${itemName || '未命名品項'}${vendor ? ` · ${vendor}` : ''}${variantKey ? ` · ${variantKey}` : ''}`
+  `${vendorItemLabel({ name: itemName || '未命名品項', variantKey })}${vendor ? ` · ${vendor}` : ''}`
 );
 
 export const groupOrdersByFloor = (orders = []) => {
