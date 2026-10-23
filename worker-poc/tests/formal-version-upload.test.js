@@ -60,6 +60,6 @@ test('Cloudflare version resources are used, not the version root', async () => 
   const before={compatibility_date:'2026-09-07',usage_model:'standard',bindings:[{name:'DB',type:'d1',id:'e75bc185-afb5-4a5d-abc9-81bd79525cff'}]};
   const version={id:'version',resources:{bindings:before.bindings,script_runtime:{compatibility_date:before.compatibility_date,usage_model:before.usage_model}}};
   assert.deepEqual(versionSettings(version), before);
-  await assert.doesNotReject(verifyVersionSettings(before,version,[],[],['0 16 * * *','0 8 * * *','30 0 15 6-12 *'],['0 16 * * *','0 8 * * *','30 0 15 6-12 *']));
+  await assert.doesNotReject(verifyVersionSettings(before,version,[],[],['0 16 * * *','0 8 * * *','0 10 * * *','30 0 15 6-12 *'],['0 16 * * *','0 8 * * *','0 10 * * *','30 0 15 6-12 *']));
   assert.rejects(verifyVersionSettings(before,{id:'version'},[],[],[],[]),/VERSION_RESOURCES_UNAVAILABLE/);
 });

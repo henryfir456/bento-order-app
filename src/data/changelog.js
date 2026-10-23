@@ -11,6 +11,15 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.0': [
+    { name: '新增', changes: [
+      '小鈴鐺除了公告，也會收到系統通知：管理員取消開團並退款時，受影響的訂購人與該團廠商都會收到通知；每天 18:00 收單後，廠商會收到一則明天訂單的彙總通知。',
+      '廠商也有小鈴鐺。'
+    ] },
+    { name: '變更', changes: [
+      '小鈴鐺移到標題列最右邊；「已綁定 LINE」標籤不再顯示，只有尚未綁定時才會出現。'
+    ] }
+  ],
   '0.18.0': [
     { name: '新增', changes: [
       '廠商新增「訂餐」月曆與「足跡」：月曆只能查看，點自家團的日期可看當天訂單總覽；足跡可切換全部、今年、本月，顯示售出餐點的份數、金額與排行（統計到昨天）。',

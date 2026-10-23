@@ -361,6 +361,7 @@ test('formal Wrangler config schedules the Worker at Taipei midnight', () => {
   assert.deepEqual(config.triggers?.crons, [
     '0 16 * * *',
     '0 8 * * *',
+    '0 10 * * *',
     '30 0 15 6-12 *'
   ]);
 });

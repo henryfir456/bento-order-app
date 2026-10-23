@@ -33,6 +33,7 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
   assert.deepEqual(formalConfig.triggers?.crons, [
     '0 16 * * *',
     '0 8 * * *',
+    '0 10 * * *',
     '30 0 15 6-12 *'
   ]);
   assert.match(packageConfig.scripts['db:info'], /\bbento-formal\b/);
@@ -67,7 +68,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0020_safe_vendor_order_identity_resolution.sql',
       '0021_verified_vendor_settlement_sources.sql',
       '0022_vendor_legacy_name_attribution.sql',
-      '0023_order_line_canonical_identities.sql'
+      '0023_order_line_canonical_identities.sql',
+      '0024_user_notifications.sql'
     ]
   );
 });

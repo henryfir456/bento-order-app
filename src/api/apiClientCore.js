@@ -185,6 +185,29 @@ const createGasOperations = ({ gasApi, authClient }) => ({
       'The announcement inbox is available through the formal Worker API.'
     );
   },
+  getMyNotifications: () => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'getMyNotifications',
+      accessToken: readToken(authClient, 'getMyNotifications')
+    });
+    throw new ApiContractGapError(
+      'NOTIFICATIONS_UNSUPPORTED_TRANSPORT',
+      'getMyNotifications',
+      'Bell notifications are available through the formal Worker API.'
+    );
+  },
+  markNotificationRead: ({ notificationId } = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'markNotificationRead',
+      accessToken: readToken(authClient, 'markNotificationRead'),
+      notificationId
+    });
+    throw new ApiContractGapError(
+      'NOTIFICATIONS_UNSUPPORTED_TRANSPORT',
+      'markNotificationRead',
+      'Bell notifications are available through the formal Worker API.'
+    );
+  },
   markAnnouncementRead: ({ announcementId } = {}) => {
     if (authClient?.isMock) return gasApi.post({
       action: 'markAnnouncementRead',
@@ -499,6 +522,14 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   getMyAnnouncements: () => workerRequest(
     'getMyAnnouncements', 'GET', '/api/me/announcements'
+  ),
+  getMyNotifications: () => workerRequest(
+    'getMyNotifications', 'GET', '/api/me/notifications'
+  ),
+  markNotificationRead: ({ notificationId } = {}) => workerRequest(
+    'markNotificationRead',
+    'POST',
+    `/api/me/notifications/${encodeURIComponent(String(notificationId || '').trim())}/read`
   ),
   markAnnouncementRead: ({ announcementId } = {}) => workerRequest(
     'markAnnouncementRead',
