@@ -129,12 +129,25 @@ test('Vendor identity and scope come only from canonical principal and membershi
   assert.equal(vendorDeferred.response.status, 200);
   assert.deepEqual(vendorDeferred.body.likes, {});
   assert.deepEqual(vendorDeferred.body.announcements, []);
+  database.run(`
+    INSERT INTO calendar_settings (order_date, vendor, mode, created_at, updated_at)
+    VALUES ('2026-10-21', '合成廠商', 'A', '2026-10-01T00:00:00.000Z', '2026-10-01T00:00:00.000Z')
+  `);
   const vendorCalendar = await call(database, '/api/calendar', {
     token: 'synthetic-vendor-token-a',
     lineUserId: 'synthetic-line-vendor-a'
   });
-  assert.equal(vendorCalendar.response.status, 403);
-  assert.equal(vendorCalendar.body.error, 'VENDOR_ROUTE_FORBIDDEN');
+  assert.equal(vendorCalendar.response.status, 200, JSON.stringify(vendorCalendar.body));
+  const calendarDay = vendorCalendar.body.events['2026-10-21'];
+  assert.equal(calendarDay.vendor, '合成廠商');
+  assert.deepEqual(Object.keys(calendarDay).sort(),
+    ['deadline', 'isExpired', 'mode', 'order_date', 'vendor']);
+  const vendorHistory = await call(database, '/api/orders/history', {
+    token: 'synthetic-vendor-token-a',
+    lineUserId: 'synthetic-line-vendor-a'
+  });
+  assert.equal(vendorHistory.response.status, 403);
+  assert.equal(vendorHistory.body.error, 'VENDOR_ROUTE_FORBIDDEN');
 
   const second = await call(database, '/api/vendor/context', {
     token: 'synthetic-vendor-token-b',

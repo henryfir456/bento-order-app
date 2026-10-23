@@ -85,6 +85,29 @@ export const handleReadOnlyRequest = async (request, env, {
         bootId: requiredBootId(url)
       });
     }
+    if (url.pathname === '/api/calendar') {
+      // Vendors see which shop runs on which day, but not order volumes,
+      // likes or other members' data.
+      assertCan(identity, ACTIONS.READ_VENDOR_CONTEXT);
+      const events = await getCalendarEvents(env.DB, {
+        fromDate: url.searchParams.get('from') || null,
+        toDate: url.searchParams.get('to') || null,
+        now
+      });
+      return jsonResponse({
+        success: true,
+        events: Object.fromEntries(Object.entries(events).map(([date, event]) => [date, {
+          order_date: event.order_date,
+          vendor: event.vendor,
+          mode: event.mode,
+          deadline: event.deadline,
+          isExpired: event.isExpired,
+          ...(event.dailyFlavorName ? { dailyFlavorName: event.dailyFlavorName } : {})
+        }])),
+        announcements: [],
+        announcement: null
+      });
+    }
     throw forbidden('VENDOR_ROUTE_FORBIDDEN');
   }
 

@@ -65,6 +65,7 @@ test('Vendor operations UI keeps Vendor in a dedicated shell and separates manua
   assert.match(app, /!isVendorAccount && viewMode === 'calendar'/);
   assert.match(app, /廠商每日訂單與轉帳對帳/);
   assert.match(nav, /role === 'Vendor'[\s\S]*key === 'vendor'/);
+  assert.match(nav, /role === 'Vendor'[\s\S]*key === 'calendar'/);
 });
 
 test('Admin can read disabled vendor history but cannot start a new transfer', async () => {
@@ -556,7 +557,7 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
       assert.match(metrics.main, /Mock Bento A/u);
       assert.deepEqual(metrics.tabs, ['今日', '訂單總覽', '對帳']);
       assert.doesNotMatch(metrics.main, /Local mock vendor|員工編號|我的訂單|餘額/u);
-      assert.deepEqual(metrics.nav, ['店家']);
+      assert.deepEqual(metrics.nav, ['店家', '訂餐']);
 
       assert.equal(await clickTab('訂單總覽'), true);
       await waitFor('document.body.innerText.includes("訂單日數") && document.querySelectorAll("main article").length > 1', 'Vendor order overview with several days');
@@ -570,6 +571,21 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
       assert.ok(settlement.documentWidth <= width, `Vendor settlement tab should fit ${width}px.`);
       assert.doesNotMatch(settlement.main, /備餐清單|訂單日數/u);
       assert.equal(await clickTab('今日'), true);
+
+      const clickNav = (label) => evaluate(`(()=>{const button=[...document.querySelectorAll("nav[aria-label=主要導覽] button")].find(item=>item.innerText.trim()===${JSON.stringify(label)});button?.click();return Boolean(button)})()`);
+      assert.equal(await clickNav('訂餐'), true);
+      await waitFor('document.querySelector("[aria-label=廠商訂餐月曆]") && [...document.querySelectorAll("[aria-label=廠商訂餐月曆] button")].some(button=>!button.disabled && /你的團/.test(button.getAttribute("aria-label")||""))', 'Vendor read-only calendar with own days');
+      const calendar = await readMetrics();
+      assert.ok(calendar.documentWidth <= width, `Vendor calendar should fit ${width}px.`);
+      assert.match(calendar.main, /只能查看/u);
+      assert.doesNotMatch(calendar.main, /查看菜單並預訂|我的訂單/u);
+      assert.equal(await evaluate('[...document.querySelectorAll("[aria-label=廠商訂餐月曆] button")].filter(button=>/你的團/.test(button.getAttribute("aria-label")||"")).every(button=>!button.disabled)'), true);
+      await evaluate('[...document.querySelectorAll("[aria-label=廠商訂餐月曆] button")].find(button=>!button.disabled && /你的團/.test(button.getAttribute("aria-label")||"")).click()');
+      await waitFor('document.querySelector("[role=dialog]")?.innerText.includes("訂單總覽") && document.querySelector("[role=dialog]")?.innerText.includes("備餐清單")', 'Vendor day order summary dialog');
+      await evaluate('document.querySelector("[role=dialog] button[aria-label=關閉視窗]").click()');
+      await waitFor('![...document.querySelectorAll("[role=dialog]")].some(dialog=>dialog.innerText.includes("訂單總覽"))', 'Vendor day dialog closes');
+      assert.equal(await clickNav('店家'), true);
+      await waitFor('document.body.innerText.includes("備餐清單")', 'Vendor back to workbench');
     }
   } finally {
     devtools?.close();

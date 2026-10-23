@@ -2,11 +2,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '../../api/apiClient';
 import { formatApiErrorDiagnostic } from '../../api/apiErrors';
 import { canRecordVendorTransfer, isVendorEnabled, vendorOperationsView } from './vendorOperationsPolicy';
+import VendorDaySummary from './VendorDaySummary';
+import { currency, dayStatusLabel, formatTaipeiTime } from './vendorDayFormat';
 
 const taipeiToday = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
 }).format(new Date());
-const currency = (value) => `${Number(value || 0).toLocaleString('zh-TW')} 元`;
 const currentMonth = () => taipeiToday().slice(0, 7);
 const createKey = () => `vendor-transfer-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 const reasonLabel = (reason) => ({
@@ -15,14 +16,6 @@ const reasonLabel = (reason) => ({
   ORDER_REPLACEMENT_OR_PRICE_CHANGE: '訂單更換／價格變更後新增調整版本',
   ORDER_ACTIVITY_CHANGE: '訂單變動後新增調整版本'
 }[reason] || reason || '—');
-const dayStatusLabel = (day) => {
-  if (day.source === 'SNAPSHOT') return `已截止・快照 v${day.revision}`;
-  if (day.source === 'MOCK') return day.cutoffPassed ? '已截止（Mock）' : '未截止・暫估（Mock）';
-  return day.cutoffPassed ? '已截止' : '未截止・暫估';
-};
-const formatTaipeiTime = (value) => (value
-  ? new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
-  : '未設定');
 const VENDOR_TABS = Object.freeze([
   { key: 'today', label: '今日' },
   { key: 'orders', label: '訂單總覽' },
@@ -515,32 +508,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
             ? <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600">
               {loading ? '載入中…' : `今天（${today}）目前沒有訂單。`}
             </div>
-            : <>
-              <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-lg font-bold text-[#2C4A3E]">{today}</h3>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${todayDay.cutoffPassed ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}`}>{dayStatusLabel(todayDay)}</span>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">截止時間：{formatTaipeiTime(todayDay.cutoffAt)}</p>
-                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">份數</div><div className="mt-1 text-2xl font-extrabold tabular-nums text-[#2C4A3E]">{todayDay.portionCount}</div></div>
-                  <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">訂單</div><div className="mt-1 text-2xl font-extrabold tabular-nums text-slate-800">{todayDay.orderCount}</div></div>
-                  <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">金額</div><div className="mt-1 text-lg font-extrabold tabular-nums text-slate-800">{currency(todayDay.amountTwd)}</div></div>
-                </div>
-                {!todayDay.cutoffPassed && <p className="mt-2 text-xs text-amber-800">尚未截止，數量可能還會變動。</p>}
-              </div>
-              <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
-                <h3 className="font-bold text-[#2C4A3E]">備餐清單</h3>
-                <ul className="mt-2 divide-y divide-slate-100">
-                  {[...(todayDay.items || [])].sort((a, b) => b.quantity - a.quantity).map((item, index) => (
-                    <li key={`${item.name}-${item.variantKey}-${index}`} className="flex items-center justify-between gap-3 py-2">
-                      <span className="min-w-0 break-words text-base">{item.name}{item.variantKey ? `（${item.variantKey}）` : ''}</span>
-                      <span className="shrink-0 text-xl font-extrabold tabular-nums text-[#2C4A3E]">× {item.quantity}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </>}
+            : <VendorDaySummary day={todayDay} />}
         </div>
       )}
 

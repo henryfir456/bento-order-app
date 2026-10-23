@@ -368,6 +368,25 @@ export const getMockCalendarEvents = (mockUser) => {
   const primaryDate = getPrimaryDate();
   const dates = [primaryDate, addDays(primaryDate, 2), addDays(primaryDate, 4)];
 
+  // The mock vendor also sees its own past service days this month, matching
+  // the days getMockVendorOperations reports for it.
+  const pastVendorDates = state.user?.role === 'Vendor'
+    ? mockServiceDatesBefore(primaryDate.slice(0, 7), primaryDate)
+    : [];
+  const pastEvents = pastVendorDates.reduce((events, date) => {
+    events[date] = {
+      order_date: date,
+      vendor: date.endsWith('-01') ? MOCK_VENDORS[1] : MOCK_VENDORS[0],
+      mode: 'A',
+      deadline: `${date}T02:00:00.000Z`,
+      isExpired: true,
+      likeCount: 0,
+      isUserLiked: false,
+      lunarLabel: null
+    };
+    return events;
+  }, {});
+
   return dates.reduce((events, date, index) => {
     const vendor = state.vendors[date] || MOCK_VENDORS[index % MOCK_VENDORS.length];
     events[date] = {
@@ -381,7 +400,7 @@ export const getMockCalendarEvents = (mockUser) => {
       lunarLabel: null
     };
     return events;
-  }, {});
+  }, pastEvents);
 };
 
 const normalizeMockVendorName = (value) => (
