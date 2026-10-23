@@ -18,7 +18,7 @@ const entries = [
 
 export default function BottomNavigation({ current, onNavigate, role, canViewWallet, canManage, balance, balanceKnown = false }) {
   const visible = role === 'Vendor'
-    ? entries.filter(({ key }) => key === 'vendor')
+    ? entries.filter(({ key }) => key === 'vendor' || key === 'calendar')
     : entries.filter(({ key }) => key !== 'vendor' && (
       key === 'wallet' ? canViewWallet : key === 'admin' ? canManage : true
     ));
