@@ -33,3 +33,9 @@
 ## 下一輪預防
 - 觸發條件：為測試暫時放寬登入規則。
 - 應追加的前置檢查：放寬一律做成可單一開關關閉、關閉時既有 session 同步失效，且預設唯讀。注意部署使用 `--keep-vars` 時，設定檔中仍列出的值會覆蓋，要鎖回請改值而不是刪除該行。
+
+## 追加：正式環境代號登入回 VENDOR_SCOPE_FORBIDDEN
+- 現象：部署後使用者輸入代號，畫面顯示 `VENDOR_SCOPE_FORBIDDEN`。
+- 根因（依 runbook 推定，未查正式 D1）：禾拾的 Vendor owner 同時是 protected account（`configure-vendor-owner.sql` 會新增 protected user mapping，用來封鎖舊員編登入）。代號登入原本把 protected account 一律拒絕。
+- 修正：代號登入不再檢查 protected mapping；該保護針對的是以員編存取此使用者，而代號登入只給唯讀的 Vendor 範圍。舊員編登入仍被擋（新增測試涵蓋）。
+- 預防：放寬登入前，先用正式資料的實際組合（Vendor owner＋protected mapping）寫測試，不只用一般合成廠商。

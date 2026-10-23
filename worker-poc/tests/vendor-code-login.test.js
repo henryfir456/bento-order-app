@@ -130,3 +130,24 @@ test('a session stops working once the vendor is suspended', async () => {
   const result = await call(database, '/api/vendor/orders?month=2026-10', { token });
   assert.equal(result.response.status, 401);
 });
+
+test('a protected vendor owner can use code login but its employee ID stays blocked', async () => {
+  const database = new SqliteD1();
+  seedCodeVendor(database);
+  database.run(`
+    UPDATE users SET employee_id = 'SYNTHETIC-OLD-EMPLOYEE' WHERE user_id = 'synthetic-code-vendor'
+  `);
+  database.run(`
+    INSERT INTO protected_account_user_mappings (account_key, user_id, created_at)
+    VALUES ('synthetic-owner', 'synthetic-code-vendor', '2026-10-20T00:00:00.000Z')
+  `);
+  const signedIn = await login(database, CODE);
+  assert.equal(signedIn.response.status, 201, JSON.stringify(signedIn.body));
+  const me = await call(database, '/api/me', { token: signedIn.body.token });
+  assert.equal(me.response.status, 200, JSON.stringify(me.body));
+  assert.equal(me.body.user.role, 'Vendor');
+  assert.equal(me.body.lineUserId, '');
+
+  const employee = await login(database, 'SYNTHETIC-OLD-EMPLOYEE');
+  assert.equal(employee.response.status, 403);
+});
