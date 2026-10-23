@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.1': [
+    { name: '新增', changes: [
+      '每個 API 回應的 Server-Timing 會附上這次讀取的資料筆數與查詢數，讀取 5,000 筆以上的請求也會寫入日誌，用來找出耗用 D1 每日讀取額度的查詢。'
+    ] }
+  ],
   '0.19.0': [
     { name: '新增', changes: [
       '小鈴鐺除了公告，也會收到系統通知：管理員取消開團並退款時，受影響的訂購人與該團廠商都會收到通知；每天 18:00 收單後，廠商會收到一則明天訂單的彙總通知。',

@@ -59,7 +59,7 @@ test('responses report durations only through Server-Timing', async () => {
   );
   assert.equal(response.status, 200);
   const header = response.headers.get('Server-Timing');
-  assert.match(header, /^d1-probe;dur=\d+\.\d, line;desc="1";dur=\d+\.\d, total;dur=\d+\.\d$/);
+  assert.match(header, /^d1-probe;dur=\d+\.\d, line;desc="1";dur=\d+\.\d, total;dur=\d+\.\d, d1-rows;desc="\d+ rows\/\d+ queries"$/);
   assert.doesNotMatch(header, /user-1|token|Synthetic/);
   assert.equal(response.headers.get('Timing-Allow-Origin'), 'https://stirring-pony-3571ac.netlify.app');
 });
@@ -67,14 +67,14 @@ test('responses report durations only through Server-Timing', async () => {
 test('health and unauthenticated errors still carry a total duration', async () => {
   const database = seededDatabase();
   const health = await handleFormalRequest(new Request('https://formal.test/api/health'), { DB: database });
-  assert.match(health.headers.get('Server-Timing'), /^total;dur=\d+\.\d$/);
+  assert.match(health.headers.get('Server-Timing'), /^total;dur=\d+\.\d(, d1-rows;desc="\d+ rows\/\d+ queries")?$/);
   const denied = await handleFormalRequest(
     new Request('https://formal.test/api/me'),
     { DB: database },
     { fetchImpl: profileFetch(), now: NOW }
   );
   assert.equal(denied.status, 401);
-  assert.match(denied.headers.get('Server-Timing'), /^d1-probe;dur=\d+\.\d, total;dur=\d+\.\d$/);
+  assert.match(denied.headers.get('Server-Timing'), /^d1-probe;dur=\d+\.\d, total;dur=\d+\.\d, d1-rows;desc="\d+ rows\/\d+ queries"$/);
 });
 
 class SlowProbeD1 extends RecordingD1 {
