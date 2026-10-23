@@ -27,6 +27,29 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.18.0] - 2026-10-23
+
+### Added
+
+- Add a read-only vendor ordering calendar and a vendor sales footprint (全部／今年／本月, through yesterday, by dish and quantity, with amounts) beside the Vendor workbench; the Worker exposes only an allow-listed calendar shape and `GET /api/vendor/footprints` to Vendors (PRs #165 and #179).
+- Split the Vendor workbench into Today, Orders and Settlement tabs, and let an Admin preview the Vendor layout read-only without Vendor actions (PRs #156 and #162).
+- Add an Admin-reviewed history import for a vendor's pre-launch orders: a preview, a confirmation that records append-only menu-version and shop-name mappings (migration 0022 adds `vendor_legacy_name_mapping_events` and rebuilds the vendor attribution view), and a 歷史已結清 display for legacy-only days with no payment records or cutoff snapshots (PRs #166 and #170).
+- Add a temporary, read-only Vendor code login behind `VENDOR_CODE_LOGIN_ENABLED` for testing; confirmation and dispute actions stay disabled and it can be locked by turning the flag off (PRs #163 and #164).
+- Add a one-click Windows Vendor preview launcher for local Mock UAT and make local Worker UAT pick free ports (PRs #160 and #161).
+- Add read-only legacy order line identity reports and a reviewed canonical identity overlay so old order lines read through verified identities in footprints, Admin summaries and the vendor month (PRs #171–#175).
+
+### Changed
+
+- Show dish names with Chinese variant labels (半飯, 加量) instead of `BASE`/`HALF` codes in footprints, Admin summaries and Vendor screens, and show the current menu name for the same dish everywhere (PRs #167, #175 and #177).
+- Speed up footprint statistics and authentication by batching and parallelising D1 reads, skipping unused guest-session reads and adding `Server-Timing` (PRs #152–#155).
+- Read a Vendor month in batched, concurrent D1 queries: about 170 sequential statements for a 20-day month become a few reads, cutting a 17 s simulated load to about 1 s (PR #169).
+
+### Fixed
+
+- Count COMPLETED imported legacy orders on past days in Vendor reads and the history import preview, matching the Admin summary, so vendors no longer see fewer portions than Admin (PR #178).
+- Group unverified footprint lines by their raw label and count old base-code 半飯 lines as the HALF dish in footprints only, leaving Admin summaries and vendor settlement unchanged (PRs #158 and #159).
+- Align the local Worker UAT seed with migration 0021 (PR #157).
+
 ## [0.17.3] - 2026-10-20
 
 ### Fixed

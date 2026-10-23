@@ -11,6 +11,24 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.18.0': [
+    { name: '新增', changes: [
+      '廠商新增「訂餐」月曆與「足跡」：月曆只能查看，點自家團的日期可看當天訂單總覽；足跡可切換全部、今年、本月，顯示售出餐點的份數、金額與排行（統計到昨天）。',
+      '廠商工作台分成「今日」「訂單」「結算」三個分頁；管理員可唯讀預覽廠商畫面，不會有廠商操作。',
+      '管理員可匯入廠商上線前的過往訂單：先預覽數量、確認後寫入，這些日子顯示為「歷史已結清」，不產生轉帳紀錄。',
+      '新增暫時開放、唯讀的廠商代號登入（可用開關鎖回），方便測試；不能確認或爭議轉帳。',
+      '新增本機 Windows 廠商預覽啟動檔，本機測試會自動挑選可用連接埠。',
+      '舊訂單品項身分報表與已審核的身分對照，讓足跡、管理員訂單總覽與廠商月份讀到正確的品項。'
+    ] },
+    { name: '變更', changes: [
+      '品名一律顯示中文規格（半飯、加量），不再出現 BASE、HALF，同一道餐在各畫面顯示現行菜單名稱。',
+      '足跡、登入與廠商月份載入大幅加速：廠商月份從十幾秒降到約一秒（模擬測試）。'
+    ] },
+    { name: '修正', changes: [
+      '廠商端現在會計入匯入的舊訂單（已完成），與管理員訂單總覽的份數一致。',
+      '足跡中身分未確認的舊品項依原始名稱分組，舊的基本代號半飯品項計為半飯。'
+    ] }
+  ],
   '0.17.3': [
     { name: '修正', changes: [
       '無法確認菜單身份的訂單會保留原始名稱並各自計算，管理頁與足跡排行也會標示身份尚未確認。',
