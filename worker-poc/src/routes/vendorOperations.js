@@ -13,6 +13,7 @@ import {
 import { compatibilityVendorCandidates } from '../domain/menuVendors.js';
 import { deadlineAt, getTaipeiDate, isDateOnly } from '../domain/deadlines.js';
 import { getActiveVendorIdsForPrincipal } from '../domain/vendorMemberships.js';
+import { VENDOR_FOOTPRINT_PERIODS, getVendorFootprints } from '../domain/vendorFootprints.js';
 import { applyVendorHistoryImport, previewVendorHistoryImport } from '../domain/vendorHistory.js';
 
 const text = (value) => String(value ?? '').trim();
@@ -723,6 +724,7 @@ export const handleVendorOperationsRoute = async (request, env, {
   const url = new URL(request.url);
   const now = resolveClock(suppliedNow);
   const vendorRead = request.method === 'GET' && url.pathname === '/api/vendor/orders';
+  const vendorFootprints = request.method === 'GET' && url.pathname === '/api/vendor/footprints';
   const adminRead = request.method === 'GET' && url.pathname === '/api/admin/vendor-operations';
   const adminCreate = request.method === 'POST' && url.pathname === '/api/admin/vendor-payments';
   const vendorAck = request.method === 'POST'
@@ -737,7 +739,7 @@ export const handleVendorOperationsRoute = async (request, env, {
     && /^\/api\/admin\/vendor-payment-allocations\/[^/]+\/adjustments$/.test(url.pathname);
   const historyImport = url.pathname === '/api/admin/vendor-history-import'
     && ['GET', 'POST'].includes(request.method);
-  if (!vendorRead && !adminRead && !adminCreate && !vendorAck && !vendorDispute
+  if (!vendorRead && !vendorFootprints && !adminRead && !adminCreate && !vendorAck && !vendorDispute
     && !adminResolve && !adminReverse && !adminAdjust && !historyImport) return null;
 
   if (historyImport) {
@@ -750,6 +752,19 @@ export const handleVendorOperationsRoute = async (request, env, {
     return jsonResponse(request.method === 'POST'
       ? await applyVendorHistoryImport(env.DB, identity, vendor, { versions: safeInteger(body.expectedVersions ?? 0), names: safeInteger(body.expectedNames ?? 0) }, now)
       : await previewVendorHistoryImport(env.DB, vendor, now));
+  }
+
+  if (vendorFootprints) {
+    const periods = url.searchParams.getAll('period');
+    if ([...url.searchParams.keys()].some((key) => key !== 'period') || periods.length > 1
+      || !VENDOR_FOOTPRINT_PERIODS.includes(periods[0] || 'all')) throw badRequest('INVALID_QUERY');
+    const { vendorIds } = await requireVendorIdentity(request, env, { fetchImpl, now }, ACTIONS.VENDOR_READ_OPERATIONS);
+    const vendors = [];
+    for (const vendorId of vendorIds) {
+      const vendor = await activeVendorForId(env.DB, vendorId);
+      if (vendor) vendors.push(vendor);
+    }
+    return jsonResponse({ success: true, ...await getVendorFootprints(env.DB, vendors, { period: periods[0] || 'all', now }) });
   }
 
   if (vendorRead) {
