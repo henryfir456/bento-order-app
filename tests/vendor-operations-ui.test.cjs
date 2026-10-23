@@ -543,15 +543,30 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
         screenWidth: width, screenHeight: height
       });
       await devtools.send('Page.navigate', { url: appUrl });
-      await waitFor('document.body.innerText.includes("DEV · MOCK VENDOR") && document.body.innerText.includes("每日訂單與轉帳") && document.body.innerText.includes("Mock Bento A")', 'Vendor local Mock portal data');
-      const metrics = JSON.parse(await evaluate(`JSON.stringify({width:innerWidth,documentWidth:document.documentElement.scrollWidth,main:document.querySelector("main")?.innerText||"",nav:[...document.querySelectorAll("nav[aria-label=主要導覽] button")].map(button=>button.innerText.trim())})`));
+      await waitFor('document.body.innerText.includes("DEV · MOCK VENDOR") && document.body.innerText.includes("廠商工作台") && document.body.innerText.includes("Mock Bento A") && document.body.innerText.includes("備餐清單")', 'Vendor local Mock portal today tab');
+      const readMetrics = async () => JSON.parse(await evaluate(`JSON.stringify({width:innerWidth,documentWidth:document.documentElement.scrollWidth,main:document.querySelector("main")?.innerText||"",nav:[...document.querySelectorAll("nav[aria-label=主要導覽] button")].map(button=>button.innerText.trim()),tabs:[...document.querySelectorAll("[role=tab]")].map(button=>button.innerText.trim())})`));
+      const clickTab = (label) => evaluate(`(()=>{const tab=[...document.querySelectorAll("[role=tab]")].find(button=>button.innerText.trim()===${JSON.stringify(label)});tab?.click();return Boolean(tab)})()`);
+      const metrics = await readMetrics();
       assert.equal(metrics.width, width);
       assert.ok(metrics.documentWidth <= width, `Vendor UI should fit ${width}px without horizontal overflow.`);
       assert.match(metrics.main, /LOCAL MOCK · 非 LINE／非實際 API/u);
       assert.match(metrics.main, /Mock Bento A/u);
-      assert.match(metrics.main, /與訂單履行狀態分開/u);
+      assert.deepEqual(metrics.tabs, ['今日', '訂單總覽', '對帳']);
       assert.doesNotMatch(metrics.main, /Local mock vendor|員工編號|我的訂單|餘額/u);
       assert.deepEqual(metrics.nav, ['店家']);
+
+      assert.equal(await clickTab('訂單總覽'), true);
+      await waitFor('document.body.innerText.includes("訂單日數") && document.querySelectorAll("main article").length > 1', 'Vendor order overview with several days');
+      const overview = await readMetrics();
+      assert.ok(overview.documentWidth <= width, `Vendor order overview should fit ${width}px.`);
+      assert.doesNotMatch(overview.main, /已登記轉帳/u);
+
+      assert.equal(await clickTab('對帳'), true);
+      await waitFor('document.body.innerText.includes("與訂單履行狀態分開") && document.body.innerText.includes("未登記差額")', 'Vendor settlement tab');
+      const settlement = await readMetrics();
+      assert.ok(settlement.documentWidth <= width, `Vendor settlement tab should fit ${width}px.`);
+      assert.doesNotMatch(settlement.main, /備餐清單|訂單日數/u);
+      assert.equal(await clickTab('今日'), true);
     }
   } finally {
     devtools?.close();
