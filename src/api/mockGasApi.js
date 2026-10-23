@@ -148,7 +148,7 @@ export const createMockGasApi = ({ mockUser, storage } = {}) => {
 
     if (action === 'getVendorHistoryImport') {
       if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
-      return jsonResponse({ success: true, versionCount: 0, orderCount: 0, dayCount: 0 });
+      return jsonResponse({ success: true, versionCount: 0, nameCount: 0, orderCount: 0, dayCount: 0 });
     }
 
     if (action === 'getAdminVendorOperations') {
@@ -519,8 +519,8 @@ export const createMockGasApi = ({ mockUser, storage } = {}) => {
 
     if (action === 'applyVendorHistoryImport') {
       if (!isMockLineAdmin(user)) return errorResponse('ADMIN_LINE_AUTH_REQUIRED', 403);
-      if (Number(payload?.expectedVersions) !== 0) return errorResponse('VENDOR_HISTORY_PREVIEW_STALE', 409);
-      return jsonResponse({ success: true, versionCount: 0, importedVersions: 0 });
+      if (Number(payload?.expectedVersions) !== 0 || Number(payload?.expectedNames || 0) !== 0) return errorResponse('VENDOR_HISTORY_PREVIEW_STALE', 409);
+      return jsonResponse({ success: true, versionCount: 0, nameCount: 0, importedVersions: 0, importedNames: 0 });
     }
 
     if (action === 'recordVendorPayment') {

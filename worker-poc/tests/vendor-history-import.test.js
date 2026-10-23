@@ -45,7 +45,7 @@ const addVersion = (database, { vendor = VENDOR, versionId, effectiveDate }) => 
   `, `${versionId}-item`, versionId);
 };
 
-const addLegacyOrder = (database, { orderId, serviceDate, versionId, quantity = 1, vendorId = null }) => {
+const addLegacyOrder = (database, { orderId, serviceDate, versionId, quantity = 1, vendorId = null, vendor = VENDOR, lines = null }) => {
   const buyerId = `synthetic-buyer-${orderId}`;
   seedUser(database, { userId: buyerId, lineUserId: `synthetic-line-${buyerId}`, employeeId: `SYNTHETIC-${orderId}` });
   database.run(`
@@ -53,12 +53,14 @@ const addLegacyOrder = (database, { orderId, serviceDate, versionId, quantity = 
       order_id, user_id, display_name_snapshot, order_date, vendor, vendor_id, pickup_floor,
       total_amount, status, created_by_user_id, created_auth_mode, created_at, updated_at
     ) VALUES (?, ?, 'Synthetic Buyer', ?, ?, ?, '1樓', ?, 'ACTIVE', ?, 'line', ?, ?)
-  `, orderId, buyerId, serviceDate, VENDOR, vendorId, quantity * 90, buyerId,
+  `, orderId, buyerId, serviceDate, vendor, vendorId, quantity * 90, buyerId,
   `${serviceDate}T01:00:00.000Z`, `${serviceDate}T01:00:00.000Z`);
-  database.run(`
-    INSERT INTO order_items (order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal)
-    VALUES (?, 1, ?, 'A', 'Synthetic Meal', ?, 90, ?)
-  `, orderId, `${versionId}-item`, quantity, quantity * 90);
+  (lines || [{ menuItemId: `${versionId}-item`, legacyItemId: 'A', name: 'Synthetic Meal' }]).forEach((line, index) => {
+    database.run(`
+      INSERT INTO order_items (order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot, quantity, unit_price, subtotal)
+      VALUES (?, ?, ?, ?, ?, ?, 90, ?)
+    `, orderId, index + 1, line.menuItemId, line.legacyItemId, line.name, quantity, quantity * 90);
+  });
 };
 
 test('Admin previews and imports a vendor history; legacy days show as historically settled', async () => {
@@ -69,7 +71,7 @@ test('Admin previews and imports a vendor history; legacy days show as historica
   addVersion(database, { vendor: 'Synthetic Other Bento', versionId: 'v-other', effectiveDate: '2026-10-01' });
   addLegacyOrder(database, { orderId: 'o1', serviceDate: '2026-09-15', versionId: 'v-sep', quantity: 2 });
   addLegacyOrder(database, { orderId: 'o2', serviceDate: '2026-10-05', versionId: 'v-oct' });
-  addLegacyOrder(database, { orderId: 'o3', serviceDate: '2026-10-06', versionId: 'v-other' });
+  addLegacyOrder(database, { orderId: 'o3', serviceDate: '2026-10-06', versionId: 'v-other', vendor: 'Synthetic Other Bento' });
 
   const before = await call(database, '/api/vendor/orders?month=2026-10', vendorUser);
   assert.equal(before.response.status, 200, JSON.stringify(before.body));
@@ -80,16 +82,17 @@ test('Admin previews and imports a vendor history; legacy days show as historica
   assert.equal(preview.body.versionCount, 2);
   assert.equal(preview.body.orderCount, 2);
   assert.equal(preview.body.dayCount, 2);
+  assert.equal(preview.body.nameCount, 1);
   assert.equal(preview.body.firstOrderDate, '2026-09-15');
 
   const stale = await call(database, '/api/admin/vendor-history-import', {
-    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: 3 }
+    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: 3, expectedNames: 1 }
   });
   assert.equal(stale.response.status, 409);
   assert.equal(stale.body.error, 'VENDOR_HISTORY_PREVIEW_STALE');
 
   const applied = await call(database, '/api/admin/vendor-history-import', {
-    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: 2 }
+    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: 2, expectedNames: 1 }
   });
   assert.equal(applied.response.status, 200, JSON.stringify(applied.body));
   assert.equal(applied.body.importedVersions, 2);
@@ -98,6 +101,8 @@ test('Admin previews and imports a vendor history; legacy days show as historica
 
   const again = await call(database, '/api/admin/vendor-history-import?vendorId=synthetic-history-vendor', admin);
   assert.equal(again.body.versionCount, 0);
+  assert.equal(again.body.nameCount, 0);
+  assert.equal(again.body.orderCount, 0);
 
   const october = await call(database, '/api/vendor/orders?month=2026-10', vendorUser);
   assert.equal(october.response.status, 200, JSON.stringify(october.body));
@@ -122,7 +127,7 @@ test('a day with a canonical (live) order is not treated as historical', async (
   addLegacyOrder(database, { orderId: 'live', serviceDate: '2026-10-05', versionId: 'v-oct', vendorId: 'synthetic-history-vendor' });
   const preview = await call(database, '/api/admin/vendor-history-import?vendorId=synthetic-history-vendor', admin);
   await call(database, '/api/admin/vendor-history-import', {
-    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: preview.body.versionCount }
+    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: preview.body.versionCount, expectedNames: preview.body.nameCount }
   });
   const october = await call(database, '/api/vendor/orders?month=2026-10', vendorUser);
   const day = october.body.days.find((entry) => entry.serviceDate === '2026-10-05');
@@ -141,4 +146,72 @@ test('only an Admin with LINE can preview or import vendor history', async () =>
   });
   assert.equal(write.response.status, 403);
   assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_menu_version_mapping_events').count, 0);
+});
+
+test('legacy orders under the shop name count in full, even with unverified lines', async () => {
+  const database = seed();
+  addVersion(database, { versionId: 'v-oct', effectiveDate: '2026-10-01' });
+  addVersion(database, { vendor: 'Synthetic Other Bento', versionId: 'v-other', effectiveDate: '2026-10-01' });
+  // Verified line only.
+  addLegacyOrder(database, { orderId: 'verified', serviceDate: '2026-10-13', versionId: 'v-oct' });
+  // One verified line plus one line with no menu identity: previously dropped whole.
+  addLegacyOrder(database, { orderId: 'mixed', serviceDate: '2026-10-13', versionId: 'v-oct', lines: [
+    { menuItemId: 'v-oct-item', legacyItemId: 'A', name: 'Synthetic Meal' },
+    { menuItemId: null, legacyItemId: 'H2', name: 'Synthetic Half Rice' }
+  ] });
+  // No menu identity at all.
+  addLegacyOrder(database, { orderId: 'unverified', serviceDate: '2026-10-13', versionId: 'v-oct', lines: [
+    { menuItemId: null, legacyItemId: 'H2', name: 'Synthetic Half Rice' }
+  ] });
+  // Same shop name but a line verified for another vendor: never attributed by name.
+  database.run(`
+    INSERT INTO vendor_menu_version_mapping_events (event_id, menu_version_id, revision, vendor_id, effective_date,
+      mapping_status, evidence_kind, reviewed_by_user_id, reviewed_at)
+    VALUES ('other-map', 'v-other', 1, 'synthetic-other-vendor', '2026-10-01', 'VERIFIED',
+      'MENU_VERSION_ID_EFFECTIVE_DATE', 'synthetic-admin', '2026-10-01T00:00:00.000Z')
+  `);
+  addLegacyOrder(database, { orderId: 'conflict', serviceDate: '2026-10-13', versionId: 'v-other' });
+  // Another shop's legacy order.
+  addLegacyOrder(database, { orderId: 'other-shop', serviceDate: '2026-10-13', versionId: 'v-oct', vendor: 'Synthetic Other Bento',
+    lines: [{ menuItemId: null, legacyItemId: 'Z', name: 'Other Meal' }] });
+
+  const preview = await call(database, '/api/admin/vendor-history-import?vendorId=synthetic-history-vendor', admin);
+  assert.equal(preview.response.status, 200, JSON.stringify(preview.body));
+  assert.equal(preview.body.versionCount, 1);
+  assert.equal(preview.body.nameCount, 1);
+  const applied = await call(database, '/api/admin/vendor-history-import', {
+    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: 1, expectedNames: 1 }
+  });
+  assert.equal(applied.response.status, 200, JSON.stringify(applied.body));
+  assert.equal(applied.body.importedNames, 1);
+  assert.equal(database.get('SELECT COUNT(*) AS count FROM vendor_legacy_name_mapping_events').count, 1);
+
+  const october = await call(database, '/api/vendor/orders?month=2026-10', vendorUser);
+  const day = october.body.days.find((entry) => entry.serviceDate === '2026-10-13');
+  assert.equal(day.source, 'HISTORY');
+  assert.equal(day.orderCount, 3);
+  assert.equal(day.portionCount, 4);
+  assert.equal(day.settlement.historicalSettledTwd, 360);
+  assert.ok(day.items.some((item) => item.name.includes('Synthetic Half Rice')), JSON.stringify(day.items));
+
+  const again = await call(database, '/api/admin/vendor-history-import?vendorId=synthetic-history-vendor', admin);
+  assert.equal(again.body.nameCount, 0);
+  const noop = await call(database, '/api/admin/vendor-history-import', {
+    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: 0, expectedNames: 0 }
+  });
+  assert.equal(noop.body.importedNames, 0);
+});
+
+test('name mapping events are append-only and need an Admin reviewer', async () => {
+  const database = seed();
+  assert.throws(() => database.run(`
+    INSERT INTO vendor_legacy_name_mapping_events (event_id, vendor_name, revision, vendor_id, before_date, mapping_status, reviewed_by_user_id, reviewed_at)
+    VALUES ('e1', ?, 1, 'synthetic-history-vendor', '2026-10-20', 'VERIFIED', 'synthetic-vendor-user', '2026-10-20T00:00:00.000Z')
+  `, VENDOR), /VENDOR_LEGACY_NAME_MAPPING_INVALID/);
+  database.run(`
+    INSERT INTO vendor_legacy_name_mapping_events (event_id, vendor_name, revision, vendor_id, before_date, mapping_status, reviewed_by_user_id, reviewed_at)
+    VALUES ('e2', ?, 1, 'synthetic-history-vendor', '2026-10-20', 'VERIFIED', 'synthetic-admin', '2026-10-20T00:00:00.000Z')
+  `, VENDOR);
+  assert.throws(() => database.run(`UPDATE vendor_legacy_name_mapping_events SET before_date = '2026-12-01'`), /APPEND_ONLY/);
+  assert.throws(() => database.run('DELETE FROM vendor_legacy_name_mapping_events'), /APPEND_ONLY/);
 });

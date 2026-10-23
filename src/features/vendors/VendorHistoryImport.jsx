@@ -36,9 +36,9 @@ export default function VendorHistoryImport({ vendorId, vendorName, onImported }
     setBusy(true); setError(''); setMessage('');
     try {
       const result = await readJson(await apiClient.applyVendorHistoryImport({
-        vendorId, expectedVersions: preview.versionCount
+        vendorId, expectedVersions: preview.versionCount, expectedNames: preview.nameCount || 0
       }));
-      setMessage(`已匯入 ${result.importedVersions} 個菜單版本的過往訂單。`);
+      setMessage(`已匯入過往訂單（${result.orderCount} 筆、${result.dayCount} 天）。`);
       setPreview(null);
       onImported?.();
     } catch (requestError) {
@@ -55,10 +55,11 @@ export default function VendorHistoryImport({ vendorId, vendorName, onImported }
       className="mt-3 min-h-11 w-full rounded-xl border border-[#2C4A3E] px-4 font-bold text-[#2C4A3E] disabled:opacity-50">
       {busy ? '查詢中…' : '查詢可匯入的過往訂單'}
     </button>}
-    {preview && (preview.versionCount === 0
-      ? <p role="status" className="mt-3 text-sm text-slate-700">目前沒有可匯入的過往菜單版本。</p>
+    {preview && (preview.versionCount === 0 && !preview.nameCount
+      ? <p role="status" className="mt-3 text-sm text-slate-700">目前沒有可匯入的過往訂單。</p>
       : <div role="status" className="mt-3 space-y-2 text-sm text-slate-800">
-        <p>可匯入 {preview.versionCount} 個菜單版本（{preview.firstVersionDate} ～ {preview.lastVersionDate}）。</p>
+        <p>店名為「{(preview.menuVersionNames || []).join('、')}」、{preview.beforeDate} 以前的舊訂單會整張算給這家廠商。</p>
+        {preview.versionCount > 0 && <p>另含 {preview.versionCount} 個菜單版本（{preview.firstVersionDate} ～ {preview.lastVersionDate}）。</p>}
         <p>約 {preview.orderCount} 筆訂單、{preview.dayCount} 天{preview.firstOrderDate ? `（${preview.firstOrderDate} ～ ${preview.lastOrderDate}）` : ''}。</p>
         <div className="flex gap-2">
           <button type="button" disabled={busy} onClick={() => void apply()}
