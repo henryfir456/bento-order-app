@@ -43,8 +43,9 @@ test('old 禾拾 meals imported under 蔡老師 are matched by name, not by code
   assert.deepEqual([half.vendorId, half.variantKey, half.basis], ['V-HESHI', 'HALF', SOURCE_BASIS.NAME_TO_MENU]);
 });
 
-test('a migrated 禾拾 name missing from the current menu is left for review', () => {
-  const result = plan([line({ code: 'H2', name: '紅麴腐乳板豆腐' })]);
+test('old 紅麴腐乳板豆腐 is today\'s 紅麴豆腐, and an unknown migrated name is left for review', () => {
+  assert.equal(only([line({ code: 'H2', name: '紅麴腐乳板豆腐' })]).itemCode, 'H3');
+  const result = plan([line({ code: 'H2', name: '完全不存在的菜' })]);
   assert.equal(result.writes.length, 0);
   assert.equal(result.reviews.length, 1);
 });
@@ -134,4 +135,18 @@ test('canonical identities are append-only, reviewed by an Admin, and revised in
   assert.throws(() => database.run('UPDATE order_line_canonical_identities SET basis = ?', 'X'), /APPEND_ONLY/);
   assert.throws(() => database.run('DELETE FROM order_line_canonical_identities'), /APPEND_ONLY/);
   assert.equal(database.get('SELECT COUNT(*) AS n FROM order_line_current_identities').n, 1);
+});
+
+test('risky orders are listed with every line and its planned decision', async () => {
+  const { riskyOrdersCsv } = await import('../scripts/legacy-line-identity-plan.mjs');
+  const csv = riskyOrdersCsv(plan([
+    line({ order_id: 'ok' }),
+    line({ order_id: 'half', line_no: 1 }),
+    line({ order_id: 'half', line_no: 2, code: 'ZZ', name: '未知' }),
+    line({ order_id: 'mix', line_no: 1 }),
+    line({ order_id: 'mix', line_no: 2, code: 'H1', name: '蕃茄鷹豆泥' })
+  ]));
+  assert.ok(!csv.includes(',ok,'));
+  assert.equal(csv.trim().split('\r\n').length, 1 + 4);
+  assert.ok(csv.includes('店家不一致') && csv.includes('部分行需確認') && csv.includes('需確認：'));
 });
