@@ -69,7 +69,7 @@ export const previewVendorHistoryImport = async (database, vendor, now = new Dat
         MIN(o.order_date) AS first_order_date,
         MAX(o.order_date) AS last_order_date
       FROM orders o
-      WHERE o.status = 'ACTIVE'
+      WHERE o.status IN ('ACTIVE', 'COMPLETED')
         AND o.order_date < ?
         AND (
           trim(o.vendor) IN (SELECT value FROM json_each(?))

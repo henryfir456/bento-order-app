@@ -45,15 +45,16 @@ const addVersion = (database, { vendor = VENDOR, versionId, effectiveDate }) => 
   `, `${versionId}-item`, versionId);
 };
 
-const addLegacyOrder = (database, { orderId, serviceDate, versionId, quantity = 1, vendorId = null, vendor = VENDOR, lines = null }) => {
+const addLegacyOrder = (database, { orderId, serviceDate, versionId, quantity = 1, vendorId = null, vendor = VENDOR, lines = null, status = 'ACTIVE' }) => {
   const buyerId = `synthetic-buyer-${orderId}`;
   seedUser(database, { userId: buyerId, lineUserId: `synthetic-line-${buyerId}`, employeeId: `SYNTHETIC-${orderId}` });
   database.run(`
     INSERT INTO orders (
       order_id, user_id, display_name_snapshot, order_date, vendor, vendor_id, pickup_floor,
       total_amount, status, created_by_user_id, created_auth_mode, created_at, updated_at
-    ) VALUES (?, ?, 'Synthetic Buyer', ?, ?, ?, '1樓', ?, 'ACTIVE', ?, 'line', ?, ?)
-  `, orderId, buyerId, serviceDate, vendor, vendorId, quantity * 90, buyerId,
+    ) VALUES (?, ?, 'Synthetic Buyer', ?, ?, ?, '1樓', ?, ?, ?, ?, ?, ?)
+  `, orderId, buyerId, serviceDate, vendor, vendorId, quantity * 90, status, buyerId,
+  status === 'COMPLETED' ? 'legacy_import' : 'line',
   `${serviceDate}T01:00:00.000Z`, `${serviceDate}T01:00:00.000Z`);
   (lines || [{ menuItemId: `${versionId}-item`, legacyItemId: 'A', name: 'Synthetic Meal' }]).forEach((line, index) => {
     database.run(`
@@ -214,4 +215,24 @@ test('name mapping events are append-only and need an Admin reviewer', async () 
   `, VENDOR);
   assert.throws(() => database.run(`UPDATE vendor_legacy_name_mapping_events SET before_date = '2026-12-01'`), /APPEND_ONLY/);
   assert.throws(() => database.run('DELETE FROM vendor_legacy_name_mapping_events'), /APPEND_ONLY/);
+});
+
+test('completed legacy-import orders on past days count for the vendor, like the Admin summary', async () => {
+  const database = seed();
+  addVersion(database, { versionId: 'v-oct', effectiveDate: '2026-10-01' });
+  addLegacyOrder(database, { orderId: 'live', serviceDate: '2026-10-13', versionId: 'v-oct' });
+  addLegacyOrder(database, { orderId: 'done-1', serviceDate: '2026-10-13', versionId: 'v-oct', status: 'COMPLETED' });
+  addLegacyOrder(database, { orderId: 'done-2', serviceDate: '2026-10-13', versionId: 'v-oct', quantity: 2, status: 'COMPLETED' });
+
+  const preview = await call(database, '/api/admin/vendor-history-import?vendorId=synthetic-history-vendor', admin);
+  assert.equal(preview.body.orderCount, 3, JSON.stringify(preview.body));
+  await call(database, '/api/admin/vendor-history-import', {
+    ...admin, method: 'POST', body: { vendorId: 'synthetic-history-vendor', expectedVersions: preview.body.versionCount, expectedNames: preview.body.nameCount }
+  });
+
+  const october = await call(database, '/api/vendor/orders?month=2026-10', vendorUser);
+  const day = october.body.days.find((entry) => entry.serviceDate === '2026-10-13');
+  assert.equal(day.orderCount, 3);
+  assert.equal(day.portionCount, 4);
+  assert.equal(day.settlement.receivableTwd, 360);
 });
