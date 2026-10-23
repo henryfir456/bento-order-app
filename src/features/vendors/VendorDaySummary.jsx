@@ -1,5 +1,5 @@
 import React from 'react';
-import { currency, dayStatusLabel, formatTaipeiTime } from './vendorDayFormat';
+import { currency, dayStatusLabel, formatTaipeiTime, vendorItemLabel } from './vendorDayFormat';
 
 // One service day for the vendor: status, totals and the prep list sorted by
 // quantity. Shared by the Today tab and the calendar day dialog.
@@ -23,7 +23,7 @@ export default function VendorDaySummary({ day }) {
       <ul className="mt-2 divide-y divide-slate-100">
         {[...(day.items || [])].sort((a, b) => b.quantity - a.quantity).map((item, index) => (
           <li key={`${item.name}-${item.variantKey}-${index}`} className="flex items-center justify-between gap-3 py-2">
-            <span className="min-w-0 break-words text-base">{item.name}{item.variantKey ? `（${item.variantKey}）` : ''}</span>
+            <span className="min-w-0 break-words text-base">{vendorItemLabel(item)}</span>
             <span className="shrink-0 text-xl font-extrabold tabular-nums text-[#2C4A3E]">× {item.quantity}</span>
           </li>
         ))}

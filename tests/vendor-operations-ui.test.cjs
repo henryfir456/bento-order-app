@@ -89,6 +89,19 @@ test('Admin can read disabled vendor history but cannot start a new transfer', a
   assert.match(page, /getAdminVendorOperations\(\{ month, vendorId \}\)/);
 });
 
+test('vendor item labels show Chinese variant names instead of variant codes', async () => {
+  const { vendorItemLabel } = await import('../src/features/vendors/vendorDayFormat.js');
+  assert.equal(vendorItemLabel({ name: '紅麴豆腐', variantKey: 'BASE' }), '紅麴豆腐');
+  assert.equal(vendorItemLabel({ name: '紅麴豆腐', variantKey: 'HALF' }), '紅麴豆腐（半飯）');
+  assert.equal(vendorItemLabel({ name: '紅麴豆腐半飯', variantKey: 'HALF' }), '紅麴豆腐半飯');
+  assert.equal(vendorItemLabel({ name: '風味便當', variantKey: 'PLUS' }), '風味便當（加量）');
+  assert.equal(vendorItemLabel({ name: 'A.風味便當', variantKey: '飯少' }), 'A.風味便當（飯少）');
+  assert.equal(vendorItemLabel({ name: 'C.每日特餐', variantKey: '' }), 'C.每日特餐');
+  for (const file of ['VendorOperationsPage.jsx', 'VendorDaySummary.jsx']) {
+    assert.doesNotMatch(read(`src/features/vendors/${file}`), /（\$\{item\.variantKey\}）/);
+  }
+});
+
 test('Admin vendor preview shows the Vendor layout without Admin controls or Vendor actions', async () => {
   const page = read('src/features/vendors/VendorOperationsPage.jsx');
   const { vendorOperationsView } = await import('../src/features/vendors/vendorOperationsPolicy.js');

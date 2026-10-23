@@ -4,7 +4,7 @@ import { formatApiErrorDiagnostic } from '../../api/apiErrors';
 import { canRecordVendorTransfer, isVendorEnabled, vendorOperationsView } from './vendorOperationsPolicy';
 import VendorDaySummary from './VendorDaySummary';
 import VendorHistoryImport from './VendorHistoryImport';
-import { currency, dayStatusLabel, formatTaipeiTime } from './vendorDayFormat';
+import { currency, dayStatusLabel, formatTaipeiTime, vendorItemLabel } from './vendorDayFormat';
 
 const taipeiToday = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit'
@@ -565,7 +565,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
           {day.changeReason && <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">版本原因：{reasonLabel(day.changeReason)}</p>}
           {showOrders && day.items?.length > 0 && <ul className="space-y-1 border-t border-slate-100 pt-2 text-sm">
             {day.items.map((item, index) => <li key={`${item.name}-${item.variantKey}-${index}`} className="flex justify-between gap-3">
-              <span className="min-w-0 break-words">{item.name}{item.variantKey ? `（${item.variantKey}）` : ''} × {item.quantity}</span>
+              <span className="min-w-0 break-words">{vendorItemLabel(item)} × {item.quantity}</span>
               <span className="shrink-0 tabular-nums">{currency(item.amountTwd)}</span>
             </li>)}
           </ul>}
