@@ -11,7 +11,7 @@ import {
   reviewedIdentityOf
 } from '../domain/effectiveOrderItemNames.js';
 import { compatibilityVendorCandidates } from '../domain/menuVendors.js';
-import { deadlineAt, isDateOnly } from '../domain/deadlines.js';
+import { deadlineAt, getTaipeiDate, isDateOnly } from '../domain/deadlines.js';
 import { getActiveVendorIdsForPrincipal } from '../domain/vendorMemberships.js';
 import { applyVendorHistoryImport, previewVendorHistoryImport } from '../domain/vendorHistory.js';
 
@@ -64,9 +64,10 @@ const requireVendorIdentity = async (request, env, { fetchImpl, now }, action) =
   return { identity, vendorIds };
 };
 
-// One read for the whole month: every attributed ACTIVE order line, with a
-// flag for orders placed with a canonical vendor_id (non-historical).
-const activeOrderRowsForMonth = async (database, vendorId, bounds) => {
+// One read for the whole month: every attributed order line, with a flag for
+// orders placed with a canonical vendor_id (non-historical). Like the Admin
+// summary, past days also count COMPLETED orders (imported legacy history).
+const activeOrderRowsForMonth = async (database, vendorId, bounds, today) => {
   const result = await database.prepare(`
     SELECT o.order_id, o.order_date, o.vendor,
       oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot,
@@ -76,9 +77,10 @@ const activeOrderRowsForMonth = async (database, vendorId, bounds) => {
     JOIN vendor_order_vendor_attributions attribution ON attribution.order_id = o.order_id
     JOIN order_items oi ON oi.order_id = o.order_id${reviewedIdentityJoin('oi')}
     LEFT JOIN canonical_order_vendor_assignments direct ON direct.order_id = o.order_id
-    WHERE attribution.vendor_id = ? AND o.order_date >= ? AND o.order_date < ? AND o.status = 'ACTIVE'
+    WHERE attribution.vendor_id = ? AND o.order_date >= ? AND o.order_date < ?
+      AND (o.status = 'ACTIVE' OR (o.status = 'COMPLETED' AND o.order_date < ?))
     ORDER BY o.order_date, o.order_id, oi.line_no
-  `).bind(vendorId, bounds.start, bounds.end).all();
+  `).bind(vendorId, bounds.start, bounds.end, today).all();
   const byDate = new Map();
   for (const row of rowsFrom(result)) {
     const date = String(row.order_date);
@@ -353,7 +355,7 @@ const operationsForVendor = async (database, identity, vendor, month, now) => {
   const resolveName = createEffectiveOrderItemNameResolver(database);
   const [dates, rowsByDate, modes] = await Promise.all([
     datesForMonth(database, vendor, bounds),
-    activeOrderRowsForMonth(database, vendor.vendor_id, bounds),
+    activeOrderRowsForMonth(database, vendor.vendor_id, bounds, getTaipeiDate(now)),
     calendarModesForMonth(database, vendor.name, bounds)
   ]);
   await resolveName.prefetch([...rowsByDate.entries()].flatMap(([orderDate, rows]) => (
