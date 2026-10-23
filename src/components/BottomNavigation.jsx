@@ -10,6 +10,7 @@ const icons = {
 const entries = [
   { key: 'vendor', label: '店家', icon: 'management' },
   { key: 'calendar', label: '訂餐', icon: 'calendar' },
+  { key: 'vendorFootprints', label: '足跡', icon: 'footprints' },
   { key: 'myOrders', label: '我的訂單', icon: 'orders' },
   { key: 'footprints', label: '足跡', icon: 'footprints' },
   { key: 'wallet', label: '餘額', icon: 'wallet' },
@@ -18,8 +19,8 @@ const entries = [
 
 export default function BottomNavigation({ current, onNavigate, role, canViewWallet, canManage, balance, balanceKnown = false }) {
   const visible = role === 'Vendor'
-    ? entries.filter(({ key }) => key === 'vendor' || key === 'calendar')
-    : entries.filter(({ key }) => key !== 'vendor' && (
+    ? entries.filter(({ key }) => key === 'vendor' || key === 'calendar' || key === 'vendorFootprints')
+    : entries.filter(({ key }) => key !== 'vendor' && key !== 'vendorFootprints' && (
       key === 'wallet' ? canViewWallet : key === 'admin' ? canManage : true
     ));
   return <nav aria-label="主要導覽" className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 shadow-[0_-2px_12px_rgba(0,0,0,0.05)] backdrop-blur" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>

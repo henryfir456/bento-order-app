@@ -570,7 +570,7 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
       assert.match(metrics.main, /Mock Bento A/u);
       assert.deepEqual(metrics.tabs, ['今日', '訂單總覽', '對帳']);
       assert.doesNotMatch(metrics.main, /Local mock vendor|員工編號|我的訂單|餘額/u);
-      assert.deepEqual(metrics.nav, ['店家', '訂餐']);
+      assert.deepEqual(metrics.nav, ['店家', '訂餐', '足跡']);
 
       assert.equal(await clickTab('訂單總覽'), true);
       await waitFor('document.body.innerText.includes("訂單日數") && document.querySelectorAll("main article").length > 1', 'Vendor order overview with several days');
@@ -597,6 +597,15 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
       await waitFor('document.querySelector("[role=dialog]")?.innerText.includes("訂單總覽") && document.querySelector("[role=dialog]")?.innerText.includes("備餐清單")', 'Vendor day order summary dialog');
       await evaluate('document.querySelector("[role=dialog] button[aria-label=關閉視窗]").click()');
       await waitFor('![...document.querySelectorAll("[role=dialog]")].some(dialog=>dialog.innerText.includes("訂單總覽"))', 'Vendor day dialog closes');
+      assert.equal(await clickNav('足跡'), true);
+      await waitFor('document.querySelector("[aria-label=廠商售出足跡]")?.innerText.includes("售出餐點排行")', 'Vendor sales footprint');
+      const footprint = await readMetrics();
+      assert.ok(footprint.documentWidth <= width, `Vendor footprint should fit ${width}px.`);
+      assert.match(footprint.main, /累計售出份數/u);
+      assert.match(footprint.main, /統計到昨天為止/u);
+      assert.doesNotMatch(footprint.main, /BASE|HALF|我的便當足跡|餘額/u);
+      await evaluate('[...document.querySelectorAll("[aria-label=統計期間] button")].find(button=>button.innerText.trim()==="本月").click()');
+      await waitFor('document.querySelector("[aria-label=統計期間] button[aria-pressed=true]")?.innerText.trim()==="本月"', 'Vendor footprint month period');
       assert.equal(await clickNav('店家'), true);
       await waitFor('document.body.innerText.includes("備餐清單")', 'Vendor back to workbench');
     }

@@ -170,7 +170,7 @@ export const getHistoricalOrderSummaries = async (database, userId, now = new Da
 };
 
 
-const EXCLUDED_STATISTIC_ITEM_NAMES = Object.freeze([
+export const EXCLUDED_STATISTIC_ITEM_NAMES = Object.freeze([
   '手續費減免',
   '免費加飯',
   '1元'

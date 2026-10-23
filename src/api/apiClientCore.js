@@ -330,6 +330,12 @@ const createGasOperations = ({ gasApi, authClient }) => ({
     );
     throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'getVendorOperations', 'Vendor operations are implemented only by Worker and local Mock transports.');
   },
+  getVendorFootprints: ({ period } = {}) => {
+    if (authClient?.isMock) return gasApi.get(
+      `?action=getVendorFootprints&period=${encodeURIComponent(String(period || 'all'))}&t=${Date.now()}`
+    );
+    throw new ApiContractGapError('VENDOR_OPERATIONS_UNSUPPORTED_TRANSPORT', 'getVendorFootprints', 'Vendor footprints are implemented only by Worker and local Mock transports.');
+  },
   getAdminVendorOperations: ({ month, vendorId } = {}) => {
     if (authClient?.isMock) return gasApi.get(
       `?action=getAdminVendorOperations&month=${encodeURIComponent(String(month || ''))}`
@@ -625,6 +631,9 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'PATCH',
     `/api/admin/vendors/${encodeURIComponent(String(vendorId || '').trim())}`,
     { body: payload }
+  ),
+  getVendorFootprints: ({ period } = {}) => workerRequest(
+    'getVendorFootprints', 'GET', '/api/vendor/footprints', { query: { period } }
   ),
   getVendorOperations: ({ month } = {}) => workerRequest(
     'getVendorOperations', 'GET', '/api/vendor/orders', { query: { month } }

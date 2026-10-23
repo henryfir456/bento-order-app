@@ -483,6 +483,50 @@ const mockServiceDatesBefore = (month, currentDate) => {
   return dates;
 };
 
+// Mock footprint: sums the same synthetic past days the Vendor workbench shows.
+export const getMockVendorFootprints = (mockUser, { period = 'all' } = {}) => {
+  const today = getPrimaryDate();
+  const year = Number(today.slice(0, 4));
+  const monthNumber = Number(today.slice(5, 7));
+  const monthCount = period === 'month' ? 1 : period === 'year' ? monthNumber : 3;
+  const months = Array.from({ length: monthCount }, (_, index) => {
+    const date = new Date(Date.UTC(year, monthNumber - 1 - index, 1));
+    return date.toISOString().slice(0, 7);
+  });
+  const byDish = new Map();
+  const days = new Set();
+  let totalPortions = 0;
+  let totalAmountTwd = 0;
+  months.forEach((month) => {
+    getMockVendorOperations(mockUser, { month }).days
+      .filter((day) => day.serviceDate < today)
+      .forEach((day) => {
+        days.add(day.serviceDate);
+        day.items.forEach((item) => {
+          const key = `${item.name}|${item.variantKey}`;
+          const entry = byDish.get(key) || { name: item.name, variantKey: item.variantKey, resolved: true, portions: 0, amountTwd: 0 };
+          entry.portions += item.quantity;
+          entry.amountTwd += item.amountTwd;
+          byDish.set(key, entry);
+          totalPortions += item.quantity;
+          totalAmountTwd += item.amountTwd;
+        });
+      });
+  });
+  const items = [...byDish.values()].sort((left, right) => right.portions - left.portions);
+  return {
+    success: true,
+    period,
+    startDate: period === 'year' ? `${year}-01-01` : period === 'month' ? `${today.slice(0, 7)}-01` : null,
+    endDate: today,
+    totalPortions,
+    totalAmountTwd,
+    totalOrderDays: days.size,
+    totalMealTypes: items.length,
+    items
+  };
+};
+
 export const getMockVendorOperations = (mockUser, { month, vendorId = null } = {}) => {
   const state = getMockSessionState(mockUser);
   const isVendor = state.user?.role === 'Vendor';

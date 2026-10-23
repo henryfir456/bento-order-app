@@ -43,6 +43,7 @@ import ModernCalendar from './features/calendar/ModernCalendar';
 import VendorHub from './features/vendors/VendorHub';
 import VendorOperationsPage from './features/vendors/VendorOperationsPage';
 import VendorCalendar from './features/vendors/VendorCalendar';
+import VendorFootprints from './features/vendors/VendorFootprints';
 import {
   CANONICAL_VENDOR_FALLBACKS,
   normalizeVendor,
@@ -2854,7 +2855,7 @@ export default function App() {
 
   const navigateBottomTab = (key) => {
     if (authRole === 'Vendor') {
-      if (key === 'vendor' || key === 'calendar') setViewMode(key);
+      if (key === 'vendor' || key === 'calendar' || key === 'vendorFootprints') setViewMode(key);
       return;
     }
     if (key === 'calendar') {
@@ -3837,6 +3838,9 @@ export default function App() {
         )}
         {isRegistered && isVendorAccount && viewMode === 'calendar' && !loading && (
           <VendorCalendar />
+        )}
+        {isRegistered && isVendorAccount && viewMode === 'vendorFootprints' && !loading && (
+          <VendorFootprints />
         )}
 
         {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (

@@ -12,6 +12,7 @@ import {
   getMockSessionState,
   configureMockVendorPaymentStorage,
   getMockVendor,
+  getMockVendorFootprints,
   getMockVendorOperations,
   getMockVendors,
   registerMockUser,
@@ -138,6 +139,12 @@ export const createMockGasApi = ({ mockUser, storage } = {}) => {
     if (action === 'getVendor') {
       const vendor = getUser() ? getMockVendor(mockUser, params.get('vendorId')) : null;
       return vendor ? jsonResponse(vendor) : errorResponse('VENDOR_NOT_FOUND');
+    }
+
+    if (action === 'getVendorFootprints') {
+      return user?.role === 'Vendor'
+        ? jsonResponse(getMockVendorFootprints(mockUser, { period: params.get('period') || 'all' }))
+        : errorResponse('VENDOR_SCOPE_FORBIDDEN', 403);
     }
 
     if (action === 'getVendorOperations') {
