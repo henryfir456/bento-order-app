@@ -178,7 +178,7 @@ const resetLocalDatabase = () => {
   } catch {
     foreignKeyRows = null;
   }
-  if (verification?.last_migration !== '0022_vendor_legacy_name_attribution.sql'
+  if (verification?.last_migration !== '0023_order_line_canonical_identities.sql'
     || verification.synthetic_users !== 5
     || verification.synthetic_vendors !== 2
     || verification.synthetic_owner_mappings !== 1
@@ -189,7 +189,7 @@ const resetLocalDatabase = () => {
     throw new Error('LOCAL_UAT_SEED_VERIFICATION_FAILED');
   }
   return {
-    migration: '0022_vendor_legacy_name_attribution',
+    migration: '0023_order_line_canonical_identities',
     database: localDatabaseName,
     credentialsFile
   };

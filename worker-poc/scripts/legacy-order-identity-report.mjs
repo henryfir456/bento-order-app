@@ -264,7 +264,7 @@ const parseArgs = (argv) => {
   return args;
 };
 
-const remoteQuery = (sql) => {
+export const remoteQuery = (sql) => {
   const result = spawnSync(process.execPath, [
     resolve(workerRoot, 'node_modules', 'wrangler', 'bin', 'wrangler.js'),
     'd1', 'execute', 'bento-formal', '--remote', '--json',
@@ -278,7 +278,7 @@ const remoteQuery = (sql) => {
   return (Array.isArray(parsed) ? parsed : [parsed]).flatMap((entry) => entry.results || []);
 };
 
-const localQuery = async (path) => {
+export const localQuery = async (path) => {
   const { DatabaseSync } = await import('node:sqlite');
   const database = new DatabaseSync(path, { readOnly: true });
   return (sql) => database.prepare(sql).all();
