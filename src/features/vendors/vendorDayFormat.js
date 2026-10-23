@@ -8,3 +8,12 @@ export const dayStatusLabel = (day) => {
 export const formatTaipeiTime = (value) => (value
   ? new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
   : '未設定');
+// Vendors read dish names, not variant codes: BASE is the plain dish, and the
+// other variants get their Chinese label unless the name already says it.
+const VARIANT_LABELS = { BASE: '', HALF: '半飯', PLUS: '加量' };
+export const vendorItemLabel = (item) => {
+  const name = item?.name || '';
+  const key = String(item?.variantKey || '').trim();
+  const label = Object.hasOwn(VARIANT_LABELS, key.toUpperCase()) ? VARIANT_LABELS[key.toUpperCase()] : key;
+  return label && !name.includes(label) ? `${name}（${label}）` : name;
+};
