@@ -1,8 +1,10 @@
 import { getTaipeiDate, isDateOnly } from './deadlines.js';
 import { HISTORICAL_MENU_ITEM_CODE_ALIASES } from './menu.js';
 import {
+  REVIEWED_IDENTITY_COLUMNS,
   createEffectiveOrderItemNameResolver,
-  footprintHalfRiceIdentity
+  reviewedIdentityJoin,
+  reviewedIdentityOf
 } from './effectiveOrderItemNames.js';
 
 const rowsFrom = (result) => (
@@ -200,9 +202,9 @@ export const getOrderStatistics = async (
     SELECT o.order_id, o.order_date,
            COALESCE(NULLIF(TRIM(o.vendor), ''), '未命名店家') AS vendor,
            i.line_no, i.menu_item_id, i.legacy_item_id, i.item_name_snapshot,
-           i.quantity, i.unit_price
+           i.quantity, i.unit_price,${REVIEWED_IDENTITY_COLUMNS}
     FROM orders o
-    JOIN order_items i ON i.order_id = o.order_id
+    JOIN order_items i ON i.order_id = o.order_id${reviewedIdentityJoin('i')}
     WHERE o.user_id = ?
       AND o.order_date <= ?
       AND o.status IN ('ACTIVE', 'COMPLETED')${rangePredicate}
@@ -224,7 +226,7 @@ export const getOrderStatistics = async (
   await resolveName.prefetch(rowsFrom(result).map((row) => ({
     vendor: row.vendor,
     orderDate: row.order_date,
-    item: { menu_item_id: row.menu_item_id }
+    item: { menu_item_id: row.menu_item_id, reviewed_identity: reviewedIdentityOf(row) }
   })));
 
   for (const row of rowsFrom(result)) {
@@ -233,6 +235,7 @@ export const getOrderStatistics = async (
       legacy_item_id: row.legacy_item_id,
       item_name_snapshot: row.item_name_snapshot,
       unit_price: row.unit_price,
+      reviewed_identity: reviewedIdentityOf(row),
       fallbackKey: `${row.order_id}:${row.line_no}`
     };
     const effectiveItem = await resolveName({
@@ -240,31 +243,26 @@ export const getOrderStatistics = async (
       orderDate: row.order_date,
       item
     });
-    if (EXCLUDED_STATISTIC_ITEM_NAMES.includes(String(row.item_name_snapshot || ''))
+    if (effectiveItem.isAdjustment
+      || EXCLUDED_STATISTIC_ITEM_NAMES.includes(String(row.item_name_snapshot || ''))
       || EXCLUDED_STATISTIC_ITEM_NAMES.includes(effectiveItem.itemName)) continue;
     const portions = Number(row.quantity || 0);
     const vendor = String(effectiveItem.vendor || row.vendor || '未命名店家');
     const name = String(effectiveItem.itemName || '');
-    // An unresolved line keeps its own snapshot rather than joining a verified
-    // menu item, but repeated orders of the same raw label are one footprint
-    // row: group them by vendor, item code, variant, original name and unit
-    // price. The price stays in the key because one legacy code was reused for
-    // different dishes at different prices. Old lines recorded under a dish's
-    // base code are counted as its 半飯 variant when footprintHalfRiceIdentity
-    // finds evidence for it.
-    const halfRice = footprintHalfRiceIdentity(effectiveItem, item);
+    // A line without a verified or reviewed identity keeps its own snapshot,
+    // grouped by vendor, item code, variant, original name and unit price. The
+    // price stays in the key because one legacy code was reused for different
+    // dishes at different prices.
     const groupKey = effectiveItem.resolved
       ? effectiveItem.identityKey
-      : halfRice
-        ? halfRice.identityKey
-        : JSON.stringify([
-          effectiveItem.vendor,
-          'snapshot',
-          HISTORICAL_MENU_ITEM_CODE_ALIASES[effectiveItem.itemCode] || effectiveItem.itemCode,
-          effectiveItem.variantKey,
-          name,
-          Number(row.unit_price)
-        ]);
+      : JSON.stringify([
+        effectiveItem.vendor,
+        'snapshot',
+        HISTORICAL_MENU_ITEM_CODE_ALIASES[effectiveItem.itemCode] || effectiveItem.itemCode,
+        effectiveItem.variantKey,
+        name,
+        Number(row.unit_price)
+      ]);
     totalPortions += portions;
     days.add(row.order_date);
     mealTypes.add(groupKey);
@@ -273,21 +271,18 @@ export const getOrderStatistics = async (
       name,
       identityKey: groupKey,
       vendor: effectiveItem.vendor,
-      variantKey: halfRice ? halfRice.variantKey : effectiveItem.variantKey,
-      itemCode: halfRice ? halfRice.itemCode : effectiveItem.itemCode,
+      variantKey: effectiveItem.variantKey,
+      itemCode: effectiveItem.itemCode,
       resolved: effectiveItem.resolved,
-      resolutionStatus: halfRice ? 'inferred_half_rice' : effectiveItem.resolutionStatus,
+      resolutionStatus: effectiveItem.resolutionStatus,
       portions: 0
     };
     // Rows are ordered by effective order date, so retain the latest menu
-    // label when the same stable meal identity was renamed over time. An
-    // inferred 半飯 line never replaces a verified menu label.
+    // label when the same stable meal identity was renamed over time.
+    existing.name = name;
     if (effectiveItem.resolved) {
-      existing.name = name;
       existing.resolved = true;
-      existing.resolutionStatus = 'resolved';
-    } else if (!halfRice) {
-      existing.name = name;
+      existing.resolutionStatus = effectiveItem.resolutionStatus;
     }
     existing.portions += portions;
     itemsByIdentity.set(groupKey, existing);

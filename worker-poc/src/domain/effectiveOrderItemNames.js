@@ -1,6 +1,5 @@
 import { getCustomerMenu, HISTORICAL_MENU_ITEM_CODE_ALIASES } from './menu.js';
 import {
-  legacyItemHasHalfVariant,
   normalizeLegacyMenuIdentity,
   prefetchCompatibilityMenuBaselines,
   prefetchMenuItemChanges
@@ -152,46 +151,30 @@ export const resolveEffectiveOrderItemName = ({
 };
 
 /**
- * Footprint statistics only (never Admin summaries or vendor settlement): an
- * unresolved order line whose snapshot code is a dish's base code is counted
- * as that dish's HALF (半飯) variant when either
- * - its own stored menu item is that dish's HALF item (identity_mismatch), or
- * - it has no menu item ID and its snapshot name says 半飯,
- * and the reviewed legacy mapping says the dish has a HALF variant. Returns the
- * same identity key a verified HALF menu item gets, or null.
+ * Reviewed per-line identity (migration 0023). Callers LEFT JOIN
+ * order_line_current_identities and pass the row through reviewedIdentityOf so
+ * an old order line resolves by its reviewed vendor, item code and variant
+ * instead of by its snapshot code or name.
  */
-export const footprintHalfRiceIdentity = (effectiveItem, item = {}) => {
-  if (!effectiveItem || effectiveItem.resolved !== false) return null;
-  const vendor = effectiveItem.vendor;
-  const base = normalizeLegacyMenuIdentity({
-    vendor,
-    itemCode: canonicalLegacyItemId(item?.legacy_item_id || item?.item_id)
-  });
-  if (!base || base.variant_key !== 'BASE'
-    || !legacyItemHasHalfVariant({ vendor, itemCode: base.item_code })) return null;
-  let evidence = null;
-  const stored = effectiveItem.storedMenuIdentity;
-  if (effectiveItem.resolutionStatus === 'identity_mismatch' && stored
-    && normalizeMenuVendor(stored.vendor) === vendor) {
-    const storedIdentity = normalizeLegacyMenuIdentity({
-      vendor,
-      itemCode: stored.legacyItemId,
-      variantKey: stored.variantKey
-    });
-    if (storedIdentity?.item_code === base.item_code && storedIdentity.variant_key === 'HALF') {
-      evidence = 'menu_item';
-    }
-  } else if (!text(item?.menu_item_id) && itemNameFor(item).includes('半飯')) {
-    evidence = 'name';
+export const REVIEWED_IDENTITY_COLUMNS = `
+  reviewed.line_kind AS reviewed_line_kind,
+  reviewed_vendor.name AS reviewed_vendor_name,
+  reviewed.item_code AS reviewed_item_code,
+  reviewed.variant_key AS reviewed_variant_key`;
+
+export const reviewedIdentityJoin = (itemAlias) => `
+  LEFT JOIN order_line_current_identities reviewed
+    ON reviewed.order_id = ${itemAlias}.order_id AND reviewed.line_no = ${itemAlias}.line_no
+  LEFT JOIN vendors reviewed_vendor ON reviewed_vendor.vendor_id = reviewed.vendor_id`;
+
+export const reviewedIdentityOf = (row) => (row?.reviewed_line_kind
+  ? {
+    lineKind: row.reviewed_line_kind,
+    vendorName: text(row.reviewed_vendor_name),
+    itemCode: text(row.reviewed_item_code),
+    variantKey: text(row.reviewed_variant_key)
   }
-  if (!evidence) return null;
-  return {
-    identityKey: identity(vendor, 'menu', base.item_code, 'HALF'),
-    itemCode: base.item_code,
-    variantKey: 'HALF',
-    evidence
-  };
-};
+  : null);
 
 // D1 allows at most 100 bound parameters per statement.
 const IDENTITY_BATCH_SIZE = 50;
@@ -208,7 +191,58 @@ export const createEffectiveOrderItemNameResolver = (database) => {
     // Name resolution never reads image URLs, so skip the image fallback read.
     includeDisplayImages: false
   });
+  const resolveReviewed = async ({ vendor, orderDate, item }) => {
+    const reviewed = item.reviewed_identity;
+    if (reviewed.lineKind === 'ADJUSTMENT') {
+      const adjustmentVendor = normalizeMenuVendor(vendor) || text(vendor) || '未命名店家';
+      return {
+        itemName: itemNameFor(item),
+        identityKey: identity(adjustmentVendor, 'adjustment', itemNameFor(item)),
+        vendor: adjustmentVendor,
+        variantKey: '',
+        itemCode: text(item.legacy_item_id),
+        resolved: true,
+        resolutionStatus: 'adjustment',
+        isAdjustment: true,
+        orderDate
+      };
+    }
+    const reviewedVendor = normalizeMenuVendor(reviewed.vendorName);
+    const reviewedItem = {
+      ...item,
+      reviewed_identity: null,
+      menu_item_id: '',
+      legacy_item_id: reviewed.itemCode,
+      variant_key: reviewed.variantKey,
+      stable_identity: true
+    };
+    let result = null;
+    if (isDateOnly(orderDate)) {
+      const cacheKey = identity(reviewedVendor, orderDate);
+      if (!menus.has(cacheKey)) menus.set(cacheKey, loadMenu(reviewedVendor, orderDate));
+      result = resolveEffectiveOrderItemName({
+        vendor: reviewedVendor,
+        orderDate,
+        item: reviewedItem,
+        menuItems: await menus.get(cacheKey)
+      });
+    }
+    if (result?.resolved) return result;
+    // The dish is not on that day's effective menu (older history), but the
+    // reviewed identity is authoritative: group it with the same stable key.
+    return {
+      itemName: itemNameFor(item),
+      identityKey: identity(reviewedVendor, 'menu', reviewed.itemCode, reviewed.variantKey),
+      vendor: reviewedVendor,
+      variantKey: reviewed.variantKey,
+      itemCode: reviewed.itemCode,
+      resolved: true,
+      resolutionStatus: 'reviewed_identity',
+      orderDate
+    };
+  };
   const resolve = async ({ vendor, orderDate, item } = {}) => {
+    if (item?.reviewed_identity) return resolveReviewed({ vendor, orderDate, item });
     const normalizedVendor = normalizeMenuVendor(vendor) || text(vendor);
     const cacheKey = identity(normalizedVendor, orderDate);
     let sourceItem = { ...item };
@@ -268,6 +302,7 @@ export const createEffectiveOrderItemNameResolver = (database) => {
    */
   resolve.prefetch = async (entries = []) => {
     const menuItemIds = [...new Set(entries
+      .filter((entry) => !entry?.item?.reviewed_identity)
       .map((entry) => text(entry?.item?.menu_item_id))
       .filter((id) => id && !historicalIdentities.has(id)))];
     const identityBatches = [];
@@ -293,7 +328,10 @@ export const createEffectiveOrderItemNameResolver = (database) => {
     }
     const pairs = new Map();
     entries.forEach((entry) => {
-      const normalizedVendor = normalizeMenuVendor(entry?.vendor) || text(entry?.vendor);
+      const reviewed = entry?.item?.reviewed_identity;
+      if (reviewed?.lineKind === 'ADJUSTMENT') return;
+      const normalizedVendor = normalizeMenuVendor(reviewed?.vendorName || entry?.vendor)
+        || text(reviewed?.vendorName || entry?.vendor);
       if (!normalizedVendor || !isDateOnly(entry?.orderDate)) return;
       pairs.set(identity(normalizedVendor, entry.orderDate), [normalizedVendor, entry.orderDate]);
     });
