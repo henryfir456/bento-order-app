@@ -6,6 +6,7 @@ import {
 } from './menuItemChanges.js';
 import { normalizeMenuVendor } from './menuVendors.js';
 import { isDateOnly } from './deadlines.js';
+import { getTaipeiDate } from '../contract.js';
 
 const text = (value) => String(value ?? '').trim();
 const canonicalLegacyItemId = (value) => {
@@ -180,7 +181,7 @@ export const reviewedIdentityOf = (row) => (row?.reviewed_line_kind
 const IDENTITY_BATCH_SIZE = 50;
 
 /** Cache effective vendor/date menus while resolving any number of snapshots. */
-export const createEffectiveOrderItemNameResolver = (database) => {
+export const createEffectiveOrderItemNameResolver = (database, { referenceDate = getTaipeiDate() } = {}) => {
   const menus = new Map();
   const historicalIdentities = new Map();
   const readCache = new Map();
@@ -229,9 +230,22 @@ export const createEffectiveOrderItemNameResolver = (database) => {
     }
     if (result?.resolved) return result;
     // The dish is not on that day's effective menu (older history), but the
-    // reviewed identity is authoritative: group it with the same stable key.
+    // reviewed identity is authoritative: group it with the same stable key and
+    // show the dish's current menu name when it still exists.
+    let currentName = '';
+    if (isDateOnly(referenceDate)) {
+      const currentKey = identity(reviewedVendor, referenceDate);
+      if (!menus.has(currentKey)) menus.set(currentKey, loadMenu(reviewedVendor, referenceDate));
+      const current = resolveEffectiveOrderItemName({
+        vendor: reviewedVendor,
+        orderDate: referenceDate,
+        item: reviewedItem,
+        menuItems: await menus.get(currentKey)
+      });
+      if (current.resolved) currentName = current.itemName;
+    }
     return {
-      itemName: itemNameFor(item),
+      itemName: currentName || itemNameFor(item),
       identityKey: identity(reviewedVendor, 'menu', reviewed.itemCode, reviewed.variantKey),
       vendor: reviewedVendor,
       variantKey: reviewed.variantKey,
