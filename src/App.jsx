@@ -362,7 +362,8 @@ export default function App() {
     : normalOrderControlsOpen;
 
   const readCurrentCredential = useCallback(() => {
-    if (apiClient.transport === 'worker' && authMode === 'employee_guest') {
+    if (apiClient.transport === 'worker'
+      && (authMode === 'employee_guest' || authMode === 'vendor_code')) {
       return guestSessionStore.getGuestSession()?.token || '';
     }
     return authClient.getAccessToken();
@@ -1748,7 +1749,9 @@ export default function App() {
       const response = await apiClient.employeeGuestLogin({ employeeId });
       const data = await response.json();
       if (selection !== authSelectionRef.current) return;
-      if (!data.success || data.authMode !== 'employee_guest' || !data.token || !data.expiresAt) {
+      // vendor_code: temporary Vendor sign-in by vendor code (Worker switch).
+      if (!data.success || !['employee_guest', 'vendor_code'].includes(data.authMode)
+        || !data.token || !data.expiresAt) {
         throw new Error(data.error || data.message || 'EMPLOYEE_GUEST_LOGIN_INVALID_RESPONSE');
       }
       guestSessionStore.setGuestSession({ token: data.token, expiresAt: data.expiresAt });
@@ -3586,6 +3589,18 @@ export default function App() {
               />
             )}
             {isVendorAccount && <span className="font-bold">廠商工作台</span>}
+            {isVendorAccount && authMode === 'vendor_code' && (
+              <button
+                type="button"
+                onClick={() => {
+                  guestSessionStore.clearGuestSession({ reason: 'vendor-code-logout', notify: false });
+                  window.location.reload();
+                }}
+                className="rounded bg-emerald-800/80 px-2 py-1 font-bold text-emerald-100 transition hover:bg-emerald-700"
+              >
+                登出
+              </button>
+            )}
             {!isVendorAccount && <span aria-hidden="true">👤</span>}
             {!isVendorAccount && headerRoleLabel && isRegistered && (
               <span className="rounded bg-emerald-800/80 px-1.5 py-0.5 font-bold">
@@ -3817,7 +3832,7 @@ export default function App() {
         )}
 
         {isRegistered && isVendorAccount && viewMode === 'vendor' && !loading && (
-          <VendorOperationsPage role="Vendor" mock={authClient.isMock} />
+          <VendorOperationsPage role="Vendor" mock={authClient.isMock} readOnly={authMode === 'vendor_code'} />
         )}
 
         {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (

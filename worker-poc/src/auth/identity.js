@@ -16,6 +16,7 @@ import {
   isProtectedAccount,
   requireProtectedLineOwner
 } from './protectedAccounts.js';
+import { resolveVendorCodeSession } from './vendorCodeLogin.js';
 
 const bearerToken = (request) => {
   const header = request?.headers?.get('Authorization') || '';
@@ -164,6 +165,24 @@ export const resolveCanonicalIdentity = async (
     // this read entirely.
     const guest = await inspectGuestSession(env.DB, token, { now });
     if (viewAsTarget(new URL(request.url))) throw forbidden('VIEW_AS_FORBIDDEN');
+    if (guest?.vendorPrincipal) {
+      // Temporary vendor code login (VENDOR_CODE_LOGIN_ENABLED). The vendor is
+      // resolved as its canonical Vendor principal, but stays read-only.
+      const vendorUser = await resolveVendorCodeSession(env, guest, now);
+      const actor = actorFromUser(vendorUser, { authMode: 'line' });
+      actor.vendorCodeLogin = true;
+      actor.capabilities = actor.capabilities.filter((action) => ![
+        'VENDOR_CONFIRM_TRANSFER',
+        'VENDOR_DISPUTE_TRANSFER'
+      ].includes(action));
+      return {
+        actor,
+        authorizationActor: actor,
+        effectiveSubject: actor,
+        viewAs: null,
+        guestSession: guest.session
+      };
+    }
     if (!guest?.normal) throw unauthorized('GUEST_SESSION_INVALID');
     if (await hasAnyProtectedEmployeeId(env.DB,
       guest.employeeId,

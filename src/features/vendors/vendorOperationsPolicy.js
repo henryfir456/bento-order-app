@@ -10,13 +10,15 @@ export const canRecordVendorTransfer = (role, vendor) => (
 // only changes what is rendered: data still comes from the Admin read API,
 // Admin controls are hidden, and Vendor-only actions stay disabled so an Admin
 // can never acknowledge or dispute a transfer on the vendor's behalf.
-export const vendorOperationsView = (role, vendorPreview = false) => {
+// A Vendor signed in by vendor code (temporary testing switch) is read-only:
+// the Worker rejects acknowledgement and dispute for that session.
+export const vendorOperationsView = (role, vendorPreview = false, readOnly = false) => {
   const isVendor = role === 'Vendor';
   const previewing = role === 'Admin' && vendorPreview === true;
   return {
     previewing,
     vendorLayout: isVendor || previewing,
     adminControls: role === 'Admin' && !previewing,
-    vendorActionsEnabled: isVendor
+    vendorActionsEnabled: isVendor && readOnly !== true
   };
 };

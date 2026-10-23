@@ -56,7 +56,7 @@ export const getMe = (identity) => {
     success: true,
     registered,
     identityState,
-    authMode: actor.authMode || null,
+    authMode: actor.vendorCodeLogin === true ? 'vendor_code' : actor.authMode || null,
     user,
     lineBound: user?.lineBound === true,
     ...(employeeBindingRequired ? {
