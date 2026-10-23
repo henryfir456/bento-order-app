@@ -427,6 +427,43 @@ export const updateMockVendor = (mockUser, vendorId, patch = {}) => {
 // These fixtures are synthetic and never call a Worker, LINE login, bank
 // service, or persistent database. Vendor payment entries may be kept in
 // localStorage so a local Mock role can be restarted in the same browser.
+const MOCK_VENDOR_A_MENU = Object.freeze([
+  { name: 'A.風味便當', variantKey: '', unitPrice: 90 },
+  { name: 'A.風味便當', variantKey: '飯少', unitPrice: 90 },
+  { name: 'B.水煮低醣健康餐', variantKey: '', unitPrice: 100 },
+  { name: 'C.每日特餐', variantKey: '', unitPrice: 110 }
+]);
+
+// Deterministic synthetic day for the primary mock vendor, so the Vendor
+// workbench has several days, items and totals to show in local Mock mode.
+const mockVendorADay = (serviceDate) => {
+  const day = Number(serviceDate.slice(8, 10));
+  const items = MOCK_VENDOR_A_MENU.map((entry, index) => {
+    const quantity = (day * (index + 3) + index) % 6 + (index === 0 ? 3 : 0);
+    return { name: entry.name, variantKey: entry.variantKey, quantity, amountTwd: quantity * entry.unitPrice };
+  }).filter((item) => item.quantity > 0);
+  const portionCount = items.reduce((sum, item) => sum + item.quantity, 0);
+  return {
+    orderCount: Math.max(1, Math.round(portionCount * 0.8)),
+    portionCount,
+    amountTwd: items.reduce((sum, item) => sum + item.amountTwd, 0),
+    items
+  };
+};
+
+const mockServiceDatesBefore = (month, currentDate) => {
+  const dates = [];
+  const [year, monthIndex] = month.split('-').map(Number);
+  for (let day = 1; day <= 31; day += 1) {
+    const date = new Date(Date.UTC(year, monthIndex - 1, day));
+    if (date.getUTCMonth() !== monthIndex - 1) break;
+    const key = date.toISOString().slice(0, 10);
+    if (key >= currentDate) break;
+    if (date.getUTCDay() !== 0 && date.getUTCDay() !== 6) dates.push(key);
+  }
+  return dates;
+};
+
 export const getMockVendorOperations = (mockUser, { month, vendorId = null } = {}) => {
   const state = getMockSessionState(mockUser);
   const isVendor = state.user?.role === 'Vendor';
@@ -440,6 +477,11 @@ export const getMockVendorOperations = (mockUser, { month, vendorId = null } = {
   for (const vendor of vendors) {
     const serviceDates = new Set();
     if (selectedMonth === currentMonth) serviceDates.add(currentDate);
+    if (vendor.id === 'mock-vendor-a' && selectedMonth <= currentMonth) {
+      mockServiceDatesBefore(selectedMonth, currentDate)
+        .filter((date) => !date.endsWith('-01'))
+        .forEach((date) => serviceDates.add(date));
+    }
     state.vendorPayments
       .filter((payment) => payment.vendorId === vendor.id)
       .forEach((payment) => payment.allocations.forEach((allocation) => {
@@ -465,26 +507,30 @@ export const getMockVendorOperations = (mockUser, { month, vendorId = null } = {
             resolution: payment.resolution || null,
             reversalReason: payment.reversalReason || null
           })));
+      const pastDay = serviceDate < currentDate;
+      const hasOrders = serviceDate === currentDate
+        || (vendor.id === 'mock-vendor-a' && pastDay && !serviceDate.endsWith('-01'));
       const estimate = vendor.id === 'mock-vendor-a'
-        ? { orderCount: 3, portionCount: 4, amountTwd: 320,
-          items: [{ name: 'Mock Bento', variantKey: '', quantity: 4, amountTwd: 320 }] }
+        ? mockVendorADay(serviceDate)
         : { orderCount: 2, portionCount: 2, amountTwd: 160,
           items: [{ name: 'Mock Noodle', variantKey: '', quantity: 2, amountTwd: 160 }] };
-      const amountTwd = serviceDate === currentDate ? estimate.amountTwd : 0;
+      const amountTwd = hasOrders && (vendor.id === 'mock-vendor-a' || serviceDate === currentDate)
+        ? estimate.amountTwd : 0;
+      const counted = amountTwd > 0;
       const registeredTransferTwd = transfers.reduce((sum, transfer) => sum + transfer.allocatedAmountTwd, 0);
       days.push({
         serviceDate,
         vendorId: vendor.id,
         vendorName: vendor.name,
         cutoffAt: `${serviceDate}T02:00:00.000Z`,
-        cutoffPassed: false,
+        cutoffPassed: pastDay,
         source: 'MOCK',
-        revision: 0,
+        revision: pastDay ? 1 : 0,
         changeReason: null,
-        orderCount: serviceDate === currentDate ? estimate.orderCount : 0,
-        portionCount: serviceDate === currentDate ? estimate.portionCount : 0,
+        orderCount: counted ? estimate.orderCount : 0,
+        portionCount: counted ? estimate.portionCount : 0,
         amountTwd,
-        items: serviceDate === currentDate ? estimate.items : [],
+        items: counted ? estimate.items : [],
         settlement: {
           receivableTwd: amountTwd,
           registeredTransferTwd,

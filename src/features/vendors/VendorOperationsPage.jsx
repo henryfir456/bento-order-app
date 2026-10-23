@@ -15,6 +15,19 @@ const reasonLabel = (reason) => ({
   ORDER_REPLACEMENT_OR_PRICE_CHANGE: '訂單更換／價格變更後新增調整版本',
   ORDER_ACTIVITY_CHANGE: '訂單變動後新增調整版本'
 }[reason] || reason || '—');
+const dayStatusLabel = (day) => {
+  if (day.source === 'SNAPSHOT') return `已截止・快照 v${day.revision}`;
+  if (day.source === 'MOCK') return day.cutoffPassed ? '已截止（Mock）' : '未截止・暫估（Mock）';
+  return day.cutoffPassed ? '已截止' : '未截止・暫估';
+};
+const formatTaipeiTime = (value) => (value
+  ? new Date(value).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })
+  : '未設定');
+const VENDOR_TABS = Object.freeze([
+  { key: 'today', label: '今日' },
+  { key: 'orders', label: '訂單總覽' },
+  { key: 'settlement', label: '對帳' }
+]);
 const paymentStatusLabel = (status) => ({
   REGISTERED: '已登記轉帳・待廠商確認',
   ACKNOWLEDGED: '廠商已確認收款',
@@ -59,6 +72,8 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
   const [reversals, setReversals] = useState({});
   const [busyKey, setBusyKey] = useState('');
   const [vendorPreview, setVendorPreview] = useState(false);
+  const [tab, setTab] = useState('today');
+  const [loadedAt, setLoadedAt] = useState(null);
   const view = vendorOperationsView(role, vendorPreview);
   const requestRef = useRef(0);
   const idempotencyRef = useRef({ payload: '', key: createKey() });
@@ -77,6 +92,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
       const data = await readResponse(response);
       if (requestId !== requestRef.current) return;
       setDays(Array.isArray(data.days) ? data.days : []);
+      setLoadedAt(new Date());
       setVendorName(data.vendor?.name || data.vendors?.[0]?.name || '');
       if (isVendor && Array.isArray(data.vendors)) setVendors(data.vendors);
     } catch (requestError) {
@@ -112,6 +128,8 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
   }, [load]);
 
   const totals = useMemo(() => days.reduce((result, day) => ({
+    orderDays: result.orderDays + (Number(day.orderCount || 0) > 0 ? 1 : 0),
+    amount: result.amount + Number(day.amountTwd || 0),
     orders: result.orders + Number(day.orderCount || 0),
     portions: result.portions + Number(day.portionCount || 0),
     receivable: result.receivable + Number(day.settlement?.receivableTwd || day.amountTwd || 0),
@@ -120,7 +138,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
     pending: result.pending + Number(day.settlement?.pendingConfirmationTwd || 0),
     confirmed: result.confirmed + Number(day.settlement?.confirmedTwd || 0),
     disputed: result.disputed + Number(day.settlement?.disputedTwd || 0)
-  }), { orders: 0, portions: 0, receivable: 0, registered: 0, unregistered: 0, pending: 0, confirmed: 0, disputed: 0 }), [days]);
+  }), { orderDays: 0, amount: 0, orders: 0, portions: 0, receivable: 0, registered: 0, unregistered: 0, pending: 0, confirmed: 0, disputed: 0 }), [days]);
 
   const performAction = async (key, action) => {
     setBusyKey(key);
@@ -348,12 +366,28 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
     </div>
   );
 
+  const showToday = view.vendorLayout && tab === 'today';
+  const showOrders = !view.vendorLayout || tab === 'orders';
+  const showSettlement = !view.vendorLayout || tab === 'settlement';
+  const today = taipeiToday();
+  const todayDay = days.find((day) => day.serviceDate === today);
+  const selectTab = (key) => {
+    setTab(key);
+    if (key === 'today' && month !== currentMonth()) setMonth(currentMonth());
+  };
+  const listedDays = days.filter((day) => (
+    !view.vendorLayout
+    || (tab === 'orders' && Number(day.orderCount || 0) > 0)
+    || (tab === 'settlement' && (Number(day.settlement?.receivableTwd || 0) > 0
+      || (day.settlement?.transfers || []).length > 0))
+  ));
+
   return (
     <section aria-label={isVendor ? '廠商每日訂單與轉帳對帳' : '廠商每日訂單與轉帳管理'} className="mx-auto w-full max-w-xl space-y-4">
       <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-[#2C4A3E]">{view.vendorLayout ? '每日訂單與轉帳' : '廠商訂單與轉帳'}</h2>
+            <h2 className="text-xl font-bold text-[#2C4A3E]">{view.vendorLayout ? '廠商工作台' : '廠商訂單與轉帳'}</h2>
             <p className="mt-1 text-sm text-slate-600">{vendorName || (isAdmin ? '選擇廠商查看' : '依已授權廠商範圍顯示')}</p>
           </div>
           {mock && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-extrabold text-amber-900">LOCAL MOCK · 非 LINE／非實際 API</span>}
@@ -369,11 +403,11 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
               </option>)}
             </select>
           </label>}
-          <label className="space-y-1 text-sm font-medium text-slate-700">
+          {!showToday && <label className="space-y-1 text-sm font-medium text-slate-700">
             <span>月份（台北時間）</span>
             <input type="month" value={month} onChange={(event) => setMonth(event.target.value)}
               className="min-h-11 w-full rounded-lg border border-slate-300 px-3" />
-          </label>
+          </label>}
           <button type="button" onClick={() => void load()} disabled={loading || (!isVendor && !vendorId)}
             className="min-h-11 self-end rounded-lg border border-slate-300 px-4 py-2 font-bold text-slate-700 disabled:opacity-50">
             {loading ? '載入中…' : '重新整理'}
@@ -383,13 +417,22 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
           <input type="checkbox" checked={vendorPreview} onChange={(event) => setVendorPreview(event.target.checked)} />
           以廠商視角預覽（唯讀）
         </label>}
+        {loadedAt && <p className="mt-2 text-xs text-slate-500">最後更新：{loadedAt.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>}
       </div>
+
+      {view.vendorLayout && <div role="tablist" aria-label="廠商工作台分頁" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+        {VENDOR_TABS.map(({ key, label }) => <button key={key} type="button" role="tab" aria-selected={tab === key}
+          onClick={() => selectTab(key)}
+          className={`min-h-11 rounded-lg text-sm font-bold ${tab === key ? 'bg-white text-[#2C4A3E] shadow-sm' : 'text-slate-600'}`}>
+          {label}
+        </button>)}
+      </div>}
 
       {view.previewing && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
         廠商視角預覽：顯示{vendorName ? `「${vendorName}」` : '這家廠商'}登入後看到的畫面。管理功能已隱藏，「確認收到」與「提出爭議」只有廠商本人能操作。
       </p>}
 
-      {!error && <p className="text-xs text-slate-500">
+      {!error && showSettlement && <p className="text-xs text-slate-500">
         轉帳對帳與訂單履行狀態分開顯示。
       </p>}
 
@@ -462,22 +505,65 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
         <p>{error}</p><button type="button" onClick={() => void load()} className="mt-2 min-h-10 rounded-lg border border-rose-300 px-3 font-bold">重試</button>
       </div>}
 
-      {!error && <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {!error && showToday && (
+        <div aria-label="今日訂單" className="space-y-3">
+          {!todayDay || Number(todayDay.orderCount || 0) === 0
+            ? <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600">
+              {loading ? '載入中…' : `今天（${today}）目前沒有訂單。`}
+            </div>
+            : <>
+              <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-lg font-bold text-[#2C4A3E]">{today}</h3>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${todayDay.cutoffPassed ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}`}>{dayStatusLabel(todayDay)}</span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">截止時間：{formatTaipeiTime(todayDay.cutoffAt)}</p>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">份數</div><div className="mt-1 text-2xl font-extrabold tabular-nums text-[#2C4A3E]">{todayDay.portionCount}</div></div>
+                  <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">訂單</div><div className="mt-1 text-2xl font-extrabold tabular-nums text-slate-800">{todayDay.orderCount}</div></div>
+                  <div className="rounded-xl bg-slate-50 p-3"><div className="text-xs text-slate-500">金額</div><div className="mt-1 text-lg font-extrabold tabular-nums text-slate-800">{currency(todayDay.amountTwd)}</div></div>
+                </div>
+                {!todayDay.cutoffPassed && <p className="mt-2 text-xs text-amber-800">尚未截止，數量可能還會變動。</p>}
+              </div>
+              <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
+                <h3 className="font-bold text-[#2C4A3E]">備餐清單</h3>
+                <ul className="mt-2 divide-y divide-slate-100">
+                  {[...(todayDay.items || [])].sort((a, b) => b.quantity - a.quantity).map((item, index) => (
+                    <li key={`${item.name}-${item.variantKey}-${index}`} className="flex items-center justify-between gap-3 py-2">
+                      <span className="min-w-0 break-words text-base">{item.name}{item.variantKey ? `（${item.variantKey}）` : ''}</span>
+                      <span className="shrink-0 text-xl font-extrabold tabular-nums text-[#2C4A3E]">× {item.quantity}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>}
+        </div>
+      )}
+
+      {!error && showSettlement && <div aria-label="對帳合計" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         {[
           ['應收', totals.receivable], ['已登記轉帳', totals.registered],
           ['未登記差額', totals.unregistered], ['待廠商確認', totals.pending],
-          ['廠商已確認', totals.confirmed], ['爭議中', totals.disputed],
-          ['訂單日', totals.orders], ['份數', totals.portions]
+          ['廠商已確認', totals.confirmed], ['爭議中', totals.disputed]
         ].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-3">
-          <div className="text-xs text-slate-500">{label}</div><div className="mt-1 font-bold tabular-nums text-slate-800">{label === '訂單日' || label === '份數' ? value : currency(value)}</div>
+          <div className="text-xs text-slate-500">{label}</div><div className="mt-1 font-bold tabular-nums text-slate-800">{currency(value)}</div>
         </div>)}
       </div>}
 
-      {!loading && !error && days.length === 0 && (
+      {!error && showOrders && <div aria-label="訂單月合計" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          ['訂單日數', totals.orderDays, false], ['訂單數', totals.orders, false],
+          ['份數', totals.portions, false], ['訂單金額', totals.amount, true]
+        ].map(([label, value, money]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-3">
+          <div className="text-xs text-slate-500">{label}</div><div className="mt-1 font-bold tabular-nums text-slate-800">{money ? currency(value) : value}</div>
+        </div>)}
+      </div>}
+
+      {!loading && !error && !showToday && listedDays.length === 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-600">這個月份尚無訂單或轉帳紀錄。</div>
       )}
-      <div className="space-y-3">
-        {days.map((day) => {
+      {!showToday && <div className="space-y-3">
+        {listedDays.map((day) => {
           const dayKey = `${day.vendorId}-${day.serviceDate}`;
           const expanded = expandedDays[dayKey] ?? (day.serviceDate === taipeiToday());
           return <article key={dayKey} className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
@@ -485,24 +571,26 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
             onClick={() => setExpandedDays((current) => ({ ...current, [dayKey]: !expanded }))}
             className="flex min-h-12 w-full flex-wrap items-start justify-between gap-2 text-left">
             <span><span className="block text-lg font-bold text-[#2C4A3E]">{day.serviceDate} ・{day.vendorName}</span>
-              <span className="text-sm text-slate-600">{day.orderCount} 筆訂單・{day.portionCount} 份・{currency(day.amountTwd)}</span></span>
+              <span className="text-sm text-slate-600">{showOrders
+                ? `${day.orderCount} 筆訂單・${day.portionCount} 份・${currency(day.amountTwd)}`
+                : `應收 ${currency(day.settlement?.receivableTwd)}・已登記 ${currency(day.settlement?.registeredTransferTwd)}`}</span></span>
             <span className="flex items-center gap-2">
               <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${day.cutoffPassed ? 'bg-emerald-100 text-emerald-900' : 'bg-amber-100 text-amber-900'}`}>
-                {day.source === 'SNAPSHOT' ? `截止快照 v${day.revision}` : day.source === 'MOCK' ? 'Mock 合成資料' : '截止前估算'}
+                {dayStatusLabel(day)}
               </span>
               <span aria-hidden="true" className="text-slate-500">{expanded ? '收合' : '展開'}</span>
             </span>
           </button>
           {expanded && <div className="mt-3 space-y-3">
-          <p className="text-xs text-slate-500">截止時間：{day.cutoffAt ? new Date(day.cutoffAt).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }) : '未設定'}</p>
+          <p className="text-xs text-slate-500">截止時間：{formatTaipeiTime(day.cutoffAt)}</p>
           {day.changeReason && <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">版本原因：{reasonLabel(day.changeReason)}</p>}
-          {day.items?.length > 0 && <ul className="space-y-1 border-t border-slate-100 pt-2 text-sm">
+          {showOrders && day.items?.length > 0 && <ul className="space-y-1 border-t border-slate-100 pt-2 text-sm">
             {day.items.map((item, index) => <li key={`${item.name}-${item.variantKey}-${index}`} className="flex justify-between gap-3">
               <span className="min-w-0 break-words">{item.name}{item.variantKey ? `（${item.variantKey}）` : ''} × {item.quantity}</span>
               <span className="shrink-0 tabular-nums">{currency(item.amountTwd)}</span>
             </li>)}
           </ul>}
-          <section aria-label={`${day.serviceDate} 轉帳對帳`} className="space-y-2 border-t border-slate-100 pt-3">
+          {showSettlement && <section aria-label={`${day.serviceDate} 轉帳對帳`} className="space-y-2 border-t border-slate-100 pt-3">
             <h4 className="font-bold text-slate-800">轉帳對帳 <span className="text-xs font-normal text-slate-500">（與訂單履行狀態分開）</span></h4>
             <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
               <div className="rounded-lg bg-slate-50 p-2">應收<strong className="mt-1 block">{currency(day.settlement?.receivableTwd)}</strong></div>
@@ -516,11 +604,11 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
             {(day.settlement?.transfers || []).length > 0
               ? <div className="space-y-2">{day.settlement.transfers.map((transfer) => makePaymentAction(day, transfer))}</div>
               : <p className="text-sm text-slate-500">尚無已登記轉帳；截止前金額是估算值。</p>}
-          </section>
+          </section>}
           </div>}
         </article>;
         })}
-      </div>
+      </div>}
     </section>
   );
 }
