@@ -1,3 +1,4 @@
+import { createReadMeter, meterDatabase } from './db/readMeter.js';
 import { handleAuthRoute } from './routes/auth.js';
 import { handleMeRoute } from './routes/me.js';
 import { handleAnnouncementInboxRoute } from './routes/announcementInbox.js';
@@ -82,6 +83,7 @@ export const handleScheduled = async (
   return result;
 };
 
+const D1_ROWS_LOG_THRESHOLD = 5000;
 const LINE_API_HOST = 'api.line.me';
 
 const urlOf = (input) => (typeof input === 'string' ? input : String(input?.url || ''));
@@ -158,6 +160,8 @@ export const handleFormalRequest = async (request, env, options = {}) => {
   const requestId = globalThis.crypto.randomUUID();
   const timing = createServerTiming(options.fetchImpl);
   options = { ...options, fetchImpl: timing.timedFetch };
+  const meter = createReadMeter();
+  if (env?.DB) env = { ...env, DB: meterDatabase(env.DB, meter) };
   let response;
   try {
     if (request.method === 'OPTIONS') {
@@ -257,7 +261,17 @@ export const handleFormalRequest = async (request, env, options = {}) => {
   }
   const responseHeaders = new Headers(response.headers);
   responseHeaders.set('X-Request-Id', requestId);
-  responseHeaders.set('Server-Timing', timing.header());
+  responseHeaders.set('Server-Timing', `${timing.header()}, d1-rows;desc="${meter.rows} rows/${meter.queries} queries"`);
+  const logger = options.logger ?? console;
+  if (meter.rows >= D1_ROWS_LOG_THRESHOLD && typeof logger?.log === 'function') {
+    logger.log(JSON.stringify({
+      event: 'd1_rows_read',
+      method: request.method,
+      path: new URL(request.url).pathname,
+      rows: meter.rows,
+      queries: meter.queries
+    }));
+  }
   response = new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

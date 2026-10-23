@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.1] - 2026-10-23
+
+### Added
+
+- Report D1 rows read and query count per request in the `Server-Timing` header (`d1-rows`) and log a `d1_rows_read` line for requests that read 5,000 rows or more, to find the endpoints that consume the daily D1 read quota. Rows from `first()` queries are not counted.
+
 ## [0.19.0] - 2026-10-23
 
 ### Added
