@@ -6,6 +6,7 @@ import {
   lineEmployeeLookup,
   bindLineIdentity
 } from '../domain/guestAccess.js';
+import { isVendorCodeLoginEnabled, vendorCodeLogin, vendorLoginCode } from '../auth/vendorCodeLogin.js';
 import { badRequest, unauthorized } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 
@@ -45,6 +46,9 @@ export const handleAuthRoute = async (request, env, {
 
   if (isGuestLogin) {
     const body = await readJson(request);
+    if (isVendorCodeLoginEnabled(env) && vendorLoginCode(body.employeeId)) {
+      return jsonResponse(await vendorCodeLogin(env.DB, body.employeeId, now), 201);
+    }
     const result = await employeeGuestLogin(env.DB, body.employeeId, now);
     return jsonResponse(
       result,

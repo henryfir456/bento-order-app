@@ -104,6 +104,9 @@ test('Admin vendor preview shows the Vendor layout without Admin controls or Ven
   // A non-Admin cannot turn preview on.
   assert.equal(vendorOperationsView('Vendor', true).previewing, false);
   assert.equal(vendorOperationsView('User', true).vendorLayout, false);
+  const codeLogin = vendorOperationsView('Vendor', false, true);
+  assert.equal(codeLogin.vendorLayout, true);
+  assert.equal(codeLogin.vendorActionsEnabled, false);
 
   assert.match(page, /以廠商視角預覽（唯讀）/);
   assert.match(page, /view\.adminControls && canRecordVendorTransfer\(role, selectedVendor\)/);

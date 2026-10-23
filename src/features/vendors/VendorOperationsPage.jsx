@@ -48,7 +48,7 @@ const readResponse = async (response) => {
   return data;
 };
 
-export default function VendorOperationsPage({ role = 'User', mock = false }) {
+export default function VendorOperationsPage({ role = 'User', mock = false, readOnly = false }) {
   const isVendor = role === 'Vendor';
   const isAdmin = role === 'Admin';
   const [month, setMonth] = useState(currentMonth);
@@ -74,7 +74,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
   const [vendorPreview, setVendorPreview] = useState(false);
   const [tab, setTab] = useState('today');
   const [loadedAt, setLoadedAt] = useState(null);
-  const view = vendorOperationsView(role, vendorPreview);
+  const view = vendorOperationsView(role, vendorPreview, readOnly);
   const requestRef = useRef(0);
   const idempotencyRef = useRef({ payload: '', key: createKey() });
   const selectedVendor = vendors.find((vendor) => vendor.id === vendorId);
@@ -430,6 +430,10 @@ export default function VendorOperationsPage({ role = 'User', mock = false }) {
 
       {view.previewing && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
         廠商視角預覽：顯示{vendorName ? `「${vendorName}」` : '這家廠商'}登入後看到的畫面。管理功能已隱藏，「確認收到」與「提出爭議」只有廠商本人能操作。
+      </p>}
+
+      {role === 'Vendor' && readOnly && showSettlement && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
+        目前是代號測試登入，只能查看。「確認收到」與「提出爭議」請用 LINE 登入後操作。
       </p>}
 
       {!error && showSettlement && <p className="text-xs text-slate-500">

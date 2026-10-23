@@ -232,6 +232,12 @@ export const assertCan = (identity, action) => {
   ].includes(action) && !actor.vendorAccessActive) {
     throw forbidden();
   }
+  if (actor.vendorCodeLogin === true && [
+    ACTIONS.VENDOR_CONFIRM_TRANSFER,
+    ACTIONS.VENDOR_DISPUTE_TRANSFER
+  ].includes(action)) {
+    throw forbidden('VENDOR_CODE_LOGIN_READ_ONLY');
+  }
   return true;
 };
 
