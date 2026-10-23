@@ -43,8 +43,9 @@ test('old 禾拾 meals imported under 蔡老師 are matched by name, not by code
   assert.deepEqual([half.vendorId, half.variantKey, half.basis], ['V-HESHI', 'HALF', SOURCE_BASIS.NAME_TO_MENU]);
 });
 
-test('a migrated 禾拾 name missing from the current menu is left for review', () => {
-  const result = plan([line({ code: 'H2', name: '紅麴腐乳板豆腐' })]);
+test('old 紅麴腐乳板豆腐 is today\'s 紅麴豆腐, and an unknown migrated name is left for review', () => {
+  assert.equal(only([line({ code: 'H2', name: '紅麴腐乳板豆腐' })]).itemCode, 'H3');
+  const result = plan([line({ code: 'H2', name: '完全不存在的菜' })]);
   assert.equal(result.writes.length, 0);
   assert.equal(result.reviews.length, 1);
 });

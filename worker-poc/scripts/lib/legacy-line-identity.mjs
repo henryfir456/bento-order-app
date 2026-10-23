@@ -17,11 +17,13 @@ const ADJUSTMENT_CODES = new Set(['FR1', 'REVERT1']);
 // numbering differed from today's menu, so they are matched by dish name only.
 const MIGRATED_CODES = /^H[1-5]$/i;
 
-// 蕃/番 are used interchangeably for 蕃茄 in old names.
+// 蕃/番 are used interchangeably for 蕃茄 in old names. Henry confirmed on
+// 2026-10-23 that the old 紅麴腐乳板豆腐 is today's 紅麴豆腐.
 const dishKey = (name) => normalizeMenuItemName(name)
   .replace(/[（(]\s*半飯\s*[）)]/gu, '')
   .replace(/番/gu, '蕃')
-  .replace(/\s+/gu, '');
+  .replace(/\s+/gu, '')
+  .replace(/^紅麴腐乳板豆腐$/u, '紅麴豆腐');
 
 export const SOURCE_BASIS = Object.freeze({
   CODE: 'LEGACY_CODE_MAP',
