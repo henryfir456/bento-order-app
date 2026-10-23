@@ -72,6 +72,8 @@ import { formatLedgerOrderDate } from './features/balances/ledgerFormatters';
 import { normalizeAnnouncementInbox, normalizeDeferredLikes, mergeDeferredLikes } from './features/bootstrap/deferredBootstrap';
 import AnnouncementBell from './features/announcements/AnnouncementBell';
 import AnnouncementInbox from './features/announcements/AnnouncementInbox';
+import useUserNotifications from './features/announcements/useUserNotifications';
+import { getLineBindingState } from './auth/lineBindingState';
 import AnnouncementPopup from './features/announcements/AnnouncementPopup';
 import { formatTransactionDescription, TOPUP_METHOD_OPTIONS } from './features/balances/topupMethods';
 import {
@@ -1234,8 +1236,17 @@ export default function App() {
     && hasPermission(authUser?.role, 'manageAnnouncements', authMode, true)
   );
 
+  const isVendorSession = authUser?.role === 'Vendor';
+  const userNotifications = useUserNotifications({
+    enabled: (apiClient.transport === 'worker' || authClient.isMock)
+      && authState === AUTH_STATES.REGISTERED
+      && Boolean(authUser?.userId)
+      && !viewAsUser?.userId,
+    userKey: `${authUser?.userId || ''}:${authMode || ''}`
+  });
+
   const loadAnnouncementInbox = useCallback(async ({ queuePopups = true } = {}) => {
-    if (authState !== AUTH_STATES.REGISTERED || !authUser?.userId || viewAsUser?.userId) return false;
+    if (authState !== AUTH_STATES.REGISTERED || !authUser?.userId || viewAsUser?.userId || authUser?.role === 'Vendor') return false;
     const requestId = ++announcementInboxRequestRef.current;
     const sessionKey = `${authUser.userId}:${authMode || ''}:${authSelectionRef.current}`;
     if (announcementPopupSessionRef.current.key !== sessionKey) {
@@ -1288,7 +1299,7 @@ export default function App() {
     } finally {
       if (requestId === announcementInboxRequestRef.current) setAnnouncementInboxLoading(false);
     }
-  }, [authState, authUser?.userId, authMode, viewAsUser?.userId]);
+  }, [authState, authUser?.userId, authUser?.role, authMode, viewAsUser?.userId]);
 
   const markAnnouncementRead = useCallback(async (announcement) => {
     const id = String(announcement?.id || '').trim();
@@ -3584,12 +3595,6 @@ export default function App() {
         <div className="max-w-xl mx-auto min-w-0">
           <h1 className="sr-only">蔬食便當預訂系統</h1>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-emerald-100">
-            {isRegistered && !isVendorAccount && !isViewAsMode && (apiClient.transport === 'worker' || authClient.isMock) && (
-              <AnnouncementBell
-                unreadCount={announcementUnreadCount}
-                onClick={() => setShowAnnouncementModal(true)}
-              />
-            )}
             {isVendorAccount && <span className="font-bold">廠商工作台</span>}
             {isVendorAccount && authMode === 'vendor_code' && (
               <button
@@ -3644,7 +3649,7 @@ export default function App() {
                 {displayFloor}
               </button>
             ))}
-            {!isVendorAccount && isRegistered && apiClient.transport === 'worker' && (
+            {!isVendorAccount && isRegistered && apiClient.transport === 'worker' && getLineBindingState(authUser) !== 'BOUND' && (
               <IdentityStatusBadges fields={['lineBinding']} lineBound={authUser?.lineBound} lineUserId={authUser?.lineUserId} />
             )}
             {!isVendorAccount && canOfferLineBinding({ user: authUser, registered: isRegistered, transport: apiClient.transport, authMode, isViewAsMode })
@@ -3658,6 +3663,12 @@ export default function App() {
                   {lineBindLoading ? '綁定中...' : '綁定 LINE'}
                 </button>
               )}
+            {isRegistered && !isViewAsMode && (apiClient.transport === 'worker' || authClient.isMock) && (
+              <AnnouncementBell
+                unreadCount={announcementUnreadCount + userNotifications.unreadCount}
+                onClick={() => setShowAnnouncementModal(true)}
+              />
+            )}
           </div>
           <ViewAsBanner
             viewAsUser={isViewAsMode ? viewAsUser : null}
@@ -4600,6 +4611,9 @@ export default function App() {
         open={showAnnouncementModal}
         announcements={announcements}
         unreadCount={announcementUnreadCount}
+        notifications={userNotifications.notifications}
+        announcementsAvailable={!isVendorSession}
+        onReadNotification={(notification) => { void userNotifications.markRead(notification); }}
         loading={announcementInboxLoading || !announcementsLoaded}
         error={announcementInboxError}
         onRetry={() => { void loadAnnouncementInbox(); }}

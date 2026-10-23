@@ -27,6 +27,16 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.0] - 2026-10-23
+
+### Added
+
+- Show bell notifications for system events beside announcements: an Admin group cancellation with refund notifies each refunded buyer and the assigned vendor, and the 18:00 order close sends each vendor one summary of tomorrow's orders. Vendors now have the bell too. Migration 0024 adds `user_notifications`, and a new 10:00 UTC cron sends the vendor notice (`GET /api/me/notifications`, `POST /api/me/notifications/:id/read`).
+
+### Changed
+
+- Move the bell to the far right of the header and show the LINE binding badge only while the account is unbound.
+
 ## [0.18.0] - 2026-10-23
 
 ### Added

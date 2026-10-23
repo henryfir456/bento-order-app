@@ -220,6 +220,12 @@ export const createMockGasApi = ({ mockUser, storage } = {}) => {
       });
     }
 
+    if (action === 'getMyNotifications') {
+      return jsonResponse({ success: true, unreadCount: 0, notifications: [] });
+    }
+
+    if (action === 'markNotificationRead') return errorResponse('NOTIFICATION_NOT_FOUND', 404);
+
     if (['markAnnouncementRead', 'dismissAnnouncementAutoPopup'].includes(action)) {
       const announcementId = String(payload.announcementId || '').trim();
       if (!['mock-announcement-1', 'mock-announcement-2', 'mock-announcement-legacy'].includes(announcementId)) {

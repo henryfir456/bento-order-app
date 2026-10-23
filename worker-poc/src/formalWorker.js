@@ -1,6 +1,8 @@
 import { handleAuthRoute } from './routes/auth.js';
 import { handleMeRoute } from './routes/me.js';
 import { handleAnnouncementInboxRoute } from './routes/announcementInbox.js';
+import { notifyVendorsOrderClosed } from './domain/userNotifications.js';
+import { handleUserNotificationRoute } from './routes/userNotifications.js';
 import { handleOrderRoute } from './routes/orders.js';
 import { handleBalanceRoute } from './routes/balance.js';
 import { handleVendorRoute } from './routes/vendors.js';
@@ -56,6 +58,13 @@ export const handleScheduled = async (
       source: 'holiday_calendar_cron',
       ...result
     };
+    if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
+    return result;
+  }
+
+  if (controller?.cron === '0 10 * * *') {
+    const result = await notifyVendorsOrderClosed(env.DB, controller?.scheduledTime);
+    const logEntry = { event: 'vendor_order_closed_notification', source: 'order_close_cron', ...result };
     if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
     return result;
   }
@@ -192,6 +201,10 @@ export const handleFormalRequest = async (request, env, options = {}) => {
       if (!response) {
         const announcementInboxResponse = await handleAnnouncementInboxRoute(request, env, options);
         if (announcementInboxResponse) response = announcementInboxResponse;
+      }
+      if (!response) {
+        const notificationResponse = await handleUserNotificationRoute(request, env, options);
+        if (notificationResponse) response = notificationResponse;
       }
       if (!response) {
         const orderResponse = await handleOrderRoute(request, env, options);

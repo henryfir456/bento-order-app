@@ -4,6 +4,7 @@ import { prepareStatement, randomId, resolveClock, runMutationBatch } from '../d
 import { conflict } from '../http/errors.js';
 import { deadlineInfo, getTaipeiDate, isDateOnly } from './deadlines.js';
 import { normalizeMenuVendor } from './menuVendors.js';
+import { notificationStatement, vendorPrincipalsForName } from './userNotifications.js';
 
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
@@ -118,6 +119,7 @@ export const cancelCalendarGroup = async (
     throw error;
   }
 
+  const previousSetting = activeOrders.length ? await getCalendarSetting(database, orderDate) : null;
   const statements = [];
   for (const order of activeOrders) {
     const activeGuard = {
@@ -225,6 +227,23 @@ export const cancelCalendarGroup = async (
       orderDate,
       orderDate
     ]));
+
+    statements.push(notificationStatement(database, {
+      userId: order.user_id,
+      kind: 'GROUP_CANCELLED',
+      title: '取消開團並退款',
+      body: `${orderDate.replace(/-/g, '/')} 取消開團，你的訂單已取消，${Number(order.total_amount)} 元已退回餘額。`,
+      refDate: orderDate,
+      dedupeKey: `GROUP_CANCELLED:${order.order_id}`,
+      occurredAt,
+      guard: {
+        sql: `EXISTS (
+          SELECT 1 FROM orders cancelled
+          WHERE cancelled.order_id = ? AND cancelled.status = 'CANCELLED'
+        )`,
+        params: [order.order_id]
+      }
+    }));
   }
 
   statements.push(prepareStatement(database, `
@@ -252,6 +271,21 @@ export const cancelCalendarGroup = async (
       WHERE vendor_order.order_date = ? AND vendor_order.status = 'ACTIVE'
     )
   `, [orderDate, mode, actor.userId, occurredAt, occurredAt, orderDate, orderDate]));
+
+  if (activeOrders.length && previousSetting?.vendor) {
+    const vendorBody = `${orderDate.replace(/-/g, '/')} 已取消開團，這一天的 ${activeOrders.length} 筆訂單全部取消，不需出餐。`;
+    for (const principal of await vendorPrincipalsForName(database, previousSetting.vendor)) {
+      statements.push(notificationStatement(database, {
+        userId: principal.userId,
+        kind: 'GROUP_CANCELLED',
+        title: '取消開團通知',
+        body: vendorBody,
+        refDate: orderDate,
+        dedupeKey: `GROUP_CANCELLED_VENDOR:${orderDate}:${occurredAt}:${principal.userId}`,
+        occurredAt
+      }));
+    }
+  }
 
   const summary = {
     userCount: new Set(activeOrders.map((order) => order.user_id)).size,

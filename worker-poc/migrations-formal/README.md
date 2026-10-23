@@ -45,6 +45,7 @@ The migration files in this checkout are listed in execution order:
 0021_verified_vendor_settlement_sources.sql # keep historical snapshots/allocations untrusted until verified
 0022_vendor_legacy_name_attribution.sql # reviewed shop-name attribution of whole legacy orders
 0023_order_line_canonical_identities.sql # reviewed canonical vendor/item identity per old order line (append-only overlay)
+0024_user_notifications.sql # bell notifications per user (group cancel refunds, vendor order close)
 ```
 
 Migrations 0002, 0003, 0004, and 0005 are intentionally forward-only when executed as raw

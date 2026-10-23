@@ -273,7 +273,8 @@ test('daily flavor cron runs at Taipei 16:00 without replacing the midnight grou
   const database = new SqliteD1();
   const lines = [];
   const result = await handleScheduled(
-    { cron: '0 8 * * *', scheduledTime: new Date('2026-10-02T08:00:00.000Z') },
+    { cron: '0 8 * * *',
+    '0 10 * * *', scheduledTime: new Date('2026-10-02T08:00:00.000Z') },
     { DB: database },
     {
       logger: { log: (line) => lines.push(line) },
@@ -361,6 +362,7 @@ test('formal Wrangler config schedules the Worker at Taipei midnight', () => {
   assert.deepEqual(config.triggers?.crons, [
     '0 16 * * *',
     '0 8 * * *',
+    '0 10 * * *',
     '30 0 15 6-12 *'
   ]);
 });
