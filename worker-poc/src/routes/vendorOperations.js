@@ -4,7 +4,12 @@ import { auditStatement } from '../db/audit.js';
 import { prepareStatement, randomId, resolveClock, runMutationBatch } from '../db/transactions.js';
 import { badRequest, conflict, forbidden, notFound } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
-import { createEffectiveOrderItemNameResolver } from '../domain/effectiveOrderItemNames.js';
+import {
+  REVIEWED_IDENTITY_COLUMNS,
+  createEffectiveOrderItemNameResolver,
+  reviewedIdentityJoin,
+  reviewedIdentityOf
+} from '../domain/effectiveOrderItemNames.js';
 import { compatibilityVendorCandidates } from '../domain/menuVendors.js';
 import { deadlineAt, isDateOnly } from '../domain/deadlines.js';
 import { getActiveVendorIdsForPrincipal } from '../domain/vendorMemberships.js';
@@ -66,10 +71,10 @@ const activeOrderRowsForMonth = async (database, vendorId, bounds) => {
     SELECT o.order_id, o.order_date, o.vendor,
       oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot,
       oi.quantity, oi.unit_price, oi.subtotal,
-      CASE WHEN direct.order_id IS NULL THEN 0 ELSE 1 END AS is_direct
+      CASE WHEN direct.order_id IS NULL THEN 0 ELSE 1 END AS is_direct,${REVIEWED_IDENTITY_COLUMNS}
     FROM orders o
     JOIN vendor_order_vendor_attributions attribution ON attribution.order_id = o.order_id
-    JOIN order_items oi ON oi.order_id = o.order_id
+    JOIN order_items oi ON oi.order_id = o.order_id${reviewedIdentityJoin('oi')}
     LEFT JOIN canonical_order_vendor_assignments direct ON direct.order_id = o.order_id
     WHERE attribution.vendor_id = ? AND o.order_date >= ? AND o.order_date < ? AND o.status = 'ACTIVE'
     ORDER BY o.order_date, o.order_id, oi.line_no
@@ -78,7 +83,7 @@ const activeOrderRowsForMonth = async (database, vendorId, bounds) => {
   for (const row of rowsFrom(result)) {
     const date = String(row.order_date);
     if (!byDate.has(date)) byDate.set(date, []);
-    byDate.get(date).push(row);
+    byDate.get(date).push({ ...row, reviewed_identity: reviewedIdentityOf(row) });
   }
   return byDate;
 };
@@ -87,6 +92,8 @@ const aggregateDay = async (vendor, serviceDate, rows, resolveName) => {
   const items = new Map();
   for (const row of rows) {
     const resolved = await resolveName({ vendor: vendor.name, orderDate: serviceDate, item: row });
+    // Reviewed non-meal adjustments (fee waivers, 1-yuan placeholders) are not portions.
+    if (resolved.isAdjustment) continue;
     const key = JSON.stringify([resolved.identityKey, resolved.variantKey]);
     const item = items.get(key) || {
       name: resolved.itemName,

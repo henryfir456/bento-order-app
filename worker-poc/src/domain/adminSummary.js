@@ -4,7 +4,12 @@ import { currentBalanceProjection, publicUser } from '../db/users.js';
 import { badRequest, forbidden } from '../http/errors.js';
 import { isDateOnly } from './deadlines.js';
 import { isHistoricalOrderDate, orderStatusPredicate } from './ordersRead.js';
-import { createEffectiveOrderItemNameResolver } from './effectiveOrderItemNames.js';
+import {
+  REVIEWED_IDENTITY_COLUMNS,
+  createEffectiveOrderItemNameResolver,
+  reviewedIdentityJoin,
+  reviewedIdentityOf
+} from './effectiveOrderItemNames.js';
 
 const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
@@ -70,10 +75,10 @@ export const getAdminSummary = async (
            o.status,
            u.display_name,
            oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot, oi.quantity,
-           oi.unit_price, oi.subtotal
+           oi.unit_price, oi.subtotal,${REVIEWED_IDENTITY_COLUMNS}
     FROM orders o
     JOIN users u ON u.user_id = o.user_id
-    JOIN order_items oi ON oi.order_id = o.order_id
+    JOIN order_items oi ON oi.order_id = o.order_id${reviewedIdentityJoin('oi')}
     WHERE o.order_date = ?
       AND ${orderStatusPredicate({ alias: 'o', includeCompleted })}
     ORDER BY o.pickup_floor ASC, o.order_id ASC, oi.line_no ASC
@@ -89,6 +94,7 @@ export const getAdminSummary = async (
         legacy_item_id: row.legacy_item_id,
         item_name_snapshot: row.item_name_snapshot,
         unit_price: row.unit_price,
+        reviewed_identity: reviewedIdentityOf(row),
         fallbackKey: `${row.order_id}:${row.line_no}`
       }
     });
