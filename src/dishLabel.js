@@ -3,7 +3,9 @@
 const VARIANT_LABELS = { BASE: '', HALF: '半飯', PLUS: '加量' };
 
 export const dishLabel = ({ name, variantKey } = {}) => {
-  const dishName = name || '';
+  const rawName = String(name || '');
+  // A bracketed 半飯 is rewritten in the standard full-width form below.
+  const dishName = rawName.replace(/\s*[（(]\s*半飯\s*[）)]/gu, '');
   const key = String(variantKey || '').trim();
   const label = Object.hasOwn(VARIANT_LABELS, key.toUpperCase()) ? VARIANT_LABELS[key.toUpperCase()] : key;
   return label && !dishName.includes(label) ? `${dishName}（${label}）` : dishName;

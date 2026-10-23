@@ -217,35 +217,27 @@ export const createEffectiveOrderItemNameResolver = (database, { referenceDate =
       variant_key: reviewed.variantKey,
       stable_identity: true
     };
-    let result = null;
-    if (isDateOnly(orderDate)) {
-      const cacheKey = identity(reviewedVendor, orderDate);
-      if (!menus.has(cacheKey)) menus.set(cacheKey, loadMenu(reviewedVendor, orderDate));
-      result = resolveEffectiveOrderItemName({
+    // One reviewed dish shows one name everywhere: its name on the current
+    // menu. A renamed dish (特餐 / 每日特餐) must not read differently by order date.
+    const resolveOn = async (date) => {
+      if (!isDateOnly(date)) return null;
+      const cacheKey = identity(reviewedVendor, date);
+      if (!menus.has(cacheKey)) menus.set(cacheKey, loadMenu(reviewedVendor, date));
+      return resolveEffectiveOrderItemName({
         vendor: reviewedVendor,
-        orderDate,
+        orderDate: date,
         item: reviewedItem,
         menuItems: await menus.get(cacheKey)
       });
-    }
-    if (result?.resolved) return result;
-    // The dish is not on that day's effective menu (older history), but the
-    // reviewed identity is authoritative: group it with the same stable key and
-    // show the dish's current menu name when it still exists.
-    let currentName = '';
-    if (isDateOnly(referenceDate)) {
-      const currentKey = identity(reviewedVendor, referenceDate);
-      if (!menus.has(currentKey)) menus.set(currentKey, loadMenu(reviewedVendor, referenceDate));
-      const current = resolveEffectiveOrderItemName({
-        vendor: reviewedVendor,
-        orderDate: referenceDate,
-        item: reviewedItem,
-        menuItems: await menus.get(currentKey)
-      });
-      if (current.resolved) currentName = current.itemName;
-    }
+    };
+    const current = await resolveOn(referenceDate);
+    if (current?.resolved) return { ...current, orderDate };
+    // Not on the current menu: use that order day's menu, else keep the
+    // snapshot name under the same stable key (the reviewed identity is authoritative).
+    const onOrderDate = await resolveOn(orderDate);
+    if (onOrderDate?.resolved) return onOrderDate;
     return {
-      itemName: currentName || itemNameFor(item),
+      itemName: itemNameFor(item),
       identityKey: identity(reviewedVendor, 'menu', reviewed.itemCode, reviewed.variantKey),
       vendor: reviewedVendor,
       variantKey: reviewed.variantKey,
@@ -255,7 +247,7 @@ export const createEffectiveOrderItemNameResolver = (database, { referenceDate =
       orderDate
     };
   };
-  const resolve = async ({ vendor, orderDate, item } = {}) => {
+  const resolveOnOrderDate = async ({ vendor, orderDate, item } = {}) => {
     if (item?.reviewed_identity) return resolveReviewed({ vendor, orderDate, item });
     const normalizedVendor = normalizeMenuVendor(vendor) || text(vendor);
     const cacheKey = identity(normalizedVendor, orderDate);
@@ -307,6 +299,18 @@ export const createEffectiveOrderItemNameResolver = (database, { referenceDate =
     }
     const menuItems = await menus.get(cacheKey);
     return resolveEffectiveOrderItemName({ vendor: normalizedVendor, orderDate, item: sourceItem, menuItems });
+  };
+
+  // A dish renamed over time (特餐 / 每日特餐) shows its current menu name for
+  // every order date, so every screen reads the same label for one identity.
+  const resolve = async (entry = {}) => {
+    const result = await resolveOnOrderDate(entry);
+    if (!result.resolved || result.isAdjustment || entry.item?.reviewed_identity
+      || !isDateOnly(entry.orderDate) || !isDateOnly(referenceDate) || entry.orderDate === referenceDate) return result;
+    const current = await resolveOnOrderDate({ ...entry, orderDate: referenceDate });
+    return current.resolved && current.identityKey === result.identityKey
+      ? { ...result, itemName: current.itemName }
+      : result;
   };
 
   /**
