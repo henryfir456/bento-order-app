@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.5': [
+    { name: '修正', changes: [
+      '補回廠商「訂單總覽」與「對帳」分頁的月份切換（0.19.3 移除標題卡片時一併被拿掉）。'
+    ] }
+  ],
   '0.19.4': [
     { name: '變更', changes: [
       '廠商的店家名稱改顯示在畫面上方、登出按鈕的左邊，所有廠商頁面都看得到目前登入的店家；工作台內原本只有店名的卡片已移除。'
