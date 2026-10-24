@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.7': [
+    { name: '變更', changes: [
+      '頁首的姓名與預設領取樓層合併成同一個可點按鈕，點開即可修改個人資料。',
+      '管理中心把每日常用的「訂單總覽」「開團管理」「廠商對帳」排在最前面（原「廠商每日訂單與轉帳對帳」簡化為「廠商對帳」），所有管理子頁最上方都有「← 管理中心」返回連結。'
+    ] }
+  ],
   '0.19.6': [
     { name: '變更', changes: [
       '底部導覽的「足跡」改名：員工為「我的足跡」、廠商為「售出足跡」，不再兩邊同名。',
