@@ -14,6 +14,7 @@ import { compatibilityVendorCandidates } from '../domain/menuVendors.js';
 import { deadlineAt, getTaipeiDate, isDateOnly } from '../domain/deadlines.js';
 import { getActiveVendorIdsForPrincipal } from '../domain/vendorMemberships.js';
 import { VENDOR_FOOTPRINT_PERIODS, getVendorFootprints } from '../domain/vendorFootprints.js';
+import { ensureAttributionCache } from '../domain/attributionCache.js';
 import { applyVendorHistoryImport, previewVendorHistoryImport } from '../domain/vendorHistory.js';
 
 const text = (value) => String(value ?? '').trim();
@@ -62,6 +63,7 @@ const requireVendorIdentity = async (request, env, { fetchImpl, now }, action) =
   assertVendorActor(identity, action);
   const vendorIds = await getActiveVendorIdsForPrincipal(env.DB, identity.actor.userId);
   if (!vendorIds.length) throw forbidden('VENDOR_SCOPE_FORBIDDEN');
+  await ensureAttributionCache(env.DB, now);
   return { identity, vendorIds };
 };
 
@@ -78,10 +80,11 @@ const activeOrderRowsForMonth = async (database, vendorId, bounds, today) => {
     JOIN vendor_order_vendor_attributions attribution ON attribution.order_id = o.order_id
     JOIN order_items oi ON oi.order_id = o.order_id${reviewedIdentityJoin('oi')}
     LEFT JOIN canonical_order_vendor_assignments direct ON direct.order_id = o.order_id
-    WHERE attribution.vendor_id = ? AND o.order_date >= ? AND o.order_date < ?
+    WHERE attribution.vendor_id = ? AND attribution.order_date >= ? AND attribution.order_date < ?
+      AND o.order_date >= ? AND o.order_date < ?
       AND (o.status = 'ACTIVE' OR (o.status = 'COMPLETED' AND o.order_date < ?))
     ORDER BY o.order_date, o.order_id, oi.line_no
-  `).bind(vendorId, bounds.start, bounds.end, today).all();
+  `).bind(vendorId, bounds.start, bounds.end, bounds.start, bounds.end, today).all();
   const byDate = new Map();
   for (const row of rowsFrom(result)) {
     const date = String(row.order_date);
@@ -140,9 +143,9 @@ const adjustmentReasonAfter = async (database, vendorId, serviceDate, snapshotAt
     SELECT h.reason FROM order_status_history h
     JOIN orders o ON o.order_id = h.order_id
     JOIN vendor_order_vendor_attributions attribution ON attribution.order_id = o.order_id
-    WHERE attribution.vendor_id = ? AND o.order_date = ? AND h.occurred_at > ?
+    WHERE attribution.vendor_id = ? AND attribution.order_date = ? AND o.order_date = ? AND h.occurred_at > ?
     ORDER BY h.occurred_at DESC, h.transition_id DESC LIMIT 20
-  `).bind(vendorId, serviceDate, snapshotAt).all();
+  `).bind(vendorId, serviceDate, serviceDate, snapshotAt).all();
   const reasons = new Set(rowsFrom(result).map((row) => row.reason));
   if (reasons.has('ORDER_CANCELLED')) return 'ORDER_CANCELLATION_REFUND';
   if (reasons.has('ORDER_REPLACED')) return 'ORDER_REPLACEMENT_OR_PRICE_CHANGE';
@@ -292,7 +295,8 @@ const datesForMonth = async (database, vendor, bounds) => {
       SELECT o.order_date AS service_date
       FROM vendor_order_vendor_attributions attribution
       JOIN orders o ON o.order_id = attribution.order_id
-      WHERE attribution.vendor_id = ? AND o.order_date >= ? AND o.order_date < ?
+      WHERE attribution.vendor_id = ? AND attribution.order_date >= ? AND attribution.order_date < ?
+        AND o.order_date >= ? AND o.order_date < ?
       UNION SELECT service_date FROM vendor_day_snapshots
       WHERE vendor_id = ? AND service_date >= ? AND service_date < ?
         AND attribution_basis = '${VERIFIED_VENDOR_ATTRIBUTION}'
@@ -300,7 +304,7 @@ const datesForMonth = async (database, vendor, bounds) => {
       WHERE vendor_id = ? AND service_date >= ? AND service_date < ?
         AND attribution_basis = '${VERIFIED_VENDOR_ATTRIBUTION}'
     ) ORDER BY service_date DESC
-  `).bind(vendor.vendor_id, bounds.start, bounds.end,
+  `).bind(vendor.vendor_id, bounds.start, bounds.end, bounds.start, bounds.end,
     vendor.vendor_id, bounds.start, bounds.end,
     vendor.vendor_id, bounds.start, bounds.end).all();
   return rowsFrom(result).map((row) => String(row.service_date));
@@ -376,6 +380,7 @@ const adminIdentity = async (request, env, { fetchImpl, now }) => {
   if (identity.actor.role !== 'Admin' || identity.actor.authMode !== 'line') {
     throw forbidden('ADMIN_LINE_AUTH_REQUIRED');
   }
+  await ensureAttributionCache(env.DB, now);
   return identity;
 };
 

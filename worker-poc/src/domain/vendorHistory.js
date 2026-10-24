@@ -1,3 +1,4 @@
+import { ensureAttributionCache } from './attributionCache.js';
 import { auditStatement } from '../db/audit.js';
 import { prepareStatement, runMutationBatch } from '../db/transactions.js';
 import { conflict } from '../http/errors.js';
@@ -155,5 +156,6 @@ export const applyVendorHistoryImport = async (database, identity, vendor, expec
     occurredAt: reviewedAt
   });
   await runMutationBatch(database, [versionInsert, nameInsert, audit]);
+  await ensureAttributionCache(database, now);
   return { ...preview, importedVersions: preview.versionCount, importedNames: preview.nameCount };
 };

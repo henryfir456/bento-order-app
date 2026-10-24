@@ -69,7 +69,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0021_verified_vendor_settlement_sources.sql',
       '0022_vendor_legacy_name_attribution.sql',
       '0023_order_line_canonical_identities.sql',
-      '0024_user_notifications.sql'
+      '0024_user_notifications.sql',
+      '0025_vendor_attribution_cache.sql'
     ]
   );
 });
