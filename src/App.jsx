@@ -3989,6 +3989,7 @@ export default function App() {
             setting={setting}
             isExpired={isOrderExpired}
             deadlineAt={deadline?.deadline || null}
+            cutoffPassed={isExpired && !isOrderExpired}
             policyBlocked={orderPolicyBlocked}
             readOnly={activeOrderReadOnly}
             isViewAsMode={isViewAsMode}

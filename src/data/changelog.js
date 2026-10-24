@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.10': [
+    { name: '修正', changes: [
+      '管理者查看已過截止的日期時，點餐頁狀態改顯示「已截止・管理者可修改」，不再顯示「訂餐中」。'
+    ] }
+  ],
   '0.19.9': [
     { name: '變更', changes: [
       '點餐頁直接顯示截止時間與倒數（例如「今天 10:00 截止・剩 1 小時 20 分」），最後一小時改為紅字；樓層與備註維持同一列，樓層欄縮窄、備註放寬。'
