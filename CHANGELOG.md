@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Fixed
+- Android LINE 登入點「繼續」沒反應：LINE 登入改以去除舊 OAuth callback 參數（code/state 等）的乾淨 redirectUri 發起，並在 6 秒內未跳轉時提示再按一次或由 LINE 重新開啟連結（Issue #32；根因為依程式推斷，真機驗收待 Henry 確認）。
 - Leave historical vendor IDs unresolved until an exact menu-version and effective-date mapping is reviewed; write canonical vendor IDs directly on new orders and scope settlement reads through verified attribution (Issues #104 and #139).
 - Ignore pre-mapping settlement snapshots and allocations until their source is verified; cap verified settlement capacity by current canonical active-order attribution so stale snapshots cannot authorize excess, without rewriting legacy settlement rows (Issues #104 and #139).
 

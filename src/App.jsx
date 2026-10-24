@@ -1939,6 +1939,12 @@ export default function App() {
       if (selection !== authSelectionRef.current) return;
       if (!authClient.isLoggedIn()) {
         authClient.login();
+        // If the WebView never navigates (Android LINE), tell the user how to proceed.
+        setTimeout(() => {
+          if (selection === authSelectionRef.current && document.visibilityState !== 'hidden') {
+            setEmployeeGuestError('LINE 登入沒有跳轉時，請再按一次「使用 LINE 登入」，或從 LINE 聊天室重新開啟連結。');
+          }
+        }, 6000);
         return;
       }
       authBootCompletedRef.current = false;
