@@ -57,7 +57,7 @@ export default function AdminOrderSummary({
 
                 {adminSummaryLoading ? (
                   <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
-                    讀取指定日期總覽中...
+                    訂單總覽載入中…
                   </div>
                 ) : adminSummaryError ? (
                   <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">

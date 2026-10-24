@@ -267,7 +267,7 @@ export default function AnnouncementManagement({
       <div className="space-y-3">
         {loading ? (
           <div className="rounded-2xl border border-emerald-900/10 bg-white p-6 text-center text-sm text-emerald-800 animate-pulse">
-            讀取公告中...
+            公告載入中…
           </div>
         ) : announcements.length === 0 ? (
           <div className="rounded-2xl border border-emerald-900/10 bg-white p-6 text-center text-sm text-gray-400">

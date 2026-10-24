@@ -45,7 +45,7 @@ export default function AdminUserLedgerDetails({ user, onBack }) {
       <input type="month" className="ml-2 rounded-lg border p-1" value={month}
         onChange={event => setMonth(event.target.value)} />
     </label>
-    {loading ? <p role="status" className="text-sm">讀取交易紀錄中…</p> :
+    {loading ? <p role="status" className="text-sm">交易紀錄載入中…</p> :
       error ? <p role="alert" className="text-sm text-red-700">{error}</p> :
       result && <>
         <div className="grid grid-cols-2 gap-2 text-xs">

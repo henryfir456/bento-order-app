@@ -20,7 +20,7 @@ export default function WalletPage({ balance, year, month, history, summary, loa
       <strong>{year} 年 {month} 月</strong>
       <button type="button" aria-label="下個月" className="min-h-11 min-w-11 rounded-lg border" disabled={loading} onClick={() => onMonthShift(1)}>›</button>
     </div>
-    {loading ? <p role="status">資料載入中…</p> : error ? <p role="alert" className="text-rose-700">{error}</p> : <>
+    {loading ? <p role="status">交易資料載入中…</p> : error ? <p role="alert" className="text-rose-700">{error}</p> : <>
       <div className="grid grid-cols-2 gap-2 rounded-xl bg-white p-4 text-sm">
         <p>月初：{formatBalanceAmount(summary.openingBalance)}</p>
         <p>月底：{formatBalanceAmount(summary.closingBalance)}</p>

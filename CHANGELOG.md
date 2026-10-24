@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.8] - 2026-10-24
+
+### Changed
+
+- Add shared `PageHeader`, `LoadingNote` and `ErrorNotice` components and use them on the Vendor hub; unify loading copy on 〇〇載入中…, drop decorative emoji from buttons and headings, and document the copy, button and icon rules in `docs/UI_GUIDELINES.md`.
+
 ## [0.19.7] - 2026-10-24
 
 ### Changed
