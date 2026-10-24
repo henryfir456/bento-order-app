@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.4] - 2026-10-24
+
+### Changed
+
+- Show the vendor name in the header, to the left of the logout button, on every Vendor screen, and drop the name-only card from the Vendor workbench. `GET /api/vendor/context` now also returns the vendor names the account may use.
+
 ## [0.19.3] - 2026-10-24
 
 ### Changed

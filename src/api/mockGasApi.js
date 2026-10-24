@@ -220,6 +220,10 @@ export const createMockGasApi = ({ mockUser, storage } = {}) => {
       });
     }
 
+    if (action === 'getVendorContext') {
+      return jsonResponse({ success: true, role: 'Vendor', vendorIds: ['mock-vendor-a'], vendors: [{ id: 'mock-vendor-a', name: 'Mock Bento A' }] });
+    }
+
     if (action === 'getMyNotifications') {
       return jsonResponse({ success: true, unreadCount: 0, notifications: [] });
     }
