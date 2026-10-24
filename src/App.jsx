@@ -4306,7 +4306,7 @@ export default function App() {
 
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {historyLoading ? (
-                <p className="text-center text-xs text-gray-400 py-6 animate-pulse">載入明細中...</p>
+                <p className="text-center text-xs text-gray-400 py-6 animate-pulse">交易明細載入中…</p>
               ) : historyError ? (
                 <p className="text-center text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">{historyError}</p>
               ) : historyList.length === 0 ? (
@@ -4399,7 +4399,7 @@ export default function App() {
             {viewAsModalMode === 'view' && viewAsLedgerUser ? (
               <AdminUserLedgerDetails user={viewAsLedgerUser} onBack={() => setViewAsLedgerUser(null)} />
             ) : (viewAsModalMode === 'view' ? memberBalancesLoading : orderTargetsLoading) ? (
-              <p className="text-center text-sm text-emerald-800 animate-pulse py-6">讀取成員列表中...</p>
+              <p className="text-center text-sm text-emerald-800 animate-pulse py-6">成員列表載入中…</p>
             ) : (viewAsModalMode === 'view' ? memberBalancesError : orderTargetsError) ? (
               <div className="text-center text-sm text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">
                 {viewAsModalMode === 'view' ? memberBalancesError : orderTargetsError}
@@ -4446,7 +4446,7 @@ export default function App() {
                         </button>
                       ))}
                       {viewAsModalMode === 'view' && can('viewMemberBalances') && apiClient.transport === 'worker' && user.userId && (
-                        <button type="button" onClick={() => setViewAsLedgerUser(user)} className="rounded-lg border border-emerald-700 px-2.5 py-1.5 text-xs font-bold text-emerald-800">💰 餘額與交易明細</button>
+                        <button type="button" onClick={() => setViewAsLedgerUser(user)} className="rounded-lg border border-emerald-700 px-2.5 py-1.5 text-xs font-bold text-emerald-800">餘額與交易明細</button>
                       )}
                       {viewAsModalMode === 'delegate' && (
                         <button
@@ -4472,7 +4472,7 @@ export default function App() {
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl border border-amber-100">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <div>
-                <h3 className="font-bold text-base text-[#2C4A3E]">🔗 綁定員編</h3>
+                <h3 className="font-bold text-base text-[#2C4A3E]">綁定員編</h3>
                 <p className="text-xs text-gray-500 mt-1">{selectedEmployeeBindUser.name || '未命名使用者'} 的 Admin 綁定操作</p>
               </div>
               <button
@@ -4532,7 +4532,7 @@ export default function App() {
           <div className="bg-white rounded-3xl max-w-sm w-full p-6 space-y-5 shadow-2xl transform transition-all border border-emerald-100">
             <div className="flex justify-between items-center border-b border-gray-100 pb-3">
               <h3 className="font-bold text-base text-[#2C4A3E] flex items-center gap-2">
-                <span className="text-xl">💰</span> 儲值：{selectedTopupUser.name}
+                儲值：{selectedTopupUser.name}
               </h3>
               <button
                 type="button"

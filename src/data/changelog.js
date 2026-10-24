@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.8': [
+    { name: '變更', changes: [
+      '各頁的載入中、錯誤與頁首改用共用元件：載入文字統一為「〇〇載入中…」，錯誤提示統一為一句說明加「重試」按鈕，錯誤碼收進「詳細資訊」。',
+      '按鈕與標題上的裝飾性表情符號已移除（狀態標籤仍保留），並新增 UI 文案與按鈕規範文件供之後新增畫面使用。'
+    ] }
+  ],
   '0.19.7': [
     { name: '變更', changes: [
       '頁首的姓名與預設領取樓層合併成同一個可點按鈕，點開即可修改個人資料。',
