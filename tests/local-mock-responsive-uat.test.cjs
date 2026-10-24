@@ -204,7 +204,7 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
       await waitFor('document.querySelector("[role=tab][aria-selected=true]")?.innerText.includes("總數") && document.body.innerText.includes("E.風味餐")', '#103 effective total count');
       await clickVisibleButton({ text: '明細' });
 
-      await clickVisibleButton({ ariaLabel: '足跡' });
+      await clickVisibleButton({ ariaLabel: '我的足跡' });
       await waitFor('document.querySelector("[aria-label=我的便當足跡]")?.innerText.includes("餐點份數排行")', '#108 mock statistics');
       const summary = JSON.parse(await evaluate('JSON.stringify([...document.querySelectorAll("[aria-label=我的便當足跡] article")].map(article=>[article.querySelector("h3")?.innerText,article.querySelector("p")?.innerText]))'));
       assert.deepEqual(summary.slice(0, 3), [

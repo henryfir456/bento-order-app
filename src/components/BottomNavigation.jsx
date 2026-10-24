@@ -10,9 +10,9 @@ const icons = {
 const entries = [
   { key: 'vendor', label: '店家', icon: 'management' },
   { key: 'calendar', label: '訂餐', icon: 'calendar' },
-  { key: 'vendorFootprints', label: '足跡', icon: 'footprints' },
+  { key: 'vendorFootprints', label: '售出足跡', icon: 'footprints' },
   { key: 'myOrders', label: '我的訂單', icon: 'orders' },
-  { key: 'footprints', label: '足跡', icon: 'footprints' },
+  { key: 'footprints', label: '我的足跡', icon: 'footprints' },
   { key: 'wallet', label: '餘額', icon: 'wallet' },
   { key: 'admin', label: '管理', icon: 'management' }
 ];

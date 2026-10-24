@@ -4310,7 +4310,7 @@ export default function App() {
               ) : historyError ? (
                 <p className="text-center text-xs text-rose-700 bg-rose-50 border border-rose-100 rounded-xl p-4">{historyError}</p>
               ) : historyList.length === 0 ? (
-                <p className="text-center text-xs text-gray-400 py-6">此月份沒有交易紀錄</p>
+                <p className="text-center text-xs text-gray-400 py-6">此月份尚無交易紀錄</p>
               ) : (
                 historyList.map((item, idx) => (
                   <div key={idx} className="bg-gray-50/80 p-3.5 rounded-2xl flex justify-between items-center text-xs border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
