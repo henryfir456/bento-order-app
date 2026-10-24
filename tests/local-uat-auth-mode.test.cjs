@@ -67,3 +67,15 @@ test('local UAT password is sent to the Worker but only its token is stored in s
     else delete globalThis.window;
   }
 });
+
+test('LINE login redirect URI drops stale OAuth callback parameters', async () => {
+  const { buildCleanLoginRedirectUri } = await import(pathToFileURL(
+    path.join(__dirname, '..', 'src', 'auth', 'authClient.js')
+  ).href);
+  assert.equal(
+    buildCleanLoginRedirectUri('https://app.example/?code=old&state=s&liffClientId=1&liffRedirectUri=x&liff.state=%2Fa#frag'),
+    'https://app.example/?liff.state=%2Fa'
+  );
+  assert.equal(buildCleanLoginRedirectUri('https://app.example/'), 'https://app.example/');
+  assert.equal(buildCleanLoginRedirectUri(undefined), undefined);
+});

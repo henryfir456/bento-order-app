@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.11': [
+    { name: '修正', changes: [
+      '修正 Android LINE 登入點「繼續」沒反應的問題：登入改以乾淨的返回網址發起；若 6 秒內沒有跳轉，會提示再按一次或從 LINE 重新開啟連結。'
+    ] }
+  ],
   '0.19.10': [
     { name: '修正', changes: [
       '管理者查看已過截止的日期時，點餐頁狀態改顯示「已截止・管理者可修改」，不再顯示「訂餐中」。'

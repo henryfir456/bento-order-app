@@ -31,6 +31,22 @@ const clearLocalUatToken = () => {
   }
 };
 
+// OAuth callback parameters must never ride along into a new login attempt:
+// a stale code/state pair makes LIFF consume an already-used authorization
+// and the LINE "continue" step appears to do nothing (Android in-app browser).
+const OAUTH_CALLBACK_PARAMS = ['code', 'state', 'liffClientId', 'liffRedirectUri', 'error', 'error_description'];
+
+export const buildCleanLoginRedirectUri = (href) => {
+  try {
+    const url = new URL(href);
+    for (const key of OAUTH_CALLBACK_PARAMS) url.searchParams.delete(key);
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+};
+
 export const createAuthClient = ({ env = {}, liffClient, logger = console, fetchImpl = globalThis.fetch } = {}) => {
   if (!liffClient) {
     throw new Error('A LIFF client is required');
@@ -78,7 +94,10 @@ export const createAuthClient = ({ env = {}, liffClient, logger = console, fetch
     },
 
     login() {
-      if (config.mode !== 'mock' && !config.isLocalUat) return liffClient.login();
+      if (config.mode !== 'mock' && !config.isLocalUat) {
+        const redirectUri = buildCleanLoginRedirectUri(globalThis.window?.location?.href);
+        return liffClient.login(redirectUri ? { redirectUri } : undefined);
+      }
       return undefined;
     },
 

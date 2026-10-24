@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.11] - 2026-10-24
+
+### Fixed
+
+- Start LINE login with a clean `redirectUri` (stale OAuth callback parameters removed) and show a hint when the WebView does not navigate within 6 seconds, addressing the Android LINE login "continue" button doing nothing (Issue #32; real-device acceptance pending).
+
 ## [0.19.10] - 2026-10-24
 
 ### Fixed
