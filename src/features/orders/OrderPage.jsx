@@ -106,7 +106,7 @@ export default function OrderPage({
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
               <h3 className="font-bold text-sm text-[#2C4A3E]">今日菜單</h3>
               {groupedMenu.length === 0 && !dailyFlavorCard ? (
-                <p className="text-xs text-gray-400 text-center py-4">本日無可選菜單</p>
+                <p className="text-xs text-gray-400 text-center py-4">本日尚無可選菜單</p>
               ) : (
                 <>
                 {dailyFlavorCard && (
@@ -173,14 +173,14 @@ export default function OrderPage({
                                 onClick={() => onDecreaseItem(item.item_id, qty)}
                                 disabled={policyControlsDisabled}
                                 aria-label={`減少${item.dailyFlavorLabel}`}
-                                className={`w-7 h-7 rounded-full font-bold transition-all ${policyControlsDisabled
+                                className={`h-10 w-10 rounded-full font-bold transition-all ${policyControlsDisabled
                                   ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                   : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
                                   }`}
                               >
                                 -
                               </button>
-                              <span className={`w-7 h-7 flex items-center justify-center text-sm font-bold rounded-lg border ${isSelected
+                              <span className={`h-10 w-10 flex items-center justify-center text-sm font-bold rounded-lg border ${isSelected
                                 ? 'bg-[#2C4A3E] text-white border-[#2C4A3E]'
                                 : 'bg-gray-100 text-gray-800 border-gray-200'
                                 }`}>
@@ -190,7 +190,7 @@ export default function OrderPage({
                                 onClick={() => onIncreaseItem(item.item_id, qty)}
                                 disabled={policyControlsDisabled}
                                 aria-label={`增加${item.dailyFlavorLabel}`}
-                                className={`w-7 h-7 rounded-full font-bold text-white transition-all ${policyControlsDisabled
+                                className={`h-10 w-10 rounded-full font-bold text-white transition-all ${policyControlsDisabled
                                   ? 'bg-gray-200 text-gray-400'
                                   : 'bg-[#2C4A3E] hover:bg-emerald-800'
                                   }`}
@@ -281,14 +281,14 @@ export default function OrderPage({
                                 <button
                                   onClick={() => onDecreaseItem(item.item_id, qty)}
                                   disabled={policyControlsDisabled}
-                                  className={`w-7 h-7 rounded-full font-bold transition-all ${policyControlsDisabled
+                                  className={`h-10 w-10 rounded-full font-bold transition-all ${policyControlsDisabled
                                     ? 'bg-gray-100 text-gray-300 cursor-not-allowed'
                                     : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
                                     }`}
                                 >
                                   -
                                 </button>
-                                <span className={`w-7 h-7 flex items-center justify-center text-sm font-bold rounded-lg border ${isSelected
+                                <span className={`h-10 w-10 flex items-center justify-center text-sm font-bold rounded-lg border ${isSelected
                                   ? 'bg-[#2C4A3E] text-white border-[#2C4A3E]'
                                   : 'bg-gray-100 text-gray-800 border-gray-200'
                                   }`}>
@@ -297,7 +297,7 @@ export default function OrderPage({
                                 <button
                                   onClick={() => onIncreaseItem(item.item_id, qty)}
                                   disabled={policyControlsDisabled}
-                                  className={`w-7 h-7 rounded-full font-bold text-white transition-all ${policyControlsDisabled
+                                  className={`h-10 w-10 rounded-full font-bold text-white transition-all ${policyControlsDisabled
                                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                                     : 'bg-[#2C4A3E] hover:bg-emerald-800'
                                     }`}

@@ -570,7 +570,7 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
       assert.match(metrics.main, /Mock Bento A/u);
       assert.deepEqual(metrics.tabs, ['今日', '訂單總覽', '對帳']);
       assert.doesNotMatch(metrics.main, /Local mock vendor|員工編號|我的訂單|餘額/u);
-      assert.deepEqual(metrics.nav, ['店家', '訂餐', '足跡']);
+      assert.deepEqual(metrics.nav, ['店家', '訂餐', '售出足跡']);
 
       assert.equal(await clickTab('訂單總覽'), true);
       await waitFor('document.body.innerText.includes("訂單日數") && document.querySelectorAll("main article").length > 1', 'Vendor order overview with several days');
@@ -597,7 +597,7 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
       await waitFor('document.querySelector("[role=dialog]")?.innerText.includes("訂單總覽") && document.querySelector("[role=dialog]")?.innerText.includes("備餐清單")', 'Vendor day order summary dialog');
       await evaluate('document.querySelector("[role=dialog] button[aria-label=關閉視窗]").click()');
       await waitFor('![...document.querySelectorAll("[role=dialog]")].some(dialog=>dialog.innerText.includes("訂單總覽"))', 'Vendor day dialog closes');
-      assert.equal(await clickNav('足跡'), true);
+      assert.equal(await clickNav('售出足跡'), true);
       await waitFor('document.querySelector("[aria-label=廠商售出足跡]")?.innerText.includes("售出餐點排行")', 'Vendor sales footprint');
       const footprint = await readMetrics();
       assert.ok(footprint.documentWidth <= width, `Vendor footprint should fit ${width}px.`);

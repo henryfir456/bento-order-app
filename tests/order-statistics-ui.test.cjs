@@ -23,7 +23,7 @@ test('statistics navigation and API support authorized read-only View As', () =>
   const api = read('src/api/apiClientCore.js');
   const route = read('worker-poc/src/routes/readOnly.js');
   assert.match(app, /key === 'footprints'/);
-  assert.match(nav, /label: '足跡'/);
+  assert.match(nav, /label: '我的足跡'/);
   const methodStart = api.lastIndexOf('getOrderStatistics:');
   const method = api.slice(methodStart, api.indexOf('getOrderPage:', methodStart));
   assert.match(method, /'\/api\/orders\/statistics'/);
