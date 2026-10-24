@@ -3656,7 +3656,6 @@ export default function App() {
         <div className="max-w-xl mx-auto min-w-0">
           <h1 className="sr-only">蔬食便當預訂系統</h1>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-emerald-100">
-            {isVendorAccount && <span className="font-bold">廠商工作台</span>}
             {isVendorAccount && authMode === 'vendor_code' && (
               <button
                 type="button"

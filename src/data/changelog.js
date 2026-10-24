@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.3': [
+    { name: '變更', changes: [
+      '廠商畫面移除「廠商工作台」字樣、「重新整理」按鈕與最後更新時間，標題只顯示店家名稱；切換分頁會自動重新載入。',
+      '使用者管理中，廠商帳號原本員編顯示「未綁定」，改為顯示廠商代號（只有 LINE 管理員看得到）。'
+    ] }
+  ],
   '0.19.2': [
     { name: '變更', changes: [
       '大幅降低廠商頁面的資料庫讀取量：舊訂單的廠商歸屬改成預先算好的快取，新增或審核對照後會自動重建；月曆的訂購份數統計也只讀需要的日期範圍。'

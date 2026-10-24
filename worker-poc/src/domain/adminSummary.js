@@ -15,7 +15,7 @@ const rowsFrom = (result) => (
   Array.isArray(result) ? result : (Array.isArray(result?.results) ? result.results : [])
 );
 
-const memberRows = async (database, { includeInvalid = false } = {}) => {
+const memberRows = async (database, { includeInvalid = false, includeVendorLoginId = false } = {}) => {
   const result = await database.prepare(`
     SELECT u.user_id, u.employee_id, u.line_user_id, u.display_name, u.pickup_floor,
            ${currentBalanceProjection('u')} AS balance,
@@ -27,6 +27,7 @@ const memberRows = async (database, { includeInvalid = false } = {}) => {
            CASE WHEN u.role = 'User' AND vp.user_id IS NOT NULL
              THEN 'Vendor' ELSE u.role END AS role,
            CASE WHEN vp.user_id IS NULL THEN 0 ELSE 1 END AS vendor_principal,
+           vp.vendor_login_id,
            CASE WHEN u.role = 'User' AND vp.status = 'ACTIVE' AND EXISTS (
              SELECT 1
              FROM vendor_memberships vm
@@ -41,7 +42,8 @@ const memberRows = async (database, { includeInvalid = false } = {}) => {
     WHERE (? = 1 OR (u.active = 1 AND u.invalid_reason IS NULL))
     ORDER BY u.display_name ASC, u.user_id ASC
   `).bind(includeInvalid ? 1 : 0).all();
-  return rowsFrom(result).map((row) => publicUser({
+  return rowsFrom(result).map((row) => ({
+    ...publicUser({
     userId: row.user_id,
     employeeId: row.employee_id,
     lineUserId: row.line_user_id,
@@ -58,6 +60,10 @@ const memberRows = async (database, { includeInvalid = false } = {}) => {
     verificationStatus: row.verification_status,
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  }),
+    // Vendors have no employee ID; an Admin sees the vendor login code instead.
+    ...(includeVendorLoginId && Number(row.vendor_principal || 0) === 1 && row.vendor_login_id
+      ? { vendorLoginId: row.vendor_login_id } : {})
   }));
 };
 
@@ -206,7 +212,10 @@ export const getMemberBalances = async (
     metadata: { includeInvalid },
     occurredAt: now.toISOString()
   });
-  const members = await memberRows(database, { includeInvalid });
+  const includeVendorLoginId = !identity.viewAs
+    && identity.authorizationActor?.role === 'Admin'
+    && identity.authorizationActor?.authMode === 'line';
+  const members = await memberRows(database, { includeInvalid, includeVendorLoginId });
   return {
     success: true,
     requesterRole: identity.authorizationActor.role,

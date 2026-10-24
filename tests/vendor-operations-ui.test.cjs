@@ -560,7 +560,7 @@ test('Vendor local mock portal renders at phone and desktop widths without emplo
         screenWidth: width, screenHeight: height
       });
       await devtools.send('Page.navigate', { url: appUrl });
-      await waitFor('document.body.innerText.includes("DEV · MOCK VENDOR") && document.body.innerText.includes("廠商工作台") && document.body.innerText.includes("Mock Bento A") && document.body.innerText.includes("備餐清單")', 'Vendor local Mock portal today tab');
+      await waitFor('document.body.innerText.includes("DEV · MOCK VENDOR") && document.body.innerText.includes("Mock Bento A") && document.body.innerText.includes("備餐清單")', 'Vendor local Mock portal today tab');
       const readMetrics = async () => JSON.parse(await evaluate(`JSON.stringify({width:innerWidth,documentWidth:document.documentElement.scrollWidth,main:document.querySelector("main")?.innerText||"",nav:[...document.querySelectorAll("nav[aria-label=主要導覽] button")].map(button=>button.innerText.trim()),tabs:[...document.querySelectorAll("[role=tab]")].map(button=>button.innerText.trim())})`));
       const clickTab = (label) => evaluate(`(()=>{const tab=[...document.querySelectorAll("[role=tab]")].find(button=>button.innerText.trim()===${JSON.stringify(label)});tab?.click();return Boolean(tab)})()`);
       const metrics = await readMetrics();

@@ -67,7 +67,6 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
   const [busyKey, setBusyKey] = useState('');
   const [vendorPreview, setVendorPreview] = useState(false);
   const [tab, setTab] = useState('today');
-  const [loadedAt, setLoadedAt] = useState(null);
   const view = vendorOperationsView(role, vendorPreview, readOnly);
   const requestRef = useRef(0);
   const idempotencyRef = useRef({ payload: '', key: createKey() });
@@ -86,7 +85,6 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
       const data = await readResponse(response);
       if (requestId !== requestRef.current) return;
       setDays(Array.isArray(data.days) ? data.days : []);
-      setLoadedAt(new Date());
       setVendorName(data.vendor?.name || data.vendors?.[0]?.name || '');
       if (isVendor && Array.isArray(data.vendors)) setVendors(data.vendors);
     } catch (requestError) {
@@ -369,6 +367,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
   const selectTab = (key) => {
     setTab(key);
     if (key === 'today' && month !== currentMonth()) setMonth(currentMonth());
+    else if (key !== tab && !loading && (isVendor || vendorId)) void load();
   };
   const listedDays = days.filter((day) => (
     !view.vendorLayout
@@ -382,12 +381,16 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
       <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-bold text-[#2C4A3E]">{view.vendorLayout ? '廠商工作台' : '廠商訂單與轉帳'}</h2>
-            <p className="mt-1 text-sm text-slate-600">{vendorName || (isAdmin ? '選擇廠商查看' : '依已授權廠商範圍顯示')}</p>
+            {view.vendorLayout
+              ? <h2 className="text-xl font-bold text-[#2C4A3E]">{vendorName || '載入中…'}</h2>
+              : <>
+                <h2 className="text-xl font-bold text-[#2C4A3E]">廠商訂單與轉帳</h2>
+                <p className="mt-1 text-sm text-slate-600">{vendorName || (isAdmin ? '選擇廠商查看' : '依已授權廠商範圍顯示')}</p>
+              </>}
           </div>
           {mock && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-extrabold text-amber-900">LOCAL MOCK · 非 LINE／非實際 API</span>}
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
+        {(isAdmin || !showToday) && <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {isAdmin && <label className="space-y-1 text-sm font-medium text-slate-700">
             <span>廠商</span>
             <select value={vendorId} onChange={(event) => setVendorId(event.target.value)}
@@ -403,19 +406,14 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
             <input type="month" value={month} onChange={(event) => setMonth(event.target.value)}
               className="min-h-11 w-full rounded-lg border border-slate-300 px-3" />
           </label>}
-          <button type="button" onClick={() => void load()} disabled={loading || (!isVendor && !vendorId)}
-            className="min-h-11 self-end rounded-lg border border-slate-300 px-4 py-2 font-bold text-slate-700 disabled:opacity-50">
-            {loading ? '載入中…' : '重新整理'}
-          </button>
-        </div>
+        </div>}
         {isAdmin && <label className="mt-3 flex min-h-11 items-center gap-2 rounded-lg bg-slate-50 px-3 text-sm font-medium text-slate-700">
           <input type="checkbox" checked={vendorPreview} onChange={(event) => setVendorPreview(event.target.checked)} />
           以廠商視角預覽（唯讀）
         </label>}
-        {loadedAt && <p className="mt-2 text-xs text-slate-500">最後更新：{loadedAt.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>}
       </div>
 
-      {view.vendorLayout && <div role="tablist" aria-label="廠商工作台分頁" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+      {view.vendorLayout && <div role="tablist" aria-label="廠商分頁" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
         {VENDOR_TABS.map(({ key, label }) => <button key={key} type="button" role="tab" aria-selected={tab === key}
           onClick={() => selectTab(key)}
           className={`min-h-11 rounded-lg text-sm font-bold ${tab === key ? 'bg-white text-[#2C4A3E] shadow-sm' : 'text-slate-600'}`}>
