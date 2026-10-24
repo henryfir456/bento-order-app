@@ -61,7 +61,7 @@ const MemberIdentity = ({ user, onNameClick }) => (
       ? <button type="button" className="truncate text-left font-medium text-emerald-800 underline decoration-dotted" onClick={() => onNameClick(user)}>{user.name || '未命名使用者'}</button>
       : <span className="block truncate font-medium text-gray-700">{user.name || '未命名使用者'}</span>}
     <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-gray-500">
-      <span className="whitespace-nowrap">員編 {formatEmployeeId(user.employeeId)}</span>
+      <span className="whitespace-nowrap">{!user.employeeId && user.vendorLoginId ? `廠商代號 ${user.vendorLoginId}` : `員編 ${formatEmployeeId(user.employeeId)}`}</span>
       <IdentityStatusBadges fields={['lineBinding']} lineBound={user.lineBound} lineUserId={user.lineUserId} shortLineLabel />
     </div>
   </div>
@@ -642,7 +642,7 @@ export default function MemberBalanceManagement({
                 {filteredMembers.map((user, idx) => (
                   <tr key={memberKey(user, idx)} className="border-b last:border-0 align-top">
                     <td className="p-2">
-                      <div className="font-mono text-xs">{formatEmployeeId(user.employeeId)}</div>
+                      <div className="font-mono text-xs">{!user.employeeId && user.vendorLoginId ? user.vendorLoginId : formatEmployeeId(user.employeeId)}</div>
                       {isActiveValidMember(user)
                         ? <button type="button" onClick={() => startNameEdit(user)} className="mt-1 break-words text-left font-medium text-emerald-800 underline decoration-dotted hover:decoration-solid" aria-label={`修改 ${user.name || '未命名使用者'} 的姓名`}>{user.name || '未命名使用者'}</button>
                         : <span className="mt-1 block break-words font-medium text-gray-700">{user.name || '未命名使用者'}</span>}

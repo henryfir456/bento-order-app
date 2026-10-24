@@ -100,3 +100,23 @@ test('18:00 cron sends the vendor one order-closed notification and stays idempo
   );
   assert.equal(nothing.status, 'SKIP_NO_GROUP');
 });
+
+test('Admin member list shows the vendor login code in place of an employee ID, only to LINE Admin', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  seedVendorPrincipal(database);
+  database.run("UPDATE vendor_principals SET vendor_login_id = 'VSYN01' WHERE user_id = 'vendor-user'");
+  const fetchAs = async (profile) => {
+    const response = await handleFormalRequest(
+      request('/api/admin/members/balances', { token: profile.token }),
+      { DB: database },
+      { fetchImpl: profileFetch(profile), now: new Date('2026-09-08T00:00:00.000Z') }
+    );
+    return { status: response.status, body: await response.json() };
+  };
+  const admin = await fetchAs({ token: 'admin-token', lineUserId: 'admin-1' });
+  assert.equal(admin.status, 200);
+  const vendor = admin.body.members.find((member) => member.role === 'Vendor');
+  assert.equal(vendor.vendorLoginId, 'VSYN01');
+  assert.equal(vendor.employeeId, null);
+  assert.ok(admin.body.members.filter((member) => member.role !== 'Vendor').every((member) => !('vendorLoginId' in member)));
+});
