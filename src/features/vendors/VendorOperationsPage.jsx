@@ -421,6 +421,12 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
         </button>)}
       </div>}
 
+      {view.vendorLayout && !isAdmin && !mock && !showToday && <label className="block space-y-1 rounded-2xl border border-emerald-900/10 bg-white p-4 text-sm font-medium text-slate-700 shadow-sm">
+        <span>月份（台北時間）</span>
+        <input type="month" value={month} onChange={(event) => setMonth(event.target.value)}
+          className="min-h-11 w-full rounded-lg border border-slate-300 px-3" />
+      </label>}
+
       {view.previewing && <p role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-950">
         廠商視角預覽：顯示{vendorName ? `「${vendorName}」` : '這家廠商'}登入後看到的畫面。管理功能已隱藏，「確認收到」與「提出爭議」只有廠商本人能操作。
       </p>}
