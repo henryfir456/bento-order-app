@@ -277,7 +277,7 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
       assert.equal(invalidSourceButtons.includes('Mock Source Name'), false, 'An inactive invalid account must not expose name editing.');
 
       await clickVisibleButton({ ariaLabel: '管理' });
-      await clickVisibleButton({ text: '廠商每日訂單與轉帳對帳' });
+      await clickVisibleButton({ text: '廠商對帳' });
       await waitFor('document.body.innerText.includes("模擬登記銀行轉帳（LOCAL MOCK）") && document.body.innerText.includes("Mock Bento A")', '#124/#125 Admin synthetic transfer recording form');
       const setNumberInput = async (index, value) => {
         const set = await evaluate(`(()=>{const input=document.querySelectorAll('form input[type="number"]')[${index}];if(!input)return false;const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(input,${JSON.stringify(String(value))});input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);

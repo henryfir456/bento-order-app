@@ -3692,15 +3692,26 @@ export default function App() {
               </span>
             )}
             {!isVendorAccount && (isViewAsMode || !isRegistered ? (
-              <span>{displayName}</span>
+              <>
+                <span>{displayName}</span>
+                {displayFloor && (
+                  <span className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
+                    {displayFloor}
+                  </span>
+                )}
+              </>
             ) : (
               <button
                 type="button"
                 onClick={handleOpenFloorModal}
-                aria-label={`修改個人資料，目前姓名 ${displayName}`}
-                className="cursor-pointer rounded px-1 py-0.5 transition hover:bg-emerald-800/60 hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                aria-label={`修改個人資料，目前姓名 ${displayName}${displayFloor ? `，預設領取樓層 ${displayFloor}` : ''}`}
+                className="inline-flex min-h-9 cursor-pointer items-center gap-1.5 rounded px-1.5 py-1 transition hover:bg-emerald-800/60 hover:text-white focus:outline-none focus:ring-2 focus:ring-emerald-300"
               >
-                {displayName}
+                <span>{displayName}</span>
+                {displayFloor && (
+                  <span className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100">{displayFloor}</span>
+                )}
+                <span aria-hidden="true">›</span>
               </button>
             ))}
             <DevAuthBadge mode={authClient.mode} mockUser={authClient.mockUser} />
@@ -3712,20 +3723,6 @@ export default function App() {
                 window.location.reload();
               }}
             />
-            {!isVendorAccount && displayFloor && (isViewAsMode ? (
-              <span className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100" aria-label={`目前預設領取樓層 ${displayFloor}`}>
-                {displayFloor}
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={handleOpenFloorModal}
-                aria-label={`修改預設領取樓層，目前為 ${displayFloor}`}
-                className="rounded bg-emerald-900/80 px-1.5 py-0.5 font-bold text-emerald-100 transition hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-              >
-                {displayFloor}
-              </button>
-            ))}
             {!isVendorAccount && isRegistered && apiClient.transport === 'worker' && getLineBindingState(authUser) !== 'BOUND' && (
               <IdentityStatusBadges fields={['lineBinding']} lineBound={authUser?.lineBound} lineUserId={authUser?.lineUserId} />
             )}
@@ -4040,17 +4037,20 @@ export default function App() {
 
         {isRegistered && !isVendorAccount && viewMode === 'admin' && !loading && (
           <div className="space-y-4">
+            {adminSection !== 'hub' && (
+              <button type="button" onClick={() => setAdminSection('hub')} className="min-h-11 text-sm font-bold text-emerald-800 hover:underline">← 管理中心</button>
+            )}
             {adminSection === 'hub' && (
               <section aria-label="管理中心" className="space-y-3">
                 <h2 className="text-xl font-bold text-[#2C4A3E]">管理中心</h2>
                 <div className="space-y-2" role="group" aria-label="訂餐管理">
                   <h3 className="text-sm font-bold text-[#2C4A3E]">訂餐管理</h3>
-                <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
-                {authRole === 'Admin' && <button type="button" onClick={() => handleAdminSectionChange('vendorOperations')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">廠商每日訂單與轉帳對帳 ›</button>}
                 {canAuth('viewAdminOrderSummary') && <button type="button" onClick={() => handleAdminSectionChange('orders')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">訂單總覽 ›</button>}
                 {canAuth('manageCalendar') && <button type="button" onClick={() => openAdminCalendar()} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">開團管理 ›</button>}
+                {authRole === 'Admin' && <button type="button" onClick={() => handleAdminSectionChange('vendorOperations')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">廠商對帳 ›</button>}
                 {canAuth('manageAnnouncements') && <button type="button" onClick={() => handleAdminSectionChange('announcements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">公告管理 ›</button>}
                 {canAuth('manageMenu') && <button type="button" onClick={() => handleAdminSectionChange('menuChanges')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">菜單品項維護 ›</button>}
+                <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
                 </div>
                 {(canAuth('viewMemberBalances') || (authRole !== 'Admin' && (canAuth('viewAsUser') || canAuth('delegateOrder')))) && (
                 <div className="space-y-2" role="group" aria-label="使用者與帳務">

@@ -63,7 +63,7 @@ test('Vendor operations UI keeps Vendor in a dedicated shell and separates manua
   assert.match(page, /未登記差額/);
   assert.match(app, /isVendorAccount && viewMode === 'vendor'/);
   assert.match(app, /!isVendorAccount && viewMode === 'calendar'/);
-  assert.match(app, /廠商每日訂單與轉帳對帳/);
+  assert.match(app, /廠商對帳 ›/);
   assert.match(nav, /role === 'Vendor'[\s\S]*key === 'vendor'/);
   assert.match(nav, /role === 'Vendor'[\s\S]*key === 'calendar'/);
 });
@@ -278,7 +278,7 @@ test('Admin browser shows disabled vendor history without a transfer form', {
     await waitFor('document.body.innerText.includes("店家專區") && document.body.innerText.includes("查看店家")', 'Admin vendor list after update');
     await clickButton('← 月曆');
     await clickButton('管理', 'nav[aria-label="主要導覽"] button');
-    await clickButton('廠商每日訂單與轉帳對帳 ›');
+    await clickButton('廠商對帳 ›');
     await waitFor('document.querySelector("[aria-label=廠商每日訂單與轉帳管理] select option[value=mock-vendor-b]")', 'Admin Vendor operations selector');
     const selected = await evaluate(`(() => {
       const section = document.querySelector('[aria-label="廠商每日訂單與轉帳管理"]');
