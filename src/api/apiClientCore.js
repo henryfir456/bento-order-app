@@ -185,6 +185,17 @@ const createGasOperations = ({ gasApi, authClient }) => ({
       'The announcement inbox is available through the formal Worker API.'
     );
   },
+  getVendorContext: () => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'getVendorContext',
+      accessToken: readToken(authClient, 'getVendorContext')
+    });
+    throw new ApiContractGapError(
+      'VENDOR_CONTEXT_UNSUPPORTED_TRANSPORT',
+      'getVendorContext',
+      'Vendor context is available through the formal Worker API.'
+    );
+  },
   getMyNotifications: () => {
     if (authClient?.isMock) return gasApi.post({
       action: 'getMyNotifications',
@@ -522,6 +533,9 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   getMyAnnouncements: () => workerRequest(
     'getMyAnnouncements', 'GET', '/api/me/announcements'
+  ),
+  getVendorContext: () => workerRequest(
+    'getVendorContext', 'GET', '/api/vendor/context'
   ),
   getMyNotifications: () => workerRequest(
     'getMyNotifications', 'GET', '/api/me/notifications'

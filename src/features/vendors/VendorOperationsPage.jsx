@@ -378,7 +378,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
 
   return (
     <section aria-label={isVendor ? '廠商每日訂單與轉帳對帳' : '廠商每日訂單與轉帳管理'} className="mx-auto w-full max-w-xl space-y-4">
-      <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
+      {(isAdmin || mock || !view.vendorLayout) && <div className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             {view.vendorLayout
@@ -411,7 +411,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
           <input type="checkbox" checked={vendorPreview} onChange={(event) => setVendorPreview(event.target.checked)} />
           以廠商視角預覽（唯讀）
         </label>}
-      </div>
+      </div>}
 
       {view.vendorLayout && <div role="tablist" aria-label="廠商分頁" className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
         {VENDOR_TABS.map(({ key, label }) => <button key={key} type="button" role="tab" aria-selected={tab === key}

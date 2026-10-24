@@ -93,7 +93,11 @@ test('Vendor identity and scope come only from canonical principal and membershi
   assert.deepEqual(first.body, {
     success: true,
     role: 'Vendor',
-    vendorIds: ['synthetic-vendor-a', 'synthetic-vendor-b']
+    vendorIds: ['synthetic-vendor-a', 'synthetic-vendor-b'],
+    vendors: [
+      { id: 'synthetic-vendor-a', name: '合成店家 A' },
+      { id: 'synthetic-vendor-b', name: '合成店家 B' }
+    ]
   });
   assert.equal(database.get(
     'SELECT role FROM users WHERE user_id = ?', 'synthetic-vendor-user-a'

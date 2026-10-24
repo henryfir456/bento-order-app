@@ -25,5 +25,12 @@ export const handleVendorContextRoute = async (request, env, {
   }
   const vendorIds = await getActiveVendorIdsForPrincipal(env.DB, actorUserId);
   if (vendorIds.length === 0) throw forbidden('VENDOR_SCOPE_FORBIDDEN');
-  return jsonResponse({ success: true, role: 'Vendor', vendorIds });
+  const rows = await env.DB.prepare(`
+    SELECT vendor_id, name FROM vendors
+    WHERE enabled = 1 AND vendor_id IN (SELECT value FROM json_each(?))
+    ORDER BY vendor_id ASC
+  `).bind(JSON.stringify(vendorIds)).all();
+  const vendors = (Array.isArray(rows?.results) ? rows.results : [])
+    .map((row) => ({ id: String(row.vendor_id), name: String(row.name || '') }));
+  return jsonResponse({ success: true, role: 'Vendor', vendorIds, vendors });
 };

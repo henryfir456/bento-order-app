@@ -373,6 +373,7 @@ export default function App() {
   const [announcementInboxLoading, setAnnouncementInboxLoading] = useState(false);
   const [announcementInboxError, setAnnouncementInboxError] = useState('');
   const [announcementUnreadCount, setAnnouncementUnreadCount] = useState(0);
+  const [vendorNames, setVendorNames] = useState([]);
   const [announcementPopupQueue, setAnnouncementPopupQueue] = useState([]);
   const [announcementPopup, setAnnouncementPopup] = useState(null);
   const [announcementPopupDismissLoading, setAnnouncementPopupDismissLoading] = useState(false);
@@ -3598,6 +3599,21 @@ export default function App() {
       setDelegatedOrderUser(null);
     }
   }, [isRegistered, isVendorAccount]);
+  useEffect(() => {
+    if (!isRegistered || !isVendorAccount || !(apiClient.transport === 'worker' || authClient.isMock)) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await apiClient.getVendorContext();
+        if (!response.ok) return;
+        const data = await response.json();
+        const names = (Array.isArray(data?.vendors) ? data.vendors : [])
+          .map((vendor) => String(vendor?.name || '').trim()).filter(Boolean);
+        if (!cancelled) setVendorNames(names);
+      } catch { /* the header just shows no store name */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isRegistered, isVendorAccount, authUser?.userId]);
   const authStateLabel = {
     [AUTH_STATES.AUTH_LOADING]: '身份驗證中',
     [AUTH_STATES.AUTH_REQUIRED]: '請登入 LINE',
@@ -3656,6 +3672,7 @@ export default function App() {
         <div className="max-w-xl mx-auto min-w-0">
           <h1 className="sr-only">蔬食便當預訂系統</h1>
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5 text-xs text-emerald-100">
+            {isVendorAccount && vendorNames.length > 0 && <span className="font-bold text-white">{vendorNames.join('、')}</span>}
             {isVendorAccount && authMode === 'vendor_code' && (
               <button
                 type="button"
