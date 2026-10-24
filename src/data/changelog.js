@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.2': [
+    { name: '變更', changes: [
+      '大幅降低廠商頁面的資料庫讀取量：舊訂單的廠商歸屬改成預先算好的快取，新增或審核對照後會自動重建；月曆的訂購份數統計也只讀需要的日期範圍。'
+    ] }
+  ],
   '0.19.1': [
     { name: '新增', changes: [
       '每個 API 回應的 Server-Timing 會附上這次讀取的資料筆數與查詢數，讀取 5,000 筆以上的請求也會寫入日誌，用來找出耗用 D1 每日讀取額度的查詢。'

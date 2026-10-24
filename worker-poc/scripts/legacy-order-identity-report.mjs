@@ -58,7 +58,7 @@ JOIN orders o ON o.order_id = oi.order_id
 LEFT JOIN menu_items mi ON mi.menu_item_id = oi.menu_item_id
 LEFT JOIN menu_versions mv ON mv.menu_version_id = mi.menu_version_id
 LEFT JOIN latest_map lm ON lm.menu_version_id = mv.menu_version_id
-LEFT JOIN vendor_order_vendor_attributions attr ON attr.order_id = o.order_id
+LEFT JOIN vendor_order_vendor_attributions_live attr ON attr.order_id = o.order_id
 GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13
 ORDER BY 1, 5, 6, 7`;
 

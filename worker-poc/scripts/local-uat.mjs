@@ -178,7 +178,7 @@ const resetLocalDatabase = () => {
   } catch {
     foreignKeyRows = null;
   }
-  if (verification?.last_migration !== '0024_user_notifications.sql'
+  if (verification?.last_migration !== '0025_vendor_attribution_cache.sql'
     || verification.synthetic_users !== 5
     || verification.synthetic_vendors !== 2
     || verification.synthetic_owner_mappings !== 1
@@ -189,7 +189,7 @@ const resetLocalDatabase = () => {
     throw new Error('LOCAL_UAT_SEED_VERIFICATION_FAILED');
   }
   return {
-    migration: '0024_user_notifications',
+    migration: '0025_vendor_attribution_cache',
     database: localDatabaseName,
     credentialsFile
   };

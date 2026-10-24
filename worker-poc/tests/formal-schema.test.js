@@ -320,7 +320,7 @@ test('0020 exposes only explicitly reviewed menu-version mappings and keeps the 
     'Old snapshot', 1, 80, 80
   );
   assert.deepEqual(database.prepare(`
-    SELECT vendor_id FROM vendor_order_vendor_attributions WHERE order_id = ?
+    SELECT vendor_id FROM vendor_order_vendor_attributions_live WHERE order_id = ?
   `).all('synthetic-mapped-order').map((row) => row.vendor_id), ['synthetic-mapping-vendor']);
   database.prepare(`
     INSERT INTO vendor_menu_version_mapping_events (
@@ -332,7 +332,7 @@ test('0020 exposes only explicitly reviewed menu-version mappings and keeps the 
     'synthetic-mapping-admin', '2026-10-20T00:01:00.000Z'
   );
   assert.deepEqual(database.prepare(`
-    SELECT vendor_id FROM vendor_order_vendor_attributions WHERE order_id = ?
+    SELECT vendor_id FROM vendor_order_vendor_attributions_live WHERE order_id = ?
   `).all('synthetic-mapped-order'), []);
   assert.throws(() => database.prepare(`
     INSERT INTO vendor_menu_version_mapping_events (

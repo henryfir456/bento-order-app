@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.2] - 2026-10-24
+
+### Changed
+
+- Cut D1 reads of the Vendor pages: vendor order attribution for legacy orders is now read from a cache table (migration 0025) that the Worker rebuilds lazily after a reviewed mapping or line identity is added, and the vendor month queries filter by date inside the attribution lookup. The full computation stays available as `vendor_order_vendor_attributions_live`. The calendar order-quantity totals also honor the requested date range.
+
 ## [0.19.1] - 2026-10-23
 
 ### Added

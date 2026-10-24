@@ -349,9 +349,10 @@ export const getCalendarEvents = async (
     FROM orders o
     JOIN order_items oi ON oi.order_id = o.order_id
     WHERE o.status <> 'CANCELLED'
+${fromDate ? '  AND o.order_date >= ?' : ''}${toDate ? '  AND o.order_date <= ?' : ''}
     GROUP BY o.order_date
     ORDER BY o.order_date ASC
-  `).all();
+  `).bind(...[fromDate, toDate].filter(Boolean)).all();
   const dailyFlavorsResult = await database.prepare(`
     SELECT flavor.service_date, flavor.flavor_name, flavor.image_url,
       EXISTS (

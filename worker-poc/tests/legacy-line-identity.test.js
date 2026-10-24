@@ -101,7 +101,7 @@ const apply = (database) => {
 };
 
 const attribution = (database, orderId) => database.get(
-  'SELECT vendor_id FROM vendor_order_vendor_attributions WHERE order_id = ?', orderId
+  'SELECT vendor_id FROM vendor_order_vendor_attributions_live WHERE order_id = ?', orderId
 )?.vendor_id ?? null;
 
 test('applying the plan attributes whole orders by their reviewed lines', () => {
