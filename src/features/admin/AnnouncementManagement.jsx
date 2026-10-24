@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import Swal from 'sweetalert2';
 
 const EMPTY_FORM = Object.freeze({
   title: '',
@@ -115,7 +116,18 @@ export default function AnnouncementManagement({
 
   const handleDelete = async (announcement) => {
     if (isViewAsMode || actionLoading) return;
-    if (typeof window === 'undefined' || !window.confirm(`確定刪除公告「${announcement.title}」？`)) return;
+    const { isConfirmed } = await Swal.fire({
+      icon: 'warning',
+      title: '刪除公告',
+      text: `確定刪除公告「${announcement.title}」？刪除後無法復原。`,
+      showCancelButton: true,
+      focusCancel: true,
+      confirmButtonText: '刪除',
+      cancelButtonText: '取消',
+      confirmButtonColor: '#be123c',
+      customClass: { popup: 'rounded-3xl', confirmButton: 'rounded-xl', cancelButton: 'rounded-xl' }
+    });
+    if (!isConfirmed) return;
 
     setActionError('');
     setActionLoading(true);
@@ -259,7 +271,7 @@ export default function AnnouncementManagement({
           </div>
         ) : announcements.length === 0 ? (
           <div className="rounded-2xl border border-emerald-900/10 bg-white p-6 text-center text-sm text-gray-400">
-            目前沒有公告
+            尚無公告
           </div>
         ) : announcements.map((announcement) => (
           <article key={announcement.id} className="rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm">

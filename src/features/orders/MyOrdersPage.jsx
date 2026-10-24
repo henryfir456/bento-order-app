@@ -17,7 +17,7 @@ export default function MyOrdersPage({ orders, onRefresh, loading, error, isView
     </label>
     {loading ? <p role="status" className="rounded-xl bg-white p-4 text-sm">正在取得最新訂單…</p> :
       error ? <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{error}<button type="button" onClick={onRefresh} className="ml-3 min-h-11 font-semibold underline">重試</button></div> :
-      filtered.length === 0 ? <p className="rounded-xl bg-white p-4 text-sm text-slate-500">這個月份沒有訂單。</p> :
+      filtered.length === 0 ? <p className="rounded-xl bg-white p-4 text-sm text-slate-500">這個月份尚無訂單，到「訂餐」選擇開團日期即可下單。</p> :
       <div className="space-y-2">
         {filtered.map((order) => <article key={order.orderId} className="rounded-xl border border-slate-200 bg-white">
           <div className="flex min-h-14 items-center justify-between gap-2 px-4 py-3">

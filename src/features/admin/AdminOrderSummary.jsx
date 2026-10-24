@@ -96,7 +96,7 @@ export default function AdminOrderSummary({
                     {activeTab === 'detail' && (
                       <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
                         {adminSummary.todayOrders.length === 0 ? (
-                          <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
+                          <p className="text-xs text-gray-400 text-center py-4">此日期尚無訂單</p>
                         ) : (
                           <div className="space-y-4">
                             {groupOrdersByFloor(adminSummary.todayOrders).map(({ floor, orders }) => (
@@ -130,7 +130,7 @@ export default function AdminOrderSummary({
                     {activeTab === 'floorCount' && (
                       <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
                         {aggregatedOrders.length === 0 ? (
-                          <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
+                          <p className="text-xs text-gray-400 text-center py-4">此日期尚無訂單</p>
                         ) : (
                           <div className="space-y-4">
                             {aggregatedOrders.map(({ floor, items }) => (
@@ -156,7 +156,7 @@ export default function AdminOrderSummary({
                     {activeTab === 'totalCount' && (
                       <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
                         {totalOrdersByItem.length === 0 ? (
-                          <p className="text-xs text-gray-400 text-center py-4">此日期目前沒有訂單</p>
+                          <p className="text-xs text-gray-400 text-center py-4">此日期尚無訂單</p>
                         ) : (
                           <>
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

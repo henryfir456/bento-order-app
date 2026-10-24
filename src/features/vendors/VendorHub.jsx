@@ -55,13 +55,13 @@ function VendorList({
       {error && (
         <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
           <p>{error}</p>
-          <button type="button" onClick={onRetry} className="mt-3 rounded-xl bg-rose-700 px-3 py-2 text-xs font-bold text-white">重新整理</button>
+          <button type="button" onClick={onRetry} className="mt-3 rounded-xl bg-rose-700 px-3 py-2 text-xs font-bold text-white">重試</button>
         </div>
       )}
       {loading ? (
         <div className="rounded-2xl border border-emerald-900/10 bg-white p-6 text-center text-sm text-emerald-800 animate-pulse">讀取店家資料中...</div>
       ) : vendors.length === 0 ? (
-        <div className="rounded-2xl border border-emerald-900/10 bg-white p-6 text-center text-sm text-gray-400">目前沒有可顯示的店家資料。</div>
+        <div className="rounded-2xl border border-emerald-900/10 bg-white p-6 text-center text-sm text-gray-400">尚無店家資料。</div>
       ) : (
         <div className="space-y-3">
           {vendors.map((vendor) => (
@@ -208,7 +208,7 @@ function VendorDetail({ vendor, loading, error, canManageVendors, canManageCalen
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2"><button type="button" onClick={onBackToList} className="text-sm font-bold text-emerald-800 hover:underline">← 店家專區</button><button type="button" onClick={onBackToCalendar} className="rounded-xl border border-emerald-200 px-3 py-2 text-xs font-bold text-emerald-800 transition hover:bg-emerald-50">月曆</button></div>
-      {error && <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p>{error}</p><button type="button" onClick={onRetry} className="mt-3 font-bold underline">重新整理</button></div>}
+      {error && <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800"><p>{error}</p><button type="button" onClick={onRetry} className="mt-3 font-bold underline">重試</button></div>}
       {loading && <p className="rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800">讀取最新店家資料中...</p>}
       <section className="space-y-3 rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h2 className="text-2xl font-bold text-[#2C4A3E]">{vendor.name}</h2><p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-600">{vendor.description || '尚未提供店家簡介。'}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-xs font-bold ${vendor.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-500'}`}>{vendor.enabled ? '可使用' : '暫停使用'}</span></div><div className="border-t border-emerald-100 pt-3"><h3 className="font-bold text-[#2C4A3E]">店家資訊</h3><dl className="mt-2 space-y-2 text-sm text-gray-600"><div><dt className="inline font-bold">電話：</dt><dd className="inline">{vendor.phone || '尚未提供'}</dd></div><div><dt className="inline font-bold">地址：</dt><dd className="inline">{vendor.address || '尚未提供'}</dd></div><div><dt className="inline font-bold">最後點餐時間：</dt><dd className="inline">{formatVendorCutoff(latestVendorOrderingGroup(vendor)) || '尚無開團截止時間'}</dd></div>{vendor.website_url && <div><dt className="inline font-bold">官方網站：</dt><dd className="inline"><a className="text-emerald-700 underline" href={vendor.website_url} target="_blank" rel="noreferrer">查看官方網站 ↗</a></dd></div>}</dl></div></section>
       <section className="space-y-3 rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm"><h3 className="font-bold text-[#2C4A3E]">菜單</h3><MenuSnapshot key={`${vendor.id}-${vendor.menu_image_url}`} vendor={vendor} /><p className="text-sm text-gray-600">菜單更新：{formatVendorDate(vendor.menu_updated_at) || '尚未提供'}</p>{vendor.menu_source_url ? <a href={vendor.menu_source_url} target="_blank" rel="noreferrer" className="inline-flex rounded-xl bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800 hover:bg-emerald-100">查看最新官方菜單 ↗</a> : <p className="text-xs text-gray-400">尚未提供官方菜單網址。</p>}</section>

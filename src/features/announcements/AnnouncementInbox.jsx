@@ -78,15 +78,15 @@ export default function AnnouncementInbox({
           {error && announcementsAvailable && (
             <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800" role="alert">
               <p>{error}</p>
-              <button type="button" onClick={onRetry} className="mt-2 font-bold underline">重新載入公告</button>
+              <button type="button" onClick={onRetry} className="mt-2 font-bold underline">重試</button>
             </div>
           )}
           {!announcementsAvailable ? (
-            notifications.length === 0 ? <p className="rounded-xl bg-gray-50 p-5 text-center text-sm text-gray-500">目前沒有通知</p> : null
+            notifications.length === 0 ? <p className="rounded-xl bg-gray-50 p-5 text-center text-sm text-gray-500">尚無通知</p> : null
           ) : loading && announcements.length === 0 ? (
             <div role="status" className="py-6 text-center text-sm text-gray-500">公告載入中…</div>
           ) : showEmptyState ? (
-            <p className="rounded-xl bg-gray-50 p-5 text-center text-sm text-gray-500">目前沒有公告或通知</p>
+            <p className="rounded-xl bg-gray-50 p-5 text-center text-sm text-gray-500">尚無公告或通知</p>
           ) : announcements.length > 0 ? (
             <ul className="divide-y divide-gray-100" aria-label="公告列表">
               {announcements.map((announcement) => (

@@ -2164,8 +2164,8 @@ test('frontend announcement administration stays Worker-only, Admin-only, and Vi
 
   const deleteHandler = componentSource.match(/const handleDelete = async[\s\S]*?\n  \};/);
   assert.ok(deleteHandler);
-  assert.match(deleteHandler[0], /window\.confirm\(/);
-  assert.match(deleteHandler[0], /window\.confirm\([\s\S]*?onDelete\(/);
+  assert.match(deleteHandler[0], /Swal\.fire\(/);
+  assert.match(deleteHandler[0], /Swal\.fire\([\s\S]*?onDelete\(/);
   assert.match(componentSource, /isViewAsMode/);
   assert.match(componentSource, /onRefresh/);
 });

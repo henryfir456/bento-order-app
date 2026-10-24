@@ -27,6 +27,14 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.5] - 2026-10-24
+
+### Changed
+
+- Rename the bottom-navigation entries to 我的足跡 (employee) and 售出足跡 (Vendor) so the two are no longer both labelled 足跡.
+- Enlarge the order quantity buttons to a 40px touch target, unify empty-state wording on 尚無…, add a next step to the empty monthly order list, and use 重試 for inline error retry buttons.
+- Replace the browser confirm dialog for deleting an announcement with the shared warning popup (cancel focused by default).
+
 ## [0.19.4] - 2026-10-24
 
 ### Changed

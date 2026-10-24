@@ -11,6 +11,13 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.5': [
+    { name: '變更', changes: [
+      '底部導覽的「足跡」改名：員工為「我的足跡」、廠商為「售出足跡」，不再兩邊同名。',
+      '點餐頁數量加減鈕放大為 40px，手機更好點；空狀態文字統一為「尚無…」，我的訂單空月份會提示如何下單；錯誤區的重試按鈕統一為「重試」。',
+      '刪除公告改用與其他操作一致的確認視窗（預設聚焦取消），不再使用瀏覽器內建對話框。'
+    ] }
+  ],
   '0.19.4': [
     { name: '變更', changes: [
       '廠商的店家名稱改顯示在畫面上方、登出按鈕的左邊，所有廠商頁面都看得到目前登入的店家；工作台內原本只有店名的卡片已移除。'
