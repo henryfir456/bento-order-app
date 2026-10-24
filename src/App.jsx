@@ -3988,6 +3988,7 @@ export default function App() {
             onNextDate={() => nextOrderDate && handleSelectDate(nextOrderDate)}
             setting={setting}
             isExpired={isOrderExpired}
+            deadlineAt={deadline?.deadline || null}
             policyBlocked={orderPolicyBlocked}
             readOnly={activeOrderReadOnly}
             isViewAsMode={isViewAsMode}
