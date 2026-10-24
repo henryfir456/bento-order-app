@@ -11,6 +11,7 @@ export default function OrderPage({
   setting,
   isExpired,
   deadlineAt,
+  cutoffPassed,
   policyBlocked,
   readOnly,
   isViewAsMode,
@@ -75,6 +76,10 @@ export default function OrderPage({
                 ) : isExpired ? (
                   <span className="bg-slate-500 text-white text-xs px-2.5 py-1 rounded-full font-bold">
                     🔒 已截止 (唯讀)
+                  </span>
+                ) : cutoffPassed ? (
+                  <span className="bg-yellow-100 text-yellow-900 text-xs px-2.5 py-1 rounded-full font-bold">
+                    已截止・管理者可修改
                   </span>
                 ) : (
                   <span className="bg-emerald-100 text-emerald-800 text-xs px-2.5 py-1 rounded-full font-bold">
