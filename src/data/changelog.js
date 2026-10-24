@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.10': [
+    { name: '修正', changes: [
+      '修正 Android LINE 登入點「繼續」沒反應的問題：登入改以乾淨的返回網址發起；若 6 秒內沒有跳轉，會提示再按一次或從 LINE 重新開啟連結。'
+    ] }
+  ],
   '0.19.8': [
     { name: '變更', changes: [
       '各頁的載入中、錯誤與頁首改用共用元件：載入文字統一為「〇〇載入中…」，錯誤提示統一為一句說明加「重試」按鈕，錯誤碼收進「詳細資訊」。',
