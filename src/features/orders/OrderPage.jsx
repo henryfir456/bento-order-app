@@ -31,7 +31,7 @@ export default function OrderPage({
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     if (!deadlineAt) return undefined;
-    const timer = setInterval(() => setNow(new Date()), 30000);
+    const timer = setInterval(() => setNow(new Date()), 30 * 1000);
     return () => clearInterval(timer);
   }, [deadlineAt]);
   const deadlineLabel = !isExpired && !readOnly ? formatOrderDeadline(deadlineAt, now) : null;
@@ -54,7 +54,7 @@ export default function OrderPage({
                 </button>
                 <div className="min-w-0">
                   <h2 className="text-lg font-bold text-[#2C4A3E] break-words">{selectedDate} ({setting?.vendor})</h2>
-                  {deadlineLabel && <p className={`text-xs font-bold ${deadlineLabel.remainingMs < 3600000 ? 'text-rose-700' : 'text-slate-600'}`}>{deadlineLabel.text}</p>}
+                  {deadlineLabel && <p className={`text-xs font-bold ${deadlineLabel.remainingMs < 60 * 60 * 1000 ? 'text-rose-700' : 'text-slate-600'}`}>{deadlineLabel.text}</p>}
                 </div>
                 <button
                   type="button"

@@ -9,13 +9,13 @@ export const formatOrderDeadline = (deadlineIso, now = new Date()) => {
   const remainingMs = deadline.getTime() - now.getTime();
   if (remainingMs <= 0) return null;
 
-  const dayDiff = Math.round((Date.parse(`${dateKey(deadline)}T00:00:00Z`) - Date.parse(`${dateKey(now)}T00:00:00Z`)) / 86400000);
+  const dayDiff = Math.round((Date.parse(`${dateKey(deadline)}T00:00:00Z`) - Date.parse(`${dateKey(now)}T00:00:00Z`)) / (24 * 60 * 60 * 1000));
   const [, month, day] = dateKey(deadline).split('-');
   const dayLabel = dayDiff === 0 ? '今天' : dayDiff === 1 ? '明天' : `${Number(month)}/${Number(day)}`;
 
-  const totalMinutes = Math.ceil(remainingMs / 60000);
-  const days = Math.floor(totalMinutes / 1440);
-  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const totalMinutes = Math.ceil(remainingMs / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
   const minutes = totalMinutes % 60;
   const remaining = days > 0 ? `${days} 天 ${hours} 小時`
     : hours > 0 ? `${hours} 小時 ${minutes} 分`
