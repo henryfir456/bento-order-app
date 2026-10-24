@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.7] - 2026-10-24
+
+### Changed
+
+- Merge the header name and default pickup floor into one tappable profile button, regroup the Admin management hub with daily tasks first (訂單總覽, 開團管理, 廠商對帳), and add a consistent ← 管理中心 link on every Admin sub-page.
+
 ## [0.19.6] - 2026-10-24
 
 ### Changed
