@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.9': [
+    { name: '變更', changes: [
+      '點餐頁直接顯示截止時間與倒數（例如「今天 10:00 截止・剩 1 小時 20 分」），最後一小時改為紅字；樓層與備註維持同一列，樓層欄縮窄、備註放寬。'
+    ] }
+  ],
   '0.19.8': [
     { name: '變更', changes: [
       '各頁的載入中、錯誤與頁首改用共用元件：載入文字統一為「〇〇載入中…」，錯誤提示統一為一句說明加「重試」按鈕，錯誤碼收進「詳細資訊」。',

@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { formatSignedAmount } from './amountFormat.js';
+import { formatOrderDeadline } from './orderDeadlineLabel.js';
 
 export default function OrderPage({
   selectedDate,
@@ -8,6 +10,7 @@ export default function OrderPage({
   onNextDate,
   setting,
   isExpired,
+  deadlineAt,
   policyBlocked,
   readOnly,
   isViewAsMode,
@@ -25,6 +28,13 @@ export default function OrderPage({
   onIncreaseItem,
   message
 }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!deadlineAt) return undefined;
+    const timer = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(timer);
+  }, [deadlineAt]);
+  const deadlineLabel = !isExpired && !readOnly ? formatOrderDeadline(deadlineAt, now) : null;
   const controlsDisabled = isExpired || readOnly || isViewAsMode;
   const policyControlsDisabled = controlsDisabled || policyBlocked;
 
@@ -44,6 +54,7 @@ export default function OrderPage({
                 </button>
                 <div className="min-w-0">
                   <h2 className="text-lg font-bold text-[#2C4A3E] break-words">{selectedDate} ({setting?.vendor})</h2>
+                  {deadlineLabel && <p className={`text-xs font-bold ${deadlineLabel.remainingMs < 3600000 ? 'text-rose-700' : 'text-slate-600'}`}>{deadlineLabel.text}</p>}
                 </div>
                 <button
                   type="button"
@@ -75,7 +86,7 @@ export default function OrderPage({
 
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
               <h3 className="font-bold text-sm text-[#2C4A3E]">我的訂購設定</h3>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-2">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">當日領取樓層</label>
                   <select
