@@ -39,6 +39,10 @@ const OAUTH_CALLBACK_PARAMS = ['code', 'state', 'liffClientId', 'liffRedirectUri
 export const buildCleanLoginRedirectUri = (href) => {
   try {
     const url = new URL(href);
+    // A local dev page is not under the LIFF Endpoint URL (dev-start points that
+    // at the Pinggy tunnel), so LINE rejects it as an invalid redirect (400).
+    // Let LIFF use its own default there.
+    if (['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) return undefined;
     for (const key of OAUTH_CALLBACK_PARAMS) url.searchParams.delete(key);
     url.hash = '';
     return url.toString();
