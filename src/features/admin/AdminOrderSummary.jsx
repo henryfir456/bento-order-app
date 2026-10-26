@@ -15,12 +15,19 @@ export default function AdminOrderSummary({
   const totalOrdersByItem = aggregateOrdersByItem(adminSummary.todayOrders);
   const totalItemCount = totalOrdersByItem.reduce((sum, { quantity }) => sum + quantity, 0);
   const duplicateLabels = duplicateItemLabelKeys(adminSummary.todayOrders);
+  // One vendor per day is the norm: name it once under the title instead of on every line.
+  const vendorNames = [...new Set((adminSummary.todayOrders || [])
+    .map((o) => o.item_vendor || o.vendor || '').filter(Boolean))];
+  const itemVendor = (vendor) => (vendorNames.length > 1 ? vendor : '');
 
   return (
 <>
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-900/10 space-y-3">
                   <div className="flex flex-wrap justify-between items-center gap-3">
-                    <h3 className="font-bold text-base text-[#2C4A3E]">📋 訂單總覽</h3>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-base text-[#2C4A3E]">📋 訂單總覽</h3>
+                      {vendorNames.length > 0 && <p className="mt-0.5 text-xs font-semibold text-slate-600">{vendorNames.join('、')}</p>}
+                    </div>
                     <div className="flex min-w-0 items-center gap-1 rounded-2xl border border-gray-200 bg-white p-1 shadow-sm">
                       <button
                         type="button"
@@ -110,7 +117,7 @@ export default function AdminOrderSummary({
                                         {o.note && <span className="ml-2 text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-normal shadow-sm">📝 {o.note}</span>}
                                       </div>
                                       <div className="text-gray-600 mt-1">
-                                        {formatOrderItemLabel({ itemName: o.display_item_name || o.item_name, vendor: o.item_vendor || o.vendor, variantKey: o.item_variant_key })} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
+                                        {formatOrderItemLabel({ itemName: o.display_item_name || o.item_name, vendor: itemVendor(o.item_vendor || o.vendor), variantKey: o.item_variant_key })} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
                                       </div>
                                       {duplicateLabels.has(JSON.stringify([o.display_item_name || o.item_name || '', o.item_vendor || o.vendor || '', o.item_variant_key || ''])) && <p className="mt-1 text-[11px] text-slate-600">品項識別 {o.item_code || '不同'}</p>}
                                       {o.item_name_resolved === false && <p className="mt-1 text-[11px] text-amber-800" title={o.item_name_resolution_status || 'not_found'}>菜單身份未確認，保留原始名稱且不與其他訂單合併</p>}
@@ -139,7 +146,7 @@ export default function AdminOrderSummary({
                                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                   {items.map(({ itemName, identityKey, vendor, variantKey, itemCode, showIdentityCode, quantity, resolved, resolutionStatus }) => (
                                     <div key={`${floor}-${identityKey}`} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
-                                      <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor, variantKey })}{showIdentityCode && <span className="mt-1 block text-[11px] font-medium text-slate-600">品項識別 {itemCode || '不同'}</span>}{resolved === false && <span className="mt-1 block text-[11px] font-medium text-amber-800" title={resolutionStatus}>身份未確認；原始名稱獨立保留</span>}</span>
+                                      <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor: itemVendor(vendor), variantKey })}{showIdentityCode && <span className="mt-1 block text-[11px] font-medium text-slate-600">品項識別 {itemCode || '不同'}</span>}{resolved === false && <span className="mt-1 block text-[11px] font-medium text-amber-800" title={resolutionStatus}>身份未確認；原始名稱獨立保留</span>}</span>
                                       <span className="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-xs font-extrabold text-emerald-700 shadow-sm">
                                         × {quantity}
                                       </span>
@@ -162,7 +169,7 @@ export default function AdminOrderSummary({
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                               {totalOrdersByItem.map(({ itemName, identityKey, vendor, variantKey, itemCode, showIdentityCode, quantity, resolved, resolutionStatus }) => (
                                 <div key={identityKey} className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50/60 p-2.5">
-                                  <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor, variantKey })}{showIdentityCode && <span className="mt-1 block text-[11px] font-medium text-slate-600">品項識別 {itemCode || '不同'}</span>}{resolved === false && <span className="mt-1 block text-[11px] font-medium text-amber-800" title={resolutionStatus}>身份未確認；原始名稱獨立保留</span>}</span>
+                                  <span className="min-w-0 break-words text-xs font-bold text-emerald-900">{formatOrderItemLabel({ itemName, vendor: itemVendor(vendor), variantKey })}{showIdentityCode && <span className="mt-1 block text-[11px] font-medium text-slate-600">品項識別 {itemCode || '不同'}</span>}{resolved === false && <span className="mt-1 block text-[11px] font-medium text-amber-800" title={resolutionStatus}>身份未確認；原始名稱獨立保留</span>}</span>
                                   <span className="shrink-0 rounded-md border border-emerald-200 bg-white px-2 py-0.5 text-xs font-extrabold text-emerald-700 shadow-sm">
                                     × {quantity}
                                   </span>
