@@ -78,4 +78,6 @@ test('LINE login redirect URI drops stale OAuth callback parameters', async () =
   );
   assert.equal(buildCleanLoginRedirectUri('https://app.example/'), 'https://app.example/');
   assert.equal(buildCleanLoginRedirectUri(undefined), undefined);
+  assert.equal(buildCleanLoginRedirectUri('http://localhost:5173/?code=x'), undefined);
+  assert.equal(buildCleanLoginRedirectUri('http://127.0.0.1:5173/'), undefined);
 });
