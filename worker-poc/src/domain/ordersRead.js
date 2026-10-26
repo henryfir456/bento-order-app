@@ -68,6 +68,7 @@ export const getOrderItemSelectionKey = (row, menuItems = []) => {
     textValue(item?.legacy_item_id || item?.item_id) === menuCode
     && textValue(item?.item_name) === textValue(row?.item_name_snapshot)
     && Number(item?.price) === Number(row?.unit_price)
+    && (!row?.variant_key || textValue(item?.variant_key) === textValue(row.variant_key))
   ));
   if (exactMatches.length !== 1) return null;
   return textValue(exactMatches[0].selection_key || exactMatches[0].menu_item_id || exactMatches[0].item_id) || null;
@@ -97,7 +98,7 @@ export const getReadableOrder = async (
   };
 
   const result = await database.prepare(`
-    SELECT order_id, line_no, menu_item_id, legacy_item_id,
+    SELECT order_id, line_no, menu_item_id, legacy_item_id, variant_key,
            item_name_snapshot, quantity, unit_price, subtotal
     FROM order_items
     WHERE order_id = ?
@@ -201,7 +202,7 @@ export const getOrderStatistics = async (
   const result = await database.prepare(`
     SELECT o.order_id, o.order_date,
            COALESCE(NULLIF(TRIM(o.vendor), ''), '未命名店家') AS vendor,
-           i.line_no, i.menu_item_id, i.legacy_item_id, i.item_name_snapshot,
+           i.line_no, i.menu_item_id, i.legacy_item_id, i.variant_key, i.item_name_snapshot,
            i.quantity, i.unit_price,${REVIEWED_IDENTITY_COLUMNS}
     FROM orders o
     JOIN order_items i ON i.order_id = o.order_id${reviewedIdentityJoin('i')}
@@ -233,6 +234,7 @@ export const getOrderStatistics = async (
     const item = {
       menu_item_id: row.menu_item_id,
       legacy_item_id: row.legacy_item_id,
+      variant_key: row.variant_key,
       item_name_snapshot: row.item_name_snapshot,
       unit_price: row.unit_price,
       reviewed_identity: reviewedIdentityOf(row),

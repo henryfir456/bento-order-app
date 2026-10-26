@@ -73,7 +73,7 @@ const requireVendorIdentity = async (request, env, { fetchImpl, now }, action) =
 const activeOrderRowsForMonth = async (database, vendorId, bounds, today) => {
   const result = await database.prepare(`
     SELECT o.order_id, o.order_date, o.vendor,
-      oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot,
+      oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.variant_key, oi.item_name_snapshot,
       oi.quantity, oi.unit_price, oi.subtotal,
       CASE WHEN direct.order_id IS NULL THEN 0 ELSE 1 END AS is_direct,${REVIEWED_IDENTITY_COLUMNS}
     FROM orders o

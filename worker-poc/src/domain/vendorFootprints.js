@@ -33,7 +33,7 @@ export const getVendorFootprints = async (database, vendors, { period = 'all', n
   for (const vendor of vendors) {
     const result = await database.prepare(`
       SELECT o.order_id, o.order_date,
-        oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot,
+        oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.variant_key, oi.item_name_snapshot,
         oi.quantity, oi.unit_price, oi.subtotal,${REVIEWED_IDENTITY_COLUMNS}
       FROM orders o
       JOIN vendor_order_vendor_attributions attribution ON attribution.order_id = o.order_id

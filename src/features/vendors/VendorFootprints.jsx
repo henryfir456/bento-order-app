@@ -117,7 +117,7 @@ export default function VendorFootprints() {
                 <span className="w-6 shrink-0 text-center font-semibold tabular-nums text-slate-500">{index + 1}</span>
                 <span className="min-w-0">
                   <span className="block break-words font-medium text-slate-800">{dishLabel({ name: item.name, variantKey: item.variantKey })}</span>
-                  {item.resolved === false && <span className="block text-xs text-amber-800">舊資料，依原始名稱合併計算</span>}
+                  {item.resolved === false && <span className="block text-xs text-amber-800">尚未對應到菜單，依原始名稱計算</span>}
                 </span>
               </span>
               <span className="shrink-0 text-right">

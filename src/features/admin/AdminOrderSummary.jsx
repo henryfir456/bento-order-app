@@ -113,7 +113,7 @@ export default function AdminOrderSummary({
                                         {formatOrderItemLabel({ itemName: o.display_item_name || o.item_name, vendor: o.item_vendor || o.vendor, variantKey: o.item_variant_key })} <span className="bg-gray-200 px-1.5 py-0.5 rounded font-bold text-gray-700">x {o.quantity}</span>
                                       </div>
                                       {duplicateLabels.has(JSON.stringify([o.display_item_name || o.item_name || '', o.item_vendor || o.vendor || '', o.item_variant_key || ''])) && <p className="mt-1 text-[11px] text-slate-600">品項識別 {o.item_code || '不同'}</p>}
-                                      {o.item_name_resolved === false && <p className="mt-1 text-[11px] text-amber-800" title={o.item_name_resolution_status || 'not_found'}>菜單身份未確認，保留原始名稱且不與其他訂單合併</p>}
+                                      {o.item_name_resolved === false && <p className="mt-1 text-[11px] text-amber-800" title={o.item_name_resolution_status || 'not_found'}>尚未對應到菜單，依原始名稱計算且不與其他訂單合併</p>}
                                     </div>
                                     <span className="font-bold bg-emerald-100 text-emerald-800 px-2 py-1 rounded-lg text-xs border border-emerald-200 shadow-sm">
                                       {formatSignedAmount(o.subtotal)}

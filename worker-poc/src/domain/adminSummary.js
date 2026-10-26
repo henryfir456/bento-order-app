@@ -80,7 +80,7 @@ export const getAdminSummary = async (
     SELECT o.order_id, o.order_date, o.vendor, o.pickup_floor, o.note, o.created_at,
            o.status,
            u.display_name,
-           oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.item_name_snapshot, oi.quantity,
+           oi.line_no, oi.menu_item_id, oi.legacy_item_id, oi.variant_key, oi.item_name_snapshot, oi.quantity,
            oi.unit_price, oi.subtotal,${REVIEWED_IDENTITY_COLUMNS}
     FROM orders o
     JOIN users u ON u.user_id = o.user_id
@@ -98,6 +98,7 @@ export const getAdminSummary = async (
       item: {
         menu_item_id: row.menu_item_id,
         legacy_item_id: row.legacy_item_id,
+        variant_key: row.variant_key,
         item_name_snapshot: row.item_name_snapshot,
         unit_price: row.unit_price,
         reviewed_identity: reviewedIdentityOf(row),

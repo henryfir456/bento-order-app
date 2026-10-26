@@ -146,6 +146,7 @@ const normalizeItems = (rawItems, menuRows) => {
           ? menuItem.persisted_menu_item_id
           : menuItem.menu_item_id,
         legacyItemId: String(menuItem.legacy_item_id),
+        variantKey: text(menuItem.variant_key),
         itemName: menuItem.item_name,
         price: Number(menuItem.price),
         quantity
@@ -224,11 +225,11 @@ const assertOrderRequest = async (database, identity, input, clock) => {
 };
 
 const menuCte = (items) => `
-  WITH requested(line_no, menu_item_id, legacy_item_id, item_name, price, quantity, enabled) AS (
-    VALUES ${items.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}
+  WITH requested(line_no, menu_item_id, legacy_item_id, variant_key, item_name, price, quantity, enabled) AS (
+    VALUES ${items.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}
   ),
   priced AS (
-    SELECT line_no, menu_item_id, legacy_item_id, item_name, price, quantity
+    SELECT line_no, menu_item_id, legacy_item_id, variant_key, item_name, price, quantity
     FROM requested
     WHERE enabled = 1
   )
@@ -238,6 +239,8 @@ const menuParams = (items) => items.flatMap((item, index) => [
   index + 1,
   item.persistedMenuItemId ?? null,
   item.legacyItemId,
+  // Only a line without a persisted menu item needs its own variant.
+  item.persistedMenuItemId ? null : (item.variantKey || null),
   item.itemName,
   item.price,
   item.quantity,
@@ -471,10 +474,10 @@ const buildOrderStatements = (database, context, actor, details) => {
 
   const insertItems = prepareStatement(database, `${menuCte(items)}
     INSERT INTO order_items (
-      order_id, line_no, menu_item_id, legacy_item_id, item_name_snapshot,
+      order_id, line_no, menu_item_id, legacy_item_id, variant_key, item_name_snapshot,
       quantity, unit_price, subtotal
     )
-    SELECT ?, p.line_no, p.menu_item_id, p.legacy_item_id, p.item_name,
+    SELECT ?, p.line_no, p.menu_item_id, p.legacy_item_id, p.variant_key, p.item_name,
            p.quantity, p.price, p.quantity * p.price
     FROM priced p
     WHERE ${guardSql}
