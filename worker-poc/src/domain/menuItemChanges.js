@@ -120,7 +120,11 @@ export const normalizeLegacyMenuIdentity = ({ vendor, itemCode, variantKey = '',
   if (normalizedVendor === HE_SHI_MENU_VENDOR) {
     const halfMatch = codeKey.match(/^(H[1-5])H$/);
     if (halfMatch) return normalizedIdentity(halfMatch[1], 'HALF');
-    if (/^H[1-5]$/.test(codeKey)) return normalizedIdentity(codeKey, 'BASE');
+    if (/^H[1-5]$/.test(codeKey)) {
+      // A row that already carries its explicit variant (e.g. H2 + HALF) keeps it;
+      // only a bare legacy code means the BASE dish.
+      return normalizedIdentity(codeKey, NORMALIZED_VARIANT_KEYS.includes(variant) ? variant : 'BASE');
+    }
   }
 
   if (/^H[1-5]H?$/.test(codeKey)) return null;

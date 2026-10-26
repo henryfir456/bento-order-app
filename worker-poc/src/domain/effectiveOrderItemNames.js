@@ -103,6 +103,20 @@ export const resolveEffectiveOrderItemName = ({
       hasStableIdentity || unitPrice === null || Number(candidate?.price) === unitPrice
     ));
     matches = ambiguous ? [] : identityMatches;
+    if (ambiguous && !menuItemId && !requestedVariant && originalName) {
+      // A line saved without a menu item ID or variant is ambiguous only between
+      // the variants of ONE verified item code. When its own snapshot label is
+      // exactly the HALF variant's label (and price), it is that HALF line.
+      const halfSnapshot = sameVariantIdentity.filter((candidate) => (
+        text(candidate?.variant_key) === 'HALF'
+          && text(candidate?.item_name) === text(originalName)
+          && (unitPrice === null || Number(candidate?.price) === unitPrice)
+      ));
+      if (halfSnapshot.length === 1) {
+        matches = halfSnapshot;
+        ambiguous = false;
+      }
+    }
     if ((ambiguous || matches.length === 0) && hasStableIdentity && !requestedVariant) {
       // The order's own menu item (verified by its stored ID) predates a split of
       // this code into explicit variants. Use only the reviewed legacy mapping,

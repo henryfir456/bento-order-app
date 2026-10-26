@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.12': [
+    { name: '修正', changes: [
+      '修正禾拾「半飯」餐點下單後沒有記錄品項編號，導致管理者訂單總覽與廠商畫面無法辨識該品項的問題；新訂單會正確綁定半飯品項，先前已存在、品名與價格完全等於半飯品項的訂單也會自動辨識。'
+    ] }
+  ],
   '0.19.11': [
     { name: '修正', changes: [
       '修正 Android LINE 登入點「繼續」沒反應的問題：登入改以乾淨的返回網址發起；若 6 秒內沒有跳轉，會提示再按一次或從 LINE 重新開啟連結。'

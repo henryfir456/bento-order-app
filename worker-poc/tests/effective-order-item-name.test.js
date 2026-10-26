@@ -964,3 +964,24 @@ test('a reviewed line whose dish was not on the order-date menu shows the curren
   assert.deepEqual([body.items[0].name, body.items[0].vendor, body.items[0].variantKey, body.items[0].resolved],
     ['紅麴豆腐', '禾拾', 'BASE', true]);
 });
+
+test('a line saved without menu item ID or variant resolves only when its label is exactly the HALF variant', () => {
+  const menuItems = [
+    menuItem({ menuItemId: 'menu-base', legacyItemId: 'H2', variantKey: 'BASE', name: '合成豆腐', price: 100 }),
+    menuItem({ menuItemId: 'menu-half', legacyItemId: 'H2', variantKey: 'HALF', name: '合成豆腐(半飯)', price: 100 })
+  ];
+  const resolve = (name, unitPrice = 100) => resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2026-10-27',
+    item: { legacy_item_id: 'H2', item_name_snapshot: name, unit_price: unitPrice },
+    menuItems
+  });
+
+  const half = resolve('合成豆腐(半飯)');
+  assert.equal(half.resolved, true);
+  assert.equal(half.variantKey, 'HALF');
+  // The base label alone, another label or another price is never inferred.
+  assert.equal(resolve('合成豆腐').resolved, false);
+  assert.equal(resolve('其他名稱').resolutionStatus, 'ambiguous');
+  assert.equal(resolve('合成豆腐(半飯)', 90).resolved, false);
+});
