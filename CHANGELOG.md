@@ -31,7 +31,7 @@
 
 ### Fixed
 
-- Keep an explicit HALF (半飯) variant on 禾拾 H-codes when normalizing the compatibility baseline, so a half-rice order stores its own menu item ID instead of NULL and no longer shows as an unresolved/ambiguous line in Admin and vendor order views. Existing orders saved without a menu item ID still need a reviewed line identity.
+- Keep an explicit HALF (半飯) variant on 禾拾 H-codes when normalizing the compatibility baseline, so a half-rice order stores its own menu item ID instead of NULL and no longer shows as an unresolved/ambiguous line in Admin and vendor order views. Also resolve existing lines saved without a menu item ID or variant when their snapshot label and price exactly match that code's HALF variant, so earlier half-rice orders display correctly without a data rewrite.
 
 ## [0.19.11] - 2026-10-24
 

@@ -13,7 +13,7 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
   '0.19.12': [
     { name: '修正', changes: [
-      '修正禾拾「半飯」餐點下單後沒有記錄品項編號，導致管理者訂單總覽與廠商畫面無法辨識該品項的問題；新訂單會正確綁定半飯品項。'
+      '修正禾拾「半飯」餐點下單後沒有記錄品項編號，導致管理者訂單總覽與廠商畫面無法辨識該品項的問題；新訂單會正確綁定半飯品項，先前已存在、品名與價格完全等於半飯品項的訂單也會自動辨識。'
     ] }
   ],
   '0.19.11': [
