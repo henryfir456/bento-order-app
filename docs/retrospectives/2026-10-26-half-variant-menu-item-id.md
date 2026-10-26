@@ -1,5 +1,5 @@
 # 2026-10-26 — 半飯品項訂單 menu_item_id 為 NULL（Admin 總覽與廠商畫面無法辨識）
-- Repository、分支：80_bento-order-app、`claude/project-thread-mbnwv0`；PR／Commit：見 PR
+- Repository、分支：80_bento-order-app、`claude/project-thread-mbnwv0`；PR：#194
 - 本輪目標／實際修改：`normalizeLegacyMenuIdentity` 的禾拾 `H1`–`H5` 分支忽略列上已有的明確 variant，使 `H2 + HALF` 基準列被正規化成 `H2 + BASE` 並與全飯列合併；新增 `tests/orders-variant-identity.test.js`；升版 0.19.12。
 - 交付狀態：PARTIAL（程式與自動測試完成；合併／Worker 部署／既有兩筆訂單身分覆核見下）
 
@@ -16,7 +16,7 @@
 ## 驗證
 - RED：`node --test tests/orders-variant-identity.test.js`（修正前）：FAIL，`menu_item_id` 為 null。
 - GREEN：同命令（修正後）：PASS。
-- `npm test --prefix worker-poc`：675 pass／0 fail（修正後）。
+- `npm test --prefix worker-poc`：676 pass／0 fail（修正後）。
 - 前端／lint／build／changelog 測試：見 PR 紀錄。
 - 尚待：正式 Worker 部署與部署後 smoke、實機／使用者驗收（NOT VERIFIED）。
 

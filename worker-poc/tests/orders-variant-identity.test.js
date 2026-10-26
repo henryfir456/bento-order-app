@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { callOrderRoute, userProfile } from './helpers/order-fixtures.js';
-import { seedOrderDatabase } from './helpers/order-fixtures.js';
+import { callOrderRoute, seedOrderDatabase, userProfile } from './helpers/order-fixtures.js';
 
 const ORDER_DATE = '2026-10-27';
 const NOW = new Date('2026-10-26T01:00:00.000Z');
