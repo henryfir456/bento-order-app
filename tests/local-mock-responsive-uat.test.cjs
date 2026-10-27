@@ -155,7 +155,7 @@ test('local mock UAT #103, #108, #111, and #121 works at phone and desktop width
       assert.equal(clicked, true, `Expected a visible button for ${ariaLabel || text}.`);
     };
     const enterSearch = async (value) => {
-      const entered = await evaluate(`(()=>{const input=document.querySelector("input[aria-label=搜尋員編]");if(!input)return false;const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;setter.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
+      const entered = await evaluate(`(()=>{const input=document.querySelector("input[aria-label=搜尋員編或姓名]");if(!input)return false;const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set;setter.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event("input",{bubbles:true}));return true})()`);
       assert.equal(entered, true, 'The member search input should be available.');
     };
 
