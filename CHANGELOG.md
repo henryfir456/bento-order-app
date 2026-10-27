@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.13] - 2026-10-27
+
+### Added
+
+- Notify Admin and ProxyAdmin when the 蔡老師 group closes: a new 02:00 UTC (10:00 Taipei) cron writes a bell notification with the day's order and portion totals and sends one LINE Messaging API multicast when `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` is set (bell only otherwise). Migration 0026 adds the `ADMIN_ORDER_CLOSED` notification kind.
+
 ## [0.19.12] - 2026-10-26
 
 ### Fixed

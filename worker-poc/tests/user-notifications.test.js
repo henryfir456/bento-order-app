@@ -120,3 +120,52 @@ test('Admin member list shows the vendor login code in place of an employee ID, 
   assert.equal(vendor.employeeId, null);
   assert.ok(admin.body.members.filter((member) => member.role !== 'Vendor').every((member) => !('vendorLoginId' in member)));
 });
+
+test('10:00 cron tells Admin and ProxyAdmin the 蔡老師 group closed, via bell and one LINE multicast', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  seedUser(database, { lineUserId: 'proxy-1', displayName: 'Proxy One', role: 'ProxyAdmin' });
+  const buyer = userProfile('user-1', 'token-user-1');
+  const created = await callOrderRoute(database, '/api/orders', {
+    method: 'POST',
+    body: { targetDate: ORDER_DATE, pickupFloor: '1樓', items: [{ menu_item_id: 'menu-a', quantity: 1 }] },
+    headers: { 'Idempotency-Key': 'admin-close-1' }
+  }, buyer);
+  assert.equal(created.response.status, 200);
+  database.run("UPDATE calendar_settings SET vendor = '蔡老師' WHERE order_date = ?", ORDER_DATE);
+
+  const controller = { cron: '0 2 * * *', scheduledTime: Date.parse('2026-09-08T02:00:00.000Z') };
+  const pushes = [];
+  const fetchImpl = async (url, init) => {
+    pushes.push({ url, init });
+    return { ok: true, status: 200 };
+  };
+  const env = { DB: database, LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: 'secret' };
+  const lines = [];
+  const first = await handleScheduled(controller, env, { logger: { log: (line) => lines.push(line) }, fetchImpl });
+  assert.equal(first.status, 'NOTIFIED');
+  assert.equal(first.notified, 2);
+  assert.equal(first.push.sent, 2);
+  assert.equal(JSON.parse(lines[0]).event, 'admin_order_closed_notification');
+  assert.equal(pushes.length, 1);
+  assert.equal(pushes[0].url, 'https://api.line.me/v2/bot/message/multicast');
+  assert.deepEqual(JSON.parse(pushes[0].init.body).to.sort(), ['admin-1', 'proxy-1']);
+
+  // A retried run neither duplicates bells nor pushes again.
+  await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
+  assert.equal(pushes.length, 1);
+
+  const admin = await notificationsFor(database, { token: 'admin-token', lineUserId: 'admin-1' }, new Date(controller.scheduledTime));
+  assert.equal(admin.body.notifications.length, 1);
+  assert.equal(admin.body.notifications[0].kind, 'ADMIN_ORDER_CLOSED');
+  assert.match(admin.body.notifications[0].body, /1 筆訂單、1 份餐點/);
+
+  // Without a token only the bell is written; other vendors are skipped.
+  const noToken = await handleScheduled(
+    { cron: '0 2 * * *', scheduledTime: Date.parse('2026-09-09T02:00:00.000Z') },
+    { DB: database }, { logger: { log() {} }, fetchImpl }
+  );
+  assert.equal(noToken.status, 'SKIP_NO_GROUP');
+  database.run("UPDATE calendar_settings SET vendor = 'Vendor A' WHERE order_date = ?", ORDER_DATE);
+  const other = await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
+  assert.equal(other.status, 'SKIP_NO_GROUP');
+});

@@ -4,7 +4,7 @@ import { resolve, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 export const digest = bytes => createHash('sha256').update(bytes).digest('hex');
-const REQUIRED_CRONS = ['0 16 * * *', '0 8 * * *', '0 10 * * *', '30 0 15 6-12 *'];
+const REQUIRED_CRONS = ['0 16 * * *', '0 8 * * *', '0 10 * * *', '0 2 * * *', '30 0 15 6-12 *'];
 const EXPECTED_D1 = 'e75bc185-afb5-4a5d-abc9-81bd79525cff';
 const normalize = value => JSON.stringify(value);
 
