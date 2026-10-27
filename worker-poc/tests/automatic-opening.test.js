@@ -362,6 +362,7 @@ test('formal Wrangler config schedules the Worker at Taipei midnight', () => {
     '0 16 * * *',
     '0 8 * * *',
     '0 10 * * *',
+    '0 2 * * *',
     '30 0 15 6-12 *'
   ]);
 });

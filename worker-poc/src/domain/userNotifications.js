@@ -127,3 +127,82 @@ export const notifyVendorsOrderClosed = async (database, scheduledTime) => {
   })));
   return { status: 'NOTIFIED', orderDate, notified: principals.length, orderCount, portions };
 };
+
+const LATE_ORDER_VENDOR = '蔡老師';
+const LINE_MULTICAST_URL = 'https://api.line.me/v2/bot/message/multicast';
+const LINE_PUSH_TIMEOUT_MS = 3000;
+const LINE_MULTICAST_LIMIT = 500;
+
+const pushLineText = async (env, fetchImpl, lineUserIds, text) => {
+  const token = env?.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN;
+  if (!token || !lineUserIds.length) return { status: token ? 'SKIP_NO_RECIPIENT' : 'SKIP_NO_TOKEN', sent: 0 };
+  let sent = 0;
+  for (let index = 0; index < lineUserIds.length; index += LINE_MULTICAST_LIMIT) {
+    const to = lineUserIds.slice(index, index + LINE_MULTICAST_LIMIT);
+    const response = await fetchImpl(LINE_MULTICAST_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to, messages: [{ type: 'text', text }] }),
+      signal: AbortSignal.timeout(LINE_PUSH_TIMEOUT_MS)
+    });
+    if (!response.ok) return { status: 'LINE_PUSH_FAILED', httpStatus: response.status, sent };
+    sent += to.length;
+  }
+  return { status: 'PUSHED', sent };
+};
+
+// 10:00 Taipei cron: today's 蔡老師 (mode A) group has just closed. Tell each
+// active Admin/ProxyAdmin the totals through the bell and a LINE push.
+export const notifyAdminsLateGroupClosed = async (database, env, scheduledTime, {
+  fetchImpl = globalThis.fetch
+} = {}) => {
+  const now = resolveClock(scheduledTime);
+  const orderDate = getTaipeiDate(now);
+  const setting = await database.prepare(`
+    SELECT vendor FROM calendar_settings
+    WHERE order_date = ? AND mode = 'A' AND vendor = ?
+  `).bind(orderDate, LATE_ORDER_VENDOR).first();
+  if (!setting) return { status: 'SKIP_NO_GROUP', orderDate, notified: 0 };
+
+  const recipients = rowsFrom(await database.prepare(`
+    SELECT user_id, line_user_id FROM users
+    WHERE active = 1 AND role IN ('Admin', 'ProxyAdmin')
+  `).all());
+  if (!recipients.length) return { status: 'SKIP_NO_RECIPIENT', orderDate, notified: 0 };
+
+  const totals = await database.prepare(`
+    SELECT COUNT(DISTINCT o.order_id) AS order_count,
+      COALESCE(SUM(oi.quantity), 0) AS portions
+    FROM orders o
+    LEFT JOIN order_items oi ON oi.order_id = o.order_id
+    WHERE o.order_date = ? AND o.status = 'ACTIVE'
+  `).bind(orderDate).first();
+  const orderCount = Number(totals?.order_count || 0);
+  const portions = Number(totals?.portions || 0);
+  const label = orderDate.replace(/-/g, '/');
+  const body = orderCount > 0
+    ? `${label} 蔡老師已於 10:00 結單，共 ${orderCount} 筆訂單、${portions} 份餐點。`
+    : `${label} 蔡老師已於 10:00 結單，這一天沒有訂單。`;
+  const occurredAt = now.toISOString();
+  const results = await database.batch(recipients.map((recipient) => notificationStatement(database, {
+    userId: recipient.user_id,
+    kind: 'ADMIN_ORDER_CLOSED',
+    title: '蔡老師已結單',
+    body,
+    refDate: orderDate,
+    dedupeKey: `ADMIN_ORDER_CLOSED:${orderDate}:${recipient.user_id}`,
+    occurredAt
+  })));
+  // A retried cron run only pushes to recipients whose bell row is new.
+  const lineUserIds = recipients
+    .filter((_, index) => (results?.[index]?.meta?.changes ?? results?.[index]?.changes ?? 1) > 0)
+    .map((recipient) => recipient.line_user_id)
+    .filter(Boolean);
+  let push;
+  try {
+    push = await pushLineText(env, fetchImpl, lineUserIds, `【便當】${body}`);
+  } catch (error) {
+    push = { status: 'LINE_PUSH_ERROR', error: error?.name || 'Error', sent: 0 };
+  }
+  return { status: 'NOTIFIED', orderDate, notified: recipients.length, orderCount, portions, push };
+};

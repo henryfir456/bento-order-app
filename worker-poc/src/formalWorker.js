@@ -2,7 +2,7 @@ import { createReadMeter, meterDatabase } from './db/readMeter.js';
 import { handleAuthRoute } from './routes/auth.js';
 import { handleMeRoute } from './routes/me.js';
 import { handleAnnouncementInboxRoute } from './routes/announcementInbox.js';
-import { notifyVendorsOrderClosed } from './domain/userNotifications.js';
+import { notifyAdminsLateGroupClosed, notifyVendorsOrderClosed } from './domain/userNotifications.js';
 import { handleUserNotificationRoute } from './routes/userNotifications.js';
 import { handleOrderRoute } from './routes/orders.js';
 import { handleBalanceRoute } from './routes/balance.js';
@@ -59,6 +59,13 @@ export const handleScheduled = async (
       source: 'holiday_calendar_cron',
       ...result
     };
+    if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
+    return result;
+  }
+
+  if (controller?.cron === '0 2 * * *') {
+    const result = await notifyAdminsLateGroupClosed(env.DB, env, controller?.scheduledTime, { fetchImpl });
+    const logEntry = { event: 'admin_order_closed_notification', source: 'order_close_cron', ...result };
     if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
     return result;
   }
