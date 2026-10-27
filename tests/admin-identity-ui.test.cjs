@@ -85,11 +85,11 @@ test('Admin identity UI uses Worker binding and never writes verification state 
   assert.doesNotMatch(member, /待審核/);
   assert.match(member, /md:hidden/);
   assert.match(member, /onOpenEmployeeBindModal/);
-  assert.match(member, /filterMembersByEmployeeId/);
+  assert.match(member, /filterMembersByEmployeeIdOrName/);
   assert.match(member, /const \[employeeIdFilter, setEmployeeIdFilter\] = useState\(''\);/);
-  assert.match(member, /placeholder="搜尋員編"/);
-  assert.match(member, /aria-label="搜尋員編"/);
-  assert.match(member, /filterMembersByEmployeeId\(identityFiltered, employeeIdFilter\)/);
+  assert.match(member, /placeholder="搜尋員編或姓名"/);
+  assert.match(member, /aria-label="搜尋員編或姓名"/);
+  assert.match(member, /filterMembersByEmployeeIdOrName\(adminMembers, employeeIdFilter\)/);
 });
 
 test('legacy GAS adapter has no Admin identity binding operation', () => {
@@ -134,4 +134,21 @@ test('balance employee ID search reuses delegated-order partial matching semanti
   assert.deepEqual(filterMembersByEmployeeId(members, 'c777').map((row) => row.name), ['丙']);
   assert.equal(filterMembersByEmployeeId(members, '999').length, 0);
   assert.equal(filterMembersByEmployeeId(members, '').length, 3);
+});
+
+test('balance user search matches employee ID or name, case-insensitively and trimmed', async () => {
+  const { filterMembersByEmployeeIdOrName } = await import('../src/features/admin/delegateOrderFilter.js');
+  const members = [
+    { employeeId: 'A12345', name: '測試甲' },
+    { employeeId: 'b12399', name: 'Test Bee' },
+    { employee_id: ' C777 ', displayName: '測試丙' },
+    { employeeId: null, name: null }
+  ];
+
+  assert.deepEqual(filterMembersByEmployeeIdOrName(members, '123').map((row) => row.name), ['測試甲', 'Test Bee']);
+  assert.deepEqual(filterMembersByEmployeeIdOrName(members, ' 測試 ').map((row) => row.name ?? row.displayName), ['測試甲', '測試丙']);
+  assert.deepEqual(filterMembersByEmployeeIdOrName(members, 'test bee').map((row) => row.employeeId), ['b12399']);
+  assert.equal(filterMembersByEmployeeIdOrName(members, '不存在').length, 0);
+  assert.equal(filterMembersByEmployeeIdOrName(members, '').length, 4);
+  assert.equal(filterMembersByEmployeeIdOrName(undefined, 'x').length, 0);
 });

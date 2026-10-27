@@ -4,7 +4,7 @@ import { formatDateTime, getTaipeiYearMonth } from '../../dateUtils';
 import { formatBalanceAmount } from './formatters';
 import { formatEmployeeId } from '../../components/userIdentityDisplay';
 import IdentityStatusBadges from '../../components/IdentityStatusBadges';
-import { filterMembersByEmployeeId } from '../admin/delegateOrderFilter.js';
+import { filterMembersByEmployeeIdOrName } from '../admin/delegateOrderFilter.js';
 import { getLineBindingTransferMessage } from './lineBindingTransferMessages.js';
 import { getInvalidEmployeeRepairMessage } from './invalidEmployeeRepairMessages.js';
 import {
@@ -341,7 +341,7 @@ export default function MemberBalanceManagement({
     [includeInvalidMembers, memberBalances]
   );
   const filteredMembers = useMemo(() => {
-    const searched = filterMembersByEmployeeId(adminMembers, employeeIdFilter);
+    const searched = filterMembersByEmployeeIdOrName(adminMembers, employeeIdFilter);
     return [...searched].sort((a, b) => {
       const numeric = sort.key === 'balance';
       const difference = numeric
@@ -385,14 +385,14 @@ export default function MemberBalanceManagement({
           包含停用／誤建帳號
         </label>}
         <label className="block max-w-sm">
-          <span className="sr-only">搜尋員編</span>
+          <span className="sr-only">搜尋員編或姓名</span>
           <input
             type="search"
             inputMode="search"
             value={employeeIdFilter}
             onChange={(event) => setEmployeeIdFilter(event.target.value)}
-            placeholder="搜尋員編"
-            aria-label="搜尋員編"
+            placeholder="搜尋員編或姓名"
+            aria-label="搜尋員編或姓名"
             className="w-full rounded-xl border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-800 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
           />
         </label>
