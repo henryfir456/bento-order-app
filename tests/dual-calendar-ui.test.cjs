@@ -29,10 +29,12 @@ test('modern calendar supplies accessible status and date navigation', () => {
   assert.match(modern, /getWeekdayLeadingBlankCount/);
 });
 
-test('rolling layout shows last/this/next week rows and is selectable and remembered', () => {
-  assert.match(app, /layout=\{effectiveCalendarUi === 'rolling' \? 'rolling' : 'month'\}/);
+const rolling = fs.readFileSync(path.join(root, 'src/features/calendar/RollingCalendar.jsx'), 'utf8');
+test('rolling layout reuses the classic day cells for last/this/next week rows', () => {
+  assert.match(app, /<RollingCalendar renderCalendarDays=\{renderCalendarDays\} \/>/);
+  assert.match(app, /effectiveCalendarUi === 'rolling' && !adminManageMode/);
+  assert.match(app, /renderCalendarDays = \(dateList = null\)/);
   assert.match(app, /selectCalendarUi\('rolling'\)[\s\S]{0,260}滾動/);
-  assert.match(modern, /\['上週', -7\], \['本週', 0\], \['下週', 7\]/);
-  assert.match(modern, /shiftDateInput/);
-  assert.match(modern, /onSelectDate\(active.key\)/);
+  assert.match(rolling, /\['上週', -7\], \['本週', 0\], \['下週', 7\]/);
+  assert.match(rolling, /shiftDateInput/);
 });
