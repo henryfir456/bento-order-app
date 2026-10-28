@@ -12,8 +12,8 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
   '0.19.17': [
-    { name: '修正', changes: [
-      '有「管理」入口的帳號不再在訂餐頁看到 LINE 訂餐提醒，改在管理中心的「LINE 通知設定」設定。'
+    { name: '調整', changes: [
+      '所有人都能在「管理」入口看到「LINE 通知設定」（一般使用者只會看到這一項），訂餐頁不再顯示 LINE 訂餐提醒。'
     ] }
   ],
   '0.19.16': [

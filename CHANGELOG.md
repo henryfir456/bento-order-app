@@ -29,9 +29,9 @@
 
 ## [0.19.17] - 2026-10-28
 
-### Fixed
+### Changed
 
-- Hide the order-page LINE reminder block for every account that has the 管理 entry (not only roles with calendar management), so such accounts find it under 管理中心 「LINE 通知設定」 only.
+- Show the 管理 entry to every registered non-vendor account; ordinary users see only 「LINE 通知設定」 there. Remove the LINE reminder block from the order page so the settings live in one place.
 
 ## [0.19.16] - 2026-10-28
 
