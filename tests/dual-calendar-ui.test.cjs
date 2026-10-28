@@ -35,6 +35,6 @@ test('rolling layout reuses the classic day cells for last/this/next week rows',
   assert.match(app, /effectiveCalendarUi === 'rolling' && !adminManageMode/);
   assert.match(app, /renderCalendarDays = \(dateList = null\)/);
   assert.match(app, /selectCalendarUi\('rolling'\)[\s\S]{0,260}滾動/);
-  assert.match(rolling, /\['上週', -7\], \['本週', 0\], \['下週', 7\]/);
+  assert.match(rolling, /\['上週', -7\], \['本週', 0\], \['下週', 7\], \['下下週', 14\]/);
   assert.match(rolling, /shiftDateInput/);
 });
