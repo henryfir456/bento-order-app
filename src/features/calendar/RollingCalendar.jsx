@@ -1,15 +1,15 @@
 import React from 'react';
 import { formatDateInput, shiftDateInput } from '../../dateUtils';
 
-const WEEKS = [['上週', -7], ['本週', 0], ['下週', 7]];
+const WEEKS = [['上週', -7], ['本週', 0], ['下週', 7], ['下下週', 14]];
 
 export default function RollingCalendar({ renderCalendarDays }) {
   const today = formatDateInput(new Date());
   const dow = new Date(`${today}T12:00:00`).getDay();
   const monday = shiftDateInput(today, dow === 0 ? -6 : 1 - dow);
   return (
-    <div className="w-full min-w-0 space-y-3 rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm" aria-label="滾動三週訂餐">
-      <h2 className="px-1 text-lg font-bold text-[#2C4A3E]">近三週</h2>
+    <div className="w-full min-w-0 space-y-3 rounded-2xl border border-emerald-900/10 bg-white p-4 shadow-sm" aria-label="滾動四週訂餐">
+      <h2 className="px-1 text-lg font-bold text-[#2C4A3E]">近四週</h2>
       <div className="mb-1 grid grid-cols-5 gap-1 text-center text-xs font-medium text-gray-500">
         <div>一</div><div>二</div><div>三</div><div>四</div><div>五</div>
       </div>
