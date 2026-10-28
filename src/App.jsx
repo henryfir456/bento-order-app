@@ -227,8 +227,8 @@ function useUserNotifications({ api, enabled, userKey }) {
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
   const [calendarUi, setCalendarUi] = useState(() => {
-    try { const saved = window.localStorage.getItem('bento-calendar-ui'); return saved === 'modern' || saved === 'rolling' ? saved : 'classic'; }
-    catch { return 'classic'; }
+    try { const saved = window.localStorage.getItem('bento-calendar-ui'); return saved === 'classic' || saved === 'modern' ? saved : 'rolling'; }
+    catch { return 'rolling'; }
   });
   const [calendarEvents, setCalendarEvents] = useState({});
   const [vendors, setVendors] = useState([]);
