@@ -165,8 +165,13 @@ export const notifyAdminsLateGroupClosed = async (database, env, scheduledTime, 
   if (!setting) return { status: 'SKIP_NO_GROUP', orderDate, notified: 0 };
 
   const recipients = rowsFrom(await database.prepare(`
-    SELECT user_id, line_user_id FROM users
-    WHERE active = 1 AND role IN ('Admin', 'ProxyAdmin')
+    SELECT u.user_id, u.line_user_id,
+      COALESCE((
+        SELECT p.enabled FROM user_reminder_prefs p
+        WHERE p.user_id = u.user_id AND p.mode = 'ADMIN_CLOSE'
+      ), 1) AS line_enabled
+    FROM users u
+    WHERE u.active = 1 AND u.role IN ('Admin', 'ProxyAdmin')
   `).all());
   if (!recipients.length) return { status: 'SKIP_NO_RECIPIENT', orderDate, notified: 0 };
 
@@ -196,6 +201,7 @@ export const notifyAdminsLateGroupClosed = async (database, env, scheduledTime, 
   // A retried cron run only pushes to recipients whose bell row is new.
   const lineUserIds = recipients
     .filter((_, index) => (results?.[index]?.meta?.changes ?? results?.[index]?.changes ?? 1) > 0)
+    .filter((recipient) => Number(recipient.line_enabled) === 1)
     .map((recipient) => recipient.line_user_id)
     .filter(Boolean);
   let push;

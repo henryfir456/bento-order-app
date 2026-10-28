@@ -1,6 +1,6 @@
 import { ACTIONS, assertCan } from '../auth/permissions.js';
 import { prepareStatement, resolveClock } from '../db/transactions.js';
-import { badRequest } from '../http/errors.js';
+import { badRequest, forbidden } from '../http/errors.js';
 import { getTaipeiDate } from './deadlines.js';
 import { addDays, pushLineText } from './userNotifications.js';
 
@@ -14,29 +14,40 @@ const REMINDER_PLAN = {
   B: { dayOffset: 1, deadlineText: '今天 18:00' }
 };
 
+const isAdminRole = (identity) => ['Admin', 'ProxyAdmin'].includes(identity?.actor?.role);
+
 export const getReminderSettings = async (database, identity) => {
   assertCan(identity, ACTIONS.READ_SELF);
   const result = await database.prepare(`
     SELECT mode, enabled FROM user_reminder_prefs WHERE user_id = ?
   `).bind(identity.actor.userId).all();
-  const settings = { A: false, B: false };
-  for (const row of rowsFrom(result)) settings[row.mode] = Number(row.enabled) === 1;
-  return { success: true, settings, hasLineBinding: Boolean(identity.actor.lineUserId) };
+  const settings = { A: false, B: false, adminClose: true };
+  for (const row of rowsFrom(result)) {
+    settings[row.mode === 'ADMIN_CLOSE' ? 'adminClose' : row.mode] = Number(row.enabled) === 1;
+  }
+  return {
+    success: true,
+    settings,
+    canManageAdminClose: isAdminRole(identity),
+    hasLineBinding: Boolean(identity.actor.lineUserId)
+  };
 };
 
 export const updateReminderSettings = async (database, identity, body, now = new Date()) => {
   assertCan(identity, ACTIONS.READ_SELF);
   const updatedAt = resolveClock(now).toISOString();
-  const changes = ['A', 'B'].filter((mode) => body?.[mode] !== undefined);
+  const keys = { A: 'A', B: 'B', adminClose: 'ADMIN_CLOSE' };
+  const changes = Object.keys(keys).filter((key) => body?.[key] !== undefined);
   if (!changes.length) throw badRequest('REMINDER_SETTINGS_EMPTY');
-  if (changes.some((mode) => typeof body[mode] !== 'boolean')) throw badRequest('REMINDER_SETTINGS_INVALID');
-  await database.batch(changes.map((mode) => prepareStatement(database, `
+  if (changes.some((key) => typeof body[key] !== 'boolean')) throw badRequest('REMINDER_SETTINGS_INVALID');
+  if (changes.includes('adminClose') && !isAdminRole(identity)) throw forbidden('ADMIN_ONLY_REMINDER_SETTING');
+  await database.batch(changes.map((key) => prepareStatement(database, `
     INSERT INTO user_reminder_prefs (user_id, mode, enabled, updated_at)
     VALUES (?, ?, ?, ?)
     ON CONFLICT(user_id, mode) DO UPDATE SET
       enabled = excluded.enabled,
       updated_at = excluded.updated_at
-  `, [identity.actor.userId, mode, body[mode] ? 1 : 0, updatedAt])));
+  `, [identity.actor.userId, keys[key], body[key] ? 1 : 0, updatedAt])));
   return getReminderSettings(database, identity);
 };
 

@@ -33,10 +33,10 @@ test('reminder settings are per user and per group mode', async () => {
     { DB: database },
     { fetchImpl: profileFetch(profile), now: new Date('2026-09-07T00:00:00.000Z') }
   );
-  assert.deepEqual((await initial.json()).settings, { A: false, B: false });
+  assert.deepEqual((await initial.json()).settings, { A: false, B: false, adminClose: true });
   const saved = await putSettings(database, profile, { A: true });
   assert.equal(saved.status, 200);
-  assert.deepEqual(saved.body.settings, { A: true, B: false });
+  assert.deepEqual(saved.body.settings, { A: true, B: false, adminClose: true });
   assert.equal((await putSettings(database, profile, { B: 'yes' })).status, 400);
   assert.equal((await putSettings(database, profile, {})).status, 400);
 });
@@ -85,4 +85,30 @@ test('17:50 mode B cron looks at tomorrow and skips when no group of that mode e
   assert.equal(sent.status, 'REMINDED');
   assert.equal(sent.orderDate, ORDER_DATE);
   assert.match(JSON.parse(pushes[0].init.body).messages[0].text, /今天 18:00截止/);
+});
+
+test('Admin can opt out of the 10:00 close LINE push while keeping the bell; users cannot set it', async () => {
+  const database = seedOrderDatabase();
+  const admin = { token: 'admin-token', lineUserId: 'admin-1', displayName: 'Admin One' };
+  const defaults = await handleFormalRequest(
+    request('/api/me/reminder-settings', { token: admin.token }),
+    { DB: database },
+    { fetchImpl: profileFetch(admin), now: new Date('2026-09-07T00:00:00.000Z') }
+  );
+  const defaultBody = await defaults.json();
+  assert.equal(defaultBody.settings.adminClose, true);
+  assert.equal(defaultBody.canManageAdminClose, true);
+  assert.equal((await putSettings(database, userProfile('user-1', 'token-user-1'), { adminClose: false })).status, 403);
+  assert.equal((await putSettings(database, admin, { adminClose: false })).body.settings.adminClose, false);
+
+  database.run("UPDATE calendar_settings SET vendor = '蔡老師' WHERE order_date = ?", ORDER_DATE);
+  const { pushes, fetchImpl } = pushRecorder();
+  const result = await handleScheduled(
+    { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-08T02:00:00.000Z') },
+    { DB: database, LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: 'secret' },
+    { logger: { log() {} }, fetchImpl }
+  );
+  assert.equal(result.status, 'NOTIFIED');
+  assert.equal(result.notified, 1);
+  assert.equal(pushes.length, 0);
 });

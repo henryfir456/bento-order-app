@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.15': [
+    { name: '新增', changes: [
+      '管理中心新增「LINE 通知設定」：管理者可在此設定訂餐提醒，並可關閉每天 10:00 蔡老師結單的 LINE 通知；一般使用者仍在訂餐月曆頁設定。',
+      '新增「加入 LINE 官方帳號好友」按鈕。'
+    ] }
+  ],
   '0.19.14': [
     { name: '新增', changes: [
       '新增 LINE 訂餐提醒：可分別勾選蔡老師（當天 10:00 截止）與其他廠商（前一天 18:00 截止），截止前 10 分鐘若尚未訂餐，會透過 LINE 官方帳號提醒。'
