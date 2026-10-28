@@ -27,6 +27,18 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.17] - 2026-10-28
+
+### Changed
+
+- Show the 管理 entry to every registered non-vendor account; ordinary users see only 「LINE 通知設定」 there. Remove the LINE reminder block from the order page so the settings live in one place.
+
+## [0.19.16] - 2026-10-28
+
+### Changed
+
+- Default the official-account add-friend button to the production account link; `VITE_LINE_OA_ADD_FRIEND_URL` still overrides it.
+
 ## [0.19.15] - 2026-10-28
 
 ### Added

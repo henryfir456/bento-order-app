@@ -3613,6 +3613,8 @@ export default function App() {
     && hasPermission(effectiveRole, permission, authMode, isRegistered);
   const canAuth = (permission) => isRegistered
     && hasPermission(authRole, permission, authMode, isRegistered);
+  const hasManagementHub = canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary')
+    || canAuth('manageMenu') || canAuth('manageAnnouncements');
   useEffect(() => {
     if (isRegistered && isVendorAccount) {
       setViewMode('vendor');
@@ -3978,10 +3980,6 @@ export default function App() {
             weekendEvents={weekendEvents}
           />
         )}
-        {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && !adminManageMode
-          && !canAuth('manageCalendar') && !isViewAsMode && !delegatedOrderUser && (apiClient.transport === 'worker' || authClient.isMock) && (
-          <div className="mt-4"><OrderReminderSettings api={apiClient} /></div>
-        )}
 
         {isRegistered && !isVendorAccount && ['vendors', 'vendorDetail'].includes(viewMode) && !loading && (
           <VendorHub
@@ -4074,6 +4072,9 @@ export default function App() {
             {adminSection === 'hub' && (
               <section aria-label="管理中心" className="space-y-3">
                 <h2 className="text-xl font-bold text-[#2C4A3E]">管理中心</h2>
+                {(apiClient.transport === 'worker' || authClient.isMock) && <button type="button" onClick={() => setAdminSection('lineNotify')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">LINE 通知設定 ›</button>}
+                {hasManagementHub && (
+                <>
                 <div className="space-y-2" role="group" aria-label="訂餐管理">
                   <h3 className="text-sm font-bold text-[#2C4A3E]">訂餐管理</h3>
                 {canAuth('viewAdminOrderSummary') && <button type="button" onClick={() => handleAdminSectionChange('orders')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">訂單總覽 ›</button>}
@@ -4081,7 +4082,6 @@ export default function App() {
                 {authRole === 'Admin' && <button type="button" onClick={() => handleAdminSectionChange('vendorOperations')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">廠商對帳 ›</button>}
                 {canAuth('manageAnnouncements') && <button type="button" onClick={() => handleAdminSectionChange('announcements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">公告管理 ›</button>}
                 {canAuth('manageMenu') && <button type="button" onClick={() => handleAdminSectionChange('menuChanges')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">菜單品項維護 ›</button>}
-                {!isViewAsMode && !delegatedOrderUser && (apiClient.transport === 'worker' || authClient.isMock) && <button type="button" onClick={() => setAdminSection('lineNotify')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">LINE 通知設定 ›</button>}
                 <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
                 </div>
                 {(canAuth('viewMemberBalances') || (authRole !== 'Admin' && (canAuth('viewAsUser') || canAuth('delegateOrder')))) && (
@@ -4104,6 +4104,8 @@ export default function App() {
                 </div>
 
                 </div>
+                </>
+                )}
               </section>
             )}
             {adminSection === 'lineNotify' && (
@@ -4198,8 +4200,7 @@ export default function App() {
         <BottomNavigation current={viewMode} onNavigate={navigateBottomTab} role={authRole}
           balance={displayBalance} balanceKnown={(effectiveUser?.balance ?? authUser?.balance) != null && Number.isFinite(Number(effectiveUser?.balance ?? authUser?.balance))}
           canViewWallet={canAuth('viewOwnBalance') && !isViewAsMode && !delegatedOrderUser}
-          canManage={!isViewAsMode && !delegatedOrderUser
-            && (canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary') || canAuth('manageMenu') || canAuth('manageAnnouncements'))} />
+          canManage={!isViewAsMode && !delegatedOrderUser} />
       )}
       <footer className="mx-auto w-full max-w-xl px-4 py-4 text-center text-xs text-gray-400">
         <div>© 2026 Henry · 蔬食便當預訂系統

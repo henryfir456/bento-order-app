@@ -7,7 +7,8 @@ const REMINDER_OPTIONS = [
 ];
 
 const ADMIN_CLOSE_OPTION = { mode: 'adminClose', label: '蔡老師結單通知', hint: '每天 10:00 結單後，用 LINE 通知訂單數與份數（管理者）' };
-const ADD_FRIEND_URL = String(import.meta.env?.VITE_LINE_OA_ADD_FRIEND_URL || '').trim();
+const DEFAULT_ADD_FRIEND_URL = 'https://line.me/R/ti/p/@518jelfh';
+const ADD_FRIEND_URL = String(import.meta.env?.VITE_LINE_OA_ADD_FRIEND_URL || '').trim() || DEFAULT_ADD_FRIEND_URL;
 
 export default function OrderReminderSettings({ api, defaultOpen = false }) {
   const [settings, setSettings] = useState(null);
