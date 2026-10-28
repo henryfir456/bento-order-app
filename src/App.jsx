@@ -3613,6 +3613,8 @@ export default function App() {
     && hasPermission(effectiveRole, permission, authMode, isRegistered);
   const canAuth = (permission) => isRegistered
     && hasPermission(authRole, permission, authMode, isRegistered);
+  const hasManagementHub = canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary')
+    || canAuth('manageMenu') || canAuth('manageAnnouncements');
   useEffect(() => {
     if (isRegistered && isVendorAccount) {
       setViewMode('vendor');
@@ -3979,7 +3981,7 @@ export default function App() {
           />
         )}
         {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && !adminManageMode
-          && !canAuth('manageCalendar') && !isViewAsMode && !delegatedOrderUser && (apiClient.transport === 'worker' || authClient.isMock) && (
+          && !hasManagementHub && !isViewAsMode && !delegatedOrderUser && (apiClient.transport === 'worker' || authClient.isMock) && (
           <div className="mt-4"><OrderReminderSettings api={apiClient} /></div>
         )}
 
@@ -4198,8 +4200,7 @@ export default function App() {
         <BottomNavigation current={viewMode} onNavigate={navigateBottomTab} role={authRole}
           balance={displayBalance} balanceKnown={(effectiveUser?.balance ?? authUser?.balance) != null && Number.isFinite(Number(effectiveUser?.balance ?? authUser?.balance))}
           canViewWallet={canAuth('viewOwnBalance') && !isViewAsMode && !delegatedOrderUser}
-          canManage={!isViewAsMode && !delegatedOrderUser
-            && (canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary') || canAuth('manageMenu') || canAuth('manageAnnouncements'))} />
+          canManage={!isViewAsMode && !delegatedOrderUser && hasManagementHub} />
       )}
       <footer className="mx-auto w-full max-w-xl px-4 py-4 text-center text-xs text-gray-400">
         <div>© 2026 Henry · 蔬食便當預訂系統

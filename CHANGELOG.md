@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.17] - 2026-10-28
+
+### Fixed
+
+- Hide the order-page LINE reminder block for every account that has the 管理 entry (not only roles with calendar management), so such accounts find it under 管理中心 「LINE 通知設定」 only.
+
 ## [0.19.16] - 2026-10-28
 
 ### Changed
