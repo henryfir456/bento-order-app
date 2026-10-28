@@ -13,7 +13,6 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
   '0.19.14': [
     { name: '新增', changes: [
-      '訂餐月曆新增「滾動」樣式，只顯示上週、本週、下週三列。',
       '新增 LINE 訂餐提醒：可分別勾選蔡老師（當天 10:00 截止）與其他廠商（前一天 18:00 截止），截止前 10 分鐘若尚未訂餐，會透過 LINE 官方帳號提醒。'
     ] }
   ],

@@ -40,7 +40,6 @@ import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import ModernCalendar from './features/calendar/ModernCalendar';
-import RollingCalendar from './features/calendar/RollingCalendar';
 import OrderReminderSettings from './features/orders/OrderReminderSettings';
 import VendorHub from './features/vendors/VendorHub';
 import VendorOperationsPage from './features/vendors/VendorOperationsPage';
@@ -227,10 +226,7 @@ function useUserNotifications({ api, enabled, userKey }) {
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
   const [calendarUi, setCalendarUi] = useState(() => {
-    try {
-      const saved = window.localStorage.getItem('bento-calendar-ui');
-      return saved === 'modern' || saved === 'rolling' ? saved : 'classic';
-    }
+    try { return window.localStorage.getItem('bento-calendar-ui') === 'modern' ? 'modern' : 'classic'; }
     catch { return 'classic'; }
   });
   const [calendarEvents, setCalendarEvents] = useState({});
@@ -3594,7 +3590,7 @@ export default function App() {
   const canPreviewModernCalendar = isRegistered && !isViewAsMode && !delegatedOrderUser;
   const effectiveCalendarUi = canPreviewModernCalendar ? calendarUi : 'classic';
   const selectCalendarUi = (nextUi) => {
-    const next = nextUi === 'modern' || nextUi === 'rolling' ? nextUi : 'classic';
+    const next = nextUi === 'modern' ? 'modern' : 'classic';
     setCalendarUi(next);
     try { window.localStorage.setItem('bento-calendar-ui', next); } catch { /* nonessential preference */ }
   };
@@ -3947,12 +3943,6 @@ export default function App() {
             onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
             onNextMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))} />
         )}
-        {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'rolling' && !adminManageMode && (
-          <RollingCalendar events={calendarEvents} orders={userOrdersMap}
-            onSelectDate={handleSelectDate}
-            selectedKey={selectedCalendarKey}
-            onSelectKey={setSelectedCalendarKey} />
-        )}
         {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && (effectiveCalendarUi === 'classic' || adminManageMode) && (
           <CalendarManagement
             currentMonth={currentMonth}
@@ -4090,7 +4080,6 @@ export default function App() {
                   <div className="flex gap-2">
                     <button type="button" aria-pressed={effectiveCalendarUi === 'classic'} onClick={() => selectCalendarUi('classic')} className={`min-h-11 flex-1 rounded-lg text-sm font-bold ${effectiveCalendarUi === 'classic' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>經典</button>
                     <button type="button" aria-pressed={effectiveCalendarUi === 'modern'} onClick={() => selectCalendarUi('modern')} className={`min-h-11 flex-1 rounded-lg text-sm font-bold ${effectiveCalendarUi === 'modern' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>極簡</button>
-                    <button type="button" aria-pressed={effectiveCalendarUi === 'rolling'} onClick={() => selectCalendarUi('rolling')} className={`min-h-11 flex-1 rounded-lg text-sm font-bold ${effectiveCalendarUi === 'rolling' ? 'bg-[#2C4A3E] text-white' : 'bg-slate-100 text-slate-700'}`}>滾動</button>
                   </div>
                 </div>
 

@@ -31,7 +31,6 @@
 
 ### Added
 
-- Add a rolling calendar style that shows only last week, this week and next week (Monday to Friday) as three rows, next to the classic and minimal styles.
 - Add opt-in LINE order reminders: users can switch on a reminder per group type (蔡老師 same-day 10:00, and the previous-day 18:00 vendors such as 禾拾). A cron 10 minutes before each deadline (01:50 and 09:50 UTC) sends one LINE multicast to opted-in, LINE-bound users who have no active order yet. Reminders are deduplicated in `order_reminder_log`. Migration 0027 adds `user_reminder_prefs` and `order_reminder_log`; the two close-notification crons now share `0 2,10 * * *` to stay within five cron triggers.
 
 ## [0.19.13] - 2026-10-27
