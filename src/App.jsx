@@ -40,6 +40,7 @@ import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import ModernCalendar from './features/calendar/ModernCalendar';
+import RollingCalendar from './features/calendar/RollingCalendar';
 import OrderReminderSettings from './features/orders/OrderReminderSettings';
 import VendorHub from './features/vendors/VendorHub';
 import VendorOperationsPage from './features/vendors/VendorOperationsPage';
@@ -3283,23 +3284,28 @@ export default function App() {
     }
   };
 
-  const renderCalendarDays = () => {
+  const renderCalendarDays = (dateList = null) => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
     const firstWeekdayColumn = getWeekdayLeadingBlankCount(year, month);
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const days = [];
-    for (let i = 0; i < firstWeekdayColumn; i++) {
-      days.push(<div key={`empty-${i}`} className="h-24 bg-gray-50/50 border border-gray-100 rounded-lg"></div>);
+    if (!dateList) {
+      for (let i = 0; i < firstWeekdayColumn; i++) {
+        days.push(<div key={`empty-${i}`} className="h-24 bg-gray-50/50 border border-gray-100 rounded-lg"></div>);
+      }
     }
+    const targets = dateList || Array.from({ length: daysInMonth }, (_, i) => (
+      `${year}-${String(month + 1).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
+    ));
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
+    for (const dateStr of targets) {
+      const day = Number(dateStr.slice(8));
+      const date = new Date(`${dateStr}T12:00:00`);
       const dayOfWeek = date.getDay();
       if (dayOfWeek === 0 || dayOfWeek === 6) continue;
 
-      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const event = calendarEvents[dateStr];
       const eventExpired = Boolean(event?.isExpired || event?.expired);
       const isUserOrdered = Boolean(userOrdersMap[dateStr]);
@@ -3935,13 +3941,16 @@ export default function App() {
           <VendorFootprints />
         )}
 
-        {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && (effectiveCalendarUi === 'modern' || effectiveCalendarUi === 'rolling') && !adminManageMode && (
-          <ModernCalendar layout={effectiveCalendarUi === 'rolling' ? 'rolling' : 'month'} currentMonth={currentMonth} events={calendarEvents} orders={userOrdersMap}
+        {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'modern' && !adminManageMode && (
+          <ModernCalendar currentMonth={currentMonth} events={calendarEvents} orders={userOrdersMap}
             onSelectDate={handleSelectDate}
             selectedKey={selectedCalendarKey}
             onSelectKey={setSelectedCalendarKey}
             onPreviousMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1))}
             onNextMonth={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1))} />
+        )}
+        {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && effectiveCalendarUi === 'rolling' && !adminManageMode && (
+          <RollingCalendar renderCalendarDays={renderCalendarDays} />
         )}
         {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && (effectiveCalendarUi === 'classic' || adminManageMode) && (
           <CalendarManagement
