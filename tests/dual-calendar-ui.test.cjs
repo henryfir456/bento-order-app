@@ -7,7 +7,8 @@ const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
 const modern = fs.readFileSync(path.join(root, 'src/features/calendar/ModernCalendar.jsx'), 'utf8');
 
 test('classic calendar remains the default and switch is limited to real identity', () => {
-  assert.match(app, /'bento-calendar-ui'\) === 'modern'/);
+  assert.match(app, /getItem\('bento-calendar-ui'\)/);
+  assert.match(app, /saved === 'modern' \|\| saved === 'rolling' \? saved : 'classic'/);
   assert.match(app, /catch \{ return 'classic'; \}/);
   assert.match(app, /isRegistered && !isViewAsMode && !delegatedOrderUser/);
   assert.match(app, /canPreviewModernCalendar \? calendarUi : 'classic'/);
@@ -19,11 +20,19 @@ test('calendar views share existing date selection and cannot mutate order direc
   assert.doesNotMatch(modern, /apiClient|fetch\(|localStorage\.setItem/);
 });
 test('admin opening management mode falls back to classic management calendar', () => {
-  assert.match(app, /effectiveCalendarUi === 'modern' && !adminManageMode/);
+  assert.match(app, /\(effectiveCalendarUi === 'modern' \|\| effectiveCalendarUi === 'rolling'\) && !adminManageMode/);
   assert.match(app, /effectiveCalendarUi === 'classic' \|\| adminManageMode/);
 });
 test('modern calendar supplies accessible status and date navigation', () => {
   assert.match(modern, /aria-pressed=\{active\?\.key === entry.key\}/);
   assert.match(modern, /aria-label=\{\x60\$\{entry.key\}/);
   assert.match(modern, /getWeekdayLeadingBlankCount/);
+});
+
+test('rolling layout shows last/this/next week rows and is selectable and remembered', () => {
+  assert.match(app, /layout=\{effectiveCalendarUi === 'rolling' \? 'rolling' : 'month'\}/);
+  assert.match(app, /selectCalendarUi\('rolling'\)[\s\S]{0,260}滾動/);
+  assert.match(modern, /\['上週', -7\], \['本週', 0\], \['下週', 7\]/);
+  assert.match(modern, /shiftDateInput/);
+  assert.match(modern, /onSelectDate\(active.key\)/);
 });
