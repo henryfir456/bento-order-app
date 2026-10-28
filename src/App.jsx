@@ -3349,15 +3349,16 @@ export default function App() {
 
       // 1. 在 days.push 前，先根據當天的 dateStr 計算出農曆標籤
       const lunarLabel = getLunarLabel(dateStr);
+      const isTodayCell = Boolean(dateList) && dateStr === formatDateInput(new Date());
 
       days.push(
         <div
           key={dateStr}
           onClick={() => handleSelectDate(dateStr)}
-          className={`min-h-[132px] min-w-0 p-1.5 border rounded-xl flex flex-col justify-between transition-all relative ${statusBg}`}
+          className={`min-h-[132px] min-w-0 p-1.5 border rounded-xl flex flex-col justify-between transition-all relative ${statusBg}${isTodayCell ? ' ring-2 ring-amber-500 ring-offset-1' : ''}`}
         >
           <div className="flex justify-between items-start">
-            <span className="font-bold text-sm leading-none">{day}</span>
+            <span className="flex items-center gap-1 font-bold text-sm leading-none">{day}{isTodayCell && <span className="rounded bg-amber-500 px-1 py-0.5 text-[9px] font-bold text-white">今天</span>}</span>
 
             {/* 2. 改用計算出來的 lunarLabel，這樣每一天都能正確顯示初一/十五 */}
             {lunarLabel && (

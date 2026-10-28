@@ -37,4 +37,6 @@ test('rolling layout reuses the classic day cells for last/this/next week rows',
   assert.match(app, /selectCalendarUi\('rolling'\)[\s\S]{0,260}滾動/);
   assert.match(rolling, /\['上週', -7\], \['本週', 0\], \['下週', 7\], \['下下週', 14\]/);
   assert.match(rolling, /shiftDateInput/);
+  assert.match(app, /isTodayCell = Boolean\(dateList\) && dateStr === formatDateInput\(new Date\(\)\)/);
+  assert.match(app, /ring-2 ring-amber-500/);
 });
