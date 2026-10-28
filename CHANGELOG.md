@@ -27,6 +27,13 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.14] - 2026-10-28
+
+### Added
+
+- Add a rolling calendar style that shows only last week, this week and next week (Monday to Friday) as three rows, next to the classic and minimal styles.
+- Add opt-in LINE order reminders: users can switch on a reminder per group type (蔡老師 same-day 10:00, and the previous-day 18:00 vendors such as 禾拾). A cron 10 minutes before each deadline (01:50 and 09:50 UTC) sends one LINE multicast to opted-in, LINE-bound users who have no active order yet. Reminders are deduplicated in `order_reminder_log`. Migration 0027 adds `user_reminder_prefs` and `order_reminder_log`; the two close-notification crons now share `0 2,10 * * *` to stay within five cron triggers.
+
 ## [0.19.13] - 2026-10-27
 
 ### Added

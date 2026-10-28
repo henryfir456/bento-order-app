@@ -207,6 +207,29 @@ const createGasOperations = ({ gasApi, authClient }) => ({
       'Bell notifications are available through the formal Worker API.'
     );
   },
+  getReminderSettings: () => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'getReminderSettings',
+      accessToken: readToken(authClient, 'getReminderSettings')
+    });
+    throw new ApiContractGapError(
+      'REMINDERS_UNSUPPORTED_TRANSPORT',
+      'getReminderSettings',
+      'LINE reminders are available through the formal Worker API.'
+    );
+  },
+  updateReminderSettings: (settings = {}) => {
+    if (authClient?.isMock) return gasApi.post({
+      action: 'updateReminderSettings',
+      accessToken: readToken(authClient, 'updateReminderSettings'),
+      settings
+    });
+    throw new ApiContractGapError(
+      'REMINDERS_UNSUPPORTED_TRANSPORT',
+      'updateReminderSettings',
+      'LINE reminders are available through the formal Worker API.'
+    );
+  },
   markNotificationRead: ({ notificationId } = {}) => {
     if (authClient?.isMock) return gasApi.post({
       action: 'markNotificationRead',
@@ -539,6 +562,12 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   getMyNotifications: () => workerRequest(
     'getMyNotifications', 'GET', '/api/me/notifications'
+  ),
+  getReminderSettings: () => workerRequest(
+    'getReminderSettings', 'GET', '/api/me/reminder-settings'
+  ),
+  updateReminderSettings: (settings = {}) => workerRequest(
+    'updateReminderSettings', 'PUT', '/api/me/reminder-settings', { body: settings }
   ),
   markNotificationRead: ({ notificationId } = {}) => workerRequest(
     'markNotificationRead',

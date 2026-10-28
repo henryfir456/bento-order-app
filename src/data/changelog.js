@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.14': [
+    { name: '新增', changes: [
+      '訂餐月曆新增「滾動」樣式，只顯示上週、本週、下週三列。',
+      '新增 LINE 訂餐提醒：可分別勾選蔡老師（當天 10:00 截止）與其他廠商（前一天 18:00 截止），截止前 10 分鐘若尚未訂餐，會透過 LINE 官方帳號提醒。'
+    ] }
+  ],
   '0.19.13': [
     { name: '新增', changes: [
       '每天上午 10:00 蔡老師結單後，通知管理者與代理管理者當天的訂單數與份數（鈴鐺通知，並透過 LINE 官方帳號推播）。'

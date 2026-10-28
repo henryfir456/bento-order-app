@@ -81,7 +81,7 @@ export const vendorPrincipalsForName = async (database, vendorName) => {
   return rowsFrom(result).map((row) => ({ userId: row.user_id, vendorId: row.vendor_id }));
 };
 
-const addDays = (dateOnly, days) => {
+export const addDays = (dateOnly, days) => {
   const [year, month, day] = dateOnly.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   date.setUTCDate(date.getUTCDate() + days);
@@ -133,7 +133,7 @@ const LINE_MULTICAST_URL = 'https://api.line.me/v2/bot/message/multicast';
 const LINE_PUSH_TIMEOUT_MS = 3000;
 const LINE_MULTICAST_LIMIT = 500;
 
-const pushLineText = async (env, fetchImpl, lineUserIds, text) => {
+export const pushLineText = async (env, fetchImpl, lineUserIds, text) => {
   const token = env?.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN;
   if (!token || !lineUserIds.length) return { status: token ? 'SKIP_NO_RECIPIENT' : 'SKIP_NO_TOKEN', sent: 0 };
   let sent = 0;
