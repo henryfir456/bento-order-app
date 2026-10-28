@@ -6,10 +6,14 @@ const root = path.join(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'src/App.jsx'), 'utf8');
 const modern = fs.readFileSync(path.join(root, 'src/features/calendar/ModernCalendar.jsx'), 'utf8');
 
-test('classic calendar remains the default and switch is limited to real identity', () => {
+test('one-time reset moves everyone to rolling; later choices persist', () => {
+  assert.match(app, /bento-calendar-ui-default'\) !== 'rolling-v1'/);
+  assert.match(app, /setItem\('bento-calendar-ui', 'rolling'\)/);
+});
+test('rolling calendar is the default unless a user chose another style, and switch is limited to real identity', () => {
   assert.match(app, /getItem\('bento-calendar-ui'\)/);
-  assert.match(app, /saved === 'modern' \|\| saved === 'rolling' \? saved : 'classic'/);
-  assert.match(app, /catch \{ return 'classic'; \}/);
+  assert.match(app, /saved === 'classic' \|\| saved === 'modern' \? saved : 'rolling'/);
+  assert.match(app, /catch \{ return 'rolling'; \}/);
   assert.match(app, /isRegistered && !isViewAsMode && !delegatedOrderUser/);
   assert.match(app, /canPreviewModernCalendar \? calendarUi : 'classic'/);
 });

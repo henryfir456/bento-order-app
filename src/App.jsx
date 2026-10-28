@@ -227,8 +227,16 @@ function useUserNotifications({ api, enabled, userKey }) {
 export default function App() {
   const [viewMode, setViewMode] = useState('calendar');
   const [calendarUi, setCalendarUi] = useState(() => {
-    try { const saved = window.localStorage.getItem('bento-calendar-ui'); return saved === 'modern' || saved === 'rolling' ? saved : 'classic'; }
-    catch { return 'classic'; }
+    try {
+      // One-time reset so everyone starts on the rolling view; later choices are remembered.
+      if (window.localStorage.getItem('bento-calendar-ui-default') !== 'rolling-v1') {
+        window.localStorage.setItem('bento-calendar-ui-default', 'rolling-v1');
+        window.localStorage.setItem('bento-calendar-ui', 'rolling');
+        return 'rolling';
+      }
+      const saved = window.localStorage.getItem('bento-calendar-ui');
+      return saved === 'classic' || saved === 'modern' ? saved : 'rolling';
+    } catch { return 'rolling'; }
   });
   const [calendarEvents, setCalendarEvents] = useState({});
   const [vendors, setVendors] = useState([]);
