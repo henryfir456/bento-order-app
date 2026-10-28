@@ -40,6 +40,7 @@ import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
 import CalendarManagement from './features/calendar/CalendarManagement';
 import ModernCalendar from './features/calendar/ModernCalendar';
+import OrderReminderSettings from './features/orders/OrderReminderSettings';
 import VendorHub from './features/vendors/VendorHub';
 import VendorOperationsPage from './features/vendors/VendorOperationsPage';
 import VendorCalendar from './features/vendors/VendorCalendar';
@@ -3958,6 +3959,10 @@ export default function App() {
             renderCalendarDays={renderCalendarDays}
             weekendEvents={weekendEvents}
           />
+        )}
+        {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && !adminManageMode
+          && !isViewAsMode && !delegatedOrderUser && (apiClient.transport === 'worker' || authClient.isMock) && (
+          <div className="mt-4"><OrderReminderSettings api={apiClient} /></div>
         )}
 
         {isRegistered && !isVendorAccount && ['vendors', 'vendorDetail'].includes(viewMode) && !loading && (

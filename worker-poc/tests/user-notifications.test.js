@@ -81,7 +81,7 @@ test('18:00 cron sends the vendor one order-closed notification and stays idempo
   }, buyer);
   assert.equal(created.response.status, 200);
 
-  const controller = { cron: '0 10 * * *', scheduledTime: Date.parse('2026-09-07T10:00:00.000Z') };
+  const controller = { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-07T10:00:00.000Z') };
   const lines = [];
   const first = await handleScheduled(controller, { DB: database }, { logger: { log: (line) => lines.push(line) } });
   assert.equal(first.status, 'NOTIFIED');
@@ -95,7 +95,7 @@ test('18:00 cron sends the vendor one order-closed notification and stays idempo
   assert.match(vendor.body.notifications[0].body, /1 筆訂單、2 份餐點/);
 
   const nothing = await handleScheduled(
-    { cron: '0 10 * * *', scheduledTime: Date.parse('2026-09-10T10:00:00.000Z') },
+    { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-10T10:00:00.000Z') },
     { DB: database }, { logger: { log() {} } }
   );
   assert.equal(nothing.status, 'SKIP_NO_GROUP');
@@ -133,7 +133,7 @@ test('10:00 cron tells Admin and ProxyAdmin the 蔡老師 group closed, via bell
   assert.equal(created.response.status, 200);
   database.run("UPDATE calendar_settings SET vendor = '蔡老師' WHERE order_date = ?", ORDER_DATE);
 
-  const controller = { cron: '0 2 * * *', scheduledTime: Date.parse('2026-09-08T02:00:00.000Z') };
+  const controller = { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-08T02:00:00.000Z') };
   const pushes = [];
   const fetchImpl = async (url, init) => {
     pushes.push({ url, init });
@@ -161,7 +161,7 @@ test('10:00 cron tells Admin and ProxyAdmin the 蔡老師 group closed, via bell
 
   // Without a token only the bell is written; other vendors are skipped.
   const noToken = await handleScheduled(
-    { cron: '0 2 * * *', scheduledTime: Date.parse('2026-09-09T02:00:00.000Z') },
+    { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-09T02:00:00.000Z') },
     { DB: database }, { logger: { log() {} }, fetchImpl }
   );
   assert.equal(noToken.status, 'SKIP_NO_GROUP');

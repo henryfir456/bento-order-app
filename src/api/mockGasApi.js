@@ -228,6 +228,11 @@ export const createMockGasApi = ({ mockUser, storage } = {}) => {
       return jsonResponse({ success: true, unreadCount: 0, notifications: [] });
     }
 
+    if (action === 'getReminderSettings' || action === 'updateReminderSettings') {
+      state.reminderSettings = { A: false, B: false, ...state.reminderSettings, ...(action === 'updateReminderSettings' ? payload.settings : {}) };
+      return jsonResponse({ success: true, settings: state.reminderSettings, hasLineBinding: true });
+    }
+
     if (action === 'markNotificationRead') return errorResponse('NOTIFICATION_NOT_FOUND', 404);
 
     if (['markAnnouncementRead', 'dismissAnnouncementAutoPopup'].includes(action)) {

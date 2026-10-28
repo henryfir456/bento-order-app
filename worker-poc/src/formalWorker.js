@@ -3,6 +3,7 @@ import { handleAuthRoute } from './routes/auth.js';
 import { handleMeRoute } from './routes/me.js';
 import { handleAnnouncementInboxRoute } from './routes/announcementInbox.js';
 import { notifyAdminsLateGroupClosed, notifyVendorsOrderClosed } from './domain/userNotifications.js';
+import { sendOrderReminders } from './domain/orderReminders.js';
 import { handleUserNotificationRoute } from './routes/userNotifications.js';
 import { handleOrderRoute } from './routes/orders.js';
 import { handleBalanceRoute } from './routes/balance.js';
@@ -25,6 +26,12 @@ import { PROFILE_URL as LINE_PROFILE_URL } from './auth/lineProfile.js';
 
 const AUTOMATIC_OPENING_LOG_EVENT = 'automatic_daily_group_opening';
 const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
+
+// 10:00 / 18:00 Taipei close notifications share one trigger, and so do the
+// 09:50 / 17:50 reminders, to stay within the five-cron-trigger plan limit.
+const CLOSE_CRON = '0 2,10 * * *';
+const REMINDER_CRON = '50 1,9 * * *';
+const closeCronHour = (controller) => new Date(controller.scheduledTime).getUTCHours();
 
 export const handleScheduled = async (
   controller,
@@ -63,14 +70,22 @@ export const handleScheduled = async (
     return result;
   }
 
-  if (controller?.cron === '0 2 * * *') {
+  if (controller?.cron === REMINDER_CRON) {
+    const mode = new Date(controller.scheduledTime).getUTCHours() === 1 ? 'A' : 'B';
+    const result = await sendOrderReminders(env.DB, env, controller.scheduledTime, mode, { fetchImpl });
+    const logEntry = { event: 'order_reminder', source: 'order_reminder_cron', ...result };
+    if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
+    return result;
+  }
+
+  if (controller?.cron === CLOSE_CRON && closeCronHour(controller) === 2) {
     const result = await notifyAdminsLateGroupClosed(env.DB, env, controller?.scheduledTime, { fetchImpl });
     const logEntry = { event: 'admin_order_closed_notification', source: 'order_close_cron', ...result };
     if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
     return result;
   }
 
-  if (controller?.cron === '0 10 * * *') {
+  if (controller?.cron === CLOSE_CRON && closeCronHour(controller) === 10) {
     const result = await notifyVendorsOrderClosed(env.DB, controller?.scheduledTime);
     const logEntry = { event: 'vendor_order_closed_notification', source: 'order_close_cron', ...result };
     if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
