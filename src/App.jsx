@@ -3971,7 +3971,7 @@ export default function App() {
           />
         )}
         {isRegistered && !isVendorAccount && viewMode === 'calendar' && !loading && !adminManageMode
-          && !isViewAsMode && !delegatedOrderUser && (apiClient.transport === 'worker' || authClient.isMock) && (
+          && !canAuth('manageCalendar') && !isViewAsMode && !delegatedOrderUser && (apiClient.transport === 'worker' || authClient.isMock) && (
           <div className="mt-4"><OrderReminderSettings api={apiClient} /></div>
         )}
 
@@ -4073,6 +4073,7 @@ export default function App() {
                 {authRole === 'Admin' && <button type="button" onClick={() => handleAdminSectionChange('vendorOperations')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">廠商對帳 ›</button>}
                 {canAuth('manageAnnouncements') && <button type="button" onClick={() => handleAdminSectionChange('announcements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">公告管理 ›</button>}
                 {canAuth('manageMenu') && <button type="button" onClick={() => handleAdminSectionChange('menuChanges')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">菜單品項維護 ›</button>}
+                {!isViewAsMode && !delegatedOrderUser && (apiClient.transport === 'worker' || authClient.isMock) && <button type="button" onClick={() => setAdminSection('lineNotify')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">LINE 通知設定 ›</button>}
                 <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
                 </div>
                 {(canAuth('viewMemberBalances') || (authRole !== 'Admin' && (canAuth('viewAsUser') || canAuth('delegateOrder')))) && (
@@ -4095,6 +4096,12 @@ export default function App() {
                 </div>
 
                 </div>
+              </section>
+            )}
+            {adminSection === 'lineNotify' && (
+              <section aria-label="LINE 通知設定" className="space-y-3">
+                <h2 className="text-xl font-bold text-[#2C4A3E]">LINE 通知設定</h2>
+                <OrderReminderSettings api={apiClient} defaultOpen />
               </section>
             )}
             {adminSection === 'orders' && (

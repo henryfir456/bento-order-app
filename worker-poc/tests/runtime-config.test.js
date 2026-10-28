@@ -73,7 +73,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0024_user_notifications.sql',
       '0025_vendor_attribution_cache.sql',
       '0026_admin_order_closed_notification.sql',
-      '0027_order_reminders.sql'
+      '0027_order_reminders.sql',
+      '0028_admin_close_line_pref.sql'
     ]
   );
 });
