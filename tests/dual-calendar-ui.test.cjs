@@ -20,7 +20,7 @@ test('calendar views share existing date selection and cannot mutate order direc
   assert.doesNotMatch(modern, /apiClient|fetch\(|localStorage\.setItem/);
 });
 test('admin opening management mode falls back to classic management calendar', () => {
-  assert.match(app, /\(effectiveCalendarUi === 'modern' \|\| effectiveCalendarUi === 'rolling'\) && !adminManageMode/);
+  assert.match(app, /effectiveCalendarUi === 'modern' && !adminManageMode/);
   assert.match(app, /effectiveCalendarUi === 'classic' \|\| adminManageMode/);
 });
 test('modern calendar supplies accessible status and date navigation', () => {
