@@ -722,7 +722,7 @@ test('invalid bootstrap token returns the existing LINE error without reading Sh
 });
 
 test('frontend bootstrap owns initial state and only uses legacy startup on INVALID_ACTION', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const initStart = appSource.indexOf('const initLiffAndFetchData');
   const initEnd = appSource.indexOf('  useEffect(() => {', initStart);
   const initSource = appSource.slice(initStart, initEnd);
@@ -810,7 +810,7 @@ test('frontend boot timing logger emits only the Phase 3 allowlist', async () =>
 });
 
 test('frontend bootstrap wires the correlated Phase 3 waterfall without extra requests', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const initStart = appSource.indexOf('const initLiffAndFetchData');
   const initEnd = appSource.indexOf('  useEffect(() => {', initStart);
   const initSource = appSource.slice(initStart, initEnd);
@@ -973,7 +973,7 @@ test('missing Announcements sheet returns null and keeps calendar initialization
 });
 
 test('announcement inbox uses an accessible bell and modal instead of a persistent home card', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const bellSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'announcements', 'AnnouncementBell.jsx'), 'utf8');
   const inboxSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'announcements', 'AnnouncementInbox.jsx'), 'utf8');
   const contentSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'announcements', 'AnnouncementContent.jsx'), 'utf8');
@@ -1893,7 +1893,7 @@ test.skip('token-authenticated order writes ignore forged user ids', () => {
 });
 
 test('frontend separates auth/view-as identity, guards writes, and keeps date changes off member balances', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
   const viewAsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ViewAsBanner.jsx'), 'utf8');
   const dateHandler = appSource.match(/const handleAdminDateChange = \(dateStr\) => \{[\s\S]*?\n  \};/);
@@ -2033,14 +2033,14 @@ test('admin identity list hides inactive employee guests and only exposes eligib
     []
   );
 
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const bindingHandler = appSource.match(/const handleOpenEmployeeBindModal = \(user\) => \{[\s\S]*?\n  \};/);
   assert.ok(bindingHandler);
   assert.match(bindingHandler[0], /isEligibleEmployeeBindingTarget\(user\)/);
 });
 
 test('frontend wires floor editing, version history, modal preview, and corrected finance permissions', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
   const changelogSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'data', 'changelog.js'), 'utf8');
   const changelogMarkdown = fs.readFileSync(path.join(__dirname, '..', 'CHANGELOG.md'), 'utf8');
@@ -2132,7 +2132,7 @@ test('frontend wires floor editing, version history, modal preview, and correcte
 });
 
 test('frontend announcement administration stays Worker-only, Admin-only, and View As-safe', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const apiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js'), 'utf8');
   const componentSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'admin', 'AnnouncementManagement.jsx'), 'utf8');
   const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
@@ -2231,7 +2231,7 @@ test('weekday-only calendar offset skips leading weekend dates', async () => {
 });
 
 test('calendar management owns special-date controls without a separate modal entry', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
 
   assert.doesNotMatch(appSource, /showSpecialAdminModal/);
   assert.doesNotMatch(appSource, /特殊日期開團/);
@@ -2239,7 +2239,7 @@ test('calendar management owns special-date controls without a separate modal en
 });
 
 test('frontend wires monthly balance and selected-date admin summary queries', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
 
   assert.match(appSource, /apiClient\.getBalanceHistory/);
   assert.match(appSource, /selectedYear/);
@@ -2252,7 +2252,7 @@ test('frontend wires monthly balance and selected-date admin summary queries', (
 });
 
 test('frontend renders completed historical orders as read-only', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const orderSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'orders', 'OrderPage.jsx'), 'utf8');
 
   assert.match(appSource, /activeOrderReadOnly/);
@@ -2296,7 +2296,7 @@ test('DEV mock auth never calls LIFF lifecycle or access-token methods', async (
 });
 
 test('frontend keeps LIFF and GAS transport behind the auth and API boundaries', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const mockApiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'mockGasApi.js'), 'utf8');
   const gasApiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'gasApi.js'), 'utf8');
   const apiClientSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClient.js'), 'utf8');
@@ -3018,7 +3018,7 @@ test('frontend order idempotency keys are stable per action and block duplicate 
   const { normalizeWorkerOrderMenu } = await import(
     pathToFileURL(path.join(__dirname, '..', 'src', 'features', 'orders', 'orderSelection.js')).href
   );
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const submitRef = { current: null };
   const workerMenu = normalizeWorkerOrderMenu([
     { menu_item_id: 'menu-a', item_id: 'legacy-a' },
@@ -3150,7 +3150,7 @@ test('frontend like adapter keeps authoritative state and rolls back optimistic 
     normalizeWorkerLikeResponse,
     restoreCalendarEvent
   } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'likeState.js')).href);
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const likeStateSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'likeState.js'), 'utf8');
   assert.deepEqual(normalizeWorkerLikeResponse({ success: true, isLiked: true, totalLikes: 3 }), {
     isLiked: true,
@@ -3192,7 +3192,7 @@ test('frontend like adapter keeps authoritative state and rolls back optimistic 
 
 test('Worker read adapters propagate View As only for the effective read subject', async () => {
   const { createApiClient } = await import(pathToFileURL(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js')).href);
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');
   const authClient = { isMock: false, getAccessToken: () => 'line-token' };
   const gasCalls = [];
@@ -3357,7 +3357,7 @@ test('mock API reuses bootstrap and order-page response contracts', async () => 
 });
 
 test('frontend menu change history is Worker-only, Admin-only, append-only, and View As-safe', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const apiSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js'), 'utf8');
   const componentSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'admin', 'MenuItemChangesManagement.jsx'), 'utf8');
   const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'permissions.js'), 'utf8');

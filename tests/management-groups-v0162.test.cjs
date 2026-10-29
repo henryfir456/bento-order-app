@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const app = fs.readFileSync(path.join(__dirname,'../src/App.jsx'),'utf8');
+const app = require('./helpers/app-source.cjs').readAppSource();
 
 test('management hub groups existing actions without changing guards or handlers', () => {
   for(const group of ['訂餐管理','使用者與帳務','系統設定']) assert.match(app,new RegExp('aria-label="'+group+'"'));

@@ -58,7 +58,7 @@ test('mock identity fixtures distinguish registered LINE Admin from unbound and 
 });
 
 test('Admin identity UI uses Worker binding and never writes verification state locally', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const client = read('src/api/apiClientCore.js');
   const member = read('src/features/balances/MemberBalanceManagement.jsx');
   const identityStatus = read('src/features/balances/identityStatus.js');

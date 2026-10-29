@@ -123,7 +123,7 @@ test('auth boot plan checks LIFF before restoring a guest fallback', async () =>
 });
 
 test('Worker startup preserves explicit employee entry when LIFF is also authenticated', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const bootSource = appSource.match(/const initLiffAndFetchData[\s\S]*?\n  useEffect/)?.[0] || '';
   const liffCheckIndex = bootSource.indexOf("logAuthDiagnostic('LIFF_INIT_START')");
   const guestRestoreIndex = bootSource.indexOf("logAuthDiagnostic('RESTORE_GUEST_SESSION')");
@@ -139,7 +139,7 @@ test('Worker startup preserves explicit employee entry when LIFF is also authent
 });
 
 test('explicit LINE login clears only the local employee entry before boot', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const lineLogin = appSource.match(/const handleLineLogin = async \(\) => \{[\s\S]*?\n  };/)?.[0] || '';
 
   assert.match(lineLogin, /reason: 'line-login'/);
@@ -148,7 +148,7 @@ test('explicit LINE login clears only the local employee entry before boot', () 
 });
 
 test('bound LINE identity never re-enters provisional onboarding', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
 
   assert.match(appSource, /const isGuestOnboarding = authMode === 'employee_guest'/);
@@ -159,7 +159,7 @@ test('bound LINE identity never re-enters provisional onboarding', () => {
 });
 
 test('registered bootstrap consumes nested identity state for an UNVERIFIED Admin', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const authRuntimeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'authRuntime.js'), 'utf8');
   const bootstrap = {
     success: true,
@@ -187,7 +187,7 @@ test('registered bootstrap consumes nested identity state for an UNVERIFIED Admi
 
 test('legacy guest identity states remain compatibility-only and do not gate LINE access', async () => {
   const { IDENTITY_STATES } = await import('../src/auth/bootFlow.js');
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const workerIdentitySource = fs.readFileSync(path.join(__dirname, '..', 'worker-poc', 'src', 'auth', 'identity.js'), 'utf8');
   const workerUsersSource = fs.readFileSync(path.join(__dirname, '..', 'worker-poc', 'src', 'domain', 'users.js'), 'utf8');
   const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
@@ -209,7 +209,7 @@ test('legacy guest identity states remain compatibility-only and do not gate LIN
 });
 
 test('LINE identities without employee IDs use explicit binding-required state and flow', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const bootSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'bootFlow.js'), 'utf8');
   const lookupSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'LineEmployeeLookup.jsx'), 'utf8');
   const permissionsSource = fs.readFileSync(path.join(__dirname, '..', 'worker-poc', 'src', 'auth', 'permissions.js'), 'utf8');
@@ -254,7 +254,7 @@ test('LIFF init is idempotent across concurrent boot attempts', async () => {
 });
 
 test('LIFF completion resumes the same session into normal UI without manual reopen', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   assert.match(appSource, /const resumeAfterLiffReturn/);
   assert.match(appSource, /window\.addEventListener\('pageshow', resumeAfterLiffReturn\)/);
   assert.match(appSource, /window\.addEventListener\('focus', resumeAfterLiffReturn\)/);
@@ -410,7 +410,7 @@ test('frontend permissions give employee guest order-summary read access without
 });
 
 test('Worker App wires the employee guest and bind flow without exposing LINE IDs or client authority', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const loginSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'EmployeeGuestLogin.jsx'), 'utf8');
   const lineLookupSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'LineEmployeeLookup.jsx'), 'utf8');
   const sessionSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'auth', 'sessionStore.js'), 'utf8');
@@ -439,7 +439,7 @@ test('Worker App wires the employee guest and bind flow without exposing LINE ID
 });
 
 test('Worker App keeps employee_guest onboarding separate from registered LINE application data', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
   const clientSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiClientCore.js'), 'utf8');
   const errorSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'api', 'apiErrors.js'), 'utf8');
@@ -459,7 +459,7 @@ test('Worker App keeps employee_guest onboarding separate from registered LINE a
 test('Admin identity views render the server-authoritative employee ID with a null fallback', async () => {
   const { formatEmployeeId } = await import('../src/components/userIdentityDisplay.js');
   const { getMockMembers } = await import('../src/auth/mockData.js');
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const balanceSource = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'features', 'balances', 'MemberBalanceManagement.jsx'),
     'utf8'
@@ -490,7 +490,7 @@ test('Admin identity views render the server-authoritative employee ID with a nu
 });
 
 test('employee guest provisional onboarding does not require or initiate LINE binding', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
   const submitBlock = appSource.match(/const handleProvisionalProfileSubmit[\s\S]*?\n  const fetchCalendarEvents/)?.[0] || '';
 
@@ -504,7 +504,7 @@ test('employee guest provisional onboarding does not require or initiate LINE bi
 });
 
 test('employee binding success copy is role-neutral for every target role', () => {
-  const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const onboardingSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'components', 'ProvisionalEmployeeOnboarding.jsx'), 'utf8');
   assert.match(appSource, /const \[employeeGuestSuccess, setEmployeeGuestSuccess\] = useState\(''\)/);
   assert.match(appSource, /使用者原有角色與權限已保留。/);

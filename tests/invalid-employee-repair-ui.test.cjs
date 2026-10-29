@@ -132,7 +132,7 @@ test('repair conflict codes have localized safe messages and a localized fallbac
 });
 
 test('App only exposes repair and audit to a LINE Admin outside View As and reloads members after success', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   assert.match(app, /canRepairInvalidEmployee=\{[\s\S]*?authMode === 'line'[\s\S]*?authUser\?\.role === 'Admin'[\s\S]*?!isViewAsMode[\s\S]*?\}/);
   assert.match(app, /onInvalidEmployeeRepairCompleted=\{\(\) => loadMemberBalances\(true\)\}/);
   const identityReset = app.slice(app.indexOf('const clearIdentityData ='), app.indexOf('\n  const ', app.indexOf('const clearIdentityData =') + 1));
@@ -141,7 +141,7 @@ test('App only exposes repair and audit to a LINE Admin outside View As and relo
 
 test('Admin can opt into disabled/invalid rows and the mock repair stays in local memory', async () => {
   const member = read('src/features/balances/MemberBalanceManagement.jsx');
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   assert.match(member, /包含停用／誤建帳號/);
   assert.match(app, /getMemberBalances\(\{ includeInvalid: canIncludeInvalid \}\)/);
   assert.match(app, /includeInvalidMembers/);

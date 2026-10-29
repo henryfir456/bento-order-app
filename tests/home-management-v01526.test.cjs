@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const app = fs.readFileSync(path.join(__dirname,'../src/App.jsx'),'utf8');
+const app = require('./helpers/app-source.cjs').readAppSource();
 const nav = fs.readFileSync(path.join(__dirname,'../src/components/BottomNavigation.jsx'),'utf8');
 
 test('header contains user identity but no duplicate balance or toolbar', () => {

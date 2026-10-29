@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
-const app = read('src/App.jsx');
+const app = require('./helpers/app-source.cjs').readAppSource();
 const nav = read('src/components/BottomNavigation.jsx');
 const orders = read('src/features/orders/MyOrdersPage.jsx');
 const wallet = read('src/features/balances/WalletPage.jsx');

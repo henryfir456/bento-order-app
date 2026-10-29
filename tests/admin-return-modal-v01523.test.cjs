@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const root = path.join(__dirname, '..');
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-const app = read('src/App.jsx');
+const app = require('./helpers/app-source.cjs').readAppSource();
 const center = read('src/features/balances/MemberBalanceManagement.jsx');
 const modern = read('src/features/calendar/ModernCalendar.jsx');
 

@@ -14,7 +14,7 @@ const extractHandler = (source, name) => {
 };
 
 test('frontend keeps View-As read-only and exposes explicit delegated ordering mode', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const banner = read('src/components/ViewAsBanner.jsx');
   const orderPage = read('src/features/orders/OrderPage.jsx');
   const api = read('src/api/apiClientCore.js');
@@ -106,7 +106,7 @@ test('delegated ordering filters the already eligible members by employee ID', a
 });
 
 test('delegated ordering modal wires live employee ID filtering and resets its query', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const filter = read('src/features/admin/delegateOrderFilter.js');
 
   assert.match(filter, /trim\(\)/);
@@ -127,7 +127,7 @@ test('delegated ordering modal wires live employee ID filtering and resets its q
 });
 
 test('delegated order invalidates the cached member balance without patching the list', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const handler = extractHandler(app, 'handleConfirmSubmit');
 
   assert.match(handler, /const isDelegatedOrder = Boolean\(delegatedOrderUser\?\.userId\);/);
@@ -138,7 +138,7 @@ test('delegated order invalidates the cached member balance without patching the
 });
 
 test('delegated cancel/refund invalidates the cached member balance and normal orders do not', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const submitHandler = extractHandler(app, 'handleConfirmSubmit');
   const cancelHandler = extractHandler(app, 'handleConfirmCancel');
 
@@ -162,7 +162,7 @@ test('delegated cancel/refund invalidates the cached member balance and normal o
 });
 
 test('delegated balance cache regression: stale zero is invalidated, then balances entry reloads authoritative -100', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const banner = read('src/components/ViewAsBanner.jsx');
   const balances = read('src/features/balances/MemberBalanceManagement.jsx');
   const submitHandler = extractHandler(app, 'handleConfirmSubmit');
@@ -205,7 +205,7 @@ test('delegated balance cache regression: stale zero is invalidated, then balanc
 });
 
 test('admin top-up keeps its existing invalidation and immediate authoritative refetch', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const topupHandler = extractHandler(app, 'handleTopupSubmit');
 
   assert.match(topupHandler, /setMemberBalancesLoaded\(false\);[\s\S]*await loadMemberBalances\(true\)/);

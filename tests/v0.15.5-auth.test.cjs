@@ -7,7 +7,7 @@ const ROOT = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
 test('fresh employee guest identity maps to onboarding even when the canonical user is not created yet', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const onboarding = read('src/components/ProvisionalEmployeeOnboarding.jsx');
   const stateMapping = app.match(/const nextAuthState = identity\.identityState[\s\S]*?: AUTH_STATES\.UNREGISTERED;/)?.[0] || '';
 
@@ -24,7 +24,7 @@ test('fresh employee guest identity maps to onboarding even when the canonical u
 });
 
 test('fresh employee onboarding re-resolves the same guest session before normal UI', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const onboarding = app.match(/const handleEmployeeGuestOnboarding = async[\s\S]*?\n  };/)?.[0] || '';
 
   assert.match(onboarding, /authBootCompletedRef\.current = false/);

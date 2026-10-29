@@ -92,7 +92,7 @@ test('desktop and mobile user cards share the same view and transfer actions', (
 });
 
 test('App exposes transfer only for a LINE-authenticated Admin and reloads the member list on success', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   assert.match(app, /canTransferLineBinding=\{[\s\S]*?authMode === 'line'[\s\S]*?authUser\?\.role === 'Admin'[\s\S]*?!isViewAsMode[\s\S]*?\}/);
   assert.match(app, /onLineBindingTransferCompleted=\{\(\) => loadMemberBalances\(true\)\}/);
 });

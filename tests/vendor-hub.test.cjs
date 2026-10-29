@@ -97,7 +97,7 @@ test('GAS mode exposes a typed unsupported contract instead of falling back', as
 });
 
 test('vendor UI is wired to formal Worker/mock contracts and keeps GAS explicit', () => {
-  const appSource = fs.readFileSync(path.join(ROOT, 'src/App.jsx'), 'utf8');
+  const appSource = require('./helpers/app-source.cjs').readAppSource();
   const hubSource = fs.readFileSync(path.join(ROOT, 'src/features/vendors/VendorHub.jsx'), 'utf8');
   const calendarSource = fs.readFileSync(path.join(ROOT, 'src/features/calendar/CalendarManagement.jsx'), 'utf8');
   const permissionsSource = fs.readFileSync(path.join(ROOT, 'src/auth/permissions.js'), 'utf8');

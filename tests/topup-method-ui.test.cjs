@@ -26,7 +26,7 @@ test('transaction descriptions use the canonical method and preserve legacy NULL
 });
 
 test('Admin top-up UI defaults to Taiwan Pay without an empty placeholder and keeps other methods selectable', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const client = read('src/api/apiClientCore.js');
   const handler = app.match(/const handleTopupSubmit = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   const modal = app.match(/\{selectedTopupUser && can\('topupMember'\)[\s\S]*?\n      \)\}/)?.[0] || '';
