@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { formatSignedAmount } from '../orders/amountFormat.js';
 import { shiftDateInput } from '../../dateUtils';
 import { aggregateOrdersByItem, duplicateItemLabelKeys, formatOrderItemLabel, groupOrdersByFloor, ORDER_SUMMARY_TABS } from './orderSummary.js';
+import LoadingNote from '../../components/ui/LoadingNote';
 
 export default function AdminOrderSummary({
   selectedOrderDate,
@@ -63,9 +64,7 @@ export default function AdminOrderSummary({
                 </div>
 
                 {adminSummaryLoading ? (
-                  <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
-                    訂單總覽載入中…
-                  </div>
+                  <LoadingNote label="訂單總覽" />
                 ) : adminSummaryError ? (
                   <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">
                     {adminSummaryError}

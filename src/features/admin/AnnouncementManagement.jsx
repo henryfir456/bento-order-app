@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import Swal from 'sweetalert2';
+import Swal from '../../lib/swal';
+import LoadingNote from '../../components/ui/LoadingNote';
 
 const EMPTY_FORM = Object.freeze({
   title: '',
@@ -266,9 +267,7 @@ export default function AnnouncementManagement({
 
       <div className="space-y-3">
         {loading ? (
-          <div className="rounded-2xl border border-emerald-900/10 bg-white p-6 text-center text-sm text-emerald-800 animate-pulse">
-            公告載入中…
-          </div>
+          <LoadingNote label="公告" />
         ) : announcements.length === 0 ? (
           <div className="rounded-2xl border border-emerald-900/10 bg-white p-6 text-center text-sm text-gray-400">
             尚無公告

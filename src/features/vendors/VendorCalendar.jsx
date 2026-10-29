@@ -4,6 +4,8 @@ import { formatApiErrorDiagnostic } from '../../api/apiErrors';
 import { formatDateInput, getWeekdayLeadingBlankCount } from '../../dateUtils';
 import Modal from '../../components/Modal';
 import VendorDaySummary from './VendorDaySummary';
+import LoadingNote from '../../components/ui/LoadingNote';
+import ErrorNotice from '../../components/ui/ErrorNotice';
 
 const readJson = async (response) => {
   let data = {};
@@ -115,11 +117,9 @@ export default function VendorCalendar() {
             </button>
           ))}
         </div>
-        {loading && <p className="pt-2 text-xs text-slate-500">載入中…</p>}
+        {loading && <LoadingNote compact />}
       </div>
-      {error && <div role="alert" className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-        <p>{error}</p><button type="button" onClick={() => void load()} className="mt-2 min-h-10 rounded-lg border border-rose-300 px-3 font-bold">重試</button>
-      </div>}
+      {error && <ErrorNotice message={error} onRetry={() => void load()} />}
       <Modal open={Boolean(openEntry)} title={openEntry ? `${openEntry.key} 訂單總覽` : ''} onClose={() => setOpenDate('')}>
         {openEntry && (openEntry.summary && Number(openEntry.summary.orderCount || 0) > 0
           ? <div className="space-y-3"><VendorDaySummary day={openEntry.summary} /></div>
