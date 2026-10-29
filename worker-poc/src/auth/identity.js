@@ -9,6 +9,7 @@ import {
   VERIFICATION_STATUSES
 } from './permissions.js';
 import { fetchLineProfile } from './lineProfile.js';
+import { assertTokenIssuedForChannel } from './lineChannel.js';
 import { inspectGuestSession, isGuestToken } from './guestSession.js';
 import {
   denyProtectedAccountAccess,
@@ -98,11 +99,15 @@ export const resolveLineIdentity = async (
   request,
   database,
   fetchImpl = globalThis.fetch,
-  clock = new Date()
+  clock = new Date(),
+  { channelId = '' } = {}
 ) => {
   const token = bearerToken(request);
   if (!token) throw unauthorized();
-  const profile = await fetchLineProfile(token, fetchImpl);
+  const [profile] = await Promise.all([
+    fetchLineProfile(token, fetchImpl),
+    assertTokenIssuedForChannel(token, channelId, fetchImpl, clock.getTime())
+  ]);
   let user = await getUserByLineId(database, profile.lineUserId);
   if (isProtectedAccount(user)
     || await hasAnyProtectedEmployeeId(database, user?.employeeId)) {
@@ -226,7 +231,9 @@ export const resolveCanonicalIdentity = async (
     };
   }
 
-  const line = await resolveLineIdentity(request, env.DB, fetchImpl, now);
+  const line = await resolveLineIdentity(request, env.DB, fetchImpl, now, {
+    channelId: env.LINE_CHANNEL_ID
+  });
   const actor = line.actor;
   const url = new URL(request.url);
   const requestedTarget = viewAsTarget(url);

@@ -22,6 +22,9 @@ export default function EmployeeGuestLogin({
         <p className="text-sm text-gray-500">
           LINE 與員工編號都可以登入，兩種方式可依需要交替使用。
         </p>
+        <p className="text-xs text-gray-400">
+          本系統只讀取你的 LINE 暱稱與識別碼，不會取得或儲存你的 LINE 密碼與登入憑證，也不會代你發送訊息。
+        </p>
       </div>
 
       <div className="mt-5 space-y-3">

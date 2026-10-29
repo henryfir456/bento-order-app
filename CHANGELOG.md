@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.24] - 2026-10-30
+
+### Added
+
+- Throttle repeated failed employee-code logins per client address (10 per 15 minutes, `LOGIN_RATE_LIMITED`, migration 0030); when `LINE_CHANNEL_ID` is set, the Worker also requires LINE access tokens to be issued to this app's channel; the login screen states what LINE data is read.
+
 ## [0.19.23] - 2026-10-29
 
 ### Added
