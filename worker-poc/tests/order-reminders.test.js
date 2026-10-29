@@ -112,3 +112,19 @@ test('Admin can opt out of the 10:00 close LINE push while keeping the bell; use
   assert.equal(result.notified, 1);
   assert.equal(pushes.length, 0);
 });
+
+test('without a LINE token the reminder cron sends nothing and leaves no log rows', async () => {
+  const database = seedOrderDatabase();
+  await putSettings(database, userProfile('user-2', 'token-user-2'), { A: true });
+  const { pushes, fetchImpl } = pushRecorder();
+  const controller = { cron: '50 1,9 * * *', scheduledTime: Date.parse('2026-09-08T01:50:00.000Z') };
+  const skipped = await handleScheduled(controller, { DB: database }, { logger: { log() {} }, fetchImpl });
+  assert.equal(skipped.status, 'SKIP_NO_TOKEN');
+  const sent = await handleScheduled(
+    controller,
+    { DB: database, LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: 'secret' },
+    { logger: { log() {} }, fetchImpl }
+  );
+  assert.equal(sent.status, 'REMINDED');
+  assert.equal(pushes.length, 1);
+});

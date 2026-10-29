@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.18': [
+    { name: '修正', changes: [
+      '尚未設定 LINE 官方帳號推播金鑰時，訂餐提醒不再被標記為已提醒，補設定後即可正常發送。'
+    ] }
+  ],
   '0.19.17': [
     { name: '調整', changes: [
       '所有人都能在「管理」入口看到「LINE 通知設定」（一般使用者只會看到這一項），訂餐頁不再顯示 LINE 訂餐提醒。'
