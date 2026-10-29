@@ -251,6 +251,7 @@ export default function App() {
   const [vendorDetailError, setVendorDetailError] = useState('');
   const [vendorHubUnsupported, setVendorHubUnsupported] = useState(false);
   const vendorRequestRef = useRef(0);
+  const negativeBalanceNoticeRef = useRef('');
   const [userOrdersMap, setUserOrdersMap] = useState({});
   const [myOrdersList, setMyOrdersList] = useState([]);
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
@@ -473,6 +474,7 @@ export default function App() {
     vendorRequestRef.current += 1;
     deferredUiGenerationRef.current += 1;
     deferredUiBootRef.current = '';
+    negativeBalanceNoticeRef.current = '';
     setLineUserId('');
     setAuthMode(null);
     setAuthUser(null);
@@ -631,6 +633,15 @@ export default function App() {
       setName(nextUser.name);
       setDefaultFloor(nextUser.defaultFloor);
       setFloor(nextUser.defaultFloor);
+      if (nextUser.balance < 0 && negativeBalanceNoticeRef.current !== nextUser.userId) {
+        negativeBalanceNoticeRef.current = nextUser.userId;
+        void showPopup({
+          icon: 'warning',
+          title: '餘額為負值',
+          text: `目前餘額為 ${formatBalanceAmount(nextUser.balance)}，請儘快儲值。`,
+          confirmButtonText: '我知道了'
+        });
+      }
       return data;
     }
 
