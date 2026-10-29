@@ -60,6 +60,8 @@ export const sendOrderReminders = async (database, env, scheduledTime, mode, {
   if (!plan) return { status: 'SKIP_UNKNOWN_MODE', mode, reminded: 0 };
   const now = resolveClock(scheduledTime);
   const orderDate = addDays(getTaipeiDate(now), plan.dayOffset);
+  // Without a token nothing can be sent, so leave no log rows that would block a later retry.
+  if (!env?.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN) return { status: 'SKIP_NO_TOKEN', mode, reminded: 0 };
   const setting = await database.prepare(`
     SELECT vendor FROM calendar_settings
     WHERE order_date = ? AND mode = ? AND length(trim(vendor)) > 0
