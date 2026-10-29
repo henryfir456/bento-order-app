@@ -16,31 +16,43 @@ const REMINDER_PLAN = {
 
 const isAdminRole = (identity) => ['Admin', 'ProxyAdmin'].includes(identity?.actor?.role);
 
+const isVendorRole = (identity) => identity?.actor?.role === 'Vendor';
+
+// Vendor principals have no READ_SELF; they only manage their own close push.
+const assertCanManageReminders = (identity) => assertCan(
+  identity,
+  isVendorRole(identity) ? ACTIONS.READ_VENDOR_CONTEXT : ACTIONS.READ_SELF
+);
+
 export const getReminderSettings = async (database, identity) => {
-  assertCan(identity, ACTIONS.READ_SELF);
+  assertCanManageReminders(identity);
   const result = await database.prepare(`
     SELECT mode, enabled FROM user_reminder_prefs WHERE user_id = ?
   `).bind(identity.actor.userId).all();
-  const settings = { A: false, B: false, adminClose: true };
+  const settings = { A: false, B: false, adminClose: true, vendorClose: true };
   for (const row of rowsFrom(result)) {
-    settings[row.mode === 'ADMIN_CLOSE' ? 'adminClose' : row.mode] = Number(row.enabled) === 1;
+    const key = { ADMIN_CLOSE: 'adminClose', VENDOR_CLOSE: 'vendorClose' }[row.mode] || row.mode;
+    settings[key] = Number(row.enabled) === 1;
   }
   return {
     success: true,
     settings,
     canManageAdminClose: isAdminRole(identity),
+    canManageVendorClose: isVendorRole(identity),
     hasLineBinding: Boolean(identity.actor.lineUserId)
   };
 };
 
 export const updateReminderSettings = async (database, identity, body, now = new Date()) => {
-  assertCan(identity, ACTIONS.READ_SELF);
+  assertCanManageReminders(identity);
   const updatedAt = resolveClock(now).toISOString();
-  const keys = { A: 'A', B: 'B', adminClose: 'ADMIN_CLOSE' };
+  const keys = { A: 'A', B: 'B', adminClose: 'ADMIN_CLOSE', vendorClose: 'VENDOR_CLOSE' };
   const changes = Object.keys(keys).filter((key) => body?.[key] !== undefined);
   if (!changes.length) throw badRequest('REMINDER_SETTINGS_EMPTY');
   if (changes.some((key) => typeof body[key] !== 'boolean')) throw badRequest('REMINDER_SETTINGS_INVALID');
   if (changes.includes('adminClose') && !isAdminRole(identity)) throw forbidden('ADMIN_ONLY_REMINDER_SETTING');
+  if (changes.includes('vendorClose') && !isVendorRole(identity)) throw forbidden('VENDOR_ONLY_REMINDER_SETTING');
+  if (isVendorRole(identity) && changes.some((key) => key !== 'vendorClose')) throw forbidden('VENDOR_REMINDER_SETTING_ONLY');
   await database.batch(changes.map((key) => prepareStatement(database, `
     INSERT INTO user_reminder_prefs (user_id, mode, enabled, updated_at)
     VALUES (?, ?, ?, ?)

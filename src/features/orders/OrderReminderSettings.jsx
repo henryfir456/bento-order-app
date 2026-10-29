@@ -7,6 +7,7 @@ const REMINDER_OPTIONS = [
 ];
 
 const ADMIN_CLOSE_OPTION = { mode: 'adminClose', label: '蔡老師結單通知', hint: '每天 10:00 結單後，用 LINE 通知訂單數與份數（管理者）' };
+const VENDOR_CLOSE_OPTION = { mode: 'vendorClose', label: '結單通知', hint: '前一天 18:00 結單後，用 LINE 通知訂單數與份數' };
 const DEFAULT_ADD_FRIEND_URL = 'https://line.me/R/ti/p/@518jelfh';
 const ADD_FRIEND_URL = String(import.meta.env?.VITE_LINE_OA_ADD_FRIEND_URL || '').trim() || DEFAULT_ADD_FRIEND_URL;
 
@@ -14,6 +15,7 @@ export default function OrderReminderSettings({ api, defaultOpen = false }) {
   const [settings, setSettings] = useState(null);
   const [hasLineBinding, setHasLineBinding] = useState(true);
   const [canManageAdminClose, setCanManageAdminClose] = useState(false);
+  const [canManageVendorClose, setCanManageVendorClose] = useState(false);
   const [busyMode, setBusyMode] = useState('');
   const [error, setError] = useState('');
 
@@ -21,9 +23,11 @@ export default function OrderReminderSettings({ api, defaultOpen = false }) {
     setSettings({
       A: Boolean(payload?.settings?.A),
       B: Boolean(payload?.settings?.B),
-      adminClose: payload?.settings?.adminClose !== false
+      adminClose: payload?.settings?.adminClose !== false,
+      vendorClose: payload?.settings?.vendorClose !== false
     });
     setCanManageAdminClose(Boolean(payload?.canManageAdminClose));
+    setCanManageVendorClose(Boolean(payload?.canManageVendorClose));
     setHasLineBinding(payload?.hasLineBinding !== false);
   };
 
@@ -60,24 +64,28 @@ export default function OrderReminderSettings({ api, defaultOpen = false }) {
 
   return (
     <details open={defaultOpen || undefined} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <summary className="min-h-11 cursor-pointer text-base font-bold text-[#2C4A3E]">LINE 訂餐提醒</summary>
+      <summary className="min-h-11 cursor-pointer text-base font-bold text-[#2C4A3E]">{canManageVendorClose ? 'LINE 結單通知' : 'LINE 訂餐提醒'}</summary>
       <div className="mt-3 space-y-3">
-        <p className="text-sm text-slate-600">截止前 10 分鐘，若你還沒訂餐，會用 LINE 官方帳號通知你。已訂餐就不會打擾。</p>
-        {!hasLineBinding && <p className="text-sm text-amber-800">你的帳號尚未綁定 LINE，無法收到提醒。</p>}
+        <p className="text-sm text-slate-600">{canManageVendorClose
+          ? '結單後，會用 LINE 官方帳號通知你當天的訂單數與份數。'
+          : '截止前 10 分鐘，若你還沒訂餐，會用 LINE 官方帳號通知你。已訂餐就不會打擾。'}</p>
+        {!hasLineBinding && <p className="text-sm text-amber-800">你的帳號尚未綁定 LINE，無法收到通知。</p>}
         {ADD_FRIEND_URL && (
           <a href={ADD_FRIEND_URL} target="_blank" rel="noopener noreferrer"
             className="flex min-h-11 items-center justify-center rounded-xl bg-[#06C755] px-4 py-2 text-sm font-bold text-white">
             加入 LINE 官方帳號好友
           </a>
         )}
-        {[...REMINDER_OPTIONS, ...(canManageAdminClose ? [ADMIN_CLOSE_OPTION] : [])].map(({ mode, label, hint }) => (
+        {(canManageVendorClose
+          ? [VENDOR_CLOSE_OPTION]
+          : [...REMINDER_OPTIONS, ...(canManageAdminClose ? [ADMIN_CLOSE_OPTION] : [])]).map(({ mode, label, hint }) => (
           <label key={mode} className="flex min-h-12 items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2">
             <span>
               <span className="block font-semibold">{label}</span>
               <span className="block text-xs text-slate-500">{hint}</span>
             </span>
             <input type="checkbox" className="h-6 w-6 accent-emerald-700"
-              checked={Boolean(settings?.[mode === 'adminClose' ? 'adminClose' : mode])}
+              checked={Boolean(settings?.[mode])}
               disabled={!settings || busyMode === mode}
               onChange={() => toggle(mode)} />
           </label>

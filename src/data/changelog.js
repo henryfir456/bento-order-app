@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.21': [
+    { name: '新增', changes: [
+      '廠商於前一天 18:00 結單後，會收到 LINE 通知當天的訂單數與份數；可在廠商工作台的「LINE 結單通知」自行開關。'
+    ] }
+  ],
   '0.19.20': [
     { name: '調整', changes: [
       '廠商訂餐月曆的「未開團」日期改為紅字、紅框與淡紅底色並加上圖例，方便辨識可能成為禾拾開團的日子。'

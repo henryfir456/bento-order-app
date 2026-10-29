@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { apiClient } from '../../api/apiClient';
 import { formatApiErrorDiagnostic } from '../../api/apiErrors';
 import { canRecordVendorTransfer, isVendorEnabled, vendorOperationsView } from './vendorOperationsPolicy';
+import OrderReminderSettings from '../orders/OrderReminderSettings';
 import VendorDaySummary from './VendorDaySummary';
 import VendorHistoryImport from './VendorHistoryImport';
 import { currency, dayStatusLabel, formatTaipeiTime, vendorItemLabel } from './vendorDayFormat';
@@ -592,6 +593,7 @@ export default function VendorOperationsPage({ role = 'User', mock = false, read
         </article>;
         })}
       </div>}
+      {isVendor && <OrderReminderSettings api={apiClient} />}
     </section>
   );
 }

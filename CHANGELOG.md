@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.21] - 2026-10-29
+
+### Added
+
+- Send each vendor principal a LINE push after the 18:00 close with the day's order and portion totals (bell unchanged). Vendors can switch it off in a new 「LINE 結單通知」 card in the vendor workbench; default on, stored as a `VENDOR_CLOSE` preference (migration 0029). Skipped without `LINE_MESSAGING_CHANNEL_ACCESS_TOKEN` or a LINE binding.
+
 ## [0.19.20] - 2026-10-29
 
 ### Changed

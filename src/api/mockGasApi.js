@@ -229,7 +229,7 @@ export const createMockGasApi = ({ mockUser, storage } = {}) => {
     }
 
     if (action === 'getReminderSettings' || action === 'updateReminderSettings') {
-      state.reminderSettings = { A: false, B: false, ...state.reminderSettings, ...(action === 'updateReminderSettings' ? payload.settings : {}) };
+      state.reminderSettings = { A: false, B: false, adminClose: true, vendorClose: true, ...state.reminderSettings, ...(action === 'updateReminderSettings' ? payload.settings : {}) };
       return jsonResponse({ success: true, settings: state.reminderSettings, hasLineBinding: true });
     }
 
