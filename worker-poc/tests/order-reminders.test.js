@@ -163,7 +163,7 @@ test('vendor principal can opt out of the 18:00 close LINE push; only they may s
   const first = await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
   assert.equal(first.push.sent, 1);
   assert.deepEqual(JSON.parse(pushes[0].init.body).to, ['vendor-line']);
-  assert.match(JSON.parse(pushes[0].init.body).messages[0].text, /1 筆訂單、2 份餐點/);
+  assert.match(JSON.parse(pushes[0].init.body).messages[0].text, /1 筆訂單、2 份餐點：\n.+ × 2/);
   await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
   assert.equal(pushes.length, 1);
 
