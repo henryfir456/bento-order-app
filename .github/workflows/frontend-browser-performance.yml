@@ -57,7 +57,7 @@ jobs:
             }));
             console.log(JSON.stringify({environment:'CI headless Chrome, Vite dev-mode mock, 3 independent runs per revision, not real LIFF or production bundle',before:metrics(samples('before')),after:metrics(samples('after'))},null,2));
           "
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: browser-performance-lighthouse
