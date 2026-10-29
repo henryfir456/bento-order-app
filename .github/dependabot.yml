@@ -1,0 +1,36 @@
+version: 2
+updates:
+  # Frontend (repo root)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    # Major upgrades are reviewed by hand, not proposed automatically.
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+  # Cloudflare Worker
+  - package-ecosystem: npm
+    directory: /worker-poc
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: ['version-update:semver-major']
+  # Workflow action versions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2

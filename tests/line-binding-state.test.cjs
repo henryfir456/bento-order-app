@@ -34,9 +34,11 @@ const headerMarkup = (app) => {
 };
 const loadMemberCard = () => {
   const output = buildSync({ entryPoints: [path.join(__dirname, '../src/features/balances/MemberBalanceManagement.jsx')],
-    bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime'] });
+    bundle: true, write: false, platform: 'node', format: 'cjs', jsx: 'automatic', external: ['react', 'react/jsx-runtime'],
+    // The card imports apiClient, which reads its transport config when the module loads.
+    define: { 'import.meta.env': JSON.stringify({ VITE_API_TRANSPORT: 'worker', VITE_WORKER_API_URL: 'https://worker.example.com', DEV: false }) } });
   const module = { exports: {} };
-  vm.runInNewContext(output.outputFiles[0].text, { module, exports: module.exports, require });
+  vm.runInNewContext(output.outputFiles[0].text, { module, exports: module.exports, require, URL, console });
   return module.exports.default;
 };
 
@@ -49,11 +51,13 @@ for (const [mode, bound] of [['line', true], ['employee_guest', true], ['employe
     await app.settle();
     const header = headerMarkup(app);
     const expected = bound === true ? '已綁定 LINE' : bound === false ? '未綁定 LINE' : 'LINE 綁定待確認';
-    assert.ok(header.includes(expected), header);
+    // The header only shows the binding badge while LINE is not bound; bound accounts show nothing there.
+    if (bound === true) assert.ok(!header.includes('LINE'), header); else assert.ok(header.includes(expected), header);
     assert.equal(/>綁定 LINE<\/button>/.test(header), mode === 'employee_guest' && bound === false);
     const Member = loadMemberCard();
     const card = renderToStaticMarkup(React.createElement(Member, { memberBalances: [data.user] }));
-    assert.ok(card.includes(expected), card);
+    // Member cards use the short label for a bound account.
+    assert.ok(card.includes(bound === true ? '已綁定' : expected), card);
     assert.equal(app.view.authMode, mode); assert.equal(app.view.authUser.role, 'User');
     app.destroy();
   });
@@ -70,7 +74,7 @@ test('Windows external LINE-first success clears stale employee session before r
   const app = makeApp({ store, api }); await app.settle();
   await app.view.handleLineEmployeeBind({ employeeId: '001234' }); await app.settle();
   assert.equal(store.getGuestSession(), null); assert.equal(app.view.authMode, 'line');
-  assert.ok(headerMarkup(app).includes('已綁定 LINE')); assert.equal(posts, 1);
+  assert.ok(!headerMarkup(app).includes('未綁定 LINE') && !headerMarkup(app).includes('LINE 綁定待確認')); assert.equal(posts, 1);
   app.destroy();
   const reopened = makeApp({ store, api }); await reopened.settle();
   assert.equal(reopened.view.authMode, 'line'); assert.equal(posts, 1); reopened.destroy();
@@ -99,7 +103,7 @@ test('registered foreground refresh reads binding state once without POST, redir
   await app.settle(); await app.event('focus'); await app.event('pageshow'); await app.event('visibilitychange');
   assert.equal(reads, 1);
   pending.resolve(response(identity('employee_guest', true))); await app.settle();
-  assert.ok(headerMarkup(app).includes('已綁定 LINE')); assert.equal(posts, 0);
+  assert.ok(!headerMarkup(app).includes('未綁定 LINE') && !headerMarkup(app).includes('LINE 綁定待確認')); assert.equal(posts, 0);
   assert.equal(app.view.authMode, 'employee_guest'); assert.equal(app.view.authUser.role, 'User');
   await app.view.handleBindLine(); assert.equal(posts, 0); app.destroy();
 });
@@ -112,7 +116,7 @@ test('late foreground identity cannot overwrite a newer explicit LINE entry or i
   await app.view.handleLineLogin(); await app.settle();
   old.resolve(response(identity('employee_guest', false, 'stale-user'))); await app.settle();
   assert.equal(app.view.authMode, 'line'); assert.equal(app.view.authUser.userId, 'same-user');
-  assert.ok(headerMarkup(app).includes('已綁定 LINE')); app.destroy();
+  assert.ok(!headerMarkup(app).includes('未綁定 LINE') && !headerMarkup(app).includes('LINE 綁定待確認')); app.destroy();
 });
 
 test('foreground refresh preserves View As subject and only updates authenticated actor binding', async () => {

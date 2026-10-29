@@ -86,6 +86,8 @@ exports.createHarness = ({ authClient, apiClient, store, timers = globalThis, re
     for (const filename of [base, `${base}.js`]) {
       if (fs.existsSync(filename) && filename.endsWith('.js')) return require(filename);
     }
+    // PascalCase imports are React components in .jsx files; stub them like the ./components/ ones.
+    if (/^[A-Z]/.test(path.basename(id))) return { __esModule: true, default: () => null };
     return {};
   };
   vm.runInNewContext(code, {
