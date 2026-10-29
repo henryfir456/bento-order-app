@@ -101,6 +101,11 @@ export default function VendorCalendar() {
           </div>
         </div>
         <p className="pb-2 text-xs text-slate-500">只能查看。綠色是你的團，點一下可看當天訂單總覽。</p>
+        <ul className="flex flex-wrap gap-x-3 gap-y-1 pb-2 text-xs text-slate-700" aria-label="月曆圖例">
+          <li className="flex items-center gap-1"><span aria-hidden="true" className="h-3 w-3 rounded border border-emerald-300 bg-emerald-50" />你的團</li>
+          <li className="flex items-center gap-1"><span aria-hidden="true" className="h-3 w-3 rounded border border-slate-300 bg-slate-50" />其他店家</li>
+          <li className="flex items-center gap-1 font-semibold text-red-700"><span aria-hidden="true" className="h-3 w-3 rounded border-2 border-red-500 bg-red-50" />未開團（可能成為禾拾團）</li>
+        </ul>
         <div className="grid grid-cols-5 gap-1 text-center text-xs text-slate-500">{['一', '二', '三', '四', '五'].map((day) => <div key={day}>{day}</div>)}</div>
         <div className="mt-2 grid grid-cols-5 gap-1">
           {Array.from({ length: leadingBlanks }, (_, index) => <div key={`blank-${index}`} aria-hidden="true" />)}
@@ -110,9 +115,11 @@ export default function VendorCalendar() {
               aria-label={`${entry.key} ${entry.vendor || '未開團'}${entry.own ? '，你的團，查看訂單總覽' : ''}`}
               className={`min-h-[78px] min-w-0 rounded-xl border p-1.5 text-left ${entry.own
                 ? 'border-emerald-300 bg-emerald-50 text-emerald-900 focus-visible:outline-2 focus-visible:outline-emerald-700'
-                : 'cursor-default border-slate-200 bg-slate-50 text-slate-500'}`}>
+                : entry.vendor
+                  ? 'cursor-default border-slate-200 bg-slate-50 text-slate-700'
+                  : 'cursor-default border-2 border-red-400 bg-red-50 text-red-700'}`}>
               <div className="text-base font-bold">{entry.day}</div>
-              <div className="mt-1 break-words text-[10px] leading-snug">{entry.vendor || '未開團'}</div>
+              <div className={`mt-1 break-words leading-snug ${entry.vendor ? 'text-[10px]' : 'text-xs font-bold'}`}>{entry.vendor || '未開團'}</div>
               {entry.own && <div className="mt-1 text-[10px] font-semibold tabular-nums">{entry.summary ? `${entry.summary.portionCount} 份` : '—'}</div>}
             </button>
           ))}
