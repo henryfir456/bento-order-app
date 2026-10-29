@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.23': [
+    { name: '新增', changes: [
+      '登入後若餘額為負值，會跳出彈窗提醒儘快儲值。'
+    ] }
+  ],
   '0.19.22': [
     { name: '調整', changes: [
       '廠商 18:00 結單通知會列出各便當品項與份數（份數多的在前）。'
