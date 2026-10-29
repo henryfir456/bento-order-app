@@ -57,7 +57,7 @@ test('role assignment is Admin-only, validates formal roles, and is audited', as
   const vendorPrincipal = await call(
     database,
     '/api/admin/users/vendor-role-target/role',
-    { method: 'PUT', token: 'admin-token', body: { role: 'Admin' } },
+    { method: 'PUT', token: 'admin-token', body: { role: 'ProxyAdmin' } },
     { token: 'admin-token', lineUserId: 'admin-1' }
   );
   assert.equal(vendorPrincipal.response.status, 409);
@@ -97,7 +97,7 @@ test('role assignment cannot race an invalid employee repair', async () => {
   const result = await call(
     database,
     '/api/admin/users/user-race-synthetic/role',
-    { method: 'PUT', token: 'admin-race-token', body: { role: 'Admin' } },
+    { method: 'PUT', token: 'admin-race-token', body: { role: 'ProxyAdmin' } },
     { token: 'admin-race-token', lineUserId: 'admin-race-synthetic' }
   );
   assert.equal(result.response.status, 403);
@@ -131,7 +131,7 @@ test('role assignment cannot race a Vendor principal becoming active', async () 
   const result = await call(
     database,
     '/api/admin/users/vendor-role-race-target/role',
-    { method: 'PUT', token: 'admin-vendor-race-token', body: { role: 'Admin' } },
+    { method: 'PUT', token: 'admin-vendor-race-token', body: { role: 'ProxyAdmin' } },
     { token: 'admin-vendor-race-token', lineUserId: 'admin-vendor-race' }
   );
 
@@ -144,4 +144,41 @@ test('role assignment cannot race a Vendor principal becoming active', async () 
   assert.equal(database.get(
     "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ROLE_UPDATED'"
   ).count, 0);
+});
+
+test('role assignment moves User <-> ProxyAdmin only and protects Admin accounts', async () => {
+  const database = new SqliteD1();
+  seedUser(database, { lineUserId: 'admin-1', role: 'Admin' });
+  seedUser(database, { userId: 'admin-2', employeeId: 'E-ADMIN-2', lineUserId: 'admin-2-line', role: 'Admin' });
+  seedUser(database, { userId: 'proxy-1', employeeId: 'E-PROXY-1', lineUserId: 'proxy-1-line', role: 'User' });
+  const put = (target, role) => call(
+    database,
+    `/api/admin/users/${target}/role`,
+    { method: 'PUT', token: 'admin-token', body: { role } },
+    { token: 'admin-token', lineUserId: 'admin-1' }
+  );
+  const roleOf = (id) => database.get('SELECT role FROM users WHERE user_id = ?', id).role;
+  const audits = () => database.get(
+    "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ROLE_UPDATED'"
+  ).count;
+
+  assert.equal((await put('proxy-1', 'ProxyAdmin')).response.status, 200);
+  assert.equal(roleOf('proxy-1'), 'ProxyAdmin');
+  assert.equal((await put('proxy-1', 'User')).response.status, 200);
+  assert.equal(roleOf('proxy-1'), 'User');
+  assert.equal(audits(), 2);
+
+  const toAdmin = await put('proxy-1', 'Admin');
+  assert.equal(toAdmin.response.status, 403);
+  assert.equal(toAdmin.body.error, 'ROLE_ADMIN_NOT_ASSIGNABLE');
+
+  const otherAdmin = await put('admin-2', 'User');
+  assert.equal(otherAdmin.response.status, 403);
+  assert.equal(otherAdmin.body.error, 'ROLE_TARGET_PROTECTED');
+  const self = await put(database.get("SELECT user_id AS id FROM users WHERE role = 'Admin' AND line_user_id = 'admin-1'").id, 'User');
+  assert.equal(self.response.status, 403);
+
+  assert.equal(roleOf('admin-2'), 'Admin');
+  assert.equal(roleOf('proxy-1'), 'User');
+  assert.equal(audits(), 2);
 });

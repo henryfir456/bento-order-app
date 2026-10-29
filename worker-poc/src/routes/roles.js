@@ -13,6 +13,8 @@ import { requireIdentity } from '../http/authMiddleware.js';
 
 const VALID_ROLES = new Set(['User', 'ProxyAdmin', 'Admin']);
 
+const ASSIGNABLE_ROLES = new Set(['User', 'ProxyAdmin']);
+
 const readJson = async (request) => {
   try {
     const value = await request.json();
@@ -29,6 +31,9 @@ export const assignRole = async (database, identity, targetUserInput, input, clo
   const role = String(input?.role || input?.newRole || '').trim();
   if (!targetKey) throw badRequest('ROLE_TARGET_REQUIRED');
   if (!VALID_ROLES.has(role)) throw badRequest('ROLE_INVALID');
+  // Admin can only be granted outside the app; the API only moves
+  // User <-> ProxyAdmin.
+  if (!ASSIGNABLE_ROLES.has(role)) throw forbidden('ROLE_ADMIN_NOT_ASSIGNABLE');
   const existing = await getUserById(database, targetKey)
     || await getUserByEmployeeId(database, targetKey)
     || await getUserByLineId(database, targetKey);
@@ -37,11 +42,13 @@ export const assignRole = async (database, identity, targetUserInput, input, clo
     throw forbidden('INVALID_EMPLOYEE_ID');
   }
   if (existing.vendorPrincipal) throw conflict('ROLE_TARGET_VENDOR_PRINCIPAL');
+  if (!ASSIGNABLE_ROLES.has(existing.role)) throw forbidden('ROLE_TARGET_PROTECTED');
   const occurredAt = resolveClock(clock).toISOString();
   const auditId = randomId('audit');
   const update = prepareStatement(database, `
     UPDATE users SET role = ?, updated_at = ?
     WHERE user_id = ? AND invalid_reason IS NULL
+      AND role IN ('User', 'ProxyAdmin')
       AND NOT EXISTS (
         SELECT 1 FROM vendor_principals vp WHERE vp.user_id = users.user_id
       )

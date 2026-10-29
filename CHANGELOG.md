@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.19] - 2026-10-29
+
+### Added
+
+- Let Admin promote a User to ProxyAdmin or demote a ProxyAdmin to User from the user details dialog. The role API now only moves User and ProxyAdmin accounts, rejects granting Admin or changing any Admin (including the caller), and keeps the `ROLE_UPDATED` audit record.
+
 ## [0.19.18] - 2026-10-29
 
 ### Fixed
