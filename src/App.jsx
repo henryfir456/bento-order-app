@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import Swal from 'sweetalert2';
-import 'sweetalert2/dist/sweetalert2.min.css';
+import Swal from './lib/swal';
 import { formatDateInput, formatDateTime, formatTaipeiTopupNote, getTaipeiYearMonth, getWeekdayLeadingBlankCount, shiftYearMonth } from './dateUtils';
 import { apiClient, guestSessionStore } from './api/apiClient';
 import { formatApiErrorDiagnostic, getApiErrorPresentation } from './api/apiErrors';
@@ -24,6 +23,7 @@ import {
 import { createBootId, createBootTimingLogger, getPerformanceNow } from './observability/bootTiming';
 import { APP_VERSION, UI_CHANGELOG } from './data/changelog';
 import ChangelogModal from './components/ChangelogModal';
+import LoadingNote from './components/ui/LoadingNote';
 import BottomNavigation from './components/BottomNavigation';
 import MyOrdersPage from './features/orders/MyOrdersPage';
 import MyBentoFootprintsPage from './features/orders/MyBentoFootprintsPage';
@@ -38,14 +38,9 @@ import LocalUatBadge from './components/LocalUatBadge';
 import LocalUatLogin from './components/LocalUatLogin';
 import IdentityStatusBadges from './components/IdentityStatusBadges';
 import { formatEmployeeId } from './components/userIdentityDisplay';
-import CalendarManagement from './features/calendar/CalendarManagement';
 import ModernCalendar from './features/calendar/ModernCalendar';
 import RollingCalendar from './features/calendar/RollingCalendar';
 import OrderReminderSettings from './features/orders/OrderReminderSettings';
-import VendorHub from './features/vendors/VendorHub';
-import VendorOperationsPage from './features/vendors/VendorOperationsPage';
-import VendorCalendar from './features/vendors/VendorCalendar';
-import VendorFootprints from './features/vendors/VendorFootprints';
 import {
   CANONICAL_VENDOR_FALLBACKS,
   normalizeVendor,
@@ -62,13 +57,8 @@ import {
   buildExistingOrderSubmission,
   buildOrderSubmission
 } from './features/orders/orderSubmission';
-import AdminOrderSummary from './features/admin/AdminOrderSummary';
 import { aggregateOrdersByFloor } from './features/admin/orderSummary.js';
 import { filterMembersByEmployeeId } from './features/admin/delegateOrderFilter.js';
-import AnnouncementManagement from './features/admin/AnnouncementManagement';
-import MenuItemChangesManagement from './features/admin/MenuItemChangesManagement';
-import MemberBalanceManagement from './features/balances/MemberBalanceManagement';
-import AdminUserLedgerDetails from './features/balances/AdminUserLedgerDetails';
 import { formatSignedAmount, formatBalanceAmount } from './features/balances/formatters';
 import { formatLedgerOrderDate } from './features/balances/ledgerFormatters';
 import { normalizeAnnouncementInbox, normalizeDeferredLikes, mergeDeferredLikes } from './features/bootstrap/deferredBootstrap';
@@ -81,6 +71,18 @@ import {
   getAdminMemberRows,
   isEligibleEmployeeBindingTarget
 } from './features/balances/identityStatus';
+
+// Admin and vendor screens load on demand so employees do not download them.
+const AdminOrderSummary = React.lazy(() => import('./features/admin/AdminOrderSummary'));
+const AnnouncementManagement = React.lazy(() => import('./features/admin/AnnouncementManagement'));
+const MenuItemChangesManagement = React.lazy(() => import('./features/admin/MenuItemChangesManagement'));
+const MemberBalanceManagement = React.lazy(() => import('./features/balances/MemberBalanceManagement'));
+const AdminUserLedgerDetails = React.lazy(() => import('./features/balances/AdminUserLedgerDetails'));
+const CalendarManagement = React.lazy(() => import('./features/calendar/CalendarManagement'));
+const VendorHub = React.lazy(() => import('./features/vendors/VendorHub'));
+const VendorOperationsPage = React.lazy(() => import('./features/vendors/VendorOperationsPage'));
+const VendorCalendar = React.lazy(() => import('./features/vendors/VendorCalendar'));
+const VendorFootprints = React.lazy(() => import('./features/vendors/VendorFootprints'));
 
 // 自動根據目前環境讀取對應的變數
 const AUTH_STATES = Object.freeze({
@@ -3787,6 +3789,7 @@ export default function App() {
       </header>
 
       <main className="w-full max-w-xl min-w-0 mx-auto flex-1 p-4">
+        <React.Suspense fallback={<LoadingNote label="畫面" />}>
         {apiClient.transport === 'worker'
           && authClient.isLocalUat
           && [AUTH_STATES.AUTH_REQUIRED, AUTH_STATES.AUTH_FAILED].includes(authState)
@@ -3898,9 +3901,7 @@ export default function App() {
         )}
 
         {(authState === AUTH_STATES.AUTH_LOADING || (isRegistered && loading)) && (
-          <div className="text-center py-8 text-emerald-800 font-medium animate-pulse">
-            資料處理中...
-          </div>
+          <LoadingNote label="資料" />
         )}
 
         {isUnregistered && apiClient.transport !== 'worker' && !loading && (
@@ -4202,6 +4203,7 @@ export default function App() {
           </div>
         )}
 
+        </React.Suspense>
       </main>
 
       {isRegistered && viewMode !== 'order' && (

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Modal from '../../components/Modal';
 import AnnouncementContent from './AnnouncementContent';
 import { shouldShowAnnouncementEmptyState } from './announcementInboxViewState';
+import LoadingNote from '../../components/ui/LoadingNote';
 
 export default function AnnouncementInbox({
   open,
@@ -84,7 +85,7 @@ export default function AnnouncementInbox({
           {!announcementsAvailable ? (
             notifications.length === 0 ? <p className="rounded-xl bg-gray-50 p-5 text-center text-sm text-gray-500">尚無通知</p> : null
           ) : loading && announcements.length === 0 ? (
-            <div role="status" className="py-6 text-center text-sm text-gray-500">公告載入中…</div>
+            <LoadingNote label="公告" />
           ) : showEmptyState ? (
             <p className="rounded-xl bg-gray-50 p-5 text-center text-sm text-gray-500">尚無公告或通知</p>
           ) : announcements.length > 0 ? (

@@ -3,6 +3,7 @@ import { apiClient } from '../../api/apiClient';
 import { formatDateTime, getTaipeiYearMonth } from '../../dateUtils';
 import { formatBalanceAmount, formatSignedAmount } from './formatters';
 import { formatEmployeeId } from '../../components/userIdentityDisplay';
+import LoadingNote from '../../components/ui/LoadingNote';
 
 const thisMonth = () => {
   const { year, month } = getTaipeiYearMonth();
@@ -45,7 +46,7 @@ export default function AdminUserLedgerDetails({ user, onBack }) {
       <input type="month" className="ml-2 rounded-lg border p-1" value={month}
         onChange={event => setMonth(event.target.value)} />
     </label>
-    {loading ? <p role="status" className="text-sm">交易紀錄載入中…</p> :
+    {loading ? <LoadingNote label="交易紀錄" compact /> :
       error ? <p role="alert" className="text-sm text-red-700">{error}</p> :
       result && <>
         <div className="grid grid-cols-2 gap-2 text-xs">
