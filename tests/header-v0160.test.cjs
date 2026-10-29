@@ -17,8 +17,9 @@ test('mobile header has one right-aligned identity row and no visible title row'
  assert.match(header,/ViewAsBanner/);
  assert.match(header,/handleOpenFloorModal/);
 });
-test('v0.16.0 is one application version in both UI modes',()=>{
- assert.equal(pkg.version,'0.16.0');
+test('v0.16.0 stays recorded and package metadata stays in sync in both UI modes',()=>{
+ // package.json moves on with every release, so only require the three version sources to agree.
+ assert.match(pkg.version,/^\d+\.\d+\.\d+$/);
  assert.equal(lock.version,pkg.version);
  assert.equal(lock.packages[''].version,pkg.version);
  assert.match(changelog,/## \[0\.16\.0\] - 2026-10-14/);

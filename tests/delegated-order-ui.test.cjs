@@ -29,7 +29,7 @@ test('frontend keeps View-As read-only and exposes explicit delegated ordering m
   assert.match(app, /targetUserId/);
   assert.match(app, /setViewAsUser\(null\)/);
   assert.match(app, /isViewAsMode/);
-  assert.match(app, /!isViewAsMode && !delegatedOrderUser && can\('viewOwnBalance'\)/);
+  assert.match(app, /canAuth\('viewOwnBalance'\) && !isViewAsMode && !delegatedOrderUser/);
   assert.match(banner, /代替/);
   assert.match(banner, /目標餘額：\{formatBalanceAmount\(delegatedOrderUser\.balance\)\}/);
   assert.match(banner, /返回 Admin|結束代點/);
@@ -187,7 +187,7 @@ test('delegated balance cache regression: stale zero is invalidated, then balanc
   assert.equal(state.delegatedOrderUser.balance, -100, 'banner source receives response.newBalance immediately');
   assert.match(sectionHandler, /if \(section === ['"]balances['"]\)[\s\S]*loadMemberBalances\(\)/);
   assert.match(balancesLoader, /if \(!force && memberBalancesLoaded\) return;/);
-  assert.match(balancesLoader, /apiClient\.getMemberBalances\(\)/);
+  assert.match(balancesLoader, /apiClient\.getMemberBalances\(\{ includeInvalid: canIncludeInvalid \}\)/);
   assert.match(balancesLoader, /setMemberBalances\(data\.members \|\| data\.users \|\| \[\]\)/);
 
   let fetchCount = 0;

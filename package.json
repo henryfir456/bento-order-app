@@ -8,6 +8,8 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "test": "node --test tests/*.test.cjs",
+    "test:ci": "node scripts/run-ci-tests.mjs",
     "test:auth-recovery": "node --test tests/auth-startup-recovery.test.cjs",
     "test:line-binding": "node --test tests/line-binding-state.test.cjs",
     "test:local-uat": "node --test tests/local-uat-auth-mode.test.cjs"

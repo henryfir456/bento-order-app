@@ -106,7 +106,7 @@ test('vendor UI is wired to formal Worker/mock contracts and keeps GAS explicit'
   const vendorListBlock = hubSource.match(/function VendorList[\s\S]*?\n}\n\nfunction VendorEditor/)?.[0];
   const snapshotBlock = hubSource.match(/function MenuSnapshot[\s\S]*?\n}\n\nfunction VendorDetail/)?.[0];
 
-  assert.match(appSource, /🏪 店家專區/);
+  assert.match(appSource, /店家專區 ›/);
   assert.match(appSource, /apiClient\.getVendors/);
   assert.match(appSource, /apiClient\.getVendor/);
   assert.match(appSource, /apiClient\.updateVendor/);

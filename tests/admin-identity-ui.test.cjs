@@ -45,7 +45,7 @@ test('mock identity fixtures distinguish registered LINE Admin from unbound and 
 
   assert.equal(registered.registered, true);
   assert.equal(registered.authMode, 'line');
-  assert.equal(registered.user.employeeId, '139653');
+  assert.equal(registered.user.employeeId, 'MCKUNV');
   assert.equal(registered.user.role, 'Admin');
   assert.equal(registered.user.verificationStatus, 'UNVERIFIED');
   assert.equal(unbound.registered, false);
@@ -77,7 +77,7 @@ test('Admin identity UI uses Worker binding and never writes verification state 
   assert.match(app, /formatDateTime\(item\.occurredAt \|\| item\.timestamp\)/);
   assert.match(app, /setMemberBalancesLoaded\(false\);[\s\S]*?loadMemberBalances\(true\)/);
   assert.match(member, /LINE 綁定/);
-  assert.match(member, /身份狀態/);
+  assert.match(member, /IdentityStatusBadges/);
   assert.match(identityStatus, /負餘額/);
   assert.doesNotMatch(member, /待綁員編/);
   assert.doesNotMatch(member, /已註冊/);

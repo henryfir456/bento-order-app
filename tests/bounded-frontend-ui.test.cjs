@@ -23,15 +23,21 @@ test('admin order summary groups items by deterministic floor order while preser
   ).href);
 
   const orders = [
-    { pickup_floor: '9樓', item_name: '風味便當', quantity: 1 },
+    { pickup_floor: '9樓', item_name: '風味便當', item_identity_key: 'flavor-bento', quantity: 1 },
     { pickup_floor: '1樓', item_name: '特餐(半飯)', quantity: 2 },
     { pickup_floor: '2樓', item_name: '新樓品項', quantity: 4 },
     { pickup_floor: '1樓', item_name: '特餐', quantity: 1 },
-    { pickup_floor: '9樓', item_name: '風味便當', quantity: 2 },
+    { pickup_floor: '9樓', item_name: '風味便當', item_identity_key: 'flavor-bento', quantity: 2 },
     { pickup_floor: '9樓', item_name: '小而美', quantity: 1 }
   ];
 
-  assert.deepEqual(aggregateOrdersByFloor(orders), [
+  // Rows also carry identity-resolution fields now; this test only pins grouping and item order.
+  // Lines without an identity key are never merged by name, so the repeated dish carries a shared key.
+  const grouped = aggregateOrdersByFloor(orders).map(({ floor, items }) => ({
+    floor,
+    items: items.map(({ itemName, quantity }) => ({ itemName, quantity }))
+  }));
+  assert.deepEqual(grouped, [
     {
       floor: '1樓',
       items: [
@@ -75,11 +81,12 @@ test('profile maintenance reuses the existing endpoint and synchronizes all loca
 
 test('header renders only elevated role badges before the clickable display name', () => {
   const app = require('./helpers/app-source.cjs').readAppSource();
-  const headerBlock = app.match(/<div className="mt-2 flex min-w-0 flex-wrap items-center gap-1\.5 text-xs text-emerald-100">[\s\S]*?<\/div>/)?.[0] || '';
+  const headerStart = app.indexOf('<span aria-hidden="true">👤</span>');
+  const headerBlock = app.slice(headerStart, headerStart + 900);
 
+  assert.ok(headerStart > 0);
   assert.match(app, /const headerRoleLabel = \['Admin', 'ProxyAdmin'\]\.includes\(effectiveRole\)/);
-  assert.match(headerBlock, /\{headerRoleLabel &&/);
-  assert.ok(headerBlock.indexOf('👤') < headerBlock.indexOf('headerRoleLabel'));
+  assert.match(headerBlock, /headerRoleLabel && isRegistered/);
   assert.ok(headerBlock.indexOf('headerRoleLabel') < headerBlock.indexOf('{displayName}'));
   assert.doesNotMatch(app, /\{authMode === 'employee_guest' \? '員編登入' : effectiveRole\}/);
   assert.doesNotMatch(headerBlock, /\{effectiveRole\}/);

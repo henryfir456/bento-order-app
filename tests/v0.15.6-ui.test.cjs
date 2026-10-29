@@ -29,7 +29,7 @@ test('detail view groups by floor and keeps person, item, quantity, and price fi
 
   assert.match(detailView, /groupOrdersByFloor\(adminSummary\.todayOrders\)/);
   assert.match(detailView, /\{o\.name\}/);
-  assert.match(detailView, /\{o\.item_name\}/);
+  assert.match(detailView, /itemName: o\.display_item_name \|\| o\.item_name/);
   assert.match(detailView, /\{o\.quantity\}/);
   assert.match(detailView, /formatSignedAmount\(o\.subtotal\)/);
 });
@@ -40,7 +40,7 @@ test('floor-count view aggregates each floor by item without rendering people', 
 
   assert.match(floorCountView, /aggregatedOrders\.map/);
   assert.match(floorCountView, /\{floor\} 訂單/);
-  assert.match(floorCountView, /\{itemName\}/);
+  assert.match(floorCountView, /formatOrderItemLabel\(\{ itemName,/);
   assert.match(floorCountView, /\{quantity\}/);
   assert.doesNotMatch(floorCountView, /o\.name|o\.item_name|o\.subtotal/);
 });
@@ -50,21 +50,23 @@ test('total-count view merges all floors by item and renders the total quantity'
   const totalCountView = summary.match(/\{activeTab === 'totalCount'[\s\S]*?\n\s+\)\}/)?.[0] || '';
   const { aggregateOrdersByFloor, aggregateOrdersByItem } = await import('../src/features/admin/orderSummary.js');
   const orders = [
-    { pickup_floor: '1樓', item_name: '番茄鷹豆泥', quantity: 1 },
-    { pickup_floor: '9樓', item_name: '番茄鷹豆泥', quantity: 2 },
+    { pickup_floor: '1樓', item_name: '番茄鷹豆泥', item_identity_key: 'tomato-hummus', quantity: 1 },
+    { pickup_floor: '9樓', item_name: '番茄鷹豆泥', item_identity_key: 'tomato-hummus', quantity: 2 },
     { pickup_floor: '9樓', item_name: '紅麴豆腐', quantity: 1 }
   ];
 
-  assert.deepEqual(aggregateOrdersByFloor(orders), [
+  // Rows also carry identity-resolution fields; lines without an identity key are never merged by name.
+  const pick = (items) => items.map(({ itemName, quantity }) => ({ itemName, quantity }));
+  assert.deepEqual(aggregateOrdersByFloor(orders).map(({ floor, items }) => ({ floor, items: pick(items) })), [
     { floor: '1樓', items: [{ itemName: '番茄鷹豆泥', quantity: 1 }] },
     { floor: '9樓', items: [{ itemName: '番茄鷹豆泥', quantity: 2 }, { itemName: '紅麴豆腐', quantity: 1 }] }
   ]);
-  assert.deepEqual(aggregateOrdersByItem(orders), [
+  assert.deepEqual(pick(aggregateOrdersByItem(orders)), [
     { itemName: '番茄鷹豆泥', quantity: 3 },
     { itemName: '紅麴豆腐', quantity: 1 }
   ]);
   assert.match(totalCountView, /totalOrdersByItem\.map/);
-  assert.match(totalCountView, /\{itemName\}/);
+  assert.match(totalCountView, /formatOrderItemLabel\(\{ itemName,/);
   assert.match(totalCountView, /\{quantity\}/);
   assert.match(totalCountView, /總計 \{totalItemCount\} 份/);
   assert.doesNotMatch(totalCountView, /floor|o\.name|o\.item_name/);

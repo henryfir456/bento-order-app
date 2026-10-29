@@ -15,7 +15,7 @@ test('my orders initial month follows Taipei and retains accessible month input'
   assert.match(orders,/String\(month\)\.padStart\(2, '0'\)/);
   assert.match(orders,/type="month"/);
   assert.match(orders,/sr-only">選擇月份/);
-  assert.match(orders,/顯示所有月份/);
+  assert.match(orders,/這個月份尚無訂單/);
   assert.doesNotMatch(orders,/含過去已完成和目前有效的訂餐|篩選月份/);
 });
 test('requested explanatory copy removed; Admin shortcuts hidden but ProxyAdmin guarded',()=>{
