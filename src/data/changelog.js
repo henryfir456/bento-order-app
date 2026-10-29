@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.20': [
+    { name: '調整', changes: [
+      '廠商訂餐月曆的「未開團」日期改為紅字、紅框與淡紅底色並加上圖例，方便辨識可能成為禾拾開團的日子。'
+    ] }
+  ],
   '0.19.19': [
     { name: '新增', changes: [
       '管理員可在使用者詳細資料中將一般使用者升級為代理管理員，或將代理管理員降級為一般使用者；不可變更管理員角色，並會留下稽核紀錄。'
