@@ -21,7 +21,7 @@ test('announcement image snapshots remain optional and render responsively', () 
 
 
 test('public announcement projection refreshes after admin edits', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   assert.match(app, /const refreshPublicAnnouncements = async/);
   assert.match(app, /apiClient\.getMyAnnouncements/);
   assert.match(app, /normalizeAnnouncementInbox\(payload\)/);

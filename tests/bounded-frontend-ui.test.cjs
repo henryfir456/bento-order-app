@@ -54,7 +54,7 @@ test('admin order summary groups items by deterministic floor order while preser
 });
 
 test('profile maintenance reuses the existing endpoint and synchronizes all local identity display state', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const modal = read('src/components/PickupFloorModal.jsx');
   const saveHandler = app.match(/const handleSaveDefaultFloor = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
 
@@ -74,7 +74,7 @@ test('profile maintenance reuses the existing endpoint and synchronizes all loca
 });
 
 test('header renders only elevated role badges before the clickable display name', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const headerBlock = app.match(/<div className="mt-2 flex min-w-0 flex-wrap items-center gap-1\.5 text-xs text-emerald-100">[\s\S]*?<\/div>/)?.[0] || '';
 
   assert.match(app, /const headerRoleLabel = \['Admin', 'ProxyAdmin'\]\.includes\(effectiveRole\)/);

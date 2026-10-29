@@ -7,7 +7,7 @@ const ROOT = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(ROOT, relativePath), 'utf8');
 
 test('balance history keeps month data semantics while defaulting the summary to collapsed', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const modal = app.match(/餘額歷史異動 Modal[\s\S]*?historyList\.map/)?.[0] || '';
 
   assert.match(app, /const \[historySummaryExpanded, setHistorySummaryExpanded\] = useState\(false\)/);
@@ -24,7 +24,7 @@ test('balance history keeps month data semantics while defaulting the summary to
 });
 
 test('employee entry remains a normal-user entry and explicit LINE entry is selectable', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const boot = read('src/auth/bootFlow.js');
 
   assert.match(boot, /if \(hasGuestSession\) \{/);
@@ -36,7 +36,7 @@ test('employee entry remains a normal-user entry and explicit LINE entry is sele
 });
 
 test('ProxyAdmin delegated date selection is bounded in the UI and Worker guard', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const authorization = read('worker-poc/src/domain/orderAuthorization.js');
   const selectBlock = app.match(/const handleSelectDate = async \(dateStr\) => \{[\s\S]*?\n  \};/)?.[0] || '';
 

@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), 'utf8');
 
 test('order page exposes previous and next configured-date navigation', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const orderPage = read('src/features/orders/OrderPage.jsx');
 
   assert.match(app, /const orderNavigationDates = useMemo/);
@@ -37,7 +37,7 @@ test('current formal release is consistent and preserves the 0.15.11 entry', () 
 
 
 test('calendar shows daily flavor names only when useful for Cai Teacher decisions', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const orderPage = read('src/features/orders/OrderPage.jsx');
 
   assert.doesNotMatch(orderPage, />預訂日期</);

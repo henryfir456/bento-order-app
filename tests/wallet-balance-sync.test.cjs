@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const app = fs.readFileSync(path.join(__dirname, '../src/App.jsx'), 'utf8');
+const app = require('./helpers/app-source.cjs').readAppSource();
 
 test('own current-month balance history refreshes header and nav balance', () => {
   const start = app.indexOf('const loadBalanceHistory');

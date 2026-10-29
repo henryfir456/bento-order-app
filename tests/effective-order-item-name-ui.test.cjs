@@ -80,7 +80,7 @@ test('Worker API errors preserve a safe request trace ID for user diagnostics', 
 });
 
 test('announcement and vendor error views render only sanitized codes and request IDs', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const vendor = read('src/features/vendors/VendorOperationsPage.jsx');
   assert.match(app, /formatApiErrorDiagnostic\(error\)/);
   assert.match(vendor, /formatApiErrorDiagnostic\(requestError\)/);

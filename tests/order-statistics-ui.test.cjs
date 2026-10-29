@@ -18,7 +18,7 @@ test('footprints exposes responsive period controls and the same ranked data at 
 });
 
 test('statistics navigation and API support authorized read-only View As', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const nav = read('src/components/BottomNavigation.jsx');
   const api = read('src/api/apiClientCore.js');
   const route = read('worker-poc/src/routes/readOnly.js');
@@ -35,7 +35,7 @@ test('statistics navigation and API support authorized read-only View As', () =>
 });
 
 test('mock footprints load synthetic statistics without requiring Worker transport', async () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const methodStart = app.indexOf('const refreshBentoFootprints = async');
   const methodEnd = app.indexOf('\n  useEffect', methodStart);
   const refreshMethod = app.slice(methodStart, methodEnd);
@@ -76,7 +76,7 @@ test('vendor donut chart shows the center total and respects reduced motion', ()
 });
 
 test('footprints show the last result per subject and period while refreshing', () => {
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const page = read('src/features/orders/MyBentoFootprintsPage.jsx');
   const methodStart = app.indexOf('const refreshBentoFootprints = async');
   const refreshMethod = app.slice(methodStart, app.indexOf('\n  useEffect', methodStart));

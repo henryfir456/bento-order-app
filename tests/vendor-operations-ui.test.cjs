@@ -45,7 +45,7 @@ const connectDevTools = (url) => new Promise((resolve, reject) => {
 
 test('Vendor operations UI keeps Vendor in a dedicated shell and separates manual transfers from order status', () => {
   const page = read('src/features/vendors/VendorOperationsPage.jsx');
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const nav = read('src/components/BottomNavigation.jsx');
 
   assert.match(page, /依已授權廠商範圍顯示/);

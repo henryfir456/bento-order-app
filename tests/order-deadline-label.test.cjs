@@ -26,7 +26,7 @@ test('order deadline label is hidden when expired or invalid', async () => {
 test('order page labels a passed cutoff that an Admin bypass keeps editable', () => {
   const fs = require('node:fs');
   const page = fs.readFileSync(path.join(__dirname, '../src/features/orders/OrderPage.jsx'), 'utf8');
-  const app = fs.readFileSync(path.join(__dirname, '../src/App.jsx'), 'utf8');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   assert.match(app, /cutoffPassed=\{isExpired && !isOrderExpired\}/);
   assert.match(page, /cutoffPassed \? [\s\S]*?已截止・管理者可修改/);
 });

@@ -74,7 +74,7 @@ test('calendar flavor image supports unopened exact-date flavors and rejects unr
 });
 
 test('calendar thumbnail is absent on missing image and hides on image load error', () => {
-  const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'App.jsx'), 'utf8');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const calendar = app.match(/const renderCalendarDays = \(dateList = null\) => \{[\s\S]*?const renderWeekendEvents = \(\) => \{/)?.[0] || '';
 
   assert.match(calendar, /showDailyFlavorImage &&/);
@@ -89,7 +89,7 @@ test('calendar thumbnail is absent on missing image and hides on image load erro
 test('order and admin screens render the independent projection and drop the item-name suffix instructions', () => {
   const read = (relativePath) => fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8');
   const orderPage = read('src/features/orders/OrderPage.jsx');
-  const app = read('src/App.jsx');
+  const app = require('./helpers/app-source.cjs').readAppSource();
   const adminMenu = read('src/features/admin/MenuItemChangesManagement.jsx');
 
   assert.match(orderPage, /data-testid="daily-flavor-card"/);
