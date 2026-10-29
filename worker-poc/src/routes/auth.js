@@ -7,7 +7,12 @@ import {
   bindLineIdentity
 } from '../domain/guestAccess.js';
 import { isVendorCodeLoginEnabled, vendorCodeLogin, vendorLoginCode } from '../auth/vendorCodeLogin.js';
-import { badRequest, unauthorized } from '../http/errors.js';
+import {
+  assertLoginNotThrottled,
+  loginAttemptKey,
+  recordLoginFailure
+} from '../auth/loginThrottle.js';
+import { badRequest, HttpError, unauthorized } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 
 const readJson = async (request) => {
@@ -46,14 +51,27 @@ export const handleAuthRoute = async (request, env, {
 
   if (isGuestLogin) {
     const body = await readJson(request);
-    if (isVendorCodeLoginEnabled(env) && vendorLoginCode(body.employeeId)) {
-      return jsonResponse(await vendorCodeLogin(env.DB, body.employeeId, now), 201);
+    const attemptKey = loginAttemptKey(request);
+    await assertLoginNotThrottled(env.DB, attemptKey, now);
+    try {
+      if (isVendorCodeLoginEnabled(env) && vendorLoginCode(body.employeeId)) {
+        return jsonResponse(await vendorCodeLogin(env.DB, body.employeeId, now), 201);
+      }
+      const result = await employeeGuestLogin(env.DB, body.employeeId, now);
+      // An unknown employee ID is the guessing signal; a known one is not.
+      if (result.status === 'UNVERIFIED_EMPLOYEE') {
+        await recordLoginFailure(env.DB, attemptKey, now);
+      }
+      return jsonResponse(
+        result,
+        result.status === 'UNVERIFIED_EMPLOYEE' ? 200 : 201
+      );
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 403) {
+        await recordLoginFailure(env.DB, attemptKey, now);
+      }
+      throw error;
     }
-    const result = await employeeGuestLogin(env.DB, body.employeeId, now);
-    return jsonResponse(
-      result,
-      result.status === 'UNVERIFIED_EMPLOYEE' ? 200 : 201
-    );
   }
 
   if (isGuestOnboarding) {
@@ -68,7 +86,9 @@ export const handleAuthRoute = async (request, env, {
   }
 
   if (isLineEmployeeLookup || isLineEmployeeBind) {
-    const line = await resolveLineIdentity(request, env.DB, fetchImpl, now);
+    const line = await resolveLineIdentity(request, env.DB, fetchImpl, now, {
+      channelId: env.LINE_CHANNEL_ID
+    });
     const body = await readJson(request);
     const result = isLineEmployeeLookup
       ? await lineEmployeeLookup(env.DB, {
@@ -89,7 +109,9 @@ export const handleAuthRoute = async (request, env, {
 
   const guestToken = request.headers.get('X-Employee-Guest-Session')?.trim() || '';
   if (!guestToken) throw unauthorized('GUEST_SESSION_INVALID');
-  const line = await resolveLineIdentity(request, env.DB, fetchImpl, now);
+  const line = await resolveLineIdentity(request, env.DB, fetchImpl, now, {
+      channelId: env.LINE_CHANNEL_ID
+    });
   const body = await readOptionalJson(request);
   return jsonResponse(await bindLineIdentity(env.DB, {
     guestToken,
