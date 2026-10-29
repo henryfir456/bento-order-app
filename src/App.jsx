@@ -2356,6 +2356,13 @@ export default function App() {
           totalDebit: data.totalDebit ?? 0,
           closingBalance: data.closingBalance ?? 0
         });
+        // Own current-month closing balance is the live balance; refresh the stale header/nav value (e.g. after admin top-up).
+        const currentMonth = getTaipeiYearMonth();
+        const closing = Number(data.closingBalance);
+        if (!viewAsUserId && year === currentMonth.year && month === currentMonth.month && Number.isFinite(closing)) {
+          setUserBalance(closing);
+          setAuthUser(prev => (prev && prev.balance !== closing ? { ...prev, balance: closing } : prev));
+        }
       } else {
         setHistoryError('目前無法讀取此月份的交易明細，請稍後再試。');
       }
