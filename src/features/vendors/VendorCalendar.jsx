@@ -110,9 +110,11 @@ export default function VendorCalendar() {
               aria-label={`${entry.key} ${entry.vendor || '未開團'}${entry.own ? '，你的團，查看訂單總覽' : ''}`}
               className={`min-h-[78px] min-w-0 rounded-xl border p-1.5 text-left ${entry.own
                 ? 'border-emerald-300 bg-emerald-50 text-emerald-900 focus-visible:outline-2 focus-visible:outline-emerald-700'
-                : 'cursor-default border-slate-200 bg-slate-50 text-slate-500'}`}>
+                : (entry.vendor
+                  ? 'cursor-default border-slate-200 bg-slate-50 text-slate-500'
+                  : 'cursor-default border-rose-300 bg-rose-50 text-rose-700')}`}>
               <div className="text-base font-bold">{entry.day}</div>
-              <div className="mt-1 break-words text-[10px] leading-snug">{entry.vendor || '未開團'}</div>
+              <div className={`mt-1 break-words leading-snug ${entry.vendor ? 'text-[10px]' : 'text-xs font-bold text-red-600'}`}>{entry.vendor || '未開團'}</div>
               {entry.own && <div className="mt-1 text-[10px] font-semibold tabular-nums">{entry.summary ? `${entry.summary.portionCount} 份` : '—'}</div>}
             </button>
           ))}

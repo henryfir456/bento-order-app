@@ -86,7 +86,7 @@ export const handleScheduled = async (
   }
 
   if (controller?.cron === CLOSE_CRON && closeCronHour(controller) === 10) {
-    const result = await notifyVendorsOrderClosed(env.DB, controller?.scheduledTime);
+    const result = await notifyVendorsOrderClosed(env.DB, env, controller?.scheduledTime, { fetchImpl });
     const logEntry = { event: 'vendor_order_closed_notification', source: 'order_close_cron', ...result };
     if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
     return result;

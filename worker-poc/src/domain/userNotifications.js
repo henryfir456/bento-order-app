@@ -72,13 +72,23 @@ export const vendorPrincipalsForName = async (database, vendorName) => {
   const candidates = compatibilityVendorCandidates(vendorName);
   const placeholders = candidates.map(() => '?').join(', ');
   const result = await database.prepare(`
-    SELECT DISTINCT vm.user_id, v.vendor_id
+    SELECT DISTINCT vm.user_id, v.vendor_id, u.line_user_id,
+      COALESCE((
+        SELECT p.enabled FROM user_reminder_prefs p
+        WHERE p.user_id = vm.user_id AND p.mode = 'VENDOR_CLOSE'
+      ), 1) AS line_enabled
     FROM vendors v
     JOIN vendor_memberships vm ON vm.vendor_id = v.vendor_id AND vm.status = 'ACTIVE'
     JOIN vendor_principals vp ON vp.user_id = vm.user_id AND vp.status = 'ACTIVE'
+    JOIN users u ON u.user_id = vm.user_id
     WHERE v.enabled = 1 AND v.name IN (${placeholders})
   `).bind(...candidates).all();
-  return rowsFrom(result).map((row) => ({ userId: row.user_id, vendorId: row.vendor_id }));
+  return rowsFrom(result).map((row) => ({
+    userId: row.user_id,
+    vendorId: row.vendor_id,
+    lineUserId: row.line_user_id || null,
+    lineEnabled: Number(row.line_enabled) === 1
+  }));
 };
 
 export const addDays = (dateOnly, days) => {
@@ -89,8 +99,11 @@ export const addDays = (dateOnly, days) => {
 };
 
 // 18:00 Taipei cron: tomorrow's mode-B group has just closed. Tell each vendor
-// principal of the assigned vendor how many orders and portions came in.
-export const notifyVendorsOrderClosed = async (database, scheduledTime) => {
+// principal of the assigned vendor how many orders and portions came in, through
+// the bell and (unless they opted out) a LINE push.
+export const notifyVendorsOrderClosed = async (database, env, scheduledTime, {
+  fetchImpl = globalThis.fetch
+} = {}) => {
   const now = resolveClock(scheduledTime);
   const orderDate = addDays(getTaipeiDate(now), 1);
   const setting = await database.prepare(`
@@ -116,7 +129,7 @@ export const notifyVendorsOrderClosed = async (database, scheduledTime) => {
     ? `${label} 已收單，共 ${orderCount} 筆訂單、${portions} 份餐點，請到「訂餐」查看明細。`
     : `${label} 已收單，這一天沒有訂單。`;
   const occurredAt = now.toISOString();
-  await database.batch(principals.map((principal) => notificationStatement(database, {
+  const results = await database.batch(principals.map((principal) => notificationStatement(database, {
     userId: principal.userId,
     kind: 'VENDOR_ORDER_CLOSED',
     title: '已收單通知',
@@ -125,7 +138,19 @@ export const notifyVendorsOrderClosed = async (database, scheduledTime) => {
     dedupeKey: `VENDOR_ORDER_CLOSED:${orderDate}:${principal.userId}`,
     occurredAt
   })));
-  return { status: 'NOTIFIED', orderDate, notified: principals.length, orderCount, portions };
+  // A retried cron run only pushes to principals whose bell row is new.
+  const lineUserIds = principals
+    .filter((_, index) => (results?.[index]?.meta?.changes ?? results?.[index]?.changes ?? 1) > 0)
+    .filter((principal) => principal.lineEnabled)
+    .map((principal) => principal.lineUserId)
+    .filter(Boolean);
+  let push;
+  try {
+    push = await pushLineText(env, fetchImpl, lineUserIds, `【便當】${setting.vendor} ${body}`);
+  } catch (error) {
+    push = { status: 'LINE_PUSH_ERROR', error: error?.name || 'Error', sent: 0 };
+  }
+  return { status: 'NOTIFIED', orderDate, notified: principals.length, orderCount, portions, push };
 };
 
 const LATE_ORDER_VENDOR = '蔡老師';

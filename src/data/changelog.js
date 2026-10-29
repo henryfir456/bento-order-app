@@ -11,6 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.20': [
+    { name: '新增', changes: [
+      '廠商於前一天 18:00 結單後，會收到 LINE 通知當天的訂單數與份數；可在廠商工作台的「LINE 結單通知」自行開關。'
+    ] },
+    { name: '調整', changes: [
+      '廠商月曆的「未開團」日期改為紅色粗體，方便辨識可能成為合作團的日子。'
+    ] }
+  ],
   '0.19.19': [
     { name: '新增', changes: [
       '管理員可在使用者詳細資料中將一般使用者升級為代理管理員，或將代理管理員降級為一般使用者；不可變更管理員角色，並會留下稽核紀錄。'

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { handleScheduled } from '../src/formalWorker.js';
 import { handleFormalRequest, profileFetch, request } from './helpers/formal-fixtures.js';
 import { callOrderRoute, ORDER_DATE, seedOrderDatabase, userProfile } from './helpers/order-fixtures.js';
+import { seedUser } from './helpers/formal-fixtures.js';
 
 const putSettings = async (database, profile, body) => {
   const response = await handleFormalRequest(
@@ -33,10 +34,10 @@ test('reminder settings are per user and per group mode', async () => {
     { DB: database },
     { fetchImpl: profileFetch(profile), now: new Date('2026-09-07T00:00:00.000Z') }
   );
-  assert.deepEqual((await initial.json()).settings, { A: false, B: false, adminClose: true });
+  assert.deepEqual((await initial.json()).settings, { A: false, B: false, adminClose: true, vendorClose: true });
   const saved = await putSettings(database, profile, { A: true });
   assert.equal(saved.status, 200);
-  assert.deepEqual(saved.body.settings, { A: true, B: false, adminClose: true });
+  assert.deepEqual(saved.body.settings, { A: true, B: false, adminClose: true, vendorClose: true });
   assert.equal((await putSettings(database, profile, { B: 'yes' })).status, 400);
   assert.equal((await putSettings(database, profile, {})).status, 400);
 });
@@ -126,5 +127,48 @@ test('without a LINE token the reminder cron sends nothing and leaves no log row
     { logger: { log() {} }, fetchImpl }
   );
   assert.equal(sent.status, 'REMINDED');
+  assert.equal(pushes.length, 1);
+});
+
+test('vendor principal can opt out of the 18:00 close LINE push; only they may set it', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  seedUser(database, { userId: 'vendor-user', lineUserId: 'vendor-line', employeeId: null });
+  database.run("INSERT INTO vendor_principals (user_id, principal_role, status) VALUES ('vendor-user', 'Vendor', 'ACTIVE')");
+  database.run("INSERT INTO vendor_memberships (user_id, vendor_id, status) VALUES ('vendor-user', 'canonical-vendor-a', 'ACTIVE')");
+  database.run("UPDATE calendar_settings SET mode = 'B' WHERE order_date = ?", ORDER_DATE);
+  const created = await callOrderRoute(database, '/api/orders', {
+    method: 'POST',
+    body: { targetDate: ORDER_DATE, pickupFloor: '1樓', items: [{ menu_item_id: 'menu-a', quantity: 2 }] },
+    headers: { 'Idempotency-Key': 'vendor-close-1' }
+  }, userProfile('user-1', 'token-user-1'));
+  assert.equal(created.response.status, 200);
+
+  const vendor = { token: 'vendor-token', lineUserId: 'vendor-line' };
+  const defaults = await handleFormalRequest(
+    request('/api/me/reminder-settings', { token: vendor.token }),
+    { DB: database },
+    { fetchImpl: profileFetch(vendor), now: new Date('2026-09-07T00:00:00.000Z') }
+  );
+  assert.equal(defaults.status, 200);
+  const defaultBody = await defaults.json();
+  assert.equal(defaultBody.settings.vendorClose, true);
+  assert.equal(defaultBody.canManageVendorClose, true);
+  assert.equal(defaultBody.hasLineBinding, true);
+  assert.equal((await putSettings(database, userProfile('user-1', 'token-user-1'), { vendorClose: false })).status, 403);
+  assert.equal((await putSettings(database, vendor, { A: true })).status, 403);
+
+  const controller = { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-07T10:00:00.000Z') };
+  const { pushes, fetchImpl } = pushRecorder();
+  const env = { DB: database, LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: 'secret' };
+  const first = await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
+  assert.equal(first.push.sent, 1);
+  assert.deepEqual(JSON.parse(pushes[0].init.body).to, ['vendor-line']);
+  assert.match(JSON.parse(pushes[0].init.body).messages[0].text, /1 筆訂單、2 份餐點/);
+  await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
+  assert.equal(pushes.length, 1);
+
+  assert.equal((await putSettings(database, vendor, { vendorClose: false })).body.settings.vendorClose, false);
+  database.run("DELETE FROM user_notifications");
+  await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
   assert.equal(pushes.length, 1);
 });
