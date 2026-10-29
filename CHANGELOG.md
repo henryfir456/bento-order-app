@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+- Load Admin and vendor screens and the SweetAlert2 dialog library on demand, shrinking the main bundle for employees (about 853 kB to 639 kB, gzip 241 kB to 190 kB).
+- Use the shared `LoadingNote` and `ErrorNotice` components for remaining loading and retry states in announcements, order summary, member balances, wallet, ledger details and the vendor calendar.
+
 ### Fixed
 - Leave historical vendor IDs unresolved until an exact menu-version and effective-date mapping is reviewed; write canonical vendor IDs directly on new orders and scope settlement reads through verified attribution (Issues #104 and #139).
 - Ignore pre-mapping settlement snapshots and allocations until their source is verified; cap verified settlement capacity by current canonical active-order attribution so stale snapshots cannot authorize excess, without rewriting legacy settlement rows (Issues #104 and #139).

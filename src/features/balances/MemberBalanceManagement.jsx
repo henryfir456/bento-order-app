@@ -12,6 +12,7 @@ import {
   isActiveValidMember,
   isEligibleEmployeeBindingTarget
 } from './identityStatus';
+import LoadingNote from '../../components/ui/LoadingNote';
 
 const memberKey = (user, index) => user.userId || `member-${index}`;
 
@@ -614,9 +615,7 @@ export default function MemberBalanceManagement({
         </section>
       </div>}
       {memberBalancesLoading ? (
-        <div className="bg-white p-6 rounded-2xl shadow-sm border border-emerald-900/10 text-center text-sm text-emerald-800 animate-pulse">
-          成員餘額載入中…
-        </div>
+        <LoadingNote label="成員餘額" />
       ) : memberBalancesError ? (
         <div className="bg-rose-50 p-4 rounded-2xl border border-rose-200 text-center text-sm text-rose-800">
           {memberBalancesError}
