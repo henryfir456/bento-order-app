@@ -1009,7 +1009,7 @@ test('announcement inbox uses an accessible bell and modal instead of a persiste
   assert.match(gasCalendarSource, /Transitional compatibility/);
   assert.match(calendarSource, /w-full min-w-0 bg-white/);
   assert.match(calendarSource, /grid grid-cols-5/);
-  const calendarDaysSource = appSource.match(/const renderCalendarDays = \(dateList = null\) => \{[\s\S]*?const renderWeekendEvents = \(\) => \{/)
+  const calendarDaysSource = appSource.match(/export const renderCalendarDays = [\s\S]*?export const renderWeekendEvents = /)
     ?.[0];
   assert.ok(calendarDaysSource);
   assert.match(calendarDaysSource, /flex min-w-0 items-center justify-between gap-1/);

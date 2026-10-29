@@ -75,7 +75,7 @@ test('calendar flavor image supports unopened exact-date flavors and rejects unr
 
 test('calendar thumbnail is absent on missing image and hides on image load error', () => {
   const app = require('./helpers/app-source.cjs').readAppSource();
-  const calendar = app.match(/const renderCalendarDays = \(dateList = null\) => \{[\s\S]*?const renderWeekendEvents = \(\) => \{/)?.[0] || '';
+  const calendar = app.match(/export const renderCalendarDays = [\s\S]*?export const renderWeekendEvents = /)?.[0] || '';
 
   assert.match(calendar, /showDailyFlavorImage &&/);
   assert.match(calendar, /&& dailyFlavorImageUrl/);
