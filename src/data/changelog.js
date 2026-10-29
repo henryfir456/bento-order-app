@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.22': [
+    { name: '調整', changes: [
+      '廠商 18:00 結單通知會列出各便當品項與份數（份數多的在前）。'
+    ] }
+  ],
   '0.19.21': [
     { name: '新增', changes: [
       '廠商於前一天 18:00 結單後，會收到 LINE 通知當天的訂單數與份數；可在廠商工作台的「LINE 結單通知」自行開關。'

@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.22] - 2026-10-29
+
+### Changed
+
+- The vendor 18:00 close notification (bell and LINE) now lists each dish with its portion count, largest first, after the order and portion totals.
+
 ## [0.19.21] - 2026-10-29
 
 ### Added

@@ -98,6 +98,27 @@ export const addDays = (dateOnly, days) => {
   return date.toISOString().slice(0, 10);
 };
 
+const VARIANT_LABELS = { HALF: '半飯', PLUS: '加量' };
+
+// "品名 × 份數" lines for the day's active orders, largest first.
+const vendorClosedItemLines = async (database, orderDate) => {
+  const result = await database.prepare(`
+    SELECT oi.item_name_snapshot AS name, COALESCE(mi.variant_key, '') AS variant_key,
+      SUM(oi.quantity) AS quantity
+    FROM orders o
+    JOIN order_items oi ON oi.order_id = o.order_id
+    LEFT JOIN menu_items mi ON mi.menu_item_id = oi.menu_item_id
+    WHERE o.order_date = ? AND o.status = 'ACTIVE'
+    GROUP BY oi.item_name_snapshot, COALESCE(mi.variant_key, '')
+    ORDER BY quantity DESC, name
+  `).bind(orderDate).all();
+  return rowsFrom(result).map((row) => {
+    const variant = VARIANT_LABELS[String(row.variant_key).trim().toUpperCase()] || '';
+    const name = variant && !row.name.includes(variant) ? `${row.name}（${variant}）` : row.name;
+    return `${name} × ${Number(row.quantity)}`;
+  });
+};
+
 // 18:00 Taipei cron: tomorrow's mode-B group has just closed. Tell each vendor
 // principal of the assigned vendor how many orders and portions came in, through
 // the bell and (unless they opted out) a LINE push.
@@ -125,8 +146,9 @@ export const notifyVendorsOrderClosed = async (database, env, scheduledTime, {
   const orderCount = Number(totals?.order_count || 0);
   const portions = Number(totals?.portions || 0);
   const label = orderDate.replace(/-/g, '/');
+  const items = orderCount > 0 ? await vendorClosedItemLines(database, orderDate) : [];
   const body = orderCount > 0
-    ? `${label} 已收單，共 ${orderCount} 筆訂單、${portions} 份餐點，請到「訂餐」查看明細。`
+    ? `${label} 已收單，共 ${orderCount} 筆訂單、${portions} 份餐點：\n${items.join('\n')}`
     : `${label} 已收單，這一天沒有訂單。`;
   const occurredAt = now.toISOString();
   const results = await database.batch(principals.map((principal) => notificationStatement(database, {
