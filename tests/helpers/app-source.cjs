@@ -7,5 +7,6 @@ const read = (...parts) => fs.readFileSync(path.join(__dirname, '..', '..', 'src
 exports.readAppSource = () => [
   read('App.jsx'),
   read('features', 'admin', 'AdminHub.jsx'),
-  read('features', 'balances', 'BalanceHistoryModal.jsx')
+  read('features', 'balances', 'BalanceHistoryModal.jsx'),
+  read('features', 'calendar', 'calendarDays.jsx')
 ].join('\n');

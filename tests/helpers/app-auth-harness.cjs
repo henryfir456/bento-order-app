@@ -80,6 +80,7 @@ exports.createHarness = ({ authClient, apiClient, store, timers = globalThis, re
         require: (name) => name.startsWith('.') ? require(path.resolve(path.dirname(file), name + '.js')) : require(name) });
       return badgeModule.exports;
     }
+    if (id === './features/calendar/calendarDays') return { renderCalendarDays: () => [], renderWeekendEvents: () => [], getLunarLabel: () => '' };
     if (id.endsWith('.css') || id.includes('/components/') || !id.startsWith('.')) return { __esModule: true, default: () => null };
     const base = path.resolve(root, 'src', id);
     for (const filename of [base, `${base}.js`]) {
