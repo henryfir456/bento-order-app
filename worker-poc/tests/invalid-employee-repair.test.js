@@ -407,7 +407,7 @@ test('synthetic invalid identity marker blocks LINE, registration, employee gues
 
   const roleChange = await call(database, `/api/admin/users/${SOURCE_USER}/role`, {
     method: 'PUT',
-    body: { role: 'Admin' }
+    body: { role: 'ProxyAdmin' }
   });
   assert.equal(roleChange.response.status, 403);
   assert.equal(roleChange.body.error, 'INVALID_EMPLOYEE_ID');

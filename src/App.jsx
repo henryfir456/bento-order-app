@@ -4159,6 +4159,7 @@ export default function App() {
                 onOpenTopupModal={handleOpenTopupModal}
                 onOpenEmployeeBindModal={handleOpenEmployeeBindModal}
                 onUserNameUpdated={() => loadMemberBalances(true)}
+                canManageRoles={apiClient.transport === 'worker' && authMode === 'line' && authUser?.role === 'Admin' && !isViewAsMode}
                 onLineBindingTransferCompleted={() => loadMemberBalances(true)}
               />
             )}

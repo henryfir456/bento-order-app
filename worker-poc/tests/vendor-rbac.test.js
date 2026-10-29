@@ -183,7 +183,7 @@ test('Vendor identity and scope come only from canonical principal and membershi
     {
       path: '/api/admin/users/synthetic-vendor-user-b/role',
       method: 'PUT',
-      body: { role: 'Admin' }
+      body: { role: 'ProxyAdmin' }
     }
   ]) {
     const denied = await call(database, attempt.path, {

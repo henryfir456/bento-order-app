@@ -759,6 +759,11 @@ const createWorkerOperations = ({ workerRequest }) => ({
     `/api/admin/users/${encodeURIComponent(String(userId || '').trim())}/name`,
     { credentialMode: 'line', body: { displayName } }
   ),
+  updateAdminUserRole: ({ userId, role } = {}) => workerRequest(
+    'updateAdminUserRole', 'PUT',
+    `/api/admin/users/${encodeURIComponent(String(userId || '').trim())}/role`,
+    { credentialMode: 'line', body: { role } }
+  ),
   getAdminUserLedger: ({ userId, month } = {}) => workerRequest(
     'getAdminUserLedger',
     'GET',

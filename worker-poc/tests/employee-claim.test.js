@@ -289,13 +289,13 @@ test('claimable 139653 provisional owner transfers to LINE survivor and preserve
 
   const roleMutation = await call(database, '/api/admin/users/' + SURVIVOR_ID + '/role', {
     method: 'PUT',
-    body: { role: 'Admin' }
+    body: { role: 'ProxyAdmin' }
   });
-  assert.equal(roleMutation.response.status, 200);
+  assert.equal(roleMutation.response.status, 403);
   assert.equal(survivorRow(database).role, 'Admin');
   assert.equal(database.get(
     "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'ROLE_UPDATED'"
-  ).count, 1);
+  ).count, 0);
 });
 
 test('a Vendor principal created after employee-claim preflight blocks the atomic transfer', async () => {

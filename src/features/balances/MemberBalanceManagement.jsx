@@ -92,6 +92,7 @@ export default function MemberBalanceManagement({
   onDelegateOrderUser,
   onUserNameUpdated,
   canTransferLineBinding = false,
+  canManageRoles = false,
   onLineBindingTransferCompleted,
   canRepairInvalidEmployee = false,
   includeInvalidMembers = false,
@@ -154,6 +155,26 @@ export default function MemberBalanceManagement({
       setNameError('儲存失敗，請確認管理權限並重試。');
     } finally {
       setNameSaving(false);
+    }
+  };
+  const [roleSaving, setRoleSaving] = useState(false);
+  const [roleError, setRoleError] = useState('');
+  const changeRole = async (user, role) => {
+    if (!canManageRoles || isViewAsMode || roleSaving || !user?.userId) return;
+    const label = role === 'ProxyAdmin' ? '升級為代理管理員' : '降級為一般使用者';
+    if (!window.confirm(`確定要將「${user.name || '此使用者'}」${label}嗎？此操作會留下稽核紀錄。`)) return;
+    setRoleSaving(true);
+    setRoleError('');
+    try {
+      const response = await apiClient.updateAdminUserRole({ userId: user.userId, role });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error('ROLE_FAILED');
+      setSelectedUser((current) => (current ? { ...current, role } : current));
+      await onUserNameUpdated?.();
+    } catch {
+      setRoleError('角色變更失敗，請確認管理權限並重試。');
+    } finally {
+      setRoleSaving(false);
     }
   };
   const startLineBindingTransfer = (user) => {
@@ -441,6 +462,13 @@ export default function MemberBalanceManagement({
             <div><div className="text-xs text-gray-500">角色</div><div>{selectedUser.role || 'User'}</div></div>
             <div><div className="text-xs text-gray-500">LINE 綁定</div><div>{selectedUser.lineBound ? '已綁定' : '未綁定'}</div></div>
           </div>
+          {canManageRoles && isActiveValidMember(selectedUser) && ['User', 'ProxyAdmin'].includes(selectedUser.role || 'User') && selectedUser.role !== 'Vendor' && <button
+            type="button"
+            disabled={roleSaving}
+            onClick={() => changeRole(selectedUser, (selectedUser.role || 'User') === 'User' ? 'ProxyAdmin' : 'User')}
+            className="mt-3 mr-2 min-h-11 w-full rounded-xl bg-emerald-700 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-60 sm:w-auto"
+          >{(selectedUser.role || 'User') === 'User' ? '升級為代理管理員' : '降級為一般使用者'}</button>}
+          {roleError && <p role="alert" className="mt-2 text-sm text-red-700">{roleError}</p>}
           {canTransferLineBinding && isActiveValidMember(selectedUser) && <button
             type="button"
             onClick={() => startLineBindingTransfer(selectedUser)}

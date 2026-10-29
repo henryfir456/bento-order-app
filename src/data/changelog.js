@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.19': [
+    { name: '新增', changes: [
+      '管理員可在使用者詳細資料中將一般使用者升級為代理管理員，或將代理管理員降級為一般使用者；不可變更管理員角色，並會留下稽核紀錄。'
+    ] }
+  ],
   '0.19.18': [
     { name: '修正', changes: [
       '尚未設定 LINE 官方帳號推播金鑰時，訂餐提醒不再被標記為已提醒，補設定後即可正常發送。'
