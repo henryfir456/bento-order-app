@@ -1,5 +1,6 @@
 import { createReadMeter, meterDatabase } from './db/readMeter.js';
 import { handleAuthRoute } from './routes/auth.js';
+import { handleClientErrorRoute } from './routes/clientErrors.js';
 import { handleMeRoute } from './routes/me.js';
 import { handleAnnouncementInboxRoute } from './routes/announcementInbox.js';
 import { notifyAdminsLateGroupClosed, notifyVendorsOrderClosed } from './domain/userNotifications.js';
@@ -23,6 +24,8 @@ import { asNumber } from './contract.js';
 import { bearerToken } from './auth/identity.js';
 import { isGuestToken } from './auth/guestSession.js';
 import { PROFILE_URL as LINE_PROFILE_URL } from './auth/lineProfile.js';
+import { VERIFY_URL as LINE_VERIFY_URL } from './auth/lineChannel.js';
+import { purgeOldAuthErrors, recordAuthError } from './auth/authErrorLog.js';
 
 const AUTOMATIC_OPENING_LOG_EVENT = 'automatic_daily_group_opening';
 const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
@@ -45,6 +48,13 @@ export const handleScheduled = async (
         ? new Date()
         : new Date(controller.scheduledTime)
     });
+    try {
+      await purgeOldAuthErrors(env.DB, controller?.scheduledTime === undefined
+        ? new Date()
+        : new Date(controller.scheduledTime));
+    } catch (error) {
+      if (typeof logger?.log === 'function') logger.log(JSON.stringify({ event: 'auth_error_purge_failed' }));
+    }
     const logEntry = {
       event: 'cai_teacher_daily_flavor_sync',
       source: 'daily_flavor_cron',
@@ -131,15 +141,29 @@ const authorizationOf = (init) => {
  */
 const createServerTiming = (fetchImpl = (...args) => globalThis.fetch(...args)) => {
   const startedAt = performance.now();
-  const totals = { probe: null, line: 0, lineCount: 0 };
+  const totals = {
+    probe: null, line: 0, lineCount: 0,
+    profileStatus: null, verifyStatus: null, profileMs: null
+  };
   let prefetchedProfile = null;
   const timedLineFetch = async (input, init) => {
     const lineStartedAt = performance.now();
+    const url = urlOf(input);
+    const kind = url === LINE_PROFILE_URL ? 'profileStatus'
+      : url.startsWith(LINE_VERIFY_URL) ? 'verifyStatus' : null;
     try {
-      return await fetchImpl(input, init);
+      const response = await fetchImpl(input, init);
+      if (kind) totals[kind] = Number(response?.status) || 0;
+      return response;
+    } catch (error) {
+      // Status 0 marks a network failure or timeout before any HTTP answer.
+      if (kind) totals[kind] = 0;
+      throw error;
     } finally {
-      totals.line += performance.now() - lineStartedAt;
+      const elapsed = performance.now() - lineStartedAt;
+      totals.line += elapsed;
       totals.lineCount += 1;
+      if (kind === 'profileStatus') totals.profileMs = elapsed;
     }
   };
   const timedFetch = async (input, init) => {
@@ -178,10 +202,49 @@ const createServerTiming = (fetchImpl = (...args) => globalThis.fetch(...args)) 
   return { totals, timedFetch, header };
 };
 
+const isHttpOk = (status) => status === null || (status >= 200 && status < 300);
+
+const lineErrorClass = (code, totals) => {
+  if (code === 'LINE_PROFILE_TIMEOUT') return 'LINE_TIMEOUT';
+  if (totals.profileStatus === 0) return 'LINE_NETWORK';
+  if (totals.profileStatus > 0 && !isHttpOk(totals.profileStatus)) return 'LINE_PROFILE_HTTP';
+  if (totals.verifyStatus === 0) return 'LINE_VERIFY_NETWORK';
+  if (totals.verifyStatus > 0 && !isHttpOk(totals.verifyStatus)) return 'LINE_VERIFY_HTTP';
+  // Both LINE calls answered 200, so the token itself was refused (for example
+  // issued to another channel, or the profile had no user ID).
+  if (code === 'TOKEN_INVALID') return 'TOKEN_CONTENT_REJECTED';
+  return null;
+};
+
+// Login-related failures worth keeping for diagnosis. Ordinary business
+// errors (validation, permission checks on a signed-in user) are not logged.
+const authFailureEntry = (request, error, timing, startedAt, requestId) => {
+  if (error.code === 'DATABASE_UNAVAILABLE') return null;
+  const { totals } = timing;
+  const path = new URL(request.url).pathname;
+  const hasToken = Boolean(bearerToken(request));
+  const lineFailed = !isHttpOk(totals.profileStatus) || !isHttpOk(totals.verifyStatus);
+  const authPath = path.startsWith('/api/auth/');
+  const unauthorized = error.status === 401 && hasToken;
+  if (!authPath && !unauthorized && !lineFailed && error.code !== 'LINE_PROFILE_TIMEOUT') return null;
+  return {
+    source: 'backend',
+    stage: (request.method + ' ' + path.split('/').slice(0, 4).join('/')).slice(0, 48),
+    errorCode: error.code,
+    httpStatus: error.status,
+    errorClass: lineErrorClass(error.code, totals),
+    lineProfileStatus: totals.profileStatus,
+    lineVerifyStatus: totals.verifyStatus,
+    durationMs: Math.round(performance.now() - startedAt),
+    requestId
+  };
+};
+
 export const handleFormalRequest = async (request, env, options = {}) => {
   const requestId = globalThis.crypto.randomUUID();
   const timing = createServerTiming(options.fetchImpl);
   options = { ...options, fetchImpl: timing.timedFetch };
+  const startedAt = performance.now();
   const meter = createReadMeter();
   if (env?.DB) env = { ...env, DB: meterDatabase(env.DB, meter) };
   let response;
@@ -218,7 +281,9 @@ export const handleFormalRequest = async (request, env, options = {}) => {
       } finally {
         timing.totals.probe = performance.now() - probeStartedAt;
       }
-      const authResponse = await handleAuthRoute(request, env, options);
+      const clientErrorResponse = await handleClientErrorRoute(request, env, options);
+      if (clientErrorResponse) response = clientErrorResponse;
+      const authResponse = response ? null : await handleAuthRoute(request, env, options);
       if (authResponse) response = authResponse;
       if (!response) {
         const meResponse = await handleMeRoute(request, env, options);
@@ -280,6 +345,14 @@ export const handleFormalRequest = async (request, env, options = {}) => {
       }
     }
     response = jsonResponse(publicError.body, publicError.status);
+    const failure = error instanceof HttpError && env?.DB
+      ? authFailureEntry(request, error, timing, startedAt, requestId)
+      : null;
+    if (failure) {
+      const write = recordAuthError(env.DB, request, failure, options.now ?? new Date());
+      if (typeof options.waitUntil === 'function') options.waitUntil(write);
+      else await write;
+    }
   }
   const responseHeaders = new Headers(response.headers);
   responseHeaders.set('X-Request-Id', requestId);
@@ -303,8 +376,10 @@ export const handleFormalRequest = async (request, env, options = {}) => {
 };
 
 export default {
-  fetch(request, env) {
-    return handleFormalRequest(request, env);
+  fetch(request, env, ctx) {
+    return handleFormalRequest(request, env, {
+      waitUntil: (promise) => ctx?.waitUntil?.(promise)
+    });
   },
   scheduled(controller, env) {
     return handleScheduled(controller, env);
