@@ -13,6 +13,7 @@ import { authClient } from './auth/liffClient';
 import { redactAuthSecrets, requireAuthoritativeIdentityState } from './auth/authRuntime';
 import { createDeadline } from './auth/asyncDeadline.js';
 import { canOfferLineBinding } from './auth/lineBindingState.js';
+import { parseDeepLinkTarget } from './features/navigation/deepLink.js';
 import { hasPermission } from './auth/permissions';
 import {
   AUTH_BOOT_STAGES,
@@ -3415,6 +3416,14 @@ export default function App() {
   const authUserId = authUser?.userId || lineUserId;
   const authRole = authUser?.role || 'User';
   const isVendorAccount = authRole === 'Vendor';
+  // One-shot: a LINE menu/deep link (?go=wallet) opens that page after sign-in.
+  const pendingDeepLinkRef = useRef(parseDeepLinkTarget(globalThis.window?.location?.search));
+  useEffect(() => {
+    const target = pendingDeepLinkRef.current;
+    if (!target || authState !== AUTH_STATES.REGISTERED || !authUserId) return;
+    pendingDeepLinkRef.current = '';
+    navigateBottomTab(target);
+  }, [authState, authUserId]);
   const effectiveUser = viewAsUser || authUser;
   const effectiveRole = effectiveUser?.role || 'User';
   const headerRoleLabel = ['Admin', 'ProxyAdmin'].includes(effectiveRole) ? effectiveRole : '';
