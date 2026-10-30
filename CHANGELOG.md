@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.26] - 2026-10-30
+
+### Added
+
+- Record login and bootstrap failures in a 14-day `auth_error_log` table (migration 0031): the frontend reports stage, error code, HTTP status, in-LINE flag and app version to `POST /api/client-errors`, and the Worker logs auth failures with the LINE profile/verify HTTP status, error class and duration. No tokens, user IDs or names are stored; writes are throttled and the daily cron purges old rows. Read it with `npm run report:auth-errors` in `worker-poc` (see `docs/AUTH_ERROR_LOG.md`).
+
 ## [0.19.25] - 2026-10-30
 
 ### Fixed

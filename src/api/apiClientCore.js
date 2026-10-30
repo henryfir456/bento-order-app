@@ -479,6 +479,12 @@ const createGasOperations = ({ gasApi, authClient }) => ({
 });
 
 const createWorkerOperations = ({ workerRequest }) => ({
+  reportClientError: (report) => workerRequest(
+    'reportClientError',
+    'POST',
+    '/api/client-errors',
+    { credentialMode: 'none', body: report }
+  ),
   employeeGuestLogin: ({ employeeId } = {}) => workerRequest(
     'employeeGuestLogin',
     'POST',

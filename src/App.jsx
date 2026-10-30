@@ -11,6 +11,7 @@ import {
 import { normalizeWorkerLikeResponse, restoreCalendarEvent } from './api/likeState';
 import { authClient } from './auth/liffClient';
 import { redactAuthSecrets, requireAuthoritativeIdentityState } from './auth/authRuntime';
+import { createAuthErrorReporter } from './observability/authErrorReport';
 import { createDeadline } from './auth/asyncDeadline.js';
 import { canOfferLineBinding } from './auth/lineBindingState.js';
 import { hasPermission } from './auth/permissions';
@@ -601,6 +602,12 @@ export default function App() {
     setViewMode('calendar');
   };
 
+  const authErrorReporterRef = useRef(null);
+  if (!authErrorReporterRef.current) {
+    authErrorReporterRef.current = createAuthErrorReporter({ apiClient, authClient, appVersion: APP_VERSION });
+  }
+  const reportAuthFailure = (stage, error) => authErrorReporterRef.current(stage, error);
+
   const failAuthentication = (stage, error) => {
     // A failed LIFF attempt must not be resurrected by queued foreground events.
     const resume = authResumeRef.current;
@@ -613,6 +620,7 @@ export default function App() {
     setAuthError(`${stage}: ${safeMessage}`);
     clearIdentityData();
     console.error(`[AUTH] ${stage}: ${safeMessage}`);
+    reportAuthFailure(stage, error);
   };
 
   const applyUserInfoData = (data) => {
