@@ -4,8 +4,7 @@
   "main": "src/formalWorker.js",
   "compatibility_date": "2026-09-07",
   "vars": {
-    "VENDOR_CODE_LOGIN_ENABLED": "true",
-    "LINE_CHANNEL_ID": "2011372097"
+    "VENDOR_CODE_LOGIN_ENABLED": "true"
   },
   "d1_databases": [
     {
