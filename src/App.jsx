@@ -125,6 +125,14 @@ const fetchDeferredBootstrapData = async (accessToken, bootId) => {
   }
 };
 
+// Failures that may clear on their own within a second or two.
+const TRANSIENT_BOOTSTRAP_CODES = new Set([
+  'API_AUTH_REJECTED',
+  'API_REQUEST_FAILED',
+  'LINE_PROFILE_UNAVAILABLE',
+  'LINE_PROFILE_TIMEOUT'
+]);
+
 const fetchBootstrapData = async (accessToken, bootId, signal) => {
   try {
     if (!accessToken) {
@@ -929,6 +937,16 @@ export default function App() {
         try {
           identity = await wait(() => fetchBootstrapData(accessToken, bootId, deadline.signal));
           if (!ownsAttempt()) return;
+          if (!identity?.success && TRANSIENT_BOOTSTRAP_CODES.has(identity?.code)) {
+            // A momentary LINE or network hiccup should not need a manual
+            // reopen: retry once with a freshly read LIFF token.
+            logAuthDiagnostic(`BOOTSTRAP_TRANSIENT_RETRY code=${identity.code}`);
+            await wait(() => new Promise((resolve) => { setTimeout(resolve, 1000); }));
+            if (!ownsAttempt()) return;
+            const retryToken = authClient.getAccessToken() || accessToken;
+            identity = await wait(() => fetchBootstrapData(retryToken, bootId, deadline.signal));
+            if (!ownsAttempt()) return;
+          }
           bootTiming.backend(identity?.observability?.timing, identity?.bootId);
           usingLegacyStartup = apiClient.transport === 'gas' && identity?.code === 'INVALID_ACTION';
           if (usingLegacyStartup) {

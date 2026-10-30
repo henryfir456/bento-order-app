@@ -1,4 +1,4 @@
-import { HttpError, unauthorized } from '../http/errors.js';
+import { HttpError, serviceUnavailable, unauthorized } from '../http/errors.js';
 import { createDeadline } from '../../../src/auth/asyncDeadline.js';
 
 const PROFILE_URL = 'https://api.line.me/v2/profile';
@@ -26,14 +26,17 @@ export const fetchLineProfile = async (
     }));
   } catch (error) {
     if (error?.code === 'LINE_PROFILE_TIMEOUT') throw error;
-    throw unauthorized('TOKEN_INVALID', 'LINE profile verification failed.');
+    // A network failure says nothing about the token; let the client retry.
+    console.warn('LINE_PROFILE_FETCH_FAILED', error?.name || 'error');
+    throw serviceUnavailable('LINE_PROFILE_UNAVAILABLE', 'LINE verification is temporarily unavailable.');
   }
 
   if (!response?.ok) {
     if (response?.status === 401 || response?.status === 403) {
       throw unauthorized('TOKEN_INVALID', 'LINE access token was rejected.');
     }
-    throw unauthorized('TOKEN_INVALID', 'LINE profile verification was unavailable.');
+    console.warn('LINE_PROFILE_HTTP_STATUS', response?.status);
+    throw serviceUnavailable('LINE_PROFILE_UNAVAILABLE', 'LINE verification is temporarily unavailable.');
   }
 
   let profile;

@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.25': [
+    { name: '修正', changes: [
+      'LINE 暫時連線不穩時，啟動登入會自動重試一次，不必關掉重開。'
+    ] }
+  ],
   '0.19.24': [
     { name: '新增', changes: [
       '員工編號登入加入失敗次數限制，並加強 LINE 登入驗證；登入頁說明僅讀取 LINE 暱稱與識別碼。'

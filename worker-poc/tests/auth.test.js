@@ -106,3 +106,22 @@ test('View As is admin-only and keeps authorization actor separate', async () =>
     (error) => error.code === 'VIEW_AS_FORBIDDEN' && error.status === 403
   );
 });
+
+test('LINE outages and network errors are retryable 503, not token rejections', async () => {
+  await assert.rejects(
+    () => fetchLineProfile('token', async () => ({ ok: false, status: 500 })),
+    (error) => error.code === 'LINE_PROFILE_UNAVAILABLE' && error.status === 503
+  );
+  await assert.rejects(
+    () => fetchLineProfile('token', async () => ({ ok: false, status: 429 })),
+    (error) => error.code === 'LINE_PROFILE_UNAVAILABLE' && error.status === 503
+  );
+  await assert.rejects(
+    () => fetchLineProfile('token', async () => { throw new TypeError('network'); }),
+    (error) => error.code === 'LINE_PROFILE_UNAVAILABLE' && error.status === 503
+  );
+  await assert.rejects(
+    () => fetchLineProfile('token', async () => ({ ok: false, status: 401 })),
+    (error) => error.code === 'TOKEN_INVALID' && error.status === 401
+  );
+});
