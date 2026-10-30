@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.19.27] - 2026-10-30
+
+### Changed
+
+- LINE token channel verification now accepts a comma-separated `LINE_CHANNEL_ID` list and runs in report-only mode unless `LINE_CHANNEL_MODE` is `enforce`; LINE verify outages return a retryable 503 instead of 401, and mismatches are logged.
+
 ## [0.19.26] - 2026-10-30
 
 ### Added

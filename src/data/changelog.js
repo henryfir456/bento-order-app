@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.19.27': [
+    { name: '調整', changes: [
+      '加強 LINE 登入驗證的後端檢查，先以只記錄模式觀察，不影響登入。'
+    ] }
+  ],
   '0.19.26': [
     { name: '新增', changes: [
       '登入或啟動失敗時會自動留下錯誤紀錄（不含個資），方便排查登入問題。'

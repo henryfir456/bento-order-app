@@ -100,13 +100,13 @@ export const resolveLineIdentity = async (
   database,
   fetchImpl = globalThis.fetch,
   clock = new Date(),
-  { channelId = '' } = {}
+  { channelId = '', channelMode = '' } = {}
 ) => {
   const token = bearerToken(request);
   if (!token) throw unauthorized();
   const [profile] = await Promise.all([
     fetchLineProfile(token, fetchImpl),
-    assertTokenIssuedForChannel(token, channelId, fetchImpl, clock.getTime())
+    assertTokenIssuedForChannel(token, channelId, fetchImpl, clock.getTime(), channelMode)
   ]);
   let user = await getUserByLineId(database, profile.lineUserId);
   if (isProtectedAccount(user)
@@ -232,7 +232,8 @@ export const resolveCanonicalIdentity = async (
   }
 
   const line = await resolveLineIdentity(request, env.DB, fetchImpl, now, {
-    channelId: env.LINE_CHANNEL_ID
+    channelId: env.LINE_CHANNEL_ID,
+    channelMode: env.LINE_CHANNEL_MODE
   });
   const actor = line.actor;
   const url = new URL(request.url);
