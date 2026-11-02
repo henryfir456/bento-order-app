@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.20.2] - 2026-11-02
+
+### Fixed
+
+- Re-fetch calendar events (including the per-day bento total) every time the bottom-nav 訂餐 tab is tapped, so quantities ordered by others are no longer stale.
+
 ## [0.20.1] - 2026-11-02
 
 ### Added

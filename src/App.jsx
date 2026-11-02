@@ -3009,6 +3009,8 @@ export default function App() {
     if (key === 'calendar') {
       setAdminManageMode(false);
       setViewMode('calendar');
+      // 其他人可能已訂餐，每次點「訂餐」都重新取得最新便當數量
+      void fetchCalendarEvents(authUserId, viewAsUser?.userId || null);
     } else if (key === 'myOrders') {
       setAdminManageMode(false);
       setViewMode('myOrders');
