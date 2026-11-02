@@ -24,7 +24,7 @@ const BalanceBadge = ({ balance }) => (
   </span>
 );
 
-const MemberAction = ({ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }) => {
+const MemberAction = ({ user, canTopup, canWithdraw, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenWithdrawModal, onOpenEmployeeBindModal }) => {
   if (isViewAsMode || !isActiveValidMember(user)) return <span className="text-gray-400">—</span>;
   const actions = [];
   if (canBindEmployee && isEligibleEmployeeBindingTarget(user)) {
@@ -48,6 +48,18 @@ const MemberAction = ({ user, canTopup, canBindEmployee, isViewAsMode, onOpenTop
         className="bg-emerald-700 hover:bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm whitespace-nowrap"
       >
         儲值
+      </button>
+    );
+  }
+  if (canWithdraw && user.userId && Number(user.balance) > 0) {
+    actions.push(
+      <button
+        key="withdraw"
+        type="button"
+        onClick={() => onOpenWithdrawModal(user)}
+        className="bg-slate-600 hover:bg-slate-500 text-white px-2.5 py-1.5 rounded-lg text-xs font-bold transition shadow-sm whitespace-nowrap"
+      >
+        提領
       </button>
     );
   }
@@ -86,6 +98,8 @@ export default function MemberBalanceManagement({
   canBindEmployee,
   isViewAsMode,
   onOpenTopupModal,
+  canWithdraw = false,
+  onOpenWithdrawModal = () => {},
   onOpenEmployeeBindModal,
   canViewAsUser = false,
   canDelegateOrder = false,
@@ -683,7 +697,7 @@ export default function MemberBalanceManagement({
                     <td className="p-2">
                       <div className="flex flex-wrap gap-1">
                         <UserNavigationActions user={user} />
-                        <MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} />
+                        <MemberAction {...{ user, canTopup, canWithdraw, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenWithdrawModal, onOpenEmployeeBindModal }} />
                         {!isViewAsMode && <UserDetailsAction user={user} onSelect={setSelectedUser} />}
                       </div>
                     </td>
@@ -699,7 +713,7 @@ export default function MemberBalanceManagement({
                 <MemberIdentity user={user} onNameClick={startNameEdit} />
                 <div className="flex flex-wrap items-center gap-1">
                   {hasActions && <UserNavigationActions user={user} />}
-                  {hasActions && <MemberAction {...{ user, canTopup, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenEmployeeBindModal }} />}
+                  {hasActions && <MemberAction {...{ user, canTopup, canWithdraw, canBindEmployee, isViewAsMode, onOpenTopupModal, onOpenWithdrawModal, onOpenEmployeeBindModal }} />}
                   {!isViewAsMode && <UserDetailsAction user={user} onSelect={setSelectedUser} />}
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-xs text-gray-600">

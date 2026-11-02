@@ -79,6 +79,7 @@ import {
 // Admin and vendor screens load on demand so employees do not download them.
 const AdminOrderSummary = React.lazy(() => import('./features/admin/AdminOrderSummary'));
 const AnnouncementManagement = React.lazy(() => import('./features/admin/AnnouncementManagement'));
+import WithdrawModal from './features/balances/WithdrawModal';
 const ReimbursementManagement = React.lazy(() => import('./features/admin/ReimbursementManagement'));
 const MenuItemChangesManagement = React.lazy(() => import('./features/admin/MenuItemChangesManagement'));
 const MemberBalanceManagement = React.lazy(() => import('./features/balances/MemberBalanceManagement'));
@@ -3219,6 +3220,7 @@ export default function App() {
     setImagePreview({ imageUrl, alt: alt || '餐點圖片' });
   };
 
+  const [selectedWithdrawUser, setSelectedWithdrawUser] = useState(null);
   const handleOpenTopupModal = (user) => {
     setSelectedTopupUser(user);
     setTopupAmount('');
@@ -3968,6 +3970,8 @@ export default function App() {
                 onDelegateOrderUser={handleSelectDelegatedOrder}
                 isViewAsMode={isViewAsMode}
                 onOpenTopupModal={handleOpenTopupModal}
+                canWithdraw={apiClient.transport === 'worker' && can('topupMember')}
+                onOpenWithdrawModal={setSelectedWithdrawUser}
                 onOpenEmployeeBindModal={handleOpenEmployeeBindModal}
                 onUserNameUpdated={() => loadMemberBalances(true)}
                 canManageRoles={apiClient.transport === 'worker' && authMode === 'line' && authUser?.role === 'Admin' && !isViewAsMode}
@@ -4369,6 +4373,25 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {selectedWithdrawUser && can('topupMember') && !isViewAsMode && (
+        <WithdrawModal
+          user={selectedWithdrawUser}
+          api={apiClient}
+          onClose={() => setSelectedWithdrawUser(null)}
+          onDone={async (newBalance) => {
+            const userId = selectedWithdrawUser.userId;
+            setSelectedWithdrawUser(null);
+            setMemberBalances(prev => prev.map(user => (user.userId === userId ? { ...user, balance: newBalance } : user)));
+            if (userId === authUserId) {
+              setUserBalance(newBalance);
+              setAuthUser(prev => prev ? { ...prev, balance: newBalance } : prev);
+            }
+            setMemberBalancesLoaded(false);
+            await loadMemberBalances(true);
+          }}
+        />
       )}
 
       {/* Admin 手動修改開團彈窗 Modal */}

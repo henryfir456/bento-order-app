@@ -207,6 +207,7 @@ const createGasOperations = ({ gasApi, authClient }) => ({
       'Bell notifications are available through the formal Worker API.'
     );
   },
+  withdrawBalance: () => { throw new ApiContractGapError('WITHDRAW_UNSUPPORTED_TRANSPORT', 'withdrawBalance', 'Withdrawal is available through the formal Worker API.'); },
   previewReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'previewReimbursement', 'Reimbursement is available through the formal Worker API.'); },
   listMyReimbursements: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'listMyReimbursements', 'Reimbursement is available through the formal Worker API.'); },
   createReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'createReimbursement', 'Reimbursement is available through the formal Worker API.'); },
@@ -573,6 +574,15 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   getMyNotifications: () => workerRequest(
     'getMyNotifications', 'GET', '/api/me/notifications'
+  ),
+  withdrawBalance: ({ targetUserId, amount, note, idempotencyKey } = {}) => workerRequest(
+    'withdrawBalance',
+    'POST',
+    '/api/admin/balances/withdraw',
+    {
+      extraHeaders: { 'Idempotency-Key': String(idempotencyKey || '').trim() },
+      body: { targetUserId, amount, note }
+    }
   ),
   previewReimbursement: ({ date } = {}) => workerRequest(
     'previewReimbursement', 'GET', '/api/me/reimbursements/preview', { query: { date } }

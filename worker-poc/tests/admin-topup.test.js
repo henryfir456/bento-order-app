@@ -180,3 +180,52 @@ test('serialized top-ups preserve every positive delta', async () => {
   assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 145);
   assert.equal(database.get("SELECT COUNT(*) AS count FROM balance_ledger WHERE type = 'TOPUP'").count, 3);
 });
+
+const withdraw = (database, key, body = {}, who = 'admin-1') => call(
+  database,
+  '/api/admin/balances/withdraw',
+  {
+    method: 'POST',
+    token: 'admin-token',
+    headers: { 'Idempotency-Key': key },
+    body: { targetUserId: 'user-1', amount: 40, note: 'bank', ...body }
+  },
+  { token: 'admin-token', lineUserId: who, displayName: 'Admin' }
+);
+
+test('admin withdrawal deducts balance once with a WITHDRAWAL ledger row', async () => {
+  const database = seedDatabase();
+  const first = await withdraw(database, 'w-once');
+  const retry = await withdraw(database, 'w-once');
+  assert.equal(first.response.status, 200);
+  assert.equal(first.body.newBalance, 60);
+  assert.deepEqual(retry.body, first.body);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 60);
+  const row = database.get("SELECT amount, balance_after, note FROM balance_ledger WHERE type = 'WITHDRAWAL'");
+  assert.equal(row.amount, -40);
+  assert.equal(row.balance_after, 60);
+  assert.equal(database.get("SELECT COUNT(*) AS c FROM balance_ledger WHERE type = 'WITHDRAWAL'").c, 1);
+  assert.equal(database.get("SELECT COUNT(*) AS c FROM admin_audit_log WHERE action = 'BALANCE_WITHDRAWAL'").c, 1);
+});
+
+test('admin withdrawal works for ProxyAdmin targets and never exceeds balance', async () => {
+  const database = seedDatabase();
+  database.run("UPDATE users SET balance = 30 WHERE user_id = 'proxy-1'");
+  const over = await withdraw(database, 'w-over', { targetUserId: 'proxy-1', amount: 31 });
+  assert.equal(over.response.status, 409);
+  assert.match(JSON.stringify(over.body), /WITHDRAW_EXCEEDS_BALANCE/);
+  const exact = await withdraw(database, 'w-exact', { targetUserId: 'proxy-1', amount: 30 });
+  assert.equal(exact.response.status, 200);
+  assert.equal(exact.body.newBalance, 0);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'proxy-1'").balance, 0);
+});
+
+test('only Admin can register a withdrawal', async () => {
+  const database = seedDatabase();
+  const denied = await call(database, '/api/admin/balances/withdraw', {
+    method: 'POST', token: 'p', headers: { 'Idempotency-Key': 'w-p' },
+    body: { targetUserId: 'user-1', amount: 5 }
+  }, { token: 'p', lineUserId: 'proxy-1', displayName: 'Proxy' });
+  assert.equal(denied.response.status, 403);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'user-1'").balance, 100);
+});

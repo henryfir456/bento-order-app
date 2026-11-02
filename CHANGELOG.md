@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.20.1] - 2026-11-02
+
+### Added
+
+- Admin can register a withdrawal (cash-out after a bank transfer) for any member with a balance from user management. It writes a new `WITHDRAWAL` ledger type (migration 0033 rebuilds `balance_ledger` with the wider type check), an audit record and the balance deduction in one idempotent batch, and never goes below zero.
+
 ## [0.20.0] - 2026-11-02
 
 ### Added
