@@ -207,6 +207,11 @@ const createGasOperations = ({ gasApi, authClient }) => ({
       'Bell notifications are available through the formal Worker API.'
     );
   },
+  previewReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'previewReimbursement', 'Reimbursement is available through the formal Worker API.'); },
+  listMyReimbursements: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'listMyReimbursements', 'Reimbursement is available through the formal Worker API.'); },
+  createReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'createReimbursement', 'Reimbursement is available through the formal Worker API.'); },
+  listAdminReimbursements: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'listAdminReimbursements', 'Reimbursement is available through the formal Worker API.'); },
+  decideReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'decideReimbursement', 'Reimbursement is available through the formal Worker API.'); },
   getReminderSettings: () => {
     if (authClient?.isMock) return gasApi.post({
       action: 'getReminderSettings',
@@ -568,6 +573,24 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   getMyNotifications: () => workerRequest(
     'getMyNotifications', 'GET', '/api/me/notifications'
+  ),
+  previewReimbursement: ({ date } = {}) => workerRequest(
+    'previewReimbursement', 'GET', '/api/me/reimbursements/preview', { query: { date } }
+  ),
+  listMyReimbursements: () => workerRequest(
+    'listMyReimbursements', 'GET', '/api/me/reimbursements'
+  ),
+  createReimbursement: ({ orderDate, note } = {}) => workerRequest(
+    'createReimbursement', 'POST', '/api/me/reimbursements', { body: { orderDate, note } }
+  ),
+  listAdminReimbursements: ({ status } = {}) => workerRequest(
+    'listAdminReimbursements', 'GET', '/api/admin/reimbursements', { query: { status } }
+  ),
+  decideReimbursement: ({ requestId, decision, note } = {}) => workerRequest(
+    'decideReimbursement',
+    'POST',
+    `/api/admin/reimbursements/${encodeURIComponent(String(requestId || '').trim())}/${decision === 'approve' ? 'approve' : 'reject'}`,
+    { body: { note } }
   ),
   getReminderSettings: () => workerRequest(
     'getReminderSettings', 'GET', '/api/me/reminder-settings'

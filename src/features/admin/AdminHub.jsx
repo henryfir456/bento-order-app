@@ -27,6 +27,8 @@ export default function AdminHub({
         {authRole === 'Admin' && <button type="button" onClick={() => handleAdminSectionChange('vendorOperations')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">廠商對帳 ›</button>}
         {canAuth('manageAnnouncements') && <button type="button" onClick={() => handleAdminSectionChange('announcements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">公告管理 ›</button>}
         {canAuth('manageMenu') && <button type="button" onClick={() => handleAdminSectionChange('menuChanges')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">菜單品項維護 ›</button>}
+        {canAuth('requestReimbursement') && <button type="button" onClick={() => handleAdminSectionChange('reimbursements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">請款 ›</button>}
+        {canAuth('manageReimbursements') && <button type="button" onClick={() => handleAdminSectionChange('reimbursements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">請款審核 ›</button>}
         <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
         </div>
         {(canAuth('viewMemberBalances') || (authRole !== 'Admin' && (canAuth('viewAsUser') || canAuth('delegateOrder')))) && (

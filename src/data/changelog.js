@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.20.0': [
+    { name: '新增', changes: [
+      '代理管理員可依訂單日期申請代訂款項（金額由系統帶出），管理員在「請款審核」同意後會自動加到代理管理員的餘額，並以通知鈴通知雙方。'
+    ] }
+  ],
   '0.19.27': [
     { name: '調整', changes: [
       '加強 LINE 登入驗證的後端檢查，先以只記錄模式觀察，不影響登入。'

@@ -14,6 +14,7 @@ import { handleVendorOperationsRoute } from './routes/vendorOperations.js';
 import { handleAdminRoute } from './routes/admin.js';
 import { handleCalendarRoute } from './routes/calendar.js';
 import { handleRoleRoute } from './routes/roles.js';
+import { handleReimbursementRoute } from './routes/reimbursements.js';
 import { handleReadOnlyRequest } from './routes/readOnly.js';
 import { runAutomaticDailyOpening } from './domain/automaticOpening.js';
 import { runCaiTeacherDailyFlavorSync } from './domain/dailyFlavors.js';
@@ -304,6 +305,10 @@ export const handleFormalRequest = async (request, env, options = {}) => {
       if (!response) {
         const calendarResponse = await handleCalendarRoute(request, env, options);
         if (calendarResponse) response = calendarResponse;
+      }
+      if (!response) {
+        const reimbursementResponse = await handleReimbursementRoute(request, env, options);
+        if (reimbursementResponse) response = reimbursementResponse;
       }
       if (!response) {
         const roleResponse = await handleRoleRoute(request, env, options);
