@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.20.2': [
+    { name: '修正', changes: [
+      '點「訂餐」時會重新取得月曆資料，其他人剛訂的便當數量不再停留在舊數字。'
+    ] }
+  ],
   '0.20.1': [
     { name: '新增', changes: [
       '管理員可在使用者管理對有餘額的使用者登記「提領」（轉帳後扣除餘額），扣款不會超過餘額，並留下交易與稽核紀錄。'
