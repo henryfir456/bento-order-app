@@ -79,6 +79,7 @@ import {
 // Admin and vendor screens load on demand so employees do not download them.
 const AdminOrderSummary = React.lazy(() => import('./features/admin/AdminOrderSummary'));
 const AnnouncementManagement = React.lazy(() => import('./features/admin/AnnouncementManagement'));
+const ReimbursementManagement = React.lazy(() => import('./features/admin/ReimbursementManagement'));
 const MenuItemChangesManagement = React.lazy(() => import('./features/admin/MenuItemChangesManagement'));
 const MemberBalanceManagement = React.lazy(() => import('./features/balances/MemberBalanceManagement'));
 const AdminUserLedgerDetails = React.lazy(() => import('./features/balances/AdminUserLedgerDetails'));
@@ -2983,6 +2984,14 @@ export default function App() {
       return;
     }
 
+    if (section === 'reimbursements') {
+      if (apiClient.transport !== 'worker' || isViewAsMode) return;
+      if (!canAuth('requestReimbursement') && !canAuth('manageReimbursements')) return;
+      setAdminSection('reimbursements');
+      setViewMode('admin');
+      return;
+    }
+
     if (section === 'menuChanges') {
       if (!canManageAdminMenuChanges() || isViewAsMode) return;
       setAdminSection('menuChanges');
@@ -3448,7 +3457,8 @@ export default function App() {
   const canAuth = (permission) => isRegistered
     && hasPermission(authRole, permission, authMode, isRegistered);
   const hasManagementHub = canAuth('viewMemberBalances') || canAuth('viewAdminOrderSummary')
-    || canAuth('manageMenu') || canAuth('manageAnnouncements');
+    || canAuth('manageMenu') || canAuth('manageAnnouncements')
+    || canAuth('requestReimbursement');
   useEffect(() => {
     if (isRegistered && isVendorAccount) {
       setViewMode('vendor');
@@ -3982,6 +3992,17 @@ export default function App() {
                 onUpdate={updateAdminAnnouncement}
                 onDelete={deleteAdminAnnouncement}
               />
+            )}
+            {adminSection === 'reimbursements'
+              && apiClient.transport === 'worker'
+              && !isViewAsMode
+              && (canAuth('requestReimbursement') || canAuth('manageReimbursements')) && (
+              <React.Suspense fallback={null}>
+                <ReimbursementManagement
+                  api={apiClient}
+                  mode={canAuth('manageReimbursements') ? 'review' : 'request'}
+                />
+              </React.Suspense>
             )}
             {adminSection === 'menuChanges'
               && apiClient.transport === 'worker'
