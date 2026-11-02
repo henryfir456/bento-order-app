@@ -3,7 +3,7 @@ import { prepareStatement, runMutationBatch } from './transactions.js';
 import { authoritativeBalanceProjection } from './users.js';
 import { isAllowedTopupMethod } from '../domain/topupMethods.js';
 
-export const LEDGER_TYPES = Object.freeze(['TOPUP', 'ORDER', 'REFUND', 'ADJUSTMENT']);
+export const LEDGER_TYPES = Object.freeze(['TOPUP', 'ORDER', 'REFUND', 'ADJUSTMENT', 'WITHDRAWAL']);
 const AUTH_MODES = new Set(['line', 'employee_guest', 'legacy_import']);
 
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
@@ -52,6 +52,18 @@ const referenceRule = (entry) => {
           AND a.target_user_id = ?
           AND a.actor_user_id = ?
           AND a.action = 'BALANCE_TOP_UP'
+      )`,
+      params: [entry.referenceId, entry.userId, entry.operatorUserId]
+    };
+  }
+  if (entry.type === 'WITHDRAWAL') {
+    return {
+      sql: `EXISTS (
+        SELECT 1 FROM admin_audit_log a
+        WHERE a.audit_id = ?
+          AND a.target_user_id = ?
+          AND a.actor_user_id = ?
+          AND a.action = 'BALANCE_WITHDRAWAL'
       )`,
       params: [entry.referenceId, entry.userId, entry.operatorUserId]
     };
@@ -108,8 +120,11 @@ export const validateLedgerEntry = (input) => {
     throw badRequest('LEDGER_OPERATOR_AUTH_MODE_INVALID');
   }
   if (!entry.referenceId) throw badRequest('LEDGER_REFERENCE_REQUIRED');
-  if ((entry.type === 'TOPUP' || entry.type === 'ADJUSTMENT') && !entry.operatorUserId) {
+  if ((entry.type === 'TOPUP' || entry.type === 'ADJUSTMENT' || entry.type === 'WITHDRAWAL') && !entry.operatorUserId) {
     throw badRequest('LEDGER_OPERATOR_REQUIRED');
+  }
+  if (entry.type === 'WITHDRAWAL' && entry.amount >= 0) {
+    throw badRequest('LEDGER_WITHDRAWAL_AMOUNT_NEGATIVE');
   }
   if (entry.type === 'ADJUSTMENT' && !approvedPolicy(entry.policy)) {
     throw conflict('OPENING_BALANCE_POLICY_REQUIRED');
@@ -267,7 +282,7 @@ const assertReferenceExists = async (database, entry) => {
     .first();
   if (!row) {
     throw badRequest(
-      entry.type === 'TOPUP' ? 'LEDGER_AUDIT_REFERENCE_INVALID' : 'LEDGER_ORDER_REFERENCE_INVALID'
+      entry.type === 'TOPUP' || entry.type === 'WITHDRAWAL' ? 'LEDGER_AUDIT_REFERENCE_INVALID' : 'LEDGER_ORDER_REFERENCE_INVALID'
     );
   }
 };

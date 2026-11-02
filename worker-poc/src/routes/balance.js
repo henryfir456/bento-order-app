@@ -15,12 +15,14 @@ import { badRequest, conflict, notFound } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { requireIdentity } from '../http/authMiddleware.js';
 import {
+  getCurrentBalance,
   getUserByEmployeeId,
   getUserById,
   getUserByLineId
 } from '../db/users.js';
 
 const TOP_UP_OPERATION = 'ADMIN_BALANCE_TOP_UP';
+const WITHDRAW_OPERATION = 'ADMIN_BALANCE_WITHDRAW';
 
 const readJson = async (request) => {
   try {
@@ -167,6 +169,112 @@ export const topUpBalance = async (database, identity, input, clock = new Date()
   }
 };
 
+// Admin registers a cash-out after transferring money to the member. Works
+// for any member with a balance; never below zero.
+export const withdrawBalance = async (database, identity, input, clock = new Date()) => {
+  const actor = actorForTopUp(identity);
+  const targetUserInput = text(input?.targetUserId || input?.userId);
+  const amount = positiveInteger(input?.amount);
+  const note = text(input?.note);
+  if (!targetUserInput) throw badRequest('WITHDRAW_TARGET_REQUIRED');
+  if (amount === null) throw badRequest('WITHDRAW_AMOUNT_INVALID');
+  if (note.length > 2000) throw badRequest('WITHDRAW_NOTE_TOO_LONG');
+  const idempotency = requireIdempotencyKey(input?.idempotencyKey);
+  const target = await getUserById(database, targetUserInput);
+  if (!target) throw notFound('WITHDRAW_TARGET_NOT_FOUND');
+  if (target.vendorPrincipal) throw conflict('VENDOR_BALANCE_FORBIDDEN');
+  const targetUserId = target.userId;
+  const requestHash = await hashRequest({ targetUserId, amount, note, kind: 'withdraw' });
+  const existing = await readExistingIdempotencyResult(database, {
+    actorUserId: actor.userId,
+    operation: WITHDRAW_OPERATION,
+    idempotencyKey: idempotency,
+    requestHash
+  });
+  if (existing) return existing;
+
+  const currentBalance = await getCurrentBalance(database, targetUserId);
+  if (currentBalance === null) throw notFound('WITHDRAW_TARGET_NOT_FOUND');
+  if (currentBalance < amount) throw conflict('WITHDRAW_EXCEEDS_BALANCE');
+
+  const now = resolveClock(clock).toISOString();
+  const transactionId = randomId('txn');
+  const auditId = randomId('audit');
+  const details = {
+    actorUserId: actor.userId,
+    operation: WITHDRAW_OPERATION,
+    idempotencyKey: idempotency,
+    requestHash,
+    claimToken: randomId('claim'),
+    occurredAt: now
+  };
+
+  try {
+    return await runIdempotentMutation(database, {
+      ...details,
+      claimPredicate: {
+        sql: `EXISTS (
+          SELECT 1 FROM users target
+          WHERE target.user_id = ?
+            AND NOT EXISTS (
+              SELECT 1 FROM vendor_principals vp WHERE vp.user_id = target.user_id
+            )
+        )`,
+        params: [targetUserId]
+      },
+      responseSpec: balanceMutationResponseSpec({
+        message: 'BALANCE_WITHDRAWN',
+        targetUserId,
+        balanceUserId: targetUserId,
+        transactionId
+      }),
+      buildStatements: ({ guard }) => {
+        const audit = auditStatement(database, {
+          auditId,
+          actorUserId: actor.userId,
+          actorAuthMode: actor.authMode,
+          actorEmployeeIdSnapshot: actor.employeeId,
+          actorLineUserIdSnapshot: actor.lineUserId,
+          targetUserId,
+          targetEmployeeIdSnapshot: target.employeeId,
+          targetLineUserIdSnapshot: target.lineUserId,
+          action: 'BALANCE_WITHDRAWAL',
+          metadata: { amount, note, transactionId },
+          occurredAt: now,
+          onlyIfPriorMutation: true
+        });
+        // Optimistic check: the UPDATE only applies while the authoritative
+        // balance still equals the one read above, so a concurrent change
+        // fails the batch instead of driving the balance negative.
+        const ledger = ledgerMutationStatements(database, {
+          transactionId,
+          userId: targetUserId,
+          employeeIdSnapshot: target.employeeId,
+          lineUserIdSnapshot: target.lineUserId,
+          displayNameSnapshot: target.displayName,
+          amount: -amount,
+          balanceAfter: currentBalance - amount,
+          type: 'WITHDRAWAL',
+          referenceId: auditId,
+          operatorUserId: actor.userId,
+          operatorEmployeeIdSnapshot: actor.employeeId,
+          operatorLineUserIdSnapshot: actor.lineUserId,
+          operatorDisplayNameSnapshot: actor.displayName,
+          operatorAuthMode: actor.authMode,
+          authMode: actor.authMode,
+          note: note ? `提領｜${note}` : '提領',
+          occurredAt: now
+        }, { guard });
+        return [audit, ...ledger.statements];
+      }
+    });
+  } catch (error) {
+    if (error?.code === 'IDENTITY_SESSION_STALE') throw conflict('VENDOR_BALANCE_FORBIDDEN');
+    if (error?.code === 'TRANSACTION_FAILED') throw conflict('MUTATION_CONFLICT');
+    throw error;
+  }
+};
+
 export const handleBalanceRoute = async (request, env, {
   fetchImpl = globalThis.fetch,
   now = new Date()
@@ -174,7 +282,8 @@ export const handleBalanceRoute = async (request, env, {
   const url = new URL(request.url);
   const isHistory = request.method === 'GET' && url.pathname === '/api/me/balance/history';
   const isTopUp = request.method === 'POST' && url.pathname === '/api/admin/balances/top-up';
-  if (!isHistory && !isTopUp) return null;
+  const isWithdraw = request.method === 'POST' && url.pathname === '/api/admin/balances/withdraw';
+  if (!isHistory && !isTopUp && !isWithdraw) return null;
 
   const identity = await requireIdentity(request, env, {
     fetchImpl,
@@ -191,6 +300,12 @@ export const handleBalanceRoute = async (request, env, {
     ));
   }
   const body = await readJson(request);
+  if (isWithdraw) {
+    return jsonResponse(await withdrawBalance(env.DB, identity, {
+      ...body,
+      idempotencyKey: idempotencyKey(request, body)
+    }, now));
+  }
   return jsonResponse(await topUpBalance(env.DB, identity, {
     ...body,
     idempotencyKey: idempotencyKey(request, body)
