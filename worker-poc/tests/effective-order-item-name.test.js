@@ -985,3 +985,22 @@ test('a line saved without menu item ID or variant resolves only when its label 
   assert.equal(resolve('其他名稱').resolutionStatus, 'ambiguous');
   assert.equal(resolve('合成豆腐(半飯)', 90).resolved, false);
 });
+
+test('a line saved without menu item ID or variant resolves to the PLUS variant when its label and price match exactly', () => {
+  const menuItems = [
+    menuItem({ menuItemId: 'menu-e-base', legacyItemId: 'E', variantKey: 'BASE', name: '風味餐', price: 80 }),
+    menuItem({ menuItemId: 'menu-e-plus', legacyItemId: 'E', variantKey: 'PLUS', name: '風味餐(主食加量)', price: 90 })
+  ];
+  const resolve = (name, unitPrice) => resolveEffectiveOrderItemName({
+    vendor: '合成店家',
+    orderDate: '2026-11-03',
+    item: { legacy_item_id: 'E', item_name_snapshot: name, unit_price: unitPrice },
+    menuItems
+  });
+
+  const plus = resolve('風味餐(主食加量)', 90);
+  assert.equal(plus.resolved, true);
+  assert.equal(plus.variantKey, 'PLUS');
+  assert.equal(resolve('風味餐', 80).resolved, false);
+  assert.equal(resolve('風味餐(主食加量)', 80).resolved, false);
+});
