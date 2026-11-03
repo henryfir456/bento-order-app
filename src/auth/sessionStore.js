@@ -65,6 +65,12 @@ export const createAuthSessionStore = (storage = globalThis.sessionStorage) => {
       if (shouldNotify) notify({ type: 'guest-session-cleared', reason });
     },
 
+    // A LINE access token that the Worker rejects (e.g. expired while the page
+    // stayed open) cannot recover by itself; tell the app to ask for re-login.
+    reportLineSessionRejected() {
+      notify({ type: 'line-session-rejected' });
+    },
+
     setBindIntent({ displayName = '', pickupFloor = '' } = {}) {
       target?.setItem?.(BIND_INTENT_STORAGE_KEY, JSON.stringify({
         displayName: typeof displayName === 'string' ? displayName.trim() : '',
