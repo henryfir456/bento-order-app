@@ -106,9 +106,10 @@ export const resolveEffectiveOrderItemName = ({
     if (ambiguous && !menuItemId && !requestedVariant && originalName) {
       // A line saved without a menu item ID or variant is ambiguous only between
       // the variants of ONE verified item code. When its own snapshot label is
-      // exactly the HALF variant's label (and price), it is that HALF line.
+      // exactly one non-BASE variant's label (HALF 半飯, PLUS 主食加量) and price,
+      // it is that variant's line. The BASE label alone is never inferred.
       const halfSnapshot = sameVariantIdentity.filter((candidate) => (
-        text(candidate?.variant_key) === 'HALF'
+        ['HALF', 'PLUS'].includes(text(candidate?.variant_key))
           && text(candidate?.item_name) === text(originalName)
           && (unitPrice === null || Number(candidate?.price) === unitPrice)
       ));
