@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.20.5] - 2026-11-03
+
+### Fixed
+
+- ProxyAdmin ordering on behalf of another user now bypasses the ordinary cutoff for today and future dates (create, modify, cancel), matching Admin; ProxyAdmin self-orders keep the normal cutoff and past dates stay rejected.
+
 ## [0.20.4] - 2026-11-03
 
 ### Changed

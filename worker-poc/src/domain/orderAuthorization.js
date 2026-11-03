@@ -118,10 +118,10 @@ export const resolveOrderMutationTiming = ({
     throw forbidden('DELEGATED_ORDER_DATE_NOT_ELIGIBLE');
   }
 
-  // ProxyAdmin delegation expands the eligible date range only. It never
-  // bypasses the canonical calendar/menu cutoff; Admin remains the sole
-  // elevated cutoff bypass.
-  const cutoffApplies = !adminBypass;
+  // Admin, and ProxyAdmin when ordering on behalf of someone for today or a
+  // future date, may create/modify/cancel after the ordinary cutoff.
+  // ProxyAdmin self-orders keep the normal cutoff.
+  const cutoffApplies = !(adminBypass || proxyDelegatedBypass);
   const deadline = deadlineInfo(targetDate, mode, now);
   return {
     deadline,
