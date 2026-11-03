@@ -79,7 +79,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0030_login_attempts.sql',
       '0031_auth_error_log.sql',
       '0032_reimbursement_requests.sql',
-      '0033_withdrawal_ledger_type.sql'
+      '0033_withdrawal_ledger_type.sql',
+      '0034_reimbursement_one_per_date.sql'
     ]
   );
 });

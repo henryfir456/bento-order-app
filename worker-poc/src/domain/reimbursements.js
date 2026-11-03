@@ -44,21 +44,20 @@ const publicRequest = (row) => ({
   createdAt: row.created_at
 });
 
-// Orders the actor placed for somebody else on `orderDate` that still count.
-const DELEGATED_ORDERS_SQL = `
+// Every order that still counts on `orderDate`, whoever it is for: the
+// ProxyAdmin paid the vendor for the whole day while the Admin was away.
+const DAY_ORDERS_SQL = `
   FROM orders o
-  WHERE o.created_by_user_id = ?
-    AND o.user_id <> o.created_by_user_id
-    AND o.order_date = ?
+  WHERE o.order_date = ?
     AND o.status IN ('ACTIVE', 'COMPLETED')
 `;
 
-const delegatedOrders = async (database, userId, orderDate) => {
+const dayOrders = async (database, orderDate) => {
   const result = await database.prepare(`
     SELECT o.order_id, o.display_name_snapshot AS name, o.vendor, o.total_amount
-    ${DELEGATED_ORDERS_SQL}
+    ${DAY_ORDERS_SQL}
     ORDER BY o.created_at, o.order_id
-  `).bind(userId, orderDate).all();
+  `).bind(orderDate).all();
   return rowsFrom(result).map((row) => ({
     orderId: row.order_id,
     name: row.name,
@@ -67,11 +66,12 @@ const delegatedOrders = async (database, userId, orderDate) => {
   }));
 };
 
-const openRequestFor = (database, userId, orderDate) => database.prepare(`
+// One open/approved request per order date across the whole system.
+const openRequestFor = (database, orderDate) => database.prepare(`
   SELECT request_id, status FROM reimbursement_requests
-  WHERE requester_user_id = ? AND order_date = ? AND status IN ('PENDING', 'APPROVED')
+  WHERE order_date = ? AND status IN ('PENDING', 'APPROVED')
   LIMIT 1
-`).bind(userId, orderDate).first();
+`).bind(orderDate).first();
 
 const parseDate = (value, today) => {
   const orderDate = text(value);
@@ -83,8 +83,8 @@ const parseDate = (value, today) => {
 export const previewReimbursement = async (database, identity, dateInput, now = new Date()) => {
   const actor = requireProxyAdmin(identity);
   const orderDate = parseDate(dateInput, getTaipeiDate(resolveClock(now)));
-  const orders = await delegatedOrders(database, actor.userId, orderDate);
-  const open = await openRequestFor(database, actor.userId, orderDate);
+  const orders = await dayOrders(database, orderDate);
+  const open = await openRequestFor(database, orderDate);
   return {
     success: true,
     orderDate,
@@ -126,9 +126,9 @@ export const createReimbursement = async (database, identity, input, now = new D
       requester_note, created_at, updated_at
     )
     SELECT ?, ?, ?, SUM(o.total_amount), COUNT(*), 'PENDING', ?, ?, ?
-    ${DELEGATED_ORDERS_SQL}
+    ${DAY_ORDERS_SQL}
     HAVING SUM(o.total_amount) > 0
-  `, [requestId, actor.userId, orderDate, note, occurredAt, occurredAt, actor.userId, orderDate]);
+  `, [requestId, actor.userId, orderDate, note, occurredAt, occurredAt, orderDate]);
   const admins = rowsFrom(await database.prepare(`
     SELECT user_id FROM users WHERE role = 'Admin' AND active = 1
   `).all());
@@ -140,7 +140,7 @@ export const createReimbursement = async (database, identity, input, now = new D
     userId: admin.user_id,
     kind: 'REIMBURSEMENT_REQUESTED',
     title: '代理管理員請款申請',
-    body: `${actor.displayName || '代理管理員'} 申請 ${orderDate} 的代訂款項 $${preview.amount}，請至管理頁審核。`,
+    body: `${actor.displayName || '代理管理員'} 申請 ${orderDate} 當天全部訂單的款項 $${preview.amount}，請至管理頁審核。`,
     refDate: orderDate,
     dedupeKey: `reimb-requested:${requestId}:${admin.user_id}`,
     occurredAt,
@@ -174,7 +174,7 @@ export const listAdminReimbursements = async (database, identity, statusInput) =
   // Show each pending request's order detail so the Admin can cross-check.
   for (const request of requests) {
     if (request.status === 'PENDING') {
-      request.orders = await delegatedOrders(database, request.requesterUserId, request.orderDate);
+      request.orders = await dayOrders(database, request.orderDate);
     }
   }
   return { success: true, requests };
@@ -263,7 +263,7 @@ export const approveReimbursement = async (database, identity, requestId, now = 
     userId: requester.userId,
     kind: 'REIMBURSEMENT_REVIEWED',
     title: '請款已核准',
-    body: `${row.order_date} 的代訂款項 $${amount} 已核准並加入你的餘額。`,
+    body: `${row.order_date} 當天全部訂單的款項 $${amount} 已核准並加入你的餘額。`,
     refDate: row.order_date,
     dedupeKey: `reimb-reviewed:${requestId}`,
     occurredAt,
@@ -317,7 +317,7 @@ export const rejectReimbursement = async (database, identity, requestId, input, 
     userId: row.requester_user_id,
     kind: 'REIMBURSEMENT_REVIEWED',
     title: '請款未核准',
-    body: `${row.order_date} 的代訂請款未核准${reviewNote ? `：${reviewNote}` : '。'}`,
+    body: `${row.order_date} 的請款未核准${reviewNote ? `：${reviewNote}` : '。'}`,
     refDate: row.order_date,
     dedupeKey: `reimb-reviewed:${requestId}`,
     occurredAt,

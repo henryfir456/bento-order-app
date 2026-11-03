@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.20.4] - 2026-11-03
+
+### Changed
+
+- ProxyAdmin reimbursement now covers the whole day's orders (every user's active orders on that order date, including the requester's own), and only one pending/approved request may exist per order date across all requesters (migration 0034). Already-approved requests are not recomputed.
+
 ## [0.20.3] - 2026-11-03
 
 ### Fixed
