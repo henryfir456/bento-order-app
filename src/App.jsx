@@ -290,6 +290,8 @@ export default function App() {
   const [userBalance, setUserBalance] = useState(0);
   const [defaultFloor, setDefaultFloor] = useState('');
   const [authState, setAuthState] = useState(AUTH_STATES.AUTH_LOADING);
+  const authStateRef = useRef(authState);
+  authStateRef.current = authState;
   const [authStage, setAuthStage] = useState(AUTH_STATES.AUTH_LOADING);
   const [authError, setAuthError] = useState('');
   const [registrationDisplayName, setRegistrationDisplayName] = useState('');
@@ -1161,6 +1163,18 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = guestSessionStore.subscribe((event) => {
+      if (event?.type === 'line-session-rejected') {
+        // Ignore while a login/boot is already in progress or already prompting.
+        if (authStateRef.current !== AUTH_STATES.REGISTERED) return;
+        beginAuthSelection();
+        authSelectionBusyRef.current = false;
+        authBootCompletedRef.current = false;
+        setAuthState(AUTH_STATES.AUTH_REQUIRED);
+        setAuthStage(AUTH_BOOT_STAGES.RESTORE_GUEST);
+        setAuthError('登入已逾時，請重新登入。');
+        clearIdentityData();
+        return;
+      }
       if (event?.type !== 'guest-session-invalid' && event?.type !== 'guest-session-cleared') return;
       beginAuthSelection();
       authSelectionBusyRef.current = false;

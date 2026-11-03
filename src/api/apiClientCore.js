@@ -124,6 +124,8 @@ const createWorkerRequest = ({ baseUrl, authClient, sessionStore, fetchImpl }) =
     if (errorCode === 'GUEST_SESSION_INVALID' && credential?.authMode === 'employee_guest'
       && sessionStore?.getGuestSession?.()?.token === credential.token) {
       sessionStore?.clearGuestSession?.({ reason: 'rejected' });
+    } else if (credential?.authMode === 'line' && errorCode !== 'GUEST_SESSION_INVALID') {
+      sessionStore?.reportLineSessionRejected?.();
     }
     throw new ApiAuthenticationError(
       errorCode === 'GUEST_SESSION_INVALID' ? errorCode : 'API_AUTH_REJECTED',
