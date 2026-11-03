@@ -532,7 +532,7 @@ test('ProxyAdmin self-order remains subject to the ordinary cutoff', async () =>
   assert.equal(result.body.error, 'DEADLINE_CLOSED');
 });
 
-test('ProxyAdmin delegated ordering keeps the cutoff for today', async () => {
+test('ProxyAdmin delegated ordering bypasses the cutoff for today', async () => {
   const before = await create(
     delegatedDatabase(),
     orderBody(TODAY, { targetUserId: 'user-2' }),
@@ -549,8 +549,7 @@ test('ProxyAdmin delegated ordering keeps the cutoff for today', async () => {
   );
 
   assert.equal(before.response.status, 200);
-  assert.equal(after.response.status, 400);
-  assert.equal(after.body.error, 'DEADLINE_CLOSED');
+  assert.equal(after.response.status, 200);
 });
 
 test('ProxyAdmin delegated ordering supports future dates before their cutoff', async () => {
@@ -580,7 +579,7 @@ test('ProxyAdmin delegated ordering requires a future calendar group to be open'
   assert.equal(result.body.error, 'ORDER_PAGE_SETTING_NOT_FOUND');
 });
 
-test('ProxyAdmin delegated ordering rejects past dates and future dates after cutoff', async () => {
+test('ProxyAdmin delegated ordering rejects past dates but bypasses cutoff on future dates', async () => {
   const past = await create(
     delegatedDatabase(),
     orderBody(YESTERDAY, { targetUserId: 'user-2' }),
@@ -598,8 +597,7 @@ test('ProxyAdmin delegated ordering rejects past dates and future dates after cu
 
   assert.equal(past.response.status, 403);
   assert.equal(past.body.error, 'DELEGATED_ORDER_DATE_NOT_ELIGIBLE');
-  assert.equal(afterCutoff.response.status, 400);
-  assert.equal(afterCutoff.body.error, 'DEADLINE_CLOSED');
+  assert.equal(afterCutoff.response.status, 200);
 });
 
 test('Admin self-order bypasses cutoff and supports another valid order date', async () => {

@@ -45,7 +45,7 @@ test('ProxyAdmin delegated date selection is bounded in the UI and Worker guard'
   assert.match(selectBlock, /dateStr < formatDateInput\(new Date\(\)\)/);
   assert.match(authorization, /targetDate >= getTaipeiDate\(now\)/);
   assert.match(authorization, /DELEGATED_ORDER_DATE_NOT_ELIGIBLE/);
-  assert.match(authorization, /const cutoffApplies = !adminBypass/);
+  assert.match(authorization, /const cutoffApplies = !\(adminBypass \|\| proxyDelegatedBypass\)/);
   assert.doesNotMatch(authorization, /proxyDelegatedBypass && proxyDelegatedDateAllowed\)\);/);
 });
 

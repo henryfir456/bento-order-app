@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.20.5': [
+    { name: '修正', changes: [
+      '代理管理員代他人下單／修改／取消當日及未來訂單時，不再受截止時間限制（與管理員相同）；代理管理員自己的訂單仍依一般截止時間。'
+    ] }
+  ],
   '0.20.4': [
     { name: '調整', changes: [
       '代理管理員請款改為該訂單日期「全部訂單」的總金額，且同一天全系統只能有一筆待審或已同意的請款。'
