@@ -43,14 +43,14 @@ const file = (database, date = '2026-09-07') => call(database, '/api/me/reimburs
   method: 'POST', body: { orderDate: date, note: 'n' }
 });
 
-test('preview and request sum only active orders placed for others', async () => {
+test('preview and request sum every active order of the day, including the requester own', async () => {
   const database = seed();
   const preview = await call(database, '/api/me/reimbursements/preview?date=2026-09-07', 'proxy-1');
-  assert.equal(preview.body.amount, 180);
-  assert.equal(preview.body.orderCount, 2);
+  assert.equal(preview.body.amount, 250);
+  assert.equal(preview.body.orderCount, 3);
   const created = await file(database);
   assert.equal(created.response.status, 200);
-  assert.equal(created.body.request.amount, 180);
+  assert.equal(created.body.request.amount, 250);
   assert.equal(created.body.request.status, 'PENDING');
   assert.equal(database.get("SELECT COUNT(*) AS c FROM user_notifications WHERE kind = 'REIMBURSEMENT_REQUESTED' AND user_id = 'admin-1'").c, 1);
   const dup = await file(database);
@@ -74,7 +74,7 @@ test('only Admin can list and decide', async () => {
   assert.equal((await call(database, `/api/admin/reimbursements/${id}/approve`, 'proxy-1', { method: 'POST', body: {} })).response.status, 403);
   const list = await call(database, '/api/admin/reimbursements?status=PENDING', 'admin-1');
   assert.equal(list.body.requests.length, 1);
-  assert.equal(list.body.requests[0].orders.length, 2);
+  assert.equal(list.body.requests[0].orders.length, 3);
 });
 
 test('approve credits balance once and is not repeatable', async () => {
@@ -82,14 +82,14 @@ test('approve credits balance once and is not repeatable', async () => {
   const id = (await file(database)).body.request.requestId;
   const first = await call(database, `/api/admin/reimbursements/${id}/approve`, 'admin-1', { method: 'POST', body: {} });
   assert.equal(first.response.status, 200);
-  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'proxy-1'").balance, 230);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'proxy-1'").balance, 300);
   const second = await call(database, `/api/admin/reimbursements/${id}/approve`, 'admin-1', { method: 'POST', body: {} });
   assert.equal(second.response.status, 409);
   const reject = await call(database, `/api/admin/reimbursements/${id}/reject`, 'admin-1', { method: 'POST', body: {} });
   assert.equal(reject.response.status, 409);
-  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'proxy-1'").balance, 230);
+  assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'proxy-1'").balance, 300);
   assert.equal(database.get("SELECT COUNT(*) AS c FROM balance_ledger WHERE type = 'TOPUP' AND user_id = 'proxy-1'").c, 1);
-  assert.equal(database.get("SELECT amount FROM balance_ledger WHERE type = 'TOPUP' AND user_id = 'proxy-1'").amount, 180);
+  assert.equal(database.get("SELECT amount FROM balance_ledger WHERE type = 'TOPUP' AND user_id = 'proxy-1'").amount, 250);
   assert.equal(database.get("SELECT COUNT(*) AS c FROM user_notifications WHERE kind = 'REIMBURSEMENT_REVIEWED' AND user_id = 'proxy-1'").c, 1);
   assert.equal((await file(database)).response.status, 409);
 });
@@ -102,4 +102,21 @@ test('reject keeps balance, notifies, and allows re-requesting', async () => {
   assert.equal(database.get("SELECT balance FROM users WHERE user_id = 'proxy-1'").balance, 50);
   assert.equal(database.get("SELECT COUNT(*) AS c FROM user_notifications WHERE kind = 'REIMBURSEMENT_REVIEWED' AND user_id = 'proxy-1'").c, 1);
   assert.equal((await file(database)).response.status, 200);
+});
+
+test('only one open request per date across requesters; rejected date can be refiled by another', async () => {
+  const database = seed();
+  seedUser(database, { lineUserId: 'proxy-2', role: 'ProxyAdmin' });
+  const first = await file(database);
+  assert.equal(first.response.status, 200);
+  const other = await call(database, '/api/me/reimbursements', 'proxy-2', {
+    method: 'POST', body: { orderDate: '2026-09-07' }
+  });
+  assert.equal(other.response.status, 409);
+  await call(database, `/api/admin/reimbursements/${first.body.request.requestId}/reject`, 'admin-1', { method: 'POST', body: {} });
+  const refiled = await call(database, '/api/me/reimbursements', 'proxy-2', {
+    method: 'POST', body: { orderDate: '2026-09-07' }
+  });
+  assert.equal(refiled.response.status, 200);
+  assert.equal(refiled.body.request.amount, 250);
 });

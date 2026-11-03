@@ -10,8 +10,8 @@ const STATUS_STYLES = {
 };
 
 const ERROR_MESSAGES = {
-  REIMBURSEMENT_ALREADY_REQUESTED: '這一天已經有待審或已同意的請款。',
-  REIMBURSEMENT_NO_ELIGIBLE_ORDERS: '這一天沒有你代訂的有效訂單。',
+  REIMBURSEMENT_ALREADY_REQUESTED: '這一天已經有待審或已同意的請款（全系統每天只能一筆）。',
+  REIMBURSEMENT_NO_ELIGIBLE_ORDERS: '這一天沒有有效訂單。',
   REIMBURSEMENT_DATE_IN_FUTURE: '不能申請未來的日期。',
   REIMBURSEMENT_DATE_INVALID: '請選擇有效的日期。',
   REIMBURSEMENT_ALREADY_APPROVED: '這筆請款已經同意過了。',
@@ -150,12 +150,12 @@ export default function ReimbursementManagement({ api, mode = 'request' }) {
             <input type="date" value={date} max={todayTaipei()} onChange={(e) => setDate(e.target.value)}
               className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 px-3" />
           </label>
-          {!preview && <LoadingNote label="該日代訂訂單" />}
+          {!preview && <LoadingNote label="該日全部訂單" />}
           {preview && (
             <div className="space-y-2">
               <OrderList orders={preview.orders} />
               <p className="font-bold text-[#2C4A3E]">
-                {preview.orderCount ? `共 ${preview.orderCount} 筆，請款金額 $${preview.amount}` : '這一天沒有你代訂的有效訂單。'}
+                {preview.orderCount ? `共 ${preview.orderCount} 筆，當天全部訂單總額 $${preview.amount}` : '這一天沒有有效訂單。'}
               </p>
               {preview.existingRequest && (
                 <p className="text-sm text-amber-700">

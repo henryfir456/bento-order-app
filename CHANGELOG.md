@@ -39,6 +39,12 @@
 
 - Re-fetch calendar events (including the per-day bento total) every time the bottom-nav 訂餐 tab is tapped, so quantities ordered by others are no longer stale.
 
+## [0.20.2] - 2026-11-03
+
+### Changed
+
+- ProxyAdmin reimbursement now covers the whole day's orders (every user's active orders on that order date, including the requester's own), and only one pending/approved request may exist per order date across all requesters (migration 0034). Already-approved requests are not recomputed.
+
 ## [0.20.1] - 2026-11-02
 
 ### Added
