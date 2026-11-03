@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.20.4': [
+    { name: '調整', changes: [
+      '代理管理員請款改為該訂單日期「全部訂單」的總金額，且同一天全系統只能有一筆待審或已同意的請款。'
+    ] }
+  ],
   '0.20.3': [
     { name: '修正', changes: [
       '長時間未操作導致 LINE 登入逾時（401）時，會回到登入畫面提示重新登入，不再停在「訂單紀錄讀取失敗」。'
@@ -19,11 +24,6 @@ const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
   '0.20.2': [
     { name: '修正', changes: [
       '點「訂餐」時會重新取得月曆資料，其他人剛訂的便當數量不再停留在舊數字。'
-    ] }
-  ],
-  '0.20.2': [
-    { name: '調整', changes: [
-      '代理管理員請款改為該訂單日期「全部訂單」的總金額，且同一天全系統只能有一筆待審或已同意的請款。'
     ] }
   ],
   '0.20.1': [
