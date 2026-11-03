@@ -23,6 +23,12 @@ const errorMessage = (error) => (
   ERROR_MESSAGES[error?.code] || (error?.code ? `操作失敗（${error.code}）。` : (error?.message || '操作失敗，請稍後再試。'))
 );
 
+// Worker API methods resolve to a fetch Response; accept parsed objects too.
+const parsed = async (promise) => {
+  const result = await promise;
+  return typeof result?.json === 'function' ? result.json() : result;
+};
+
 const todayTaipei = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei' }).format(new Date());
 
 function StatusBadge({ status }) {
@@ -62,9 +68,9 @@ export default function ReimbursementManagement({ api, mode = 'request' }) {
     setLoading(true);
     setError('');
     try {
-      const result = mode === 'review'
-        ? await api.listAdminReimbursements({})
-        : await api.listMyReimbursements();
+      const result = await parsed(mode === 'review'
+        ? api.listAdminReimbursements({})
+        : api.listMyReimbursements());
       setRequests(result?.requests || []);
     } catch (err) {
       setError(errorMessage(err));
@@ -79,7 +85,7 @@ export default function ReimbursementManagement({ api, mode = 'request' }) {
     if (mode !== 'request' || !date) return undefined;
     let cancelled = false;
     setPreview(null);
-    api.previewReimbursement({ date })
+    parsed(api.previewReimbursement({ date }))
       .then((result) => { if (!cancelled) setPreview(result); })
       .catch((err) => { if (!cancelled) setError(errorMessage(err)); });
     return () => { cancelled = true; };
@@ -89,7 +95,7 @@ export default function ReimbursementManagement({ api, mode = 'request' }) {
     setBusy(true);
     setError('');
     try {
-      await api.createReimbursement({ orderDate: date, note });
+      await parsed(api.createReimbursement({ orderDate: date, note }));
       setNote('');
       await reload();
       await Swal.fire({ icon: 'success', title: '已送出請款申請', timer: 1500, showConfirmButton: false });
@@ -126,7 +132,7 @@ export default function ReimbursementManagement({ api, mode = 'request' }) {
     setBusy(true);
     setError('');
     try {
-      await api.decideReimbursement({ requestId: request.requestId, decision, note: reviewNote });
+      await parsed(api.decideReimbursement({ requestId: request.requestId, decision, note: reviewNote }));
       await reload();
     } catch (err) {
       setError(errorMessage(err));

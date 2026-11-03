@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.20.6': [
+    { name: '修正', changes: [
+      '修正請款頁一律顯示「這一天沒有有效訂單」、請款紀錄與審核清單無法載入的問題。'
+    ] }
+  ],
   '0.20.5': [
     { name: '修正', changes: [
       '代理管理員代他人下單／修改／取消當日及未來訂單時，不再受截止時間限制（與管理員相同）；代理管理員自己的訂單仍依一般截止時間。'
