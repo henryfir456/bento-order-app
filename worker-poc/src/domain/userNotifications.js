@@ -124,7 +124,7 @@ const UPCOMING_DATE_COUNT = 3;
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
 // The next three business days after `orderDate` (weekends and holidays
-// skipped) with whether any group is open, as "YYYY/MM/DD（週X） 已開團/未開團".
+// skipped) with whether any group is open, as "YYYY/MM/DD（週X） 已開團/尚未開團".
 export const upcomingGroupLines = async (database, orderDate) => {
   const nonWorking = await loadNonWorkingDates(database, addDays(orderDate, 1), addDays(orderDate, 21));
   const dates = [];
@@ -141,7 +141,7 @@ export const upcomingGroupLines = async (database, orderDate) => {
   `).bind(dates[0].date, dates[dates.length - 1].date).all()).map((row) => row.order_date);
   const openSet = new Set(opened);
   return dates.map(({ date, weekday }) => (
-    `${date.replace(/-/g, '/')}（${WEEKDAY_LABELS[weekday]}） ${openSet.has(date) ? '已開團' : '未開團'}`
+    `${date.replace(/-/g, '/')}（${WEEKDAY_LABELS[weekday]}） ${openSet.has(date) ? '已開團' : '尚未開團'}`
   ));
 };
 
