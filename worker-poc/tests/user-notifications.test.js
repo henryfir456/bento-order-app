@@ -73,6 +73,7 @@ test('18:00 cron sends the vendor one order-closed notification and stays idempo
   const database = seedOrderDatabase({ balance: 100 });
   seedVendorPrincipal(database);
   database.run("UPDATE calendar_settings SET mode = 'B' WHERE order_date = ?", ORDER_DATE);
+  database.run("INSERT INTO calendar_settings (order_date, vendor, mode) VALUES ('2026-09-10', 'Vendor A', 'B')");
   const buyer = userProfile('user-1', 'token-user-1');
   const created = await callOrderRoute(database, '/api/orders', {
     method: 'POST',
@@ -93,6 +94,10 @@ test('18:00 cron sends the vendor one order-closed notification and stays idempo
   assert.equal(vendor.body.notifications.length, 1);
   assert.equal(vendor.body.notifications[0].kind, 'VENDOR_ORDER_CLOSED');
   assert.match(vendor.body.notifications[0].body, /1 筆訂單、2 份餐點/);
+  assert.match(vendor.body.notifications[0].body, /接下來三次日期/);
+  assert.match(vendor.body.notifications[0].body, /2026\/09\/09（三） 未開團/);
+  assert.match(vendor.body.notifications[0].body, /2026\/09\/10（四） 已開團/);
+  assert.match(vendor.body.notifications[0].body, /2026\/09\/11（五） 未開團/);
 
   const nothing = await handleScheduled(
     { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-10T10:00:00.000Z') },
