@@ -124,8 +124,8 @@ const UPCOMING_DATE_COUNT = 3;
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
 // The next three business days after `orderDate` (weekends and holidays
-// skipped) with whether any group is open, as "YYYY/MM/DD（週X） 已開團/未開團".
-export const upcomingGroupLines = async (database, orderDate) => {
+// skipped) with whether this vendor's own group is open (other vendors' groups, e.g. 蔡老師, count as 未開團), as "YYYY/MM/DD（週X） 已開團/未開團".
+export const upcomingGroupLines = async (database, orderDate, vendorName) => {
   const nonWorking = await loadNonWorkingDates(database, addDays(orderDate, 1), addDays(orderDate, 21));
   const dates = [];
   for (let offset = 1; dates.length < UPCOMING_DATE_COUNT && offset <= 21; offset += 1) {
@@ -135,10 +135,11 @@ export const upcomingGroupLines = async (database, orderDate) => {
     if (weekday !== 0 && weekday !== 6 && !nonWorking.has(date)) dates.push({ date, weekday });
   }
   if (!dates.length) return [];
+  const candidates = compatibilityVendorCandidates(vendorName);
   const opened = rowsFrom(await database.prepare(`
     SELECT order_date FROM calendar_settings
-    WHERE order_date BETWEEN ? AND ? AND length(trim(vendor)) > 0
-  `).bind(dates[0].date, dates[dates.length - 1].date).all()).map((row) => row.order_date);
+    WHERE order_date BETWEEN ? AND ? AND vendor IN (${candidates.map(() => '?').join(', ')})
+  `).bind(dates[0].date, dates[dates.length - 1].date, ...candidates).all()).map((row) => row.order_date);
   const openSet = new Set(opened);
   return dates.map(({ date, weekday }) => (
     `${date.replace(/-/g, '/')}（${WEEKDAY_LABELS[weekday]}） ${openSet.has(date) ? '已開團' : '未開團'}`
@@ -178,7 +179,7 @@ export const notifyVendorsOrderClosed = async (database, env, scheduledTime, {
     : `${label} 已收單，這一天沒有訂單。`;
   let upcoming = [];
   try {
-    upcoming = await upcomingGroupLines(database, orderDate);
+    upcoming = await upcomingGroupLines(database, orderDate, setting.vendor);
   } catch {
     upcoming = [];
   }
