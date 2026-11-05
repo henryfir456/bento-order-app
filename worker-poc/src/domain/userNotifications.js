@@ -1,6 +1,7 @@
 import { ACTIONS, assertCan } from '../auth/permissions.js';
 import { prepareStatement, randomId, resolveClock } from '../db/transactions.js';
 import { getTaipeiDate } from './deadlines.js';
+import { loadNonWorkingDates } from './taiwanHolidays.js';
 import { compatibilityVendorCandidates } from './menuVendors.js';
 import { notFound } from '../http/errors.js';
 
@@ -119,6 +120,31 @@ const vendorClosedItemLines = async (database, orderDate) => {
   });
 };
 
+const UPCOMING_DATE_COUNT = 3;
+const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+// The next three business days after `orderDate` (weekends and holidays
+// skipped) with whether any group is open, as "YYYY/MM/DD（週X） 已開團/未開團".
+export const upcomingGroupLines = async (database, orderDate) => {
+  const nonWorking = await loadNonWorkingDates(database, addDays(orderDate, 1), addDays(orderDate, 21));
+  const dates = [];
+  for (let offset = 1; dates.length < UPCOMING_DATE_COUNT && offset <= 21; offset += 1) {
+    const date = addDays(orderDate, offset);
+    const [year, month, day] = date.split('-').map(Number);
+    const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+    if (weekday !== 0 && weekday !== 6 && !nonWorking.has(date)) dates.push({ date, weekday });
+  }
+  if (!dates.length) return [];
+  const opened = rowsFrom(await database.prepare(`
+    SELECT order_date FROM calendar_settings
+    WHERE order_date BETWEEN ? AND ? AND length(trim(vendor)) > 0
+  `).bind(dates[0].date, dates[dates.length - 1].date).all()).map((row) => row.order_date);
+  const openSet = new Set(opened);
+  return dates.map(({ date, weekday }) => (
+    `${date.replace(/-/g, '/')}（${WEEKDAY_LABELS[weekday]}） ${openSet.has(date) ? '已開團' : '未開團'}`
+  ));
+};
+
 // 18:00 Taipei cron: tomorrow's mode-B group has just closed. Tell each vendor
 // principal of the assigned vendor how many orders and portions came in, through
 // the bell and (unless they opted out) a LINE push.
@@ -147,9 +173,18 @@ export const notifyVendorsOrderClosed = async (database, env, scheduledTime, {
   const portions = Number(totals?.portions || 0);
   const label = orderDate.replace(/-/g, '/');
   const items = orderCount > 0 ? await vendorClosedItemLines(database, orderDate) : [];
-  const body = orderCount > 0
+  const orderPart = orderCount > 0
     ? `${label} 已收單，共 ${orderCount} 筆訂單、${portions} 份餐點：\n${items.join('\n')}`
     : `${label} 已收單，這一天沒有訂單。`;
+  let upcoming = [];
+  try {
+    upcoming = await upcomingGroupLines(database, orderDate);
+  } catch {
+    upcoming = [];
+  }
+  const body = upcoming.length
+    ? `${orderPart}\n\n接下來三次日期：\n${upcoming.join('\n')}`
+    : orderPart;
   const occurredAt = now.toISOString();
   const results = await database.batch(principals.map((principal) => notificationStatement(database, {
     userId: principal.userId,
