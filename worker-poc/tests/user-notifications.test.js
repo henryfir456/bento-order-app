@@ -74,6 +74,7 @@ test('18:00 cron sends the vendor one order-closed notification and stays idempo
   seedVendorPrincipal(database);
   database.run("UPDATE calendar_settings SET mode = 'B' WHERE order_date = ?", ORDER_DATE);
   database.run("INSERT INTO calendar_settings (order_date, vendor, mode) VALUES ('2026-09-10', 'Vendor A', 'B')");
+  database.run("INSERT INTO calendar_settings (order_date, vendor, mode) VALUES ('2026-09-11', '蔡老師', 'A')");
   const buyer = userProfile('user-1', 'token-user-1');
   const created = await callOrderRoute(database, '/api/orders', {
     method: 'POST',
