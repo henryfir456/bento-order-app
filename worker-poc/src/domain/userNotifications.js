@@ -124,26 +124,32 @@ const UPCOMING_DATE_COUNT = 3;
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
 // The next three business days after `orderDate` (weekends and holidays
-// skipped) with whether this vendor's own group is open (other vendors' groups, e.g. 蔡老師, count as 尚未開團).
+// skipped) that are not taken by another vendor's group (e.g. 蔡老師), each
+// marked 已開團 when this vendor's own group is open, otherwise 尚未開團.
 export const upcomingGroupLines = async (database, orderDate, vendorName) => {
-  const nonWorking = await loadNonWorkingDates(database, addDays(orderDate, 1), addDays(orderDate, 21));
-  const dates = [];
-  for (let offset = 1; dates.length < UPCOMING_DATE_COUNT && offset <= 21; offset += 1) {
+  const rangeStart = addDays(orderDate, 1);
+  const rangeEnd = addDays(orderDate, 21);
+  const nonWorking = await loadNonWorkingDates(database, rangeStart, rangeEnd);
+  const candidates = compatibilityVendorCandidates(vendorName);
+  const rows = rowsFrom(await database.prepare(`
+    SELECT order_date, vendor FROM calendar_settings
+    WHERE order_date BETWEEN ? AND ? AND length(trim(vendor)) > 0
+  `).bind(rangeStart, rangeEnd).all());
+  const ownDates = new Set();
+  const otherDates = new Set();
+  rows.forEach((row) => {
+    (candidates.includes(row.vendor) ? ownDates : otherDates).add(row.order_date);
+  });
+  const lines = [];
+  for (let offset = 1; lines.length < UPCOMING_DATE_COUNT && offset <= 21; offset += 1) {
     const date = addDays(orderDate, offset);
     const [year, month, day] = date.split('-').map(Number);
     const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
-    if (weekday !== 0 && weekday !== 6 && !nonWorking.has(date)) dates.push({ date, weekday });
+    if (weekday === 0 || weekday === 6 || nonWorking.has(date)) continue;
+    if (otherDates.has(date) && !ownDates.has(date)) continue;
+    lines.push(`${date.replace(/-/g, '/')}（${WEEKDAY_LABELS[weekday]}） ${ownDates.has(date) ? '已開團' : '尚未開團'}`);
   }
-  if (!dates.length) return [];
-  const candidates = compatibilityVendorCandidates(vendorName);
-  const opened = rowsFrom(await database.prepare(`
-    SELECT order_date FROM calendar_settings
-    WHERE order_date BETWEEN ? AND ? AND vendor IN (${candidates.map(() => '?').join(', ')})
-  `).bind(dates[0].date, dates[dates.length - 1].date, ...candidates).all()).map((row) => row.order_date);
-  const openSet = new Set(opened);
-  return dates.map(({ date, weekday }) => (
-    `${date.replace(/-/g, '/')}（${WEEKDAY_LABELS[weekday]}） ${openSet.has(date) ? '已開團' : '尚未開團'}`
-  ));
+  return lines;
 };
 
 // 18:00 Taipei cron: tomorrow's mode-B group has just closed. Tell each vendor
