@@ -95,9 +95,9 @@ test('18:00 cron sends the vendor one order-closed notification and stays idempo
   assert.equal(vendor.body.notifications[0].kind, 'VENDOR_ORDER_CLOSED');
   assert.match(vendor.body.notifications[0].body, /1 筆訂單、2 份餐點/);
   assert.match(vendor.body.notifications[0].body, /接下來三次日期/);
-  assert.match(vendor.body.notifications[0].body, /2026\/09\/09（三） 未開團/);
+  assert.match(vendor.body.notifications[0].body, /2026\/09\/09（三） 尚未開團/);
   assert.match(vendor.body.notifications[0].body, /2026\/09\/10（四） 已開團/);
-  assert.match(vendor.body.notifications[0].body, /2026\/09\/11（五） 未開團/);
+  assert.match(vendor.body.notifications[0].body, /2026\/09\/11（五） 尚未開團/);
 
   const nothing = await handleScheduled(
     { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-10T10:00:00.000Z') },
