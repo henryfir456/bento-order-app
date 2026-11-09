@@ -1,0 +1,41 @@
+name: npm audit
+on:
+  pull_request:
+    paths:
+      - 'package*.json'
+      - 'worker-poc/package*.json'
+      - '.github/workflows/npm-audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'package*.json'
+      - 'worker-poc/package*.json'
+      - '.github/workflows/npm-audit.yml'
+  schedule:
+    # New advisories appear without any code change, so also check weekly.
+    - cron: '0 1 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      # Only production dependencies gate CI. Worker devDependencies
+      # (wrangler, offline-only xlsx scripts) never ship to users; their
+      # advisories are reported below without failing the build.
+      - name: Frontend production dependencies (fails on high or critical)
+        run: npm audit --omit=dev --audit-level=high
+      - name: Worker production dependencies (fails on high or critical)
+        working-directory: worker-poc
+        run: npm audit --omit=dev --audit-level=high
+      - name: Worker dev dependencies (report only)
+        if: ${{ !cancelled() }}
+        working-directory: worker-poc
+        continue-on-error: true
+        run: npm audit --audit-level=high
