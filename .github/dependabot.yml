@@ -8,8 +8,12 @@ updates:
       day: monday
     open-pull-requests-limit: 3
     groups:
+      # LINE LIFF SDK touches login; keep it in its own PR so it is tested alone.
+      line-liff:
+        patterns: ['@line/liff']
       minor-and-patch:
         update-types: [minor, patch]
+        exclude-patterns: ['@line/liff']
     # Major upgrades are reviewed by hand, not proposed automatically.
     ignore:
       - dependency-name: '*'
