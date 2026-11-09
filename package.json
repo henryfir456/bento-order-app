@@ -15,7 +15,7 @@
     "test:local-uat": "node --test tests/local-uat-auth-mode.test.cjs"
   },
   "dependencies": {
-    "@line/liff": "^2.31.0",
+    "@line/liff": "^2.31.2",
     "@tailwindcss/vite": "^4.3.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
