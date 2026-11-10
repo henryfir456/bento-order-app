@@ -34,10 +34,10 @@ test('reminder settings are per user and per group mode', async () => {
     { DB: database },
     { fetchImpl: profileFetch(profile), now: new Date('2026-09-07T00:00:00.000Z') }
   );
-  assert.deepEqual((await initial.json()).settings, { A: false, B: false, adminClose: true, vendorClose: true });
+  assert.deepEqual((await initial.json()).settings, { A: false, B: false, adminClose: true, vendorClose: true, adminVendorClose: false });
   const saved = await putSettings(database, profile, { A: true });
   assert.equal(saved.status, 200);
-  assert.deepEqual(saved.body.settings, { A: true, B: false, adminClose: true, vendorClose: true });
+  assert.deepEqual(saved.body.settings, { A: true, B: false, adminClose: true, vendorClose: true, adminVendorClose: false });
   assert.equal((await putSettings(database, profile, { B: 'yes' })).status, 400);
   assert.equal((await putSettings(database, profile, {})).status, 400);
 });
@@ -171,4 +171,28 @@ test('vendor principal can opt out of the 18:00 close LINE push; only they may s
   database.run("DELETE FROM user_notifications");
   await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
   assert.equal(pushes.length, 1);
+});
+
+test('Admin can opt in to the vendor 18:00 close notification; default off, non-admin rejected', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  seedUser(database, { userId: 'vendor-user', lineUserId: 'vendor-line', employeeId: null });
+  database.run("INSERT INTO vendor_principals (user_id, principal_role, status) VALUES ('vendor-user', 'Vendor', 'ACTIVE')");
+  database.run("INSERT INTO vendor_memberships (user_id, vendor_id, status) VALUES ('vendor-user', 'canonical-vendor-a', 'ACTIVE')");
+  database.run("UPDATE calendar_settings SET mode = 'B' WHERE order_date = ?", ORDER_DATE);
+  const admin = { token: 'admin-token', lineUserId: 'admin-1', displayName: 'Admin One' };
+  const controller = { cron: '0 2,10 * * *', scheduledTime: Date.parse('2026-09-07T10:00:00.000Z') };
+  const env = { DB: database, LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: 'secret' };
+
+  const off = pushRecorder();
+  const first = await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl: off.fetchImpl });
+  assert.equal(first.notified, 1);
+  assert.deepEqual(JSON.parse(off.pushes[0].init.body).to, ['vendor-line']);
+
+  assert.equal((await putSettings(database, userProfile('user-1', 'token-user-1'), { adminVendorClose: true })).status, 403);
+  assert.equal((await putSettings(database, admin, { adminVendorClose: true })).body.settings.adminVendorClose, true);
+  database.run('DELETE FROM user_notifications');
+  const on = pushRecorder();
+  const second = await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl: on.fetchImpl });
+  assert.equal(second.notified, 2);
+  assert.deepEqual(JSON.parse(on.pushes[0].init.body).to.sort(), ['admin-1', 'vendor-line']);
 });

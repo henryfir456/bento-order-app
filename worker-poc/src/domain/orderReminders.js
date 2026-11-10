@@ -29,9 +29,9 @@ export const getReminderSettings = async (database, identity) => {
   const result = await database.prepare(`
     SELECT mode, enabled FROM user_reminder_prefs WHERE user_id = ?
   `).bind(identity.actor.userId).all();
-  const settings = { A: false, B: false, adminClose: true, vendorClose: true };
+  const settings = { A: false, B: false, adminClose: true, vendorClose: true, adminVendorClose: false };
   for (const row of rowsFrom(result)) {
-    const key = { ADMIN_CLOSE: 'adminClose', VENDOR_CLOSE: 'vendorClose' }[row.mode] || row.mode;
+    const key = { ADMIN_CLOSE: 'adminClose', VENDOR_CLOSE: 'vendorClose', ADMIN_VENDOR_CLOSE: 'adminVendorClose' }[row.mode] || row.mode;
     settings[key] = Number(row.enabled) === 1;
   }
   return {
@@ -46,11 +46,11 @@ export const getReminderSettings = async (database, identity) => {
 export const updateReminderSettings = async (database, identity, body, now = new Date()) => {
   assertCanManageReminders(identity);
   const updatedAt = resolveClock(now).toISOString();
-  const keys = { A: 'A', B: 'B', adminClose: 'ADMIN_CLOSE', vendorClose: 'VENDOR_CLOSE' };
+  const keys = { A: 'A', B: 'B', adminClose: 'ADMIN_CLOSE', vendorClose: 'VENDOR_CLOSE', adminVendorClose: 'ADMIN_VENDOR_CLOSE' };
   const changes = Object.keys(keys).filter((key) => body?.[key] !== undefined);
   if (!changes.length) throw badRequest('REMINDER_SETTINGS_EMPTY');
   if (changes.some((key) => typeof body[key] !== 'boolean')) throw badRequest('REMINDER_SETTINGS_INVALID');
-  if (changes.includes('adminClose') && !isAdminRole(identity)) throw forbidden('ADMIN_ONLY_REMINDER_SETTING');
+  if ((changes.includes('adminClose') || changes.includes('adminVendorClose')) && !isAdminRole(identity)) throw forbidden('ADMIN_ONLY_REMINDER_SETTING');
   if (changes.includes('vendorClose') && !isVendorRole(identity)) throw forbidden('VENDOR_ONLY_REMINDER_SETTING');
   if (isVendorRole(identity) && changes.some((key) => key !== 'vendorClose')) throw forbidden('VENDOR_REMINDER_SETTING_ONLY');
   await database.batch(changes.map((key) => prepareStatement(database, `
