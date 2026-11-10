@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.20.9] - 2026-11-10
+
+### Changed
+
+- Backend auth error log now stores LINE's own rejection reason (`error` / `error_description`, scrubbed, no token) in `detail` when the LINE profile call fails, so repeated LINE 403 logouts can be diagnosed.
+
 ## [0.20.8] - 2026-11-10
 
 ### Fixed
