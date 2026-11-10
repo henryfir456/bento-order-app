@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.21.3] - 2026-11-10
+
+### Fixed
+
+- 「系統健康」 now reads latest versions from the npm registry instead of `npm outdated` (which was killed on some Windows setups); a package whose latest version cannot be checked shows as unknown rather than green.
+
 ## [0.21.2] - 2026-11-10
 
 ### Fixed

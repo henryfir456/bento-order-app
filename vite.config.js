@@ -12,9 +12,9 @@ const dependencyHealth = () => {
     name: 'dependency-health',
     configResolved(config) { command = config.command },
     // Always refresh on build. `vite dev` never builds, so it generates only when the file is missing (fast restarts).
-    buildStart() {
+    async buildStart() {
       const root = fileURLToPath(new URL('.', import.meta.url))
-      if (command === 'build' || !existsSync(`${root}src/generated/dependency-health.json`)) generate(root)
+      if (command === 'build' || !existsSync(`${root}src/generated/dependency-health.json`)) await generate(root)
     }
   }
 }

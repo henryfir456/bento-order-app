@@ -25,6 +25,7 @@ export const needsAttention = (health) => health?.status === 'ready' && health.o
 const STATUS = {
   ok: { icon: '✓', label: '安全且最新', cls: 'bg-emerald-100 text-emerald-800' },
   outdated: { icon: '!', label: '有新版可更新', cls: 'bg-amber-100 text-amber-800' },
+  unknown: { icon: '?', label: '無法確認最新版', cls: 'bg-amber-100 text-amber-800' },
   vulnerable: { icon: '✕', label: '有已知漏洞', cls: 'bg-rose-100 text-rose-800' }
 };
 
