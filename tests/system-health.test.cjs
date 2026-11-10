@@ -53,3 +53,11 @@ test('summary is generated before build, git-ignored, and adds no API or migrati
   assert.match(read('.gitignore'), /src\/generated\//);
   assert.doesNotMatch(read('src/features/admin/SystemHealth.jsx'), /fetch\(|apiClient/);
 });
+
+test('dev-start.ps1 syncs dependencies and refreshes the summary before starting Vite', () => {
+  const ps = read('dev-start.ps1');
+  const install = ps.indexOf('npm install --no-audit --no-fund');
+  const health = ps.indexOf('npm run health:generate');
+  const vite = ps.indexOf('Start-Process powershell.exe');
+  assert.ok(install > 0 && health > install && vite > health);
+});
