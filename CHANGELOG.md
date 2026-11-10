@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.21.0] - 2026-11-10
+
+### Added
+
+- LINE order reminders (蔡老師 and other vendors) now have per-mode details: lead time of 10, 30 or 60 minutes, which Monday–Friday order days to remind, and an optional restriction to lunar 初一 / 十五. Defaults match the previous behavior (10 minutes, Monday–Friday, no restriction). Migration 0036; the reminder cron becomes `0,30,50 1,9 * * *` (still one trigger).
+
 ## [0.20.9] - 2026-11-10
 
 ### Changed

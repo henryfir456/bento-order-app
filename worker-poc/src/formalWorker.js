@@ -34,7 +34,10 @@ const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
 // 10:00 / 18:00 Taipei close notifications share one trigger, and so do the
 // 09:50 / 17:50 reminders, to stay within the five-cron-trigger plan limit.
 const CLOSE_CRON = '0 2,10 * * *';
-const REMINDER_CRON = '50 1,9 * * *';
+// Reminders fire 60 / 30 / 10 minutes before the 10:00 (01:xx UTC) and 18:00
+// (09:xx UTC) deadlines; each tick only serves users who picked that lead time.
+const REMINDER_CRON = '0,30,50 1,9 * * *';
+const REMINDER_LEAD_BY_MINUTE = { 0: 60, 30: 30, 50: 10 };
 const closeCronHour = (controller) => new Date(controller.scheduledTime).getUTCHours();
 
 export const handleScheduled = async (
@@ -83,7 +86,8 @@ export const handleScheduled = async (
 
   if (controller?.cron === REMINDER_CRON) {
     const mode = new Date(controller.scheduledTime).getUTCHours() === 1 ? 'A' : 'B';
-    const result = await sendOrderReminders(env.DB, env, controller.scheduledTime, mode, { fetchImpl });
+    const leadMinutes = REMINDER_LEAD_BY_MINUTE[new Date(controller.scheduledTime).getUTCMinutes()] ?? 10;
+    const result = await sendOrderReminders(env.DB, env, controller.scheduledTime, mode, { fetchImpl, leadMinutes });
     const logEntry = { event: 'order_reminder', source: 'order_reminder_cron', ...result };
     if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
     return result;

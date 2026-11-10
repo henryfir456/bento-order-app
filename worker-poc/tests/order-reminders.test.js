@@ -5,6 +5,7 @@ import { handleScheduled } from '../src/formalWorker.js';
 import { handleFormalRequest, profileFetch, request } from './helpers/formal-fixtures.js';
 import { callOrderRoute, ORDER_DATE, seedOrderDatabase, userProfile } from './helpers/order-fixtures.js';
 import { seedUser } from './helpers/formal-fixtures.js';
+import { lunarDayOf, scheduleAppliesTo } from '../src/domain/orderReminders.js';
 
 const putSettings = async (database, profile, body) => {
   const response = await handleFormalRequest(
@@ -57,7 +58,7 @@ test('09:50 mode A cron reminds only opted-in users without an order, once', asy
 
   const { pushes, fetchImpl } = pushRecorder();
   const env = { DB: database, LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: 'secret' };
-  const controller = { cron: '50 1,9 * * *', scheduledTime: Date.parse('2026-09-08T01:50:00.000Z') };
+  const controller = { cron: '0,30,50 1,9 * * *', scheduledTime: Date.parse('2026-09-08T01:50:00.000Z') };
   const lines = [];
   const first = await handleScheduled(controller, env, { logger: { log: (line) => lines.push(line) }, fetchImpl });
   assert.equal(first.status, 'REMINDED');
@@ -76,7 +77,7 @@ test('17:50 mode B cron looks at tomorrow and skips when no group of that mode e
   await putSettings(database, userProfile('user-2', 'token-user-2'), { B: true });
   const { pushes, fetchImpl } = pushRecorder();
   const env = { DB: database, LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: 'secret' };
-  const controller = { cron: '50 1,9 * * *', scheduledTime: Date.parse('2026-09-07T09:50:00.000Z') };
+  const controller = { cron: '0,30,50 1,9 * * *', scheduledTime: Date.parse('2026-09-07T09:50:00.000Z') };
   const skipped = await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
   assert.equal(skipped.status, 'SKIP_NO_GROUP');
   assert.equal(skipped.mode, 'B');
@@ -118,7 +119,7 @@ test('without a LINE token the reminder cron sends nothing and leaves no log row
   const database = seedOrderDatabase();
   await putSettings(database, userProfile('user-2', 'token-user-2'), { A: true });
   const { pushes, fetchImpl } = pushRecorder();
-  const controller = { cron: '50 1,9 * * *', scheduledTime: Date.parse('2026-09-08T01:50:00.000Z') };
+  const controller = { cron: '0,30,50 1,9 * * *', scheduledTime: Date.parse('2026-09-08T01:50:00.000Z') };
   const skipped = await handleScheduled(controller, { DB: database }, { logger: { log() {} }, fetchImpl });
   assert.equal(skipped.status, 'SKIP_NO_TOKEN');
   const sent = await handleScheduled(
@@ -195,4 +196,78 @@ test('Admin can opt in to the vendor 18:00 close notification; default off, non-
   const second = await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl: on.fetchImpl });
   assert.equal(second.notified, 2);
   assert.deepEqual(JSON.parse(on.pushes[0].init.body).to.sort(), ['admin-1', 'vendor-line']);
+});
+
+test('reminder schedule: validation, defaults and per-mode storage', async () => {
+  const database = seedOrderDatabase();
+  const profile = userProfile('user-1', 'token-user-1');
+  const initial = await handleFormalRequest(
+    request('/api/me/reminder-settings', { token: profile.token }),
+    { DB: database },
+    { fetchImpl: profileFetch(profile), now: new Date('2026-09-07T00:00:00.000Z') }
+  );
+  const defaults = (await initial.json()).schedule;
+  assert.deepEqual(defaults.A, { leadMinutes: 10, weekdays: [1, 2, 3, 4, 5], lunarDays: [] });
+  assert.deepEqual(defaults.B, defaults.A);
+
+  const bad = [
+    { A: { leadMinutes: 15, weekdays: [1], lunarDays: [] } },
+    { A: { leadMinutes: 30, weekdays: [], lunarDays: [] } },
+    { A: { leadMinutes: 30, weekdays: [6], lunarDays: [] } },
+    { A: { leadMinutes: 30, weekdays: [1], lunarDays: [2] } },
+    { C: { leadMinutes: 30, weekdays: [1], lunarDays: [] } }
+  ];
+  for (const schedule of bad) assert.equal((await putSettings(database, profile, { schedule })).status, 400);
+
+  const saved = await putSettings(database, profile, {
+    schedule: { B: { leadMinutes: 60, weekdays: [1, 3, 5], lunarDays: [1, 15] } }
+  });
+  assert.equal(saved.status, 200);
+  assert.deepEqual(saved.body.schedule.B, { leadMinutes: 60, weekdays: [1, 3, 5], lunarDays: [1, 15] });
+  assert.deepEqual(saved.body.schedule.A, defaults.A);
+  // Saving a schedule must not switch the reminder on.
+  assert.equal(saved.body.settings.B, false);
+  assert.equal((await putSettings(database, profile, { B: true })).body.schedule.B.leadMinutes, 60);
+});
+
+test('reminder cron serves only users whose lead time and weekday match', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  const tenMinutes = userProfile('user-2', 'token-user-2');
+  await putSettings(database, tenMinutes, { A: true });
+  const thirty = userProfile('user-1', 'token-user-1');
+  await putSettings(database, thirty, { A: true, schedule: { A: { leadMinutes: 30, weekdays: [1, 2, 3, 4, 5], lunarDays: [] } } });
+  const mondayOnly = userProfile('admin-1', 'admin-token');
+  await putSettings(database, mondayOnly, { A: true, schedule: { A: { leadMinutes: 10, weekdays: [1], lunarDays: [] } } });
+  database.run("UPDATE calendar_settings SET vendor = '蔡老師', mode = 'A' WHERE order_date = ?", ORDER_DATE);
+
+  const env = { DB: database, LINE_MESSAGING_CHANNEL_ACCESS_TOKEN: 'secret' };
+  const cron = '0,30,50 1,9 * * *';
+  const run = async (time) => {
+    const recorder = pushRecorder();
+    const result = await handleScheduled(
+      { cron, scheduledTime: Date.parse(time) },
+      env, { logger: { log() {} }, fetchImpl: recorder.fetchImpl }
+    );
+    const body = recorder.pushes.length ? JSON.parse(recorder.pushes[0].init.body) : null;
+    return { result, to: body ? body.to : [], text: body ? body.messages[0].text : '' };
+  };
+
+  // ORDER_DATE is a Tuesday: the Monday-only user is skipped at the 10-minute tick.
+  assert.deepEqual((await run('2026-09-08T01:50:00.000Z')).to, ['user-2']);
+  const half = await run('2026-09-08T01:30:00.000Z');
+  assert.deepEqual(half.to, ['user-1']);
+  assert.match(half.text, /剩 30 分鐘/);
+  assert.equal((await run('2026-09-08T01:00:00.000Z')).result.status, 'SKIP_NO_RECIPIENT');
+});
+
+test('lunar-day restriction matches 初一 and 十五 only', () => {
+  assert.equal(lunarDayOf('2026-09-25'), 15);
+  assert.equal(lunarDayOf('2026-10-10'), 1);
+  const lunar = { weekdaysMask: 31, lunarMask: 3 };
+  assert.equal(scheduleAppliesTo('2026-09-25', lunar), true);
+  assert.equal(scheduleAppliesTo('2026-09-08', lunar), false);
+  // A Mon-Fri filter still applies on top, and weekends are never filtered by it.
+  assert.equal(scheduleAppliesTo('2026-09-25', { weekdaysMask: 1, lunarMask: 3 }), false);
+  assert.equal(scheduleAppliesTo('2026-10-10', { weekdaysMask: 1, lunarMask: 0 }), true);
+  assert.equal(scheduleAppliesTo('2026-09-08', { weekdaysMask: 31, lunarMask: 0 }), true);
 });
