@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.20.8': [
+    { name: '修正', changes: [
+      '修正管理中心點「LINE 通知設定」沒有反應的問題。'
+    ] }
+  ],
   '0.20.7': [
     { name: '新增', changes: [
       '管理者可在 LINE 提醒設定勾選「廠商結單通知（如禾拾）」，接收廠商前一天 18:00 結單通知（鈴鐺與 LINE），預設關閉。'
