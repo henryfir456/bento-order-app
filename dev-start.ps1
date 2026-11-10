@@ -2,6 +2,7 @@
 
 # ============================================================================
 # Bento dev launcher v7
+# - Syncs dependencies (npm install) and refreshes the system-health summary
 # - Starts Vite
 # - Starts Pinggy
 # - Reads Pinggy public URL from the local Pinggy debugger
@@ -183,7 +184,7 @@ Write-Host ""
 # Preflight
 # ---------------------------------------------------------------------------
 
-Write-Host "[1/6] Checking LIFF configuration..."
+Write-Host "[1/7] Checking LIFF configuration..."
 
 $liffId = Get-LiffId
 
@@ -201,7 +202,7 @@ if (-not $liffCli) {
 
 Write-Host "      LIFF CLI: $liffCli" -ForegroundColor Green
 
-Write-Host "[2/6] Checking LINE channel access..."
+Write-Host "[2/7] Checking LINE channel access..."
 
 & $liffCli app list --channel-id $channelId
 $channelCheckExit = $LASTEXITCODE
@@ -213,10 +214,34 @@ if ($channelCheckExit -ne 0) {
 Write-Host "      Channel access: PASS" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
+# Sync dependencies and refresh the Admin system-health summary
+# ---------------------------------------------------------------------------
+
+Write-Host "[3/7] Syncing dependencies and package health..."
+
+Push-Location $repoRoot
+try {
+    # Brings node_modules up to package-lock.json so the 系統健康 page shows the versions actually used.
+    npm install --no-audit --no-fund
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "      [WARN] npm install failed (exit $LASTEXITCODE); continuing with the existing node_modules." -ForegroundColor Yellow
+    }
+
+    # Always refresh here (the Vite plugin alone only refreshes a missing, failed or day-old file).
+    npm run health:generate
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "      [WARN] Package health summary could not be generated; the 系統健康 page will show the reason." -ForegroundColor Yellow
+    }
+}
+finally {
+    Pop-Location
+}
+
+# ---------------------------------------------------------------------------
 # Start Vite
 # ---------------------------------------------------------------------------
 
-Write-Host "[3/6] Starting Vite..."
+Write-Host "[4/7] Starting Vite..."
 
 $vitePort = $null
 foreach ($candidatePort in 5173..5199) {
@@ -251,7 +276,7 @@ Start-Sleep -Seconds 2
 # Start Pinggy
 # ---------------------------------------------------------------------------
 
-Write-Host "[4/6] Starting Pinggy..."
+Write-Host "[5/7] Starting Pinggy..."
 Write-Host "      When Pinggy asks for a password, press Enter." -ForegroundColor Yellow
 
 $pinggyCmd = "ssh -p 443 -R0:127.0.0.1:$vitePort -L${pinggyDebugPort}:127.0.0.1:4300 free.pinggy.io"
@@ -268,7 +293,7 @@ Start-Process cmd.exe `
 # Get Pinggy URL
 # ---------------------------------------------------------------------------
 
-Write-Host "[5/6] Waiting for Pinggy public URL..."
+Write-Host "[6/7] Waiting for Pinggy public URL..."
 
 $pinggyUrl = Get-PinggyUrl -DebugPort $pinggyDebugPort
 
@@ -282,7 +307,7 @@ Write-Host "      Pinggy URL: $pinggyUrl" -ForegroundColor Green
 # Update LIFF
 # ---------------------------------------------------------------------------
 
-Write-Host "[6/6] Updating LIFF Endpoint URL..."
+Write-Host "[7/7] Updating LIFF Endpoint URL..."
 
 Write-Host "      Channel:  $channelId"
 Write-Host "      LIFF ID:  $liffId"
