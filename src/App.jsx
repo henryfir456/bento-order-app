@@ -2999,6 +2999,13 @@ export default function App() {
       return;
     }
 
+    if (section === 'lineNotify') {
+      if (apiClient.transport !== 'worker' && !authClient.isMock) return;
+      setAdminSection('lineNotify');
+      setViewMode('admin');
+      return;
+    }
+
     if (section === 'reimbursements') {
       if (apiClient.transport !== 'worker' || isViewAsMode) return;
       if (!canAuth('requestReimbursement') && !canAuth('manageReimbursements')) return;
