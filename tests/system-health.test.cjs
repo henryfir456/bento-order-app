@@ -40,7 +40,8 @@ test('system health is Admin-only, outside View As, with a dot only for yellow o
 });
 
 test('summary is generated before build, git-ignored, and adds no API or migration', () => {
-  assert.equal(JSON.parse(read('package.json')).scripts.prebuild, 'node scripts/generate-dependency-health.mjs');
+  assert.match(read('vite.config.js'), /generate\(root\)/);
+  assert.equal(JSON.parse(read('package.json')).scripts['health:generate'], 'node scripts/generate-dependency-health.mjs');
   assert.match(read('.gitignore'), /src\/generated\//);
   assert.doesNotMatch(read('src/features/admin/SystemHealth.jsx'), /fetch\(|apiClient/);
 });

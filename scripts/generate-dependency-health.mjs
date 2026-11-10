@@ -38,28 +38,34 @@ export function buildHealth({ audit, outdated, installed, now = new Date(), keyP
   return { status: 'ready', generatedAt: now.toISOString(), overall, packages, otherVulnerable };
 }
 
-function runNpmJson(args) {
-  const r = spawnSync('npm', args, { encoding: 'utf8', timeout: 60000, shell: process.platform === 'win32' });
+function runNpmJson(args, cwd) {
+  const r = spawnSync('npm', args, { cwd, encoding: 'utf8', timeout: 90000, shell: process.platform === 'win32' });
   // npm audit/outdated exit non-zero when they find something; JSON is still on stdout.
-  try { return JSON.parse(r.stdout); } catch { return null; }
+  try { return { data: JSON.parse(r.stdout) }; } catch {
+    return { error: `npm ${args[0]} failed (${r.error?.code ?? r.status ?? 'no output'}): ${String(r.stderr || '').trim().split('\n')[0].slice(0, 160)}` };
+  }
 }
 
-function main() {
-  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Never throws: any problem yields status "unavailable" with a short reason shown on the page.
+export function generate(root) {
   const out = path.join(root, 'src', 'generated', 'dependency-health.json');
-  let result = { status: 'unavailable', generatedAt: new Date().toISOString() };
+  let result = { status: 'unavailable', generatedAt: new Date().toISOString(), reason: 'unknown' };
   try {
     const installed = {};
     for (const name of KEY_PACKAGES) {
       try { installed[name] = JSON.parse(readFileSync(path.join(root, 'node_modules', name, 'package.json'), 'utf8')).version; } catch { /* missing */ }
     }
-    const audit = runNpmJson(['audit', '--json']);
-    const outdated = runNpmJson(['outdated', '--json']);
-    if (audit && audit.vulnerabilities && outdated) result = buildHealth({ audit, outdated, installed });
-  } catch { /* keep unavailable */ }
+    const audit = runNpmJson(['audit', '--json'], root);
+    const outdated = runNpmJson(['outdated', '--json'], root);
+    if (audit.data?.vulnerabilities && outdated.data) result = buildHealth({ audit: audit.data, outdated: outdated.data, installed });
+    else result.reason = [audit.data?.vulnerabilities ? '' : (audit.error || `npm audit returned no vulnerabilities field${audit.data?.error ? `: ${audit.data.error.code}` : ''}`), outdated.error || ''].filter(Boolean).join('; ');
+  } catch (e) { result.reason = String(e?.message || e).slice(0, 160); }
   mkdirSync(path.dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`);
-  console.log(`dependency-health: ${result.status}${result.overall ? ` (${result.overall})` : ''}`);
+  return result;
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const result = generate(path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
+  console.log(`dependency-health: ${result.status}${result.overall ? ` (${result.overall})` : ''}${result.reason ? ` - ${result.reason}` : ''}`);
+}
