@@ -1,7 +1,7 @@
 {
   "name": "bento-order-app",
   "private": true,
-  "version": "0.21.0",
+  "version": "0.21.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,7 +12,9 @@
     "test:ci": "node scripts/run-ci-tests.mjs",
     "test:auth-recovery": "node --test tests/auth-startup-recovery.test.cjs",
     "test:line-binding": "node --test tests/line-binding-state.test.cjs",
-    "test:local-uat": "node --test tests/local-uat-auth-mode.test.cjs"
+    "test:local-uat": "node --test tests/local-uat-auth-mode.test.cjs",
+    "prebuild": "node scripts/generate-dependency-health.mjs",
+    "health:generate": "node scripts/generate-dependency-health.mjs"
   },
   "dependencies": {
     "@line/liff": "^2.31.2",
