@@ -26,7 +26,7 @@ import { bearerToken } from './auth/identity.js';
 import { isGuestToken } from './auth/guestSession.js';
 import { PROFILE_URL as LINE_PROFILE_URL } from './auth/lineProfile.js';
 import { VERIFY_URL as LINE_VERIFY_URL } from './auth/lineChannel.js';
-import { purgeOldAuthErrors, recordAuthError } from './auth/authErrorLog.js';
+import { purgeOldAuthErrors, recordAuthError, scrubDetail } from './auth/authErrorLog.js';
 
 const AUTOMATIC_OPENING_LOG_EVENT = 'automatic_daily_group_opening';
 const AUTOMATIC_OPENING_LOG_SOURCE = 'automatic_daily_cron';
@@ -144,7 +144,7 @@ const createServerTiming = (fetchImpl = (...args) => globalThis.fetch(...args)) 
   const startedAt = performance.now();
   const totals = {
     probe: null, line: 0, lineCount: 0,
-    profileStatus: null, verifyStatus: null, profileMs: null
+    profileStatus: null, verifyStatus: null, profileMs: null, profileDetail: null
   };
   let prefetchedProfile = null;
   const timedLineFetch = async (input, init) => {
@@ -155,6 +155,17 @@ const createServerTiming = (fetchImpl = (...args) => globalThis.fetch(...args)) 
     try {
       const response = await fetchImpl(input, init);
       if (kind) totals[kind] = Number(response?.status) || 0;
+      if (kind === 'profileStatus' && response && !response.ok && typeof response.clone === 'function') {
+        // Keep LINE's own rejection reason (error / error_description, never the token).
+        totals.profileDetail = await Promise.race([
+          response.clone().json()
+            .then((body) => [body?.error, body?.error_description, body?.message]
+              .filter((part) => typeof part === 'string').join(' ')
+              .split(authorizationOf(init).replace(/^Bearer\s+/i, '') || '\u0000').join('[REDACTED]')
+              .slice(0, 160) || null),
+          new Promise((resolve) => setTimeout(() => resolve(null), 500))
+        ]).catch(() => null);
+      }
       return response;
     } catch (error) {
       // Status 0 marks a network failure or timeout before any HTTP answer.
@@ -236,6 +247,7 @@ const authFailureEntry = (request, error, timing, startedAt, requestId) => {
     errorClass: lineErrorClass(error.code, totals),
     lineProfileStatus: totals.profileStatus,
     lineVerifyStatus: totals.verifyStatus,
+    detail: scrubDetail(totals.profileDetail),
     durationMs: Math.round(performance.now() - startedAt),
     requestId
   };

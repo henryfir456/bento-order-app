@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.20.9': [
+    { name: '調整', changes: [
+      '登入錯誤紀錄新增 LINE 回報的拒絕原因（已遮蔽憑證），方便診斷反覆被登出的問題。'
+    ] }
+  ],
   '0.20.8': [
     { name: '修正', changes: [
       '修正管理中心點「LINE 通知設定」沒有反應的問題。'

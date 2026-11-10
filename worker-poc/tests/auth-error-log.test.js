@@ -88,6 +88,20 @@ test('a rejected LINE token is logged by the backend with LINE status and class'
   assert.equal(JSON.stringify(row).includes('secret-token'), false);
 });
 
+test('a LINE profile 403 stores LINE\'s own error reason as detail', async () => {
+  const database = new SqliteD1();
+  const fetchImpl = async () => new Response(
+    JSON.stringify({ error: 'insufficient_scope', error_description: 'token secret-token lacks profile' }),
+    { status: 403 }
+  );
+  const response = await send(database, request('/api/me/bootstrap', { token: 'secret-token' }), fetchImpl);
+  assert.equal(response.status, 401);
+  const [row] = rows(database);
+  assert.equal(row.line_profile_status, 403);
+  assert.match(row.detail, /insufficient_scope/);
+  assert.equal(JSON.stringify(row).includes('secret-token'), false);
+});
+
 test('a LINE network failure is logged as LINE_NETWORK', async () => {
   const database = new SqliteD1();
   const fetchImpl = async () => { throw new Error('boom'); };
