@@ -166,7 +166,19 @@ export const notifyVendorsOrderClosed = async (database, env, scheduledTime, {
   `).bind(orderDate).first();
   if (!setting) return { status: 'SKIP_NO_GROUP', orderDate, notified: 0 };
 
-  const principals = await vendorPrincipalsForName(database, setting.vendor);
+  const vendorPrincipals = await vendorPrincipalsForName(database, setting.vendor);
+  // Admin/ProxyAdmin who ticked the opt-in get the same message (bell + LINE).
+  const vendorUserIds = new Set(vendorPrincipals.map((principal) => principal.userId));
+  const adminSubscribers = rowsFrom(await database.prepare(`
+    SELECT u.user_id, u.line_user_id
+    FROM user_reminder_prefs p
+    JOIN users u ON u.user_id = p.user_id
+    WHERE p.mode = 'ADMIN_VENDOR_CLOSE' AND p.enabled = 1
+      AND u.active = 1 AND u.role IN ('Admin', 'ProxyAdmin')
+  `).all())
+    .filter((row) => !vendorUserIds.has(row.user_id))
+    .map((row) => ({ userId: row.user_id, lineUserId: row.line_user_id || null, lineEnabled: true }));
+  const principals = [...vendorPrincipals, ...adminSubscribers];
   if (!principals.length) return { status: 'SKIP_NO_VENDOR_PRINCIPAL', orderDate, notified: 0 };
 
   const totals = await database.prepare(`
