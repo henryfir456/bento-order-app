@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.21.2': [
+    { name: '修正', changes: [
+      '修正「系統健康」頁在本機開發時顯示「尚無套件檢查資料」的問題：現在 dev 啟動與建置時都會自動產生資料，無資料時也會顯示原因。'
+    ] }
+  ],
   '0.21.1': [
     { name: '新增', changes: [
       '管理中心新增「系統健康」頁（僅管理者可見）：列出 LIFF、vite、React 等重要套件的目前版本、最新版本與已知漏洞，綠勾＝安全且最新、黃色＝有新版可更新、紅色＝有已知漏洞；入口只在黃或紅時顯示小圓點。'

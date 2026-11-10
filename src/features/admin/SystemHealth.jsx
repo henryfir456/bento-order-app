@@ -37,7 +37,8 @@ export default function SystemHealth() {
       {!health && <p className="text-sm text-slate-500">載入中…</p>}
       {health && health.status !== 'ready' && (
         <p className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
-          尚無套件檢查資料。正式建置時會自動產生；本機可執行 npm run health:generate。
+          尚無套件檢查資料。建置或啟動 dev 時會自動產生；也可執行 npm run health:generate。
+          {health.reason && <span className="mt-1 block text-xs text-slate-500 break-all">原因：{health.reason}</span>}
         </p>
       )}
       {health?.status === 'ready' && (
