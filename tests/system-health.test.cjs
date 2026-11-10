@@ -48,6 +48,7 @@ test('a failed latest-version lookup is unknown, never green', async () => {
 
 test('summary is generated before build, git-ignored, and adds no API or migration', () => {
   assert.match(read('vite.config.js'), /generate\(root\)/);
+  assert.match(read('vite.config.js'), /data\.status !== 'ready'/);
   assert.equal(JSON.parse(read('package.json')).scripts['health:generate'], 'node scripts/generate-dependency-health.mjs');
   assert.match(read('.gitignore'), /src\/generated\//);
   assert.doesNotMatch(read('src/features/admin/SystemHealth.jsx'), /fetch\(|apiClient/);
