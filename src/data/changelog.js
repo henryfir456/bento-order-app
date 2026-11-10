@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.21.3': [
+    { name: '修正', changes: [
+      '修正「系統健康」在部分 Windows 環境因 npm outdated 被中斷而無資料：改為直接查詢 npm registry 取得最新版；無法確認最新版的套件會標示為「無法確認」，不會誤顯示綠勾。'
+    ] }
+  ],
   '0.21.2': [
     { name: '修正', changes: [
       '修正「系統健康」頁在本機開發時顯示「尚無套件檢查資料」的問題：現在 dev 啟動與建置時都會自動產生資料，無資料時也會顯示原因。'

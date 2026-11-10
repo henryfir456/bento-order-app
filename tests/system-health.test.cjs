@@ -12,7 +12,7 @@ test('buildHealth marks vulnerable, outdated and ok packages', async () => {
   const h = buildHealth({
     keyPackages: ['a', 'b', 'c'],
     installed: { a: '1.0.0', b: '2.0.0', c: '3.0.0' },
-    outdated: { b: { latest: '2.1.0' } },
+    latestMap: { a: '1.0.0', b: '2.1.0', c: '3.0.0' },
     audit: { vulnerabilities: {
       a: { severity: 'high', via: [{ title: 'Bad', url: 'https://x', severity: 'high' }, 'dep'] },
       z: { severity: 'low', via: [] }
@@ -26,7 +26,7 @@ test('buildHealth marks vulnerable, outdated and ok packages', async () => {
 
 test('buildHealth is ok only when nothing is vulnerable or outdated', async () => {
   const { buildHealth } = await load();
-  const h = buildHealth({ keyPackages: ['a'], installed: { a: '1.0.0' }, outdated: {}, audit: { vulnerabilities: {} } });
+  const h = buildHealth({ keyPackages: ['a'], installed: { a: '1.0.0' }, latestMap: { a: '1.0.0' }, audit: { vulnerabilities: {} } });
   assert.equal(h.overall, 'ok');
 });
 
@@ -37,6 +37,13 @@ test('system health is Admin-only, outside View As, with a dot only for yellow o
   const sh = read('src/features/admin/SystemHealth.jsx');
   assert.match(sh, /health\.overall !== 'ok'/);
   assert.match(read('src/features/admin/AdminHub.jsx'), /系統健康 ›/);
+});
+
+test('a failed latest-version lookup is unknown, never green', async () => {
+  const { buildHealth } = await load();
+  const h = buildHealth({ keyPackages: ['a'], installed: { a: '1.0.0' }, latestMap: {}, audit: { vulnerabilities: {} } });
+  assert.equal(h.packages[0].status, 'unknown');
+  assert.equal(h.overall, 'outdated');
 });
 
 test('summary is generated before build, git-ignored, and adds no API or migration', () => {
