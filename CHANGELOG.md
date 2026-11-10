@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.20.10] - 2026-11-10
+
+### Added
+
+- Admin-only 「系統健康」 page in the management hub lists key packages (@line/liff, vite, React, etc.) with installed version, latest version and known advisories (green = safe and current, yellow = update available, red = known vulnerability). The data is a build-time `npm audit` / `npm outdated` summary loaded lazily; no API call, D1 read or migration. The hub entry shows a small dot only for yellow or red.
+
 ## [0.20.9] - 2026-11-10
 
 ### Changed

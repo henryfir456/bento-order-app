@@ -1,4 +1,5 @@
 import React from 'react';
+import { useDependencyHealth, needsAttention } from './SystemHealth';
 
 // Admin landing page: grouped entry points to every management screen.
 // `canAuth` checks the signed-in role, not a View-As target, so the menu never changes while previewing.
@@ -12,8 +13,11 @@ export default function AdminHub({
   openAdminCalendar,
   openVendorHub,
   handleOpenViewAs,
-  selectCalendarUi
+  selectCalendarUi,
+  showSystemHealth
 }) {
+  const health = useDependencyHealth(Boolean(showSystemHealth));
+  const systemHealthAlert = needsAttention(health) ? health.overall : null;
   return (
       <section aria-label="管理中心" className="space-y-3">
         <h2 className="text-xl font-bold text-[#2C4A3E]">管理中心</h2>
@@ -41,6 +45,12 @@ export default function AdminHub({
         )}
         <div className="space-y-2" role="group" aria-label="系統設定">
           <h3 className="text-sm font-bold text-[#2C4A3E]">系統設定</h3>
+        {showSystemHealth && (
+          <button type="button" onClick={() => handleAdminSectionChange('systemHealth')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">
+            系統健康 ›
+            {systemHealthAlert && <span role="img" aria-label={systemHealthAlert === 'vulnerable' ? '有套件存在已知漏洞' : '有套件可更新'} className={`ml-2 inline-block h-2.5 w-2.5 rounded-full align-middle ${systemHealthAlert === 'vulnerable' ? 'bg-rose-500' : 'bg-amber-400'}`} />}
+          </button>
+        )}
         <div className="rounded-xl border border-slate-200 bg-white p-4" aria-label="月曆樣式">
           <h3 className="font-semibold text-[#2C4A3E]">月曆樣式</h3>
           <div className="flex gap-2">

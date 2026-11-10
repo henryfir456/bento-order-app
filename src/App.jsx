@@ -45,6 +45,7 @@ import ModernCalendar from './features/calendar/ModernCalendar';
 import RollingCalendar from './features/calendar/RollingCalendar';
 import { renderCalendarDays as renderCalendarDaysFor, renderWeekendEvents } from './features/calendar/calendarDays';
 import AdminHub from './features/admin/AdminHub';
+import SystemHealth from './features/admin/SystemHealth';
 import OrderReminderSettings from './features/orders/OrderReminderSettings';
 import {
   CANONICAL_VENDOR_FALLBACKS,
@@ -2999,6 +3000,13 @@ export default function App() {
       return;
     }
 
+    if (section === 'systemHealth') {
+      if (authRole !== 'Admin' || isViewAsMode) return;
+      setAdminSection('systemHealth');
+      setViewMode('admin');
+      return;
+    }
+
     if (section === 'lineNotify') {
       if (apiClient.transport !== 'worker' && !authClient.isMock) return;
       setAdminSection('lineNotify');
@@ -3949,7 +3957,11 @@ export default function App() {
                 openVendorHub={openVendorHub}
                 handleOpenViewAs={handleOpenViewAs}
                 selectCalendarUi={selectCalendarUi}
+                showSystemHealth={authRole === 'Admin' && !isViewAsMode}
               />
+            )}
+            {adminSection === 'systemHealth' && authRole === 'Admin' && !isViewAsMode && (
+              <SystemHealth />
             )}
             {adminSection === 'lineNotify' && (
               <section aria-label="LINE 通知設定" className="space-y-3">
