@@ -229,8 +229,11 @@ export const createMockGasApi = ({ mockUser, storage } = {}) => {
     }
 
     if (action === 'getReminderSettings' || action === 'updateReminderSettings') {
-      state.reminderSettings = { A: false, B: false, adminClose: true, vendorClose: true, adminVendorClose: false, ...state.reminderSettings, ...(action === 'updateReminderSettings' ? payload.settings : {}) };
-      return jsonResponse({ success: true, settings: state.reminderSettings, hasLineBinding: true });
+      const { schedule: schedulePatch, ...settingsPatch } = action === 'updateReminderSettings' ? (payload.settings || {}) : {};
+      state.reminderSettings = { A: false, B: false, adminClose: true, vendorClose: true, adminVendorClose: false, ...state.reminderSettings, ...settingsPatch };
+      const defaultSchedule = { leadMinutes: 10, weekdays: [1, 2, 3, 4, 5], lunarDays: [] };
+      state.reminderSchedule = { A: defaultSchedule, B: defaultSchedule, ...state.reminderSchedule, ...schedulePatch };
+      return jsonResponse({ success: true, settings: state.reminderSettings, schedule: state.reminderSchedule, hasLineBinding: true });
     }
 
     if (action === 'markNotificationRead') return errorResponse('NOTIFICATION_NOT_FOUND', 404);

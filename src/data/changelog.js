@@ -11,9 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
-  '0.20.10': [
+  '0.21.1': [
     { name: '新增', changes: [
       '管理中心新增「系統健康」頁（僅管理者可見）：列出 LIFF、vite、React 等重要套件的目前版本、最新版本與已知漏洞，綠勾＝安全且最新、黃色＝有新版可更新、紅色＝有已知漏洞；入口只在黃或紅時顯示小圓點。'
+    ] }
+  ],
+  '0.21.0': [
+    { name: '新增', changes: [
+      'LINE 訂餐提醒（蔡老師、其他廠商）可設定提前 10／30／60 分鐘、週一到週五哪幾天提醒，以及只在農曆初一、十五提醒；預設維持原本行為。'
     ] }
   ],
   '0.20.9': [

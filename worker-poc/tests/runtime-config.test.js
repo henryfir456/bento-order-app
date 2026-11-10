@@ -34,7 +34,7 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
     '0 16 * * *',
     '0 8 * * *',
     '0 2,10 * * *',
-    '50 1,9 * * *',
+    '0,30,50 1,9 * * *',
     '30 0 15 6-12 *'
   ]);
   assert.match(packageConfig.scripts['db:info'], /\bbento-formal\b/);
@@ -81,7 +81,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0032_reimbursement_requests.sql',
       '0033_withdrawal_ledger_type.sql',
       '0034_reimbursement_one_per_date.sql',
-      '0035_admin_vendor_close_pref.sql'
+      '0035_admin_vendor_close_pref.sql',
+      '0036_reminder_schedule.sql'
     ]
   );
 });
