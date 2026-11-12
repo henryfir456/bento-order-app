@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@line/liff": "^2.31.2",
-    "@tailwindcss/vite": "^4.3.4",
+    "@tailwindcss/vite": "^4.3.5",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "sweetalert2": "^11.26.25"
@@ -28,7 +28,7 @@
     "@vitejs/plugin-react": "^6.2.1",
     "autoprefixer": "^10.6.2",
     "esbuild": "0.28.2",
-    "oxlint": "^1.91.0",
+    "oxlint": "^1.92.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.2"
