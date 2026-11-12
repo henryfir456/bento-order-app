@@ -60,6 +60,31 @@ export default function FeedbackManagement({ api }) {
     }
   };
 
+  const remove = async (item) => {
+    const { isConfirmed } = await Swal.fire({
+      icon: 'warning',
+      title: '刪除這則意見？',
+      text: '刪除後無法復原，提交者也會看不到這則意見。',
+      showCancelButton: true,
+      focusCancel: true,
+      confirmButtonText: '刪除',
+      cancelButtonText: '取消',
+      confirmButtonColor: '#be123c'
+    });
+    if (!isConfirmed) return;
+    setBusy(true);
+    setError('');
+    try {
+      await parsedResult(api.deleteFeedback({ feedbackId: item.feedbackId }));
+      await reload();
+    } catch (err) {
+      setError(feedbackErrorMessage(err));
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section aria-label="意見反饋管理" className="space-y-3">
       <h2 className="text-xl font-bold text-[#2C4A3E]">意見反饋</h2>
@@ -114,6 +139,8 @@ export default function FeedbackManagement({ api }) {
                   className="min-h-11 flex-1 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 disabled:opacity-40">改回未處理</button>
               )}
             </div>
+            <button type="button" disabled={busy} onClick={() => remove(item)}
+              className="min-h-11 w-full rounded-lg bg-rose-700 font-bold text-white disabled:opacity-40">刪除</button>
           </li>
         ))}
       </ul>

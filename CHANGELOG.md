@@ -27,6 +27,13 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.22.1] - 2026-11-12
+
+### Added
+
+- Megaphone icon on the 意見反饋 entries (page footer and 管理中心); the Admin hub entry shows a red badge with the number of unhandled (NEW) feedback entries.
+- Admins can delete a feedback entry from 管理中心 > 意見反饋 (confirmation required). Hard delete: the row is removed; the audit log records only the id, category and status, never the message text.
+
 ## [0.22.0] - 2026-11-12
 
 ### Added

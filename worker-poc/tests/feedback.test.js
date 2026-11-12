@@ -95,3 +95,22 @@ test('Admin marks feedback handled; non-admin cannot', async () => {
   });
   assert.equal(missing.response.status, 404);
 });
+
+test('Admin can delete feedback; others cannot; audit keeps no message text', async () => {
+  const database = seed();
+  const created = await submit(database, 'user-1', { category: 'OTHER', message: '秘密內容' });
+  const id = created.body.feedback.feedbackId;
+  const denied = await call(database, `/api/admin/feedback/${id}`, 'user-1', { method: 'DELETE' });
+  assert.equal(denied.response.status, 403);
+  assert.equal(database.get('SELECT COUNT(*) AS c FROM feedback_entries').c, 1);
+  const removed = await call(database, `/api/admin/feedback/${id}`, 'admin-1', { method: 'DELETE' });
+  assert.equal(removed.response.status, 200);
+  assert.equal(database.get('SELECT COUNT(*) AS c FROM feedback_entries').c, 0);
+  const mine = await call(database, '/api/me/feedback', 'user-1');
+  assert.equal(mine.body.feedback.length, 0);
+  const audit = database.get("SELECT metadata_json AS m FROM admin_audit_log WHERE action = 'FEEDBACK_DELETED'");
+  assert.ok(audit);
+  assert.doesNotMatch(audit.m, /秘密內容/);
+  const again = await call(database, `/api/admin/feedback/${id}`, 'admin-1', { method: 'DELETE' });
+  assert.equal(again.response.status, 404);
+});

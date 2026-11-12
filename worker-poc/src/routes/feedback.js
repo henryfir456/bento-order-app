@@ -3,6 +3,7 @@ import { badRequest } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import {
   createFeedback,
+  deleteFeedback,
   listAdminFeedback,
   listMyFeedback,
   updateFeedbackStatus
@@ -30,7 +31,8 @@ export const handleFeedbackRoute = async (request, env, {
   const statusMatch = method === 'POST'
     ? pathname.match(/^\/api\/admin\/feedback\/([^/]+)\/status$/)
     : null;
-  if (!isMine && !isAdminList && !statusMatch) return null;
+  const deleteMatch = method === 'DELETE' ? pathname.match(/^\/api\/admin\/feedback\/([^/]+)$/) : null;
+  if (!isMine && !isAdminList && !statusMatch && !deleteMatch) return null;
 
   // Feedback is never written on behalf of someone else, so View-As is off.
   const identity = await requireIdentity(request, env, { fetchImpl, allowViewAs: false, now });
@@ -42,8 +44,10 @@ export const handleFeedbackRoute = async (request, env, {
       category: url.searchParams.get('category')
     }));
   }
+  const idMatch = statusMatch || deleteMatch;
   let feedbackId;
-  try { feedbackId = decodeURIComponent(statusMatch[1]).trim(); } catch { throw badRequest('FEEDBACK_ID_INVALID'); }
+  try { feedbackId = decodeURIComponent(idMatch[1]).trim(); } catch { throw badRequest('FEEDBACK_ID_INVALID'); }
   if (!feedbackId) throw badRequest('FEEDBACK_ID_INVALID');
+  if (deleteMatch) return jsonResponse(await deleteFeedback(env.DB, identity, feedbackId, now));
   return jsonResponse(await updateFeedbackStatus(env.DB, identity, feedbackId, await readBody(request), now));
 };
