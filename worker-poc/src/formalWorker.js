@@ -61,10 +61,9 @@ export const handleScheduled = async (
       if (typeof logger?.log === 'function') logger.log(JSON.stringify({ event: 'auth_error_purge_failed' }));
     }
     try {
-      const purged = await purgeOldNotifications(env.DB, controller?.scheduledTime === undefined
+      await purgeOldNotifications(env.DB, controller?.scheduledTime === undefined
         ? new Date()
         : new Date(controller.scheduledTime));
-      if (typeof logger?.log === 'function') logger.log(JSON.stringify({ event: 'notification_purge', purged }));
     } catch (error) {
       if (typeof logger?.log === 'function') logger.log(JSON.stringify({ event: 'notification_purge_failed' }));
     }
