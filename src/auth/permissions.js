@@ -50,6 +50,7 @@ export const ROLE_PERMISSIONS = Object.freeze({
     viewAsUser: true,
     delegateOrder: true,
     manageReimbursements: true,
+    manageFeedback: true,
     manageAnnouncements: true
   })
 });

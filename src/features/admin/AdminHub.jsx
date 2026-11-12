@@ -33,6 +33,7 @@ export default function AdminHub({
         {canAuth('manageMenu') && <button type="button" onClick={() => handleAdminSectionChange('menuChanges')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">菜單品項維護 ›</button>}
         {canAuth('requestReimbursement') && <button type="button" onClick={() => handleAdminSectionChange('reimbursements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">請款 ›</button>}
         {canAuth('manageReimbursements') && <button type="button" onClick={() => handleAdminSectionChange('reimbursements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">請款審核 ›</button>}
+        {canAuth('manageFeedback') && <button type="button" onClick={() => handleAdminSectionChange('feedback')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">意見反饋 ›</button>}
         <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
         </div>
         {(canAuth('viewMemberBalances') || (authRole !== 'Admin' && (canAuth('viewAsUser') || canAuth('delegateOrder')))) && (

@@ -27,6 +27,12 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.22.0] - 2026-11-12
+
+### Added
+
+- Feedback area (「意見反饋」): any signed-in employee, ProxyAdmin, Admin or Vendor can submit feedback with a category (system, menu, vendor, other), an optional 1-5 star rating and an optional anonymous flag; limit 5 per 24 hours. Feedback is visible only to its submitter and Admins (never to other employees or vendors); anonymous entries hide the name from Admin screens. Admins review it under 管理中心 > 意見反饋, mark it 未處理/處理中/已處理 and leave a reply the submitter can see. New table `feedback_entries` (migration 0037).
+
 ## [0.21.4] - 2026-11-10
 
 ### Fixed
