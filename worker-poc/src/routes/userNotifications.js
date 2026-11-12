@@ -26,7 +26,7 @@ export const handleUserNotificationRoute = async (request, env, {
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw badRequest('INVALID_JSON');
     return jsonResponse(await updateReminderSettings(env.DB, identity, body, now));
   }
-  if (isList) return jsonResponse(await getUserNotifications(env.DB, identity));
+  if (isList) return jsonResponse(await getUserNotifications(env.DB, identity, now));
   let id;
   try { id = decodeURIComponent(readMatch[1]).trim(); } catch { throw badRequest('NOTIFICATION_ID_INVALID'); }
   if (!id) throw badRequest('NOTIFICATION_ID_INVALID');

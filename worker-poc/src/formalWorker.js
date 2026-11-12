@@ -3,7 +3,7 @@ import { handleAuthRoute } from './routes/auth.js';
 import { handleClientErrorRoute } from './routes/clientErrors.js';
 import { handleMeRoute } from './routes/me.js';
 import { handleAnnouncementInboxRoute } from './routes/announcementInbox.js';
-import { notifyAdminsLateGroupClosed, notifyVendorsOrderClosed } from './domain/userNotifications.js';
+import { notifyAdminsLateGroupClosed, notifyVendorsOrderClosed, purgeOldNotifications } from './domain/userNotifications.js';
 import { sendOrderReminders } from './domain/orderReminders.js';
 import { handleUserNotificationRoute } from './routes/userNotifications.js';
 import { handleOrderRoute } from './routes/orders.js';
@@ -59,6 +59,14 @@ export const handleScheduled = async (
         : new Date(controller.scheduledTime));
     } catch (error) {
       if (typeof logger?.log === 'function') logger.log(JSON.stringify({ event: 'auth_error_purge_failed' }));
+    }
+    try {
+      const purged = await purgeOldNotifications(env.DB, controller?.scheduledTime === undefined
+        ? new Date()
+        : new Date(controller.scheduledTime));
+      if (typeof logger?.log === 'function') logger.log(JSON.stringify({ event: 'notification_purge', purged }));
+    } catch (error) {
+      if (typeof logger?.log === 'function') logger.log(JSON.stringify({ event: 'notification_purge_failed' }));
     }
     const logEntry = {
       event: 'cai_teacher_daily_flavor_sync',
