@@ -164,3 +164,28 @@ export const updateFeedbackStatus = async (database, identity, feedbackId, input
     .bind(feedbackId).first();
   return { success: true, message: 'FEEDBACK_STATUS_UPDATED', feedback: adminView(row) };
 };
+
+// Hard delete (Admin only). The row is removed for good; the audit log keeps
+// only who deleted what (id, category, status) and never the message text.
+export const deleteFeedback = async (database, identity, feedbackId, now = new Date()) => {
+  assertCan(identity, ACTIONS.ADMIN_FEEDBACK);
+  const actor = identity.actor;
+  const existing = await database.prepare('SELECT * FROM feedback_entries WHERE feedback_id = ?')
+    .bind(feedbackId).first();
+  if (!existing) throw notFound('FEEDBACK_NOT_FOUND');
+  const occurredAt = resolveClock(now).toISOString();
+  await runMutationBatch(database, [
+    prepareStatement(database, 'DELETE FROM feedback_entries WHERE feedback_id = ?', [feedbackId]),
+    auditStatement(database, {
+      actorUserId: actor.userId,
+      actorAuthMode: actor.authMode,
+      actorEmployeeIdSnapshot: actor.employeeId,
+      actorLineUserIdSnapshot: actor.lineUserId,
+      action: 'FEEDBACK_DELETED',
+      metadata: { feedbackId, category: existing.category, status: existing.status },
+      occurredAt,
+      onlyIfPriorMutation: true
+    })
+  ]);
+  return { success: true, message: 'FEEDBACK_DELETED', feedbackId };
+};

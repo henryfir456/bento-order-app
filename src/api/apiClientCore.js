@@ -218,6 +218,7 @@ const createGasOperations = ({ gasApi, authClient }) => ({
   listMyFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'listMyFeedback', 'Feedback is available through the formal Worker API.'); },
   createFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'createFeedback', 'Feedback is available through the formal Worker API.'); },
   listAdminFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'listAdminFeedback', 'Feedback is available through the formal Worker API.'); },
+  deleteFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'deleteFeedback', 'Feedback is available through the formal Worker API.'); },
   updateFeedbackStatus: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'updateFeedbackStatus', 'Feedback is available through the formal Worker API.'); },
   getReminderSettings: () => {
     if (authClient?.isMock) return gasApi.post({
@@ -614,6 +615,9 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   listAdminFeedback: ({ status, category } = {}) => workerRequest(
     'listAdminFeedback', 'GET', '/api/admin/feedback', { query: { status, category } }
+  ),
+  deleteFeedback: ({ feedbackId } = {}) => workerRequest(
+    'deleteFeedback', 'DELETE', `/api/admin/feedback/${encodeURIComponent(String(feedbackId || '').trim())}`
   ),
   updateFeedbackStatus: ({ feedbackId, status, note } = {}) => workerRequest(
     'updateFeedbackStatus',

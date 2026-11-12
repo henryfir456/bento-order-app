@@ -11,6 +11,11 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.22.1': [
+    { name: '新增', changes: [
+      '管理員可以在「管理中心 › 意見反饋」刪除意見，刪除前會再次確認，刪除後無法復原。'
+    ] }
+  ],
   '0.22.0': [
     { name: '新增', changes: [
       '新增「意見反饋」：員工與廠商都可以在頁面底部的「意見反饋」留下意見，選擇類別（系統、便當、店家、其他），可附 1 到 5 顆星評價，也可匿名送出。',
