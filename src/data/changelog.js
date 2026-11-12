@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.22.2': [
+    { name: '調整', changes: [
+      '鈴鐺收件匣分成「通知」與「公告」兩個頁籤，頁籤上顯示未讀數量，列表固定高度、可捲動，不會再無限變長。',
+      '系統通知（結單、請款、退款等）只保留最近 14 天，更早的會自動清除；公告不會被清除。'
+    ] }
+  ],
   '0.22.1': [
     { name: '新增', changes: [
       '管理員可以在「管理中心 › 意見反饋」刪除意見，刪除前會再次確認，刪除後無法復原。',

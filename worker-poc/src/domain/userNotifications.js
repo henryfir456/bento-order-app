@@ -10,6 +10,18 @@ const rowsFrom = (result) => (
 );
 
 const LIST_LIMIT = 50;
+// Non-announcement notifications (this table) are kept for 14 days.
+export const NOTIFICATION_RETENTION_DAYS = 14;
+const retentionCutoff = (now) => new Date(
+  resolveClock(now).getTime() - NOTIFICATION_RETENTION_DAYS * 24 * 60 * 60 * 1000
+).toISOString();
+
+export const purgeOldNotifications = async (database, now = new Date()) => {
+  const result = await database.prepare(
+    'DELETE FROM user_notifications WHERE created_at < ?'
+  ).bind(retentionCutoff(now)).run();
+  return Number(result?.meta?.changes ?? result?.changes ?? 0);
+};
 
 const assertCanReadNotifications = (identity) => assertCan(
   identity,
@@ -26,16 +38,16 @@ export const notificationStatement = (database, {
   ${guard ? `WHERE ${guard.sql}` : ''}
 `, [randomId('ntf'), userId, kind, title, body, refDate, dedupeKey, occurredAt, ...(guard?.params || [])]);
 
-export const getUserNotifications = async (database, identity) => {
+export const getUserNotifications = async (database, identity, now = new Date()) => {
   assertCanReadNotifications(identity);
   const userId = identity.actor.userId;
   const result = await database.prepare(`
     SELECT notification_id, kind, title, body, ref_date, created_at, read_at
     FROM user_notifications
-    WHERE user_id = ?
+    WHERE user_id = ? AND created_at >= ?
     ORDER BY created_at DESC, notification_id DESC
     LIMIT ${LIST_LIMIT}
-  `).bind(userId).all();
+  `).bind(userId, retentionCutoff(now)).all();
   const notifications = rowsFrom(result).map((row) => ({
     id: row.notification_id,
     kind: row.kind,

@@ -27,6 +27,11 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.22.2] - 2026-11-12
+
+### Changed
+- Split the bell inbox into 通知 and 公告 tabs, each with an unread badge, in a height-limited scrollable list. Non-announcement notifications (`user_notifications`) are kept for 14 days: the list API hides older rows and the 08:00 UTC cron deletes them. Announcements are never purged.
+
 ## [0.22.1] - 2026-11-12
 
 ### Added

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { handleScheduled } from '../src/formalWorker.js';
+import { purgeOldNotifications } from '../src/domain/userNotifications.js';
 import { handleFormalRequest, profileFetch, request, seedUser } from './helpers/formal-fixtures.js';
 import { callOrderRoute, ORDER_DATE, seedOrderDatabase, userProfile } from './helpers/order-fixtures.js';
 
@@ -175,4 +176,22 @@ test('10:00 cron tells Admin and ProxyAdmin the 蔡老師 group closed, via bell
   database.run("UPDATE calendar_settings SET vendor = 'Vendor A' WHERE order_date = ?", ORDER_DATE);
   const other = await handleScheduled(controller, env, { logger: { log() {} }, fetchImpl });
   assert.equal(other.status, 'SKIP_NO_GROUP');
+});
+
+test('notifications older than 14 days are hidden from the list and purged', async () => {
+  const database = seedOrderDatabase({ balance: 100 });
+  const buyer = userProfile('user-1', 'token-user-1');
+  const now = new Date('2026-09-20T00:00:00.000Z');
+  const insert = (id, createdAt) => database.run(
+    "INSERT INTO user_notifications (notification_id, user_id, kind, title, body, dedupe_key, created_at) VALUES (?, 'user-1', 'GROUP_CANCELLED', 't', 'b', ?, ?)",
+    id, `k-${id}`, createdAt
+  );
+  insert('ntf-old', '2026-09-05T23:59:59.000Z');
+  insert('ntf-new', '2026-09-06T00:00:01.000Z');
+  const listed = await notificationsFor(database, buyer, now);
+  assert.deepEqual(listed.body.notifications.map((item) => item.id), ['ntf-new']);
+  assert.equal(listed.body.unreadCount, 1);
+  assert.equal(await purgeOldNotifications(database, now), 1);
+  const left = database.database.prepare('SELECT notification_id FROM user_notifications').all();
+  assert.deepEqual(left.map((row) => row.notification_id), ['ntf-new']);
 });
