@@ -82,7 +82,8 @@ test('default Wrangler runtime and D1 migration directory are formal', () => {
       '0033_withdrawal_ledger_type.sql',
       '0034_reimbursement_one_per_date.sql',
       '0035_admin_vendor_close_pref.sql',
-      '0036_reminder_schedule.sql'
+      '0036_reminder_schedule.sql',
+      '0037_feedback_entries.sql'
     ]
   );
 });

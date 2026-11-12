@@ -215,6 +215,10 @@ const createGasOperations = ({ gasApi, authClient }) => ({
   createReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'createReimbursement', 'Reimbursement is available through the formal Worker API.'); },
   listAdminReimbursements: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'listAdminReimbursements', 'Reimbursement is available through the formal Worker API.'); },
   decideReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'decideReimbursement', 'Reimbursement is available through the formal Worker API.'); },
+  listMyFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'listMyFeedback', 'Feedback is available through the formal Worker API.'); },
+  createFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'createFeedback', 'Feedback is available through the formal Worker API.'); },
+  listAdminFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'listAdminFeedback', 'Feedback is available through the formal Worker API.'); },
+  updateFeedbackStatus: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'updateFeedbackStatus', 'Feedback is available through the formal Worker API.'); },
   getReminderSettings: () => {
     if (authClient?.isMock) return gasApi.post({
       action: 'getReminderSettings',
@@ -603,6 +607,19 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'POST',
     `/api/admin/reimbursements/${encodeURIComponent(String(requestId || '').trim())}/${decision === 'approve' ? 'approve' : 'reject'}`,
     { body: { note } }
+  ),
+  listMyFeedback: () => workerRequest('listMyFeedback', 'GET', '/api/me/feedback'),
+  createFeedback: ({ category, targetName, rating, message, isAnonymous } = {}) => workerRequest(
+    'createFeedback', 'POST', '/api/me/feedback', { body: { category, targetName, rating, message, isAnonymous } }
+  ),
+  listAdminFeedback: ({ status, category } = {}) => workerRequest(
+    'listAdminFeedback', 'GET', '/api/admin/feedback', { query: { status, category } }
+  ),
+  updateFeedbackStatus: ({ feedbackId, status, note } = {}) => workerRequest(
+    'updateFeedbackStatus',
+    'POST',
+    `/api/admin/feedback/${encodeURIComponent(String(feedbackId || '').trim())}/status`,
+    { body: { status, note } }
   ),
   getReminderSettings: () => workerRequest(
     'getReminderSettings', 'GET', '/api/me/reminder-settings'

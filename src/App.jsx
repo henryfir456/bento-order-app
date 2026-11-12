@@ -82,6 +82,8 @@ const AdminOrderSummary = React.lazy(() => import('./features/admin/AdminOrderSu
 const AnnouncementManagement = React.lazy(() => import('./features/admin/AnnouncementManagement'));
 import WithdrawModal from './features/balances/WithdrawModal';
 const ReimbursementManagement = React.lazy(() => import('./features/admin/ReimbursementManagement'));
+const FeedbackPage = React.lazy(() => import('./features/feedback/FeedbackPage'));
+const FeedbackManagement = React.lazy(() => import('./features/feedback/FeedbackManagement'));
 const MenuItemChangesManagement = React.lazy(() => import('./features/admin/MenuItemChangesManagement'));
 const MemberBalanceManagement = React.lazy(() => import('./features/balances/MemberBalanceManagement'));
 const AdminUserLedgerDetails = React.lazy(() => import('./features/balances/AdminUserLedgerDetails'));
@@ -3022,6 +3024,13 @@ export default function App() {
       return;
     }
 
+    if (section === 'feedback') {
+      if (apiClient.transport !== 'worker' || isViewAsMode || !canAuth('manageFeedback')) return;
+      setAdminSection('feedback');
+      setViewMode('admin');
+      return;
+    }
+
     if (section === 'menuChanges') {
       if (!canManageAdminMenuChanges() || isViewAsMode) return;
       setAdminSection('menuChanges');
@@ -3933,6 +3942,17 @@ export default function App() {
           />
         )}
 
+        {isRegistered && viewMode === 'feedback' && !loading && !isViewAsMode && !delegatedOrderUser && (
+          <FeedbackPage
+            api={apiClient}
+            backLabel={isVendorAccount ? '店家' : '訂餐'}
+            onBack={() => {
+              setAdminManageMode(false);
+              setViewMode(isVendorAccount ? 'vendor' : 'calendar');
+            }}
+          />
+        )}
+
         {isRegistered && !isVendorAccount && viewMode === 'wallet' && !loading && canAuth('viewOwnBalance')
           && !isViewAsMode && !delegatedOrderUser && (
           <WalletPage balance={displayBalance} year={selectedYear} month={selectedMonth}
@@ -4043,6 +4063,14 @@ export default function App() {
                 />
               </React.Suspense>
             )}
+            {adminSection === 'feedback'
+              && apiClient.transport === 'worker'
+              && canAuth('manageFeedback')
+              && !isViewAsMode && (
+              <React.Suspense fallback={null}>
+                <FeedbackManagement api={apiClient} />
+              </React.Suspense>
+            )}
             {adminSection === 'menuChanges'
               && apiClient.transport === 'worker'
               && canAuth('manageMenu')
@@ -4081,7 +4109,16 @@ export default function App() {
             className="rounded px-2 py-1 transition hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           >
             v{APP_VERSION}
-          </button></div>
+          </button>
+          {isRegistered && apiClient.transport === 'worker' && authMode !== 'vendor_code' && !isViewAsMode && !delegatedOrderUser && (
+            <button
+              type="button"
+              onClick={() => { setAdminManageMode(false); setViewMode('feedback'); }}
+              className="rounded px-2 py-1 transition hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              意見反饋
+            </button>
+          )}</div>
       </footer>
 
       {/* 底部導覽/操作列 */}

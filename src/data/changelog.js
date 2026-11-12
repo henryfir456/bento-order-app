@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.22.0': [
+    { name: '新增', changes: [
+      '新增「意見反饋」：員工與廠商都可以在頁面底部的「意見反饋」留下意見，選擇類別（系統、便當、店家、其他），可附 1 到 5 顆星評價，也可匿名送出。',
+      '意見只有你本人和管理員看得到，不會公開給其他同事或廠商；管理員可在「管理中心 › 意見反饋」標記處理狀態並回覆。'
+    ] }
+  ],
   '0.21.4': [
     { name: '修正', changes: [
       '修正「系統健康」頁在本機沿用舊的失敗結果：dev 啟動時若上次失敗或資料超過一天，會自動重新產生。'
