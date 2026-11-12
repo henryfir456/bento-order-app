@@ -68,6 +68,7 @@ import { filterMembersByEmployeeId } from './features/admin/delegateOrderFilter.
 import { formatBalanceAmount } from './features/balances/formatters';
 import { normalizeAnnouncementInbox, normalizeDeferredLikes, mergeDeferredLikes } from './features/bootstrap/deferredBootstrap';
 import AnnouncementBell from './features/announcements/AnnouncementBell';
+import MegaphoneIcon from './features/feedback/MegaphoneIcon';
 import AnnouncementInbox from './features/announcements/AnnouncementInbox';
 import { getLineBindingState } from './auth/lineBindingState';
 import AnnouncementPopup from './features/announcements/AnnouncementPopup';
@@ -3978,6 +3979,7 @@ export default function App() {
                 handleOpenViewAs={handleOpenViewAs}
                 selectCalendarUi={selectCalendarUi}
                 showSystemHealth={authRole === 'Admin' && !isViewAsMode}
+                api={apiClient}
               />
             )}
             {adminSection === 'systemHealth' && authRole === 'Admin' && !isViewAsMode && (
@@ -4116,7 +4118,7 @@ export default function App() {
               onClick={() => { setAdminManageMode(false); setViewMode('feedback'); }}
               className="rounded px-2 py-1 transition hover:text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
-              意見反饋
+              <MegaphoneIcon size={14} className="mr-1 inline-block align-text-bottom" />意見反饋
             </button>
           )}</div>
       </footer>

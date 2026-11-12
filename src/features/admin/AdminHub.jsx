@@ -1,5 +1,25 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import MegaphoneIcon from '../feedback/MegaphoneIcon';
 import { useDependencyHealth, needsAttention } from './SystemHealth';
+
+// Number of unhandled feedback entries, shown as a red badge on the hub entry.
+// Failure is silent: the badge is a convenience, the list itself has retry.
+function useFeedbackNewCount(api, enabled) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!enabled || typeof api?.listAdminFeedback !== 'function') return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await api.listAdminFeedback({ status: 'NEW' });
+        const body = typeof result?.json === 'function' ? await result.json() : result;
+        if (!cancelled) setCount(Number(body?.summary?.newCount) || 0);
+      } catch { /* badge is optional */ }
+    })();
+    return () => { cancelled = true; };
+  }, [api, enabled]);
+  return count;
+}
 
 // Admin landing page: grouped entry points to every management screen.
 // `canAuth` checks the signed-in role, not a View-As target, so the menu never changes while previewing.
@@ -14,8 +34,10 @@ export default function AdminHub({
   openVendorHub,
   handleOpenViewAs,
   selectCalendarUi,
-  showSystemHealth
+  showSystemHealth,
+  api
 }) {
+  const feedbackNewCount = useFeedbackNewCount(api, canAuth('manageFeedback'));
   const health = useDependencyHealth(Boolean(showSystemHealth));
   const systemHealthAlert = needsAttention(health) ? health.overall : null;
   return (
@@ -33,7 +55,7 @@ export default function AdminHub({
         {canAuth('manageMenu') && <button type="button" onClick={() => handleAdminSectionChange('menuChanges')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">菜單品項維護 ›</button>}
         {canAuth('requestReimbursement') && <button type="button" onClick={() => handleAdminSectionChange('reimbursements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">請款 ›</button>}
         {canAuth('manageReimbursements') && <button type="button" onClick={() => handleAdminSectionChange('reimbursements')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">請款審核 ›</button>}
-        {canAuth('manageFeedback') && <button type="button" onClick={() => handleAdminSectionChange('feedback')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">意見反饋 ›</button>}
+        {canAuth('manageFeedback') && <button type="button" onClick={() => handleAdminSectionChange('feedback')} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold"><MegaphoneIcon size={18} className="mr-1.5 inline-block align-text-bottom text-[#2C4A3E]" />意見反饋 ›{feedbackNewCount > 0 && <span role="img" aria-label={`${feedbackNewCount} 則未處理意見`} className="ml-2 inline-block min-w-5 rounded-full bg-rose-600 px-1.5 text-center text-xs font-bold leading-5 text-white">{feedbackNewCount}</span>}</button>}
         <button type="button" onClick={openVendorHub} className="w-full min-h-12 rounded-xl border border-slate-200 bg-white px-4 text-left font-semibold">店家專區 ›</button>
         </div>
         {(canAuth('viewMemberBalances') || (authRole !== 'Admin' && (canAuth('viewAsUser') || canAuth('delegateOrder')))) && (

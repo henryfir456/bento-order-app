@@ -31,6 +31,7 @@
 
 ### Added
 
+- Megaphone icon on the 意見反饋 entries (page footer and 管理中心); the Admin hub entry shows a red badge with the number of unhandled (NEW) feedback entries.
 - Admins can delete a feedback entry from 管理中心 > 意見反饋 (confirmation required). Hard delete: the row is removed; the audit log records only the id, category and status, never the message text.
 
 ## [0.22.0] - 2026-11-12

@@ -13,7 +13,8 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
   '0.22.1': [
     { name: '新增', changes: [
-      '管理員可以在「管理中心 › 意見反饋」刪除意見，刪除前會再次確認，刪除後無法復原。'
+      '管理員可以在「管理中心 › 意見反饋」刪除意見，刪除前會再次確認，刪除後無法復原。',
+      '「意見反饋」入口加上大聲公圖示；管理中心的入口在有未處理意見時會顯示紅色數字。'
     ] }
   ],
   '0.22.0': [
