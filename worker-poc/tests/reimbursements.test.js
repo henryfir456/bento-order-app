@@ -120,3 +120,63 @@ test('only one open request per date across requesters; rejected date can be ref
   assert.equal(refiled.response.status, 200);
   assert.equal(refiled.body.request.amount, 250);
 });
+
+// ---- auto reimbursement after 蔡老師 closes ----
+import { handleScheduled } from '../src/formalWorker.js';
+
+const CLOSE = new Date('2026-09-08T02:00:00.000Z'); // 10:00 Taipei, 2026-09-08
+const autoSeed = () => {
+  const database = seed();
+  database.run(`INSERT INTO calendar_settings (order_date, mode, vendor, vendor_source, updated_at)
+    VALUES ('2026-09-08', 'A', '蔡老師', 'CONFIGURED', '2026-09-01T00:00:00.000Z')`);
+  const add = (id, user, amount, vendor = '蔡老師', status = 'ACTIVE') => database.run(`
+    INSERT INTO orders (order_id, user_id, display_name_snapshot, order_date, vendor, pickup_floor,
+      total_amount, status, created_by_user_id, created_auth_mode, created_at, updated_at)
+    VALUES (?, ?, 'u', '2026-09-08', ?, '1樓', ?, ?, 'user-1', 'line',
+      '2026-09-08T01:00:00.000Z', '2026-09-08T01:00:00.000Z')`, id, user, vendor, amount, status);
+  add('a1', 'user-1', 100); add('a2', 'user-2', 90); add('a3', 'user-3', 500, '其他'); add('a4', 'proxy-1', 70, '蔡老師', 'CANCELLED');
+  return database;
+};
+const proxyId = (database) => database.get("SELECT user_id FROM users WHERE line_user_id = 'proxy-1'").user_id;
+const cron = (database) => handleScheduled(
+  { cron: '0 2,10 * * *', scheduledTime: CLOSE.getTime() }, { DB: database }, { logger: { log() {} }, fetchImpl: async () => ({ ok: true }) }
+);
+
+test('auto reimbursement: off by default, Admin can enable, cron files one PENDING request idempotently', async () => {
+  const database = autoSeed();
+  await cron(database);
+  assert.equal(database.get('SELECT COUNT(*) AS c FROM reimbursement_requests').c, 0);
+
+  const get = await call(database, '/api/admin/reimbursements/auto-setting', 'admin-1');
+  assert.equal(get.body.enabled, false);
+  assert.equal(get.body.candidates.length, 1);
+  const bad = await call(database, '/api/admin/reimbursements/auto-setting', 'admin-1', { method: 'PUT', body: { enabled: true } });
+  assert.equal(bad.response.status, 400);
+  const nonProxy = await call(database, '/api/admin/reimbursements/auto-setting', 'admin-1', {
+    method: 'PUT', body: { enabled: true, requesterUserId: database.get("SELECT user_id FROM users WHERE line_user_id = 'user-1'").user_id }
+  });
+  assert.equal(nonProxy.response.status, 400);
+  const denied = await call(database, '/api/admin/reimbursements/auto-setting', 'proxy-1');
+  assert.equal(denied.response.status, 403);
+
+  const on = await call(database, '/api/admin/reimbursements/auto-setting', 'admin-1', {
+    method: 'PUT', body: { enabled: true, requesterUserId: proxyId(database) }
+  });
+  assert.equal(on.body.enabled, true);
+
+  await cron(database);
+  await cron(database);
+  assert.equal(database.get("SELECT COUNT(*) AS c FROM reimbursement_requests WHERE order_date = '2026-09-08'").c, 1);
+  const row = database.get("SELECT * FROM reimbursement_requests WHERE order_date = '2026-09-08'");
+  assert.equal(row.amount, 190);
+  assert.equal(row.order_count, 2);
+  assert.equal(row.status, 'PENDING');
+  assert.equal(row.requester_user_id, proxyId(database));
+  assert.equal(database.get("SELECT COUNT(*) AS c FROM user_notifications WHERE kind = 'REIMBURSEMENT_REQUESTED'").c, 1);
+
+  // Off switch stops future filing.
+  await call(database, '/api/admin/reimbursements/auto-setting', 'admin-1', { method: 'PUT', body: { enabled: false } });
+  database.run("UPDATE reimbursement_requests SET status = 'REJECTED'");
+  await cron(database);
+  assert.equal(database.get('SELECT COUNT(*) AS c FROM reimbursement_requests').c, 1);
+});

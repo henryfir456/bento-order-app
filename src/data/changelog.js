@@ -11,6 +11,12 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.23.0': [
+    { name: '新增', changes: [
+      '管理員可在「請款審核」開啟「蔡老師結單後自動請款」：蔡老師 10:00 結單後，系統會自動替你指定的代理管理員送出當天蔡老師訂單的請款申請，你仍需在下方審核同意。',
+      '功能預設關閉，可隨時在同一處關閉或更換代為請款的人；同一天已有請款時不會重複申請。'
+    ] }
+  ],
   '0.22.2': [
     { name: '調整', changes: [
       '鈴鐺收件匣分成「通知」與「公告」兩個頁籤，頁籤上顯示未讀數量，列表固定高度、可捲動，不會再無限變長。',

@@ -27,6 +27,11 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.23.0] - 2026-11-17
+
+### Added
+- Admin can enable an automatic reimbursement request: after the 蔡老師 group closes at 10:00 Taipei, the existing close cron files one PENDING request (that day's 蔡老師 orders) for the ProxyAdmin the Admin chose, and notifies Admins; the Admin still approves or rejects it. The switch and requester live in 請款審核 (`GET/PUT /api/admin/reimbursements/auto-setting`, new table `auto_reimbursement_settings`, migration 0038). Idempotent per order date; off by default.
+
 ## [0.22.2] - 2026-11-12
 
 ### Changed

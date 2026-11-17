@@ -331,3 +331,135 @@ export const rejectReimbursement = async (database, identity, requestId, input, 
   if (after.status !== 'REJECTED') throw settledError(after);
   return { success: true, message: 'REIMBURSEMENT_REJECTED', request: publicRequest(after) };
 };
+
+// ---- Automatic filing after the 蔡老師 group closes -------------------------
+
+const AUTO_VENDOR = '蔡老師';
+const AUTO_ORDERS_SQL = `
+  FROM orders o
+  WHERE o.order_date = ? AND o.vendor = ? AND o.status IN ('ACTIVE', 'COMPLETED')
+`;
+
+const activeProxyAdmins = async (database) => rowsFrom(await database.prepare(`
+  SELECT user_id, display_name FROM users
+  WHERE role = 'ProxyAdmin' AND active = 1
+  ORDER BY display_name, user_id
+`).all());
+
+export const getAutoReimbursementSetting = async (database, identity) => {
+  assertCan(identity, ACTIONS.ADMIN_REIMBURSEMENT);
+  const row = await database.prepare(`
+    SELECT s.enabled, s.requester_user_id, u.display_name AS requester_name, s.updated_at
+    FROM auto_reimbursement_settings s
+    LEFT JOIN users u ON u.user_id = s.requester_user_id
+    WHERE s.setting_id = 1
+  `).first();
+  const candidates = await activeProxyAdmins(database);
+  return {
+    success: true,
+    vendor: AUTO_VENDOR,
+    enabled: Number(row?.enabled) === 1,
+    requesterUserId: row?.requester_user_id || null,
+    requesterName: row?.requester_name || null,
+    updatedAt: row?.updated_at || null,
+    candidates: candidates.map((c) => ({ userId: c.user_id, displayName: c.display_name }))
+  };
+};
+
+export const updateAutoReimbursementSetting = async (database, identity, input, now = new Date()) => {
+  assertCan(identity, ACTIONS.ADMIN_REIMBURSEMENT);
+  const actor = identity.actor;
+  const enabled = input?.enabled === true;
+  const requesterUserId = text(input?.requesterUserId) || null;
+  if (enabled && !requesterUserId) throw badRequest('AUTO_REIMBURSEMENT_REQUESTER_REQUIRED');
+  if (requesterUserId) {
+    const candidates = await activeProxyAdmins(database);
+    if (!candidates.some((c) => c.user_id === requesterUserId)) {
+      throw badRequest('AUTO_REIMBURSEMENT_REQUESTER_INVALID');
+    }
+  }
+  const occurredAt = resolveClock(now).toISOString();
+  await database.prepare(`
+    INSERT INTO auto_reimbursement_settings (
+      setting_id, enabled, requester_user_id, updated_by_user_id, updated_at
+    ) VALUES (1, ?, ?, ?, ?)
+    ON CONFLICT(setting_id) DO UPDATE SET
+      enabled = excluded.enabled,
+      requester_user_id = excluded.requester_user_id,
+      updated_by_user_id = excluded.updated_by_user_id,
+      updated_at = excluded.updated_at
+  `).bind(enabled ? 1 : 0, requesterUserId, actor.userId, occurredAt).run();
+  return getAutoReimbursementSetting(database, identity);
+};
+
+// 10:00 Taipei cron, right after the 蔡老師 group closes: file one PENDING
+// request covering that day's 蔡老師 orders for the configured ProxyAdmin.
+// Idempotent: the system allows one open/approved request per order date, so a
+// retried cron run (or a manual request filed first) is skipped. The Admin
+// still approves or rejects it.
+export const runAutoReimbursement = async (database, scheduledTime) => {
+  const now = resolveClock(scheduledTime);
+  const orderDate = getTaipeiDate(now);
+  const setting = await database.prepare(`
+    SELECT enabled, requester_user_id FROM auto_reimbursement_settings WHERE setting_id = 1
+  `).first();
+  if (!setting || Number(setting.enabled) !== 1 || !setting.requester_user_id) {
+    return { status: 'SKIP_DISABLED', orderDate };
+  }
+  const group = await database.prepare(`
+    SELECT vendor FROM calendar_settings WHERE order_date = ? AND mode = 'A' AND vendor = ?
+  `).bind(orderDate, AUTO_VENDOR).first();
+  if (!group) return { status: 'SKIP_NO_GROUP', orderDate };
+  const requester = await database.prepare(`
+    SELECT user_id, display_name FROM users
+    WHERE user_id = ? AND role = 'ProxyAdmin' AND active = 1
+  `).bind(setting.requester_user_id).first();
+  if (!requester) return { status: 'SKIP_REQUESTER_INVALID', orderDate };
+  if (await openRequestFor(database, orderDate)) return { status: 'SKIP_ALREADY_REQUESTED', orderDate };
+
+  const totals = await database.prepare(`
+    SELECT COALESCE(SUM(o.total_amount), 0) AS amount ${AUTO_ORDERS_SQL}
+  `).bind(orderDate, AUTO_VENDOR).first();
+  const amount = Number(totals?.amount || 0);
+  if (amount <= 0) return { status: 'SKIP_NO_ORDERS', orderDate };
+
+  const occurredAt = now.toISOString();
+  const requestId = randomId('reimb');
+  const insert = prepareStatement(database, `
+    INSERT INTO reimbursement_requests (
+      request_id, requester_user_id, order_date, amount, order_count, status,
+      requester_note, created_at, updated_at
+    )
+    SELECT ?, ?, ?, SUM(o.total_amount), COUNT(*), 'PENDING', ?, ?, ?
+    ${AUTO_ORDERS_SQL}
+    HAVING SUM(o.total_amount) > 0
+  `, [requestId, requester.user_id, orderDate, `系統自動申請（${AUTO_VENDOR}結單）`,
+    occurredAt, occurredAt, orderDate, AUTO_VENDOR]);
+  const admins = rowsFrom(await database.prepare(`
+    SELECT user_id FROM users WHERE role = 'Admin' AND active = 1
+  `).all());
+  const guard = {
+    sql: 'EXISTS (SELECT 1 FROM reimbursement_requests WHERE request_id = ?)',
+    params: [requestId]
+  };
+  const notifications = admins.map((admin) => notificationStatement(database, {
+    userId: admin.user_id,
+    kind: 'REIMBURSEMENT_REQUESTED',
+    title: '代理管理員請款申請（自動）',
+    body: `${AUTO_VENDOR}已結單，系統自動為 ${requester.display_name || '代理管理員'} 申請 ${orderDate} 的款項 $${amount}，請至管理頁審核。`,
+    refDate: orderDate,
+    dedupeKey: `reimb-requested:${requestId}:${admin.user_id}`,
+    occurredAt,
+    guard
+  }));
+  try {
+    await runMutationBatch(database, [insert, ...notifications]);
+  } catch (error) {
+    if (error?.code === 'TRANSACTION_FAILED') return { status: 'SKIP_ALREADY_REQUESTED', orderDate };
+    throw error;
+  }
+  const row = await database.prepare('SELECT amount FROM reimbursement_requests WHERE request_id = ?')
+    .bind(requestId).first();
+  if (!row) return { status: 'SKIP_ALREADY_REQUESTED', orderDate };
+  return { status: 'REQUESTED', orderDate, requestId, amount: Number(row.amount), requesterUserId: requester.user_id };
+};

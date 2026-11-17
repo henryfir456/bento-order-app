@@ -4,6 +4,7 @@ import { handleClientErrorRoute } from './routes/clientErrors.js';
 import { handleMeRoute } from './routes/me.js';
 import { handleAnnouncementInboxRoute } from './routes/announcementInbox.js';
 import { notifyAdminsLateGroupClosed, notifyVendorsOrderClosed, purgeOldNotifications } from './domain/userNotifications.js';
+import { runAutoReimbursement } from './domain/reimbursements.js';
 import { sendOrderReminders } from './domain/orderReminders.js';
 import { handleUserNotificationRoute } from './routes/userNotifications.js';
 import { handleOrderRoute } from './routes/orders.js';
@@ -105,6 +106,18 @@ export const handleScheduled = async (
     const result = await notifyAdminsLateGroupClosed(env.DB, env, controller?.scheduledTime, { fetchImpl });
     const logEntry = { event: 'admin_order_closed_notification', source: 'order_close_cron', ...result };
     if (typeof logger?.log === 'function') logger.log(JSON.stringify(logEntry));
+    // Optional, Admin-enabled auto reimbursement; must never break the notification.
+    try {
+      const auto = await runAutoReimbursement(env.DB, controller?.scheduledTime);
+      if (typeof logger?.log === 'function') {
+        logger.log(JSON.stringify({ event: 'auto_reimbursement', source: 'order_close_cron', ...auto }));
+      }
+      result.autoReimbursement = auto;
+    } catch (error) {
+      if (typeof logger?.log === 'function') {
+        logger.log(JSON.stringify({ event: 'auto_reimbursement_failed', error: error?.name || 'Error' }));
+      }
+    }
     return result;
   }
 
