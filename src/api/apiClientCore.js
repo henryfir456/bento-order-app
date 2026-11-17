@@ -214,6 +214,8 @@ const createGasOperations = ({ gasApi, authClient }) => ({
   listMyReimbursements: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'listMyReimbursements', 'Reimbursement is available through the formal Worker API.'); },
   createReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'createReimbursement', 'Reimbursement is available through the formal Worker API.'); },
   listAdminReimbursements: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'listAdminReimbursements', 'Reimbursement is available through the formal Worker API.'); },
+  getAutoReimbursementSetting: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'getAutoReimbursementSetting', 'Reimbursement is available through the formal Worker API.'); },
+  updateAutoReimbursementSetting: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'updateAutoReimbursementSetting', 'Reimbursement is available through the formal Worker API.'); },
   decideReimbursement: () => { throw new ApiContractGapError('REIMBURSEMENT_UNSUPPORTED_TRANSPORT', 'decideReimbursement', 'Reimbursement is available through the formal Worker API.'); },
   listMyFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'listMyFeedback', 'Feedback is available through the formal Worker API.'); },
   createFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'createFeedback', 'Feedback is available through the formal Worker API.'); },
@@ -602,6 +604,13 @@ const createWorkerOperations = ({ workerRequest }) => ({
   ),
   listAdminReimbursements: ({ status } = {}) => workerRequest(
     'listAdminReimbursements', 'GET', '/api/admin/reimbursements', { query: { status } }
+  ),
+  getAutoReimbursementSetting: () => workerRequest(
+    'getAutoReimbursementSetting', 'GET', '/api/admin/reimbursements/auto-setting'
+  ),
+  updateAutoReimbursementSetting: ({ enabled, requesterUserId } = {}) => workerRequest(
+    'updateAutoReimbursementSetting', 'PUT', '/api/admin/reimbursements/auto-setting',
+    { body: { enabled: enabled === true, requesterUserId } }
   ),
   decideReimbursement: ({ requestId, decision, note } = {}) => workerRequest(
     'decideReimbursement',

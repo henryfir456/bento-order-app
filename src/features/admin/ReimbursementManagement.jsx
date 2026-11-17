@@ -53,6 +53,80 @@ function OrderList({ orders = [] }) {
   );
 }
 
+// Admin switch: after 蔡老師 closes (10:00) the system files a request for
+// the chosen ProxyAdmin automatically; the Admin still reviews it below.
+function AutoReimbursementSetting({ api }) {
+  const [setting, setSetting] = useState(null);
+  const [enabled, setEnabled] = useState(false);
+  const [requesterUserId, setRequesterUserId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const apply = (result) => {
+    setSetting(result);
+    setEnabled(Boolean(result?.enabled));
+    setRequesterUserId(result?.requesterUserId || '');
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    parsed(api.getAutoReimbursementSetting())
+      .then((result) => { if (!cancelled) apply(result); })
+      .catch((err) => { if (!cancelled) setMessage(errorMessage(err)); });
+    return () => { cancelled = true; };
+  }, [api]);
+
+  const save = async (nextEnabled) => {
+    setBusy(true);
+    setMessage('');
+    try {
+      apply(await parsed(api.updateAutoReimbursementSetting({ enabled: nextEnabled, requesterUserId })));
+      setMessage(nextEnabled ? '已開啟自動請款。' : '已關閉自動請款。');
+    } catch (err) {
+      setMessage(err?.code === 'AUTO_REIMBURSEMENT_REQUESTER_REQUIRED'
+        ? '請先選擇要代為請款的人。' : errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!setting) return message ? <p role="alert" className="text-sm text-red-700">{message}</p> : <LoadingNote label="自動請款設定" />;
+  return (
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="font-bold text-[#2C4A3E]">蔡老師結單後自動請款</h3>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${setting.enabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>
+          {setting.enabled ? '已開啟' : '已關閉'}
+        </span>
+      </div>
+      <p className="text-sm text-slate-600">
+        蔡老師當天 10:00 結單後，系統自動為指定的代理管理員送出當天蔡老師訂單的請款申請，仍需你在下方審核同意。
+      </p>
+      <label className="block text-sm font-semibold text-slate-700">
+        代為請款的人
+        <select value={requesterUserId} onChange={(e) => setRequesterUserId(e.target.value)}
+          className="mt-1 block min-h-11 w-full rounded-lg border border-slate-300 px-3">
+          <option value="">請選擇</option>
+          {(setting.candidates || []).map((c) => (
+            <option key={c.userId} value={c.userId}>{c.displayName || c.userId}</option>
+          ))}
+        </select>
+      </label>
+      <div className="flex gap-2">
+        <button type="button" disabled={busy || !requesterUserId} onClick={() => save(true)}
+          className="min-h-11 flex-1 rounded-lg bg-[#2C4A3E] font-bold text-white disabled:opacity-40">
+          {setting.enabled ? '更新並保持開啟' : '開啟'}
+        </button>
+        <button type="button" disabled={busy || !setting.enabled} onClick={() => save(false)}
+          className="min-h-11 flex-1 rounded-lg bg-slate-100 font-bold text-slate-700 disabled:opacity-40">
+          關閉
+        </button>
+      </div>
+      {message && <p role="status" className="text-sm text-slate-600">{message}</p>}
+    </div>
+  );
+}
+
 // mode "request": ProxyAdmin files and tracks requests.
 // mode "review": Admin approves or rejects them.
 export default function ReimbursementManagement({ api, mode = 'request' }) {
@@ -148,6 +222,8 @@ export default function ReimbursementManagement({ api, mode = 'request' }) {
   return (
     <section aria-label={mode === 'review' ? '請款審核' : '請款'} className="space-y-3">
       <h2 className="text-xl font-bold text-[#2C4A3E]">{mode === 'review' ? '請款審核' : '請款'}</h2>
+
+      {mode === 'review' && <AutoReimbursementSetting api={api} />}
 
       {mode === 'request' && (
         <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">

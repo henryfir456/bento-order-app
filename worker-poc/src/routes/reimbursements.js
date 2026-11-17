@@ -4,10 +4,12 @@ import { jsonResponse } from '../http/response.js';
 import {
   approveReimbursement,
   createReimbursement,
+  getAutoReimbursementSetting,
   listAdminReimbursements,
   listMyReimbursements,
   previewReimbursement,
-  rejectReimbursement
+  rejectReimbursement,
+  updateAutoReimbursementSetting
 } from '../domain/reimbursements.js';
 
 const readBody = async (request) => {
@@ -33,13 +35,19 @@ export const handleReimbursementRoute = async (request, env, {
   const isMine = pathname === '/api/me/reimbursements';
   const isPreview = method === 'GET' && pathname === '/api/me/reimbursements/preview';
   const isAdminList = method === 'GET' && pathname === '/api/admin/reimbursements';
-  if (!decide && !(isMine && (method === 'GET' || method === 'POST')) && !isPreview && !isAdminList) {
+  const isAuto = pathname === '/api/admin/reimbursements/auto-setting'
+    && (method === 'GET' || method === 'PUT');
+  if (!decide && !isAuto && !(isMine && (method === 'GET' || method === 'POST')) && !isPreview && !isAdminList) {
     return null;
   }
 
   const identity = await requireIdentity(request, env, { fetchImpl, allowViewAs: false, now });
   if (!identity.actor?.registered || !identity.actor.userId) throw forbidden('NOT_REGISTERED');
 
+  if (isAuto) {
+    if (method === 'GET') return jsonResponse(await getAutoReimbursementSetting(env.DB, identity));
+    return jsonResponse(await updateAutoReimbursementSetting(env.DB, identity, await readBody(request), now));
+  }
   if (isPreview) {
     return jsonResponse(await previewReimbursement(env.DB, identity, url.searchParams.get('date'), now));
   }
