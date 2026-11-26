@@ -222,6 +222,7 @@ const createGasOperations = ({ gasApi, authClient }) => ({
   listAdminFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'listAdminFeedback', 'Feedback is available through the formal Worker API.'); },
   deleteFeedback: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'deleteFeedback', 'Feedback is available through the formal Worker API.'); },
   updateFeedbackStatus: () => { throw new ApiContractGapError('FEEDBACK_UNSUPPORTED_TRANSPORT', 'updateFeedbackStatus', 'Feedback is available through the formal Worker API.'); },
+  getLineFriendship: () => Promise.resolve({ success: true, status: 'UNKNOWN' }),
   getReminderSettings: () => {
     if (authClient?.isMock) return gasApi.post({
       action: 'getReminderSettings',
@@ -633,6 +634,9 @@ const createWorkerOperations = ({ workerRequest }) => ({
     'POST',
     `/api/admin/feedback/${encodeURIComponent(String(feedbackId || '').trim())}/status`,
     { body: { status, note } }
+  ),
+  getLineFriendship: () => workerRequest(
+    'getLineFriendship', 'GET', '/api/me/line-friendship'
   ),
   getReminderSettings: () => workerRequest(
     'getReminderSettings', 'GET', '/api/me/reminder-settings'

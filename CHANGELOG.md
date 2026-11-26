@@ -27,6 +27,14 @@
 - Add explicitly labeled, browser-memory-only Vendor and Admin settlement fixtures for local order, partial-transfer, dispute, correction, and reversal UAT; these do not authenticate with LINE or call the Worker or a bank (Issues #123–#125).
 - Add a read-only formal Worker/D1 drift report and make the direct release runner stop when D1 migration state is not in sync; formal deployment remains a direct Wrangler or Cloudflare API action.
 
+## [0.23.1] - 2026-11-26
+
+### Changed
+- ProxyAdmin may create, modify and cancel its own orders after the ordinary cutoff (as it already could for delegated orders). Other roles keep the cutoff; past dates stay closed.
+
+### Added
+- `GET /api/me/line-friendship` reports whether the user has added the LINE official account (Messaging API Get profile: 200 friend, 404 not friend, anything else UNKNOWN). The header shows a warning icon with an add-friend link only when the server confirms NOT_FRIEND.
+
 ## [0.23.0] - 2026-11-17
 
 ### Added

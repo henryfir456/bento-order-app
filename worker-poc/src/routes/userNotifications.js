@@ -2,6 +2,7 @@ import { requireIdentity } from '../http/authMiddleware.js';
 import { forbidden, badRequest } from '../http/errors.js';
 import { jsonResponse } from '../http/response.js';
 import { getUserNotifications, markUserNotificationRead } from '../domain/userNotifications.js';
+import { getLineFriendship } from '../domain/lineFriendship.js';
 import { getReminderSettings, updateReminderSettings } from '../domain/orderReminders.js';
 
 export const handleUserNotificationRoute = async (request, env, {
@@ -15,10 +16,12 @@ export const handleUserNotificationRoute = async (request, env, {
     : null;
   const isReminderGet = request.method === 'GET' && url.pathname === '/api/me/reminder-settings';
   const isReminderPut = request.method === 'PUT' && url.pathname === '/api/me/reminder-settings';
-  if (!isList && !readMatch && !isReminderGet && !isReminderPut) return null;
+  const isFriendship = request.method === 'GET' && url.pathname === '/api/me/line-friendship';
+  if (!isList && !readMatch && !isReminderGet && !isReminderPut && !isFriendship) return null;
 
   const identity = await requireIdentity(request, env, { fetchImpl, allowViewAs: false, now });
   if (!identity.actor?.registered || !identity.actor.userId) throw forbidden('NOT_REGISTERED');
+  if (isFriendship) return jsonResponse(await getLineFriendship(env, identity, { fetchImpl }));
   if (isReminderGet) return jsonResponse(await getReminderSettings(env.DB, identity));
   if (isReminderPut) {
     let body;

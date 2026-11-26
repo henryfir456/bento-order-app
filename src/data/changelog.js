@@ -11,6 +11,14 @@ export const APP_VERSION = CHANGELOG.find(isFormalRelease)?.version || packageJs
 // CHANGELOG.md is the English developer/release record. Keep user-facing
 // Traditional Chinese copy here so the UI does not render the raw Markdown.
 const UI_CHANGELOG_TRANSLATIONS = Object.freeze({
+  '0.23.1': [
+    { name: '調整', changes: [
+      'ProxyAdmin 在當日截止後，也可以新增、修改與取消自己的訂單；其他角色仍依原本截止時間，過去的日期仍不可改。'
+    ] },
+    { name: '新增', changes: [
+      '若確認你尚未加入 LINE 官方帳號好友，標題列會出現黃色驚嘆號，點一下即可前往加好友，才能收到訂餐提醒與結單通知。查不到時不會顯示。'
+    ] }
+  ],
   '0.23.0': [
     { name: '新增', changes: [
       '管理員可在「請款審核」開啟「蔡老師結單後自動請款」：蔡老師 10:00 結單後，系統會自動替你指定的代理管理員送出當天蔡老師訂單的請款申請，你仍需在下方審核同意。',

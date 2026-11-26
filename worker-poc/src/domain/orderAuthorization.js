@@ -111,16 +111,17 @@ export const resolveOrderMutationTiming = ({
   enforceProxyDelegatedDate = true
 }) => {
   const adminBypass = actor?.role === 'Admin';
-  const proxyDelegatedBypass = actor?.role === 'ProxyAdmin' && isDelegated;
+  // ProxyAdmin bypasses the cutoff for its own orders as well as delegated ones.
+  const proxyDelegatedBypass = actor?.role === 'ProxyAdmin';
   const proxyDelegatedDateAllowed = !proxyDelegatedBypass
     || targetDate >= getTaipeiDate(now);
-  if (proxyDelegatedBypass && !proxyDelegatedDateAllowed && enforceProxyDelegatedDate) {
+  if (proxyDelegatedBypass && isDelegated && !proxyDelegatedDateAllowed && enforceProxyDelegatedDate) {
     throw forbidden('DELEGATED_ORDER_DATE_NOT_ELIGIBLE');
   }
 
   // Admin, and ProxyAdmin when ordering on behalf of someone for today or a
   // future date, may create/modify/cancel after the ordinary cutoff.
-  // ProxyAdmin self-orders keep the normal cutoff.
+  // Past dates stay closed for ProxyAdmin; only delegated attempts raise an error.
   const cutoffApplies = !(adminBypass || proxyDelegatedBypass);
   const deadline = deadlineInfo(targetDate, mode, now);
   return {

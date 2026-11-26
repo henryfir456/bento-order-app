@@ -68,6 +68,8 @@ import { filterMembersByEmployeeId } from './features/admin/delegateOrderFilter.
 import { formatBalanceAmount } from './features/balances/formatters';
 import { normalizeAnnouncementInbox, normalizeDeferredLikes, mergeDeferredLikes } from './features/bootstrap/deferredBootstrap';
 import AnnouncementBell from './features/announcements/AnnouncementBell';
+import LineFriendBadge from './features/lineFriend/LineFriendBadge';
+import { useLineFriendship } from './features/lineFriend/useLineFriendship';
 import MegaphoneIcon from './features/feedback/MegaphoneIcon';
 import AnnouncementInbox from './features/announcements/AnnouncementInbox';
 import { getLineBindingState } from './auth/lineBindingState';
@@ -1375,6 +1377,17 @@ export default function App() {
     enabled: (apiClient.transport === 'worker' || authClient.isMock)
       && authState === AUTH_STATES.REGISTERED
       && Boolean(authUser?.userId)
+      && !viewAsUser?.userId,
+    userKey: `${authUser?.userId || ''}:${authMode || ''}`
+  });
+
+  const lineFriendStatus = useLineFriendship({
+    api: apiClient,
+    enabled: apiClient.transport === 'worker'
+      && authState === AUTH_STATES.REGISTERED
+      && Boolean(authUser?.userId)
+      && Boolean(authUser?.lineUserId || authUser?.lineBound)
+      && authUser?.role !== 'Vendor'
       && !viewAsUser?.userId,
     userKey: `${authUser?.userId || ''}:${authMode || ''}`
   });
@@ -3648,6 +3661,9 @@ export default function App() {
                   {lineBindLoading ? '綁定中...' : '綁定 LINE'}
                 </button>
               )}
+            {isRegistered && !isViewAsMode && apiClient.transport === 'worker' && (
+              <LineFriendBadge status={lineFriendStatus} />
+            )}
             {isRegistered && !isViewAsMode && (apiClient.transport === 'worker' || authClient.isMock) && (
               <AnnouncementBell
                 unreadCount={announcementUnreadCount + userNotifications.unreadCount}
