@@ -519,7 +519,7 @@ test('User self-order remains subject to the ordinary cutoff', async () => {
   assert.equal(result.body.error, 'DEADLINE_CLOSED');
 });
 
-test('ProxyAdmin self-order remains subject to the ordinary cutoff', async () => {
+test('ProxyAdmin self-order bypasses the ordinary cutoff', async () => {
   const result = await create(
     delegatedDatabase(),
     orderBody(ORDER_DATE),
@@ -528,8 +528,7 @@ test('ProxyAdmin self-order remains subject to the ordinary cutoff', async () =>
     AFTER_ORDER_CUTOFF
   );
 
-  assert.equal(result.response.status, 400);
-  assert.equal(result.body.error, 'DEADLINE_CLOSED');
+  assert.equal(result.response.status, 200);
 });
 
 test('ProxyAdmin delegated ordering bypasses the cutoff for today', async () => {
